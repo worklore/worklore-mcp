@@ -6,7 +6,7 @@ import json
 import sys
 import urllib.request
 
-EP = sys.argv[1] if len(sys.argv) > 1 else "https://p2dyfifvg4.execute-api.us-east-1.amazonaws.com/mcp"
+EP = sys.argv[1] if len(sys.argv) > 1 else "https://worklore.dev/mcp"
 STORY = "2026-09-10-the-relay-board-my-agent-runs-the-github-kanban-i-just-close"
 STORY_MD = f"https://worklore.dev/s/{STORY}.md"
 

@@ -2,11 +2,11 @@
 
 Full test pass for the `/mcp` endpoint (worklore-mcp#18). Re-run: `python3 tests/mcp_test.py`.
 
-Last run: 2026-09-10T14:10Z · endpoint: API Gateway (temp; clean worklore.dev/mcp = #17)
+Last run: 2026-09-10T14:19Z · endpoint: https://worklore.dev/mcp
 
 ```
 
-worklore MCP — full test pass  ·  endpoint: https://p2dyfifvg4.execute-api.us-east-1.amazonaws.com/mcp
+worklore MCP — full test pass  ·  endpoint: https://worklore.dev/mcp
 
   ✓ initialize → serverInfo+protocol
   ✓ notifications/initialized → 202, no body
