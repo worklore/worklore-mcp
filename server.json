@@ -1,7 +1,16 @@
 {
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.worklore/worklore",
-  "description": "Search worklore developer stories and x-ray any skill or story's capability tier (T0-T4) before you run it.",
-  "repository": { "url": "https://github.com/worklore/worklore-mcp", "source": "github" },
+  "description": "Search worklore stories and x-ray any skill or story capability tier (T0-T4) before you run it.",
+  "repository": {
+    "url": "https://github.com/worklore/worklore-mcp",
+    "source": "github"
+  },
   "version": "0.1.0",
-  "remotes": [ { "type": "streamable-http", "url": "https://worklore.dev/mcp" } ]
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://worklore.dev/mcp"
+    }
+  ]
 }
