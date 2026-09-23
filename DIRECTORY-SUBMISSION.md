@@ -8,16 +8,23 @@ feedback. (The MCP Registry, #13, is the free cross-client path and needs no Tea
 - **Remote MCP URL:** https://worklore.dev/mcp  (Streamable HTTP)
 - **Public docs URL:** https://github.com/worklore/worklore-mcp  (README)
 - **Privacy policy URL:** https://worklore.dev/privacy.html  (has an "MCP connector" section)
-- **Auth:** none (v1 tools are read-only over public data)
-- **Tool annotations:** all 4 tools are `readOnlyHint: true`; `check_capability`
-  also `openWorldHint: true` (fetches a URL). No destructive tools in v1.
-- **Data-handling summary:** read-only tools; each call uses only the arguments
-  the agent sends (query / context / slug / text / url) to answer that request;
-  no per-user profile is stored; `check_capability` may fetch a user-provided URL
+- **Auth:** OAuth 2.1 (PKCE + dynamic client registration); sign-in is GitHub
+  public profile only — handle and avatar, no scopes, no email, no repos
+- **Tools (6):** `check_capability`, `get_story`, `search_stories`,
+  `suggest_for_project` (read-only) and `report_reproduction`, `publish_story`
+  (write, acting as the signed-in user).
+- **Tool annotations:** the four read tools are `readOnlyHint: true`;
+  `check_capability` is also `openWorldHint: true` (fetches a URL);
+  `report_reproduction` is `idempotentHint`. No destructive tools. All six
+  declare an `outputSchema` and return `structuredContent`.
+- **Data-handling summary:** read calls use only the arguments the agent sends
+  (query / context / slug / text / url) to answer that request; the two write
+  tools store what the signed-in author explicitly publishes or reports, attributed
+  to their GitHub handle; no email or repository data is requested or stored; `check_capability` may fetch a user-provided URL
   server-side purely to scan it; results are public worklore data + the scanner's
   capability report. HTTPS enforced; Origin validated.
 - **Security:** Origin allow-list (native no-Origin clients allowed; unknown web
-  origins rejected), HTTPS-only, full test suite in `tests/mcp_test.py` (30/30).
+  origins rejected), HTTPS-only, full test suite in `tests/mcp_test.py`.
 
 ### 3 example prompts (exercise different tools)
 1. "Use worklore to check what this skill can do before I install it: <URL or text>."
