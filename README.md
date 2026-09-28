@@ -60,6 +60,41 @@ paginated, so a client that browses resources sees the library without calling a
 tool. To *find* a specific story, use `search_stories` / `suggest_for_project`
 rather than walking every page.
 
+## What answers without a token
+
+Four methods answer with no credential at all — `initialize`, `ping`,
+`notifications/initialized`, and **`tools/list`**. Everything else needs a
+session: `tools/call`, `resources/list` and `resources/read` all return
+`401` with a `WWW-Authenticate` pointing at the authorization server.
+
+The rule is: **the list and the call do not need the same answer.** Anonymous
+callers get the server's *description* — names, descriptions, input and output
+schemas, annotations — which is the same information already published in the
+MCP Registry, in Smithery's listing and in this README. They get nothing that
+executes, nothing per-user, and no session.
+
+This is written down because it was a mistake first. The original build gated
+the whole endpoint, on reasoning that felt airtight: one gate, one place to get
+it right. The consequence was invisible from inside the code and obvious from
+outside — a registry-mirroring directory listed worklore with its name, its
+description, and **zero tools**, because a crawler has nobody to authenticate
+as. The same property also means nobody outside the repository — a scanner, a
+conformance harness, a curious stranger — can check what the server actually
+publishes. Two symptoms, one cause. The fix was about fifteen lines: an
+allow-list of anonymous methods plus a batch check, so a privileged call cannot
+be smuggled in beside an anonymous one.
+
+The whole thing is written up, with the diff and how to verify it against your
+own endpoint, here: [**My MCP server hid its own tool list behind a
+login**](https://worklore.dev/s/2026-09-27-my-mcp-server-hid-its-own-tool-list-behind-a-login).
+If somebody proposes gating enumeration on a server you work on, that page is
+the short version of the argument.
+
+Gating enumeration is a legitimate choice for a server whose tool *names* are
+sensitive. It is worth making on purpose rather than inheriting it from a
+transport-level gate, which is how most of them happen — including, by their
+own audit, the one that prompted this section being written down.
+
 ## Add the connector
 
 **In Claude Code:**
