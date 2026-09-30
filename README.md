@@ -4,7 +4,7 @@ An MCP (Model Context Protocol) connector for [worklore.dev](https://worklore.de
 it lets any MCP-capable agent (Claude, ChatGPT, Cursor, …) search worklore's
 developer stories, read one with its **capability disclosure** attached, x-ray any
 skill or story before running it, and — once you've signed in — record how a
-reproduction went or publish a story of your own.
+reproduction went, publish a story of your own, or revise one you published.
 
 - **Endpoint:** `https://worklore.dev/mcp` (Streamable HTTP, JSON-RPC over POST)
 - **Auth:** OAuth 2.1 (PKCE + dynamic client registration). Sign-in is with your
@@ -44,10 +44,11 @@ Write — these act as **you**, and need your authenticated session:
 |------|-----------|---------|
 | `report_reproduction` | `slug`, `result` (`worked`/`partial`/`failed`), `note` *(optional)* | the recorded reproduction. `failed` is a useful report and must never be inflated |
 | `publish_story` | `markdown`, or the parts (`title`, `narrative`, `reproduce`, `tags`, `type`, `stack`) | the published story's slug + URL. **Only ever call this with the author's explicit approval of the full draft** |
+| `edit_story` | `slug`, `markdown` (the full revised story), `kind` (`rephrase`/`addition`/`correction`, default `rephrase`), `note` *(required for a correction)*, `source` *(optional https URL)* | the slug, URL, the recorded `revision` (`at`, `kind`, `note`, `source`) and how many reproducers were `notified`. Only the story's author can edit it. **Show the author a before/after diff and get their approval first.** The story's `date` never changes. If something in the story was wrong, it is a `correction` — which tells everyone who reproduced it — never a rephrase |
 
-All six carry MCP annotations (`readOnlyHint` / `openWorldHint` / `idempotentHint`)
+All seven carry MCP annotations (`readOnlyHint` / `openWorldHint` / `idempotentHint`)
 so a client can tell the user what a call will do before they approve it, and all
-six declare an `outputSchema` and return `structuredContent`, so a consuming agent
+seven declare an `outputSchema` and return `structuredContent`, so a consuming agent
 can rely on shape instead of parsing prose.
 
 Every result carries a human capability string (e.g. `T0 · inert — touches

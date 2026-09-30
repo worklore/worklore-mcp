@@ -10,17 +10,21 @@ feedback. (The MCP Registry, #13, is the free cross-client path and needs no Tea
 - **Privacy policy URL:** https://worklore.dev/privacy.html  (has an "MCP connector" section)
 - **Auth:** OAuth 2.1 (PKCE + dynamic client registration); sign-in is GitHub
   public profile only — handle and avatar, no scopes, no email, no repos
-- **Tools (6):** `check_capability`, `get_story`, `search_stories`,
-  `suggest_for_project` (read-only) and `report_reproduction`, `publish_story`
-  (write, acting as the signed-in user).
+- **Tools (7):** `check_capability`, `get_story`, `search_stories`,
+  `suggest_for_project` (read-only) and `report_reproduction`, `publish_story`,
+  `edit_story` (write, acting as the signed-in user; `edit_story` only on the
+  signed-in user's own stories).
 - **Tool annotations:** the four read tools are `readOnlyHint: true`;
   `check_capability` is also `openWorldHint: true` (fetches a URL);
-  `report_reproduction` is `idempotentHint`. No destructive tools. All six
+  `report_reproduction` is `idempotentHint`; `edit_story` is not idempotent
+  (each call appends a revision record). No destructive tools. All seven
   declare an `outputSchema` and return `structuredContent`.
 - **Data-handling summary:** read calls use only the arguments the agent sends
-  (query / context / slug / text / url) to answer that request; the two write
-  tools store what the signed-in author explicitly publishes or reports, attributed
-  to their GitHub handle; no email or repository data is requested or stored; `check_capability` may fetch a user-provided URL
+  (query / context / slug / text / url) to answer that request; the three write
+  tools store what the signed-in author explicitly publishes, revises or reports,
+  attributed to their handle — a revision replaces the story text and appends a
+  record (time, kind, note, optional source link), and a correction notifies, inside
+  worklore, the people who reported reproducing that story; no email or repository data is requested or stored; `check_capability` may fetch a user-provided URL
   server-side purely to scan it; results are public worklore data + the scanner's
   capability report. HTTPS enforced; Origin validated.
 - **Security:** Origin allow-list (native no-Origin clients allowed; unknown web
