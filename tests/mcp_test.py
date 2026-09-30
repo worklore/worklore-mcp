@@ -1,8 +1,14 @@
 #!/usr/bin/env python3
 """Full test pass for the worklore MCP endpoint (worklore-mcp#18).
 Evidence-based: every case asserts on the ACTUAL live response. Prints a table
-and exits non-zero if anything fails. Run: python3 mcp_test.py [endpoint]"""
+and exits non-zero if anything fails. Run: python3 mcp_test.py [endpoint]
+
+Since the auth split (initialize, tools/list and ping answer anonymously; every
+tools/call needs a signed-in session), the tool calls need a token: set
+WORKLORE_TOKEN (a worklore author token). Without it, only the anonymous
+surface is checked, plus the fact that tools/call refuses you."""
 import json
+import os
 import sys
 import urllib.request
 
@@ -29,9 +35,13 @@ def post(body, headers=None, method="POST", raw=False):
             return e.code, txt
 
 
+TOKEN = os.environ.get("WORKLORE_TOKEN", "")
+AUTH = {"Authorization": f"Bearer {TOKEN}"} if TOKEN else {}
+
+
 def call(name, args, mid=1):
     return post({"jsonrpc": "2.0", "id": mid, "method": "tools/call",
-                 "params": {"name": name, "arguments": args}})
+                 "params": {"name": name, "arguments": args}}, headers=AUTH)
 
 
 def tool_json(resp):
@@ -58,20 +68,39 @@ check("ping → empty result", s == 200 and r["result"] == {}, str(r))
 s, r = post({"jsonrpc": "2.0", "id": 3, "method": "tools/list"})
 tools = r["result"]["tools"]
 names = sorted(t["name"] for t in tools)
-check("tools/list → 4 tools", s == 200 and names == ["check_capability", "get_story", "search_stories", "suggest_for_project"], str(names))
-check("every tool has inputSchema + readOnlyHint", all("inputSchema" in t and t.get("annotations", {}).get("readOnlyHint") for t in tools),
-      str([(t["name"], t.get("annotations", {}).get("readOnlyHint")) for t in tools]))
+READ = ["check_capability", "get_story", "search_stories", "suggest_for_project"]
+WRITE = ["edit_story", "publish_story", "report_reproduction"]
+check("tools/list without a token → 7 tools", s == 200 and names == sorted(READ + WRITE), str(names))
+by = {t["name"]: t for t in tools}
+check("read tools declare readOnlyHint, write tools don't",
+      all(by[n].get("annotations", {}).get("readOnlyHint") is True for n in READ)
+      and all(by[n].get("annotations", {}).get("readOnlyHint") is False for n in WRITE),
+      str([(n, by[n].get("annotations", {}).get("readOnlyHint")) for n in names]))
+check("edit_story declares itself destructive (new text replaces old)",
+      by["edit_story"].get("annotations", {}).get("destructiveHint") is True)
+check("every tool has inputSchema", all("inputSchema" in t for t in tools))
+s, r = post({"jsonrpc": "2.0", "id": 9, "method": "tools/call",
+             "params": {"name": "search_stories", "arguments": {"query": "x"}}})
+check("tools/call without a token is refused", s == 401 or "error" in (r or {}), f"{s}")
+if not TOKEN:
+    print("WORKLORE_TOKEN not set: skipping tool calls (they need a signed-in session)")
 
-s, r = post({"jsonrpc": "2.0", "id": 4, "method": "no/such/method"})
+s, r = post({"jsonrpc": "2.0", "id": 4, "method": "no/such/method"}, headers=AUTH)  # anonymous: 401 by design
 check("unknown method → -32601", s == 200 and r["error"]["code"] == -32601, str(r.get("error")))
 
-s, r = post(b"{not valid json", raw=True)
+s, r = post(b"{not valid json", raw=True, headers=AUTH)
 check("malformed JSON → 400 / -32700", s == 400 and r["error"]["code"] == -32700, f"{s} {r}")
 
 s, r = post([{"jsonrpc": "2.0", "id": "a", "method": "ping"},
              {"jsonrpc": "2.0", "method": "notifications/initialized"},
              {"jsonrpc": "2.0", "id": "b", "method": "ping"}])
 check("batch → 2 responses (notif omitted)", s == 200 and isinstance(r, list) and len(r) == 2, f"len={len(r) if isinstance(r,list) else r}")
+
+# ---------- tool calls (signed in) ----------
+if not TOKEN:
+    for label, verdict, detail in results:
+        print(f"{verdict:4}  {label}  {detail if verdict == 'FAIL' else ''}")
+    sys.exit(1 if any(v == "FAIL" for _, v, _ in results) else 0)
 
 # ---------- check_capability ----------
 r = call("check_capability", {"text": "Ask the user about constraints and edge cases before you start."})
@@ -86,7 +115,7 @@ check("check_capability skills-install → T1 (not T3)", tj["tier"] == "T1"
       and any(f["category"] == "skill-install" for f in tj["findings"]), tj["tier"])
 r = call("check_capability", {"url": STORY_MD})
 check("check_capability url → tier+sha256", "tier" in tool_json(r) and len(tool_json(r)["sha256"]) == 64, tool_json(r).get("tier"))
-s, r = post({"jsonrpc": "2.0", "id": 9, "method": "tools/call", "params": {"name": "check_capability", "arguments": {}}})
+s, r = post({"jsonrpc": "2.0", "id": 9, "method": "tools/call", "params": {"name": "check_capability", "arguments": {}}}, headers=AUTH)
 check("check_capability no args → -32602", r.get("error", {}).get("code") == -32602, str(r.get("error")))
 r = call("check_capability", {"url": "https://worklore.dev/definitely-not-a-real-page-xyz.md"})
 check("check_capability bad url → isError, no crash", r[0] == 200 and r[1]["result"].get("isError") is True, str(r[1]["result"])[:80])
@@ -96,7 +125,7 @@ r = call("get_story", {"slug": STORY})
 tj = tool_json(r)
 check("get_story valid → capability.summary + markdown", tj["capability"]["summary"].startswith(tj["capability"]["tier"])
       and len(tj["markdown"]) > 200, tj["capability"]["summary"])
-s, r = post({"jsonrpc": "2.0", "id": 11, "method": "tools/call", "params": {"name": "get_story", "arguments": {"slug": "no-such-slug-xyz"}}})
+s, r = post({"jsonrpc": "2.0", "id": 11, "method": "tools/call", "params": {"name": "get_story", "arguments": {"slug": "no-such-slug-xyz"}}}, headers=AUTH)
 check("get_story unknown → -32602", r.get("error", {}).get("code") == -32602, str(r.get("error")))
 results.append(("SKIP", "get_story hidden/quarantined", "no hidden fixture available"))
 
@@ -117,9 +146,9 @@ r = call("suggest_for_project", {"context": "python aws lambda dynamodb backend,
 tj = tool_json(r)
 check("suggest → ≤3 with capability", 1 <= len(tj["suggested"]) <= 3 and all("·" in (x["capability"] or "") for x in tj["suggested"]),
       str([x["slug"][:20] for x in tj["suggested"]]))
-s, r = post({"jsonrpc": "2.0", "id": 20, "method": "tools/call", "params": {"name": "suggest_for_project", "arguments": {"context": ""}}})
+s, r = post({"jsonrpc": "2.0", "id": 20, "method": "tools/call", "params": {"name": "suggest_for_project", "arguments": {"context": ""}}}, headers=AUTH)
 check("suggest empty → -32602", r.get("error", {}).get("code") == -32602, str(r.get("error")))
-s, r = post({"jsonrpc": "2.0", "id": 21, "method": "tools/call", "params": {"name": "nope", "arguments": {}}})
+s, r = post({"jsonrpc": "2.0", "id": 21, "method": "tools/call", "params": {"name": "nope", "arguments": {}}}, headers=AUTH)
 check("tools/call unknown tool → -32601", r.get("error", {}).get("code") == -32601, str(r.get("error")))
 
 # ---------- Security / transport ----------
