@@ -1,0 +1,11 @@
+{
+  "name": "get_story on a slug that doesn't exist fails as a tool error, and the next call still works",
+  "call": { "tool": "get_story", "args": { "slug": "no-such-story-failure-lab-probe" } },
+  "timeoutMs": 15000,
+  "expect": { "outcome": "error", "result": { "isError": true, "textContains": "not found" } },
+  "observe": {
+    "call": { "tool": "search_stories", "args": { "query": "mcp" } },
+    "timeoutMs": 15000,
+    "expect": { "outcome": "success", "result": { "isError": false, "textContains": "\"stories\"" } }
+  }
+}

@@ -48,6 +48,16 @@ def tool_json(resp):
     return json.loads(resp[1]["result"]["content"][0]["text"])
 
 
+def refused(r, text):
+    """A tool that ran and refused answers with a RESULT carrying isError and a
+    readable message (MCP: tool execution error; SEP-1303 for bad input), not a
+    JSON-RPC error. A JSON-RPC error makes the client SDK throw, so the model
+    never reads the message. This suite asserted -32602 here until MCP Failure
+    Lab, driving a real SDK client, showed what that meant."""
+    res = (r or {}).get("result") or {}
+    return "error" not in (r or {}) and res.get("isError") is True and text in res["content"][0]["text"]
+
+
 def check(label, cond, detail=""):
     results.append((("PASS" if cond else "FAIL"), label, detail))
 
@@ -116,7 +126,7 @@ check("check_capability skills-install → T1 (not T3)", tj["tier"] == "T1"
 r = call("check_capability", {"url": STORY_MD})
 check("check_capability url → tier+sha256", "tier" in tool_json(r) and len(tool_json(r)["sha256"]) == 64, tool_json(r).get("tier"))
 s, r = post({"jsonrpc": "2.0", "id": 9, "method": "tools/call", "params": {"name": "check_capability", "arguments": {}}}, headers=AUTH)
-check("check_capability no args → -32602", r.get("error", {}).get("code") == -32602, str(r.get("error")))
+check("check_capability no args → isError result, not a protocol error", refused(r, "provide"), str(r)[:100])
 r = call("check_capability", {"url": "https://worklore.dev/definitely-not-a-real-page-xyz.md"})
 check("check_capability bad url → isError, no crash", r[0] == 200 and r[1]["result"].get("isError") is True, str(r[1]["result"])[:80])
 
@@ -126,7 +136,7 @@ tj = tool_json(r)
 check("get_story valid → capability.summary + markdown", tj["capability"]["summary"].startswith(tj["capability"]["tier"])
       and len(tj["markdown"]) > 200, tj["capability"]["summary"])
 s, r = post({"jsonrpc": "2.0", "id": 11, "method": "tools/call", "params": {"name": "get_story", "arguments": {"slug": "no-such-slug-xyz"}}}, headers=AUTH)
-check("get_story unknown → -32602", r.get("error", {}).get("code") == -32602, str(r.get("error")))
+check("get_story unknown → isError \"story not found\", not a protocol error", refused(r, "story not found"), str(r)[:100])
 results.append(("SKIP", "get_story hidden/quarantined", "no hidden fixture available"))
 
 # ---------- search / suggest ----------
@@ -147,7 +157,7 @@ tj = tool_json(r)
 check("suggest → ≤3 with capability", 1 <= len(tj["suggested"]) <= 3 and all("·" in (x["capability"] or "") for x in tj["suggested"]),
       str([x["slug"][:20] for x in tj["suggested"]]))
 s, r = post({"jsonrpc": "2.0", "id": 20, "method": "tools/call", "params": {"name": "suggest_for_project", "arguments": {"context": ""}}}, headers=AUTH)
-check("suggest empty → -32602", r.get("error", {}).get("code") == -32602, str(r.get("error")))
+check("suggest empty → isError result, not a protocol error", refused(r, "provide"), str(r)[:100])
 s, r = post({"jsonrpc": "2.0", "id": 21, "method": "tools/call", "params": {"name": "nope", "arguments": {}}}, headers=AUTH)
 check("tools/call unknown tool → -32601", r.get("error", {}).get("code") == -32601, str(r.get("error")))
 

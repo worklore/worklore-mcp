@@ -1,0 +1,15 @@
+{
+  "name": "search_stories answers in time, and the session still reads a story after it",
+  "call": { "tool": "search_stories", "args": { "query": "mcp" } },
+  "timeoutMs": 15000,
+  "expect": {
+    "outcome": "success",
+    "maxDurationMs": 10000,
+    "result": { "isError": false, "textContains": "\"stories\"" }
+  },
+  "observe": {
+    "call": { "tool": "get_story", "args": { "slug": "2026-07-31-russia-reachable-static-mirror-on-cloud-ru-s3" } },
+    "timeoutMs": 15000,
+    "expect": { "outcome": "success", "result": { "isError": false, "textContains": "cloud.ru" } }
+  }
+}

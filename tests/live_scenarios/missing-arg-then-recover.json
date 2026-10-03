@@ -1,0 +1,11 @@
+{
+  "name": "get_story without its required slug is a readable tool error, and the next call still works",
+  "call": { "tool": "get_story", "args": {} },
+  "timeoutMs": 15000,
+  "expect": { "outcome": "error", "result": { "isError": true, "textContains": "provide 'slug'" } },
+  "observe": {
+    "call": { "tool": "search_stories", "args": { "query": "mcp" } },
+    "timeoutMs": 15000,
+    "expect": { "outcome": "success", "result": { "isError": false } }
+  }
+}
