@@ -64,9 +64,12 @@ rather than walking every page.
 
 ## What answers without a token
 
-Four methods answer with no credential at all — `initialize`, `ping`,
-`notifications/initialized`, and **`tools/list`**. Everything else needs a
-session: `tools/call`, `resources/list` and `resources/read` all return
+Six methods answer with no credential at all — `initialize`, `ping`,
+`notifications/initialized`, **`tools/list`**, and (since 0.4.0)
+**`resources/list`** and **`resources/read`**. Resources go through the same
+visibility rule as the site: without a token you get public stories only; with
+one, public stories plus your own private ones; a private story read anonymously
+answers exactly as a missing one. `tools/call` still needs a session and returns
 `401` with a `WWW-Authenticate` pointing at the authorization server.
 
 The rule is: **the list and the call do not need the same answer.** Anonymous
