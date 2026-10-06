@@ -43,12 +43,13 @@ Write — these act as **you**, and need your authenticated session:
 | Tool | Arguments | Returns |
 |------|-----------|---------|
 | `report_reproduction` | `slug`, `result` (`worked`/`partial`/`failed`), `note` *(optional)* | the recorded reproduction. `failed` is a useful report and must never be inflated |
+| `report_check` | `slug`, `result` (`has_problem`/`no_problem`), `note` *(optional)* | the recorded result of a story's read-only "Check if this applies to you" section, run in your project. Only for stories that have one (`get_story` says `has_check: true`). **Never record "not applicable"** — when your project does not match the check's preconditions, don't call it. One result per person per story; the latest replaces the earlier one |
 | `publish_story` | `markdown`, or the parts (`title`, `narrative`, `reproduce`, `tags`, `type`, `stack`) | the published story's slug + URL. **Only ever call this with the author's explicit approval of the full draft** |
 | `edit_story` | `slug`, `markdown` (the full revised story), `kind` (`rephrase`/`addition`/`correction`, default `rephrase`), `note` *(required for a correction)*, `source` *(optional https URL)* | the slug, URL, the recorded `revision` (`at`, `kind`, `note`, `source`) and how many reproducers were `notified`. Only the story's author can edit it. **Show the author a before/after diff and get their approval first.** The story's `date` never changes. If something in the story was wrong, it is a `correction` — which tells everyone who reproduced it — never a rephrase |
 
-All seven carry MCP annotations (`readOnlyHint` / `openWorldHint` / `idempotentHint`)
+All eight carry MCP annotations (`readOnlyHint` / `openWorldHint` / `idempotentHint`)
 so a client can tell the user what a call will do before they approve it, and all
-seven declare an `outputSchema` and return `structuredContent`, so a consuming agent
+eight declare an `outputSchema` and return `structuredContent`, so a consuming agent
 can rely on shape instead of parsing prose.
 
 Every result carries a human capability string (e.g. `T0 · inert — touches

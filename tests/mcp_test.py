@@ -79,8 +79,8 @@ s, r = post({"jsonrpc": "2.0", "id": 3, "method": "tools/list"})
 tools = r["result"]["tools"]
 names = sorted(t["name"] for t in tools)
 READ = ["check_capability", "get_story", "search_stories", "suggest_for_project"]
-WRITE = ["edit_story", "publish_story", "report_reproduction"]
-check("tools/list without a token → 7 tools", s == 200 and names == sorted(READ + WRITE), str(names))
+WRITE = ["edit_story", "publish_story", "report_check", "report_reproduction"]
+check("tools/list without a token → 8 tools", s == 200 and names == sorted(READ + WRITE), str(names))
 by = {t["name"]: t for t in tools}
 check("read tools declare readOnlyHint, write tools don't",
       all(by[n].get("annotations", {}).get("readOnlyHint") is True for n in READ)
