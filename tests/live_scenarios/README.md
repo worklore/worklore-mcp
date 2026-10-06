@@ -13,4 +13,14 @@ for s in tests/live_scenarios/*-*.json; do
 done
 ```
 
+Since 0.5.0 searching and reading public stories needs no token. The `anon-*`
+scenarios prove that with `target-anon.json`, which sends no `Authorization`
+header at all:
+
+```bash
+for s in tests/live_scenarios/anon-*.json; do
+  npx -y mcp-failure-lab@0.11.0 run "$s" --target tests/live_scenarios/target-anon.json
+done
+```
+
 Never add a scenario that publishes, edits or reports: these run against production.

@@ -3,13 +3,18 @@
 Evidence-based: every case asserts on the ACTUAL live response. Prints a table
 and exits non-zero if anything fails. Run: python3 mcp_test.py [endpoint]
 
-Since the auth split (initialize, tools/list and ping answer anonymously; every
-tools/call needs a signed-in session), the tool calls need a token: set
-WORKLORE_TOKEN (a worklore author token). Without it, only the anonymous
-surface is checked, plus the fact that tools/call refuses you."""
+Since 0.5.0 (one access table, worklore's docs/ACCESS.md): searching and
+reading public stories needs no token — search_stories, get_story,
+suggest_for_project and check_capability on text answer anonymously — while
+check_capability with a url and every write tool answer 401. Without
+WORKLORE_TOKEN the read tools run anonymously and the token-only checks are
+skipped; with it (a worklore author token) they run signed in. No case here
+ever writes: the write tools are only probed anonymously, where they are
+refused before they run."""
 import json
 import os
 import sys
+import urllib.error
 import urllib.request
 
 EP = sys.argv[1] if len(sys.argv) > 1 else "https://worklore.dev/mcp"
@@ -81,6 +86,9 @@ names = sorted(t["name"] for t in tools)
 READ = ["check_capability", "get_story", "search_stories", "suggest_for_project"]
 WRITE = ["edit_story", "publish_story", "report_check", "report_reproduction"]
 check("tools/list without a token → 8 tools", s == 200 and names == sorted(READ + WRITE), str(names))
+s, r = post({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2025-06-18"}})
+check("serverInfo.version is 0.5.0", (r or {}).get("result", {}).get("serverInfo", {}).get("version") == "0.5.0",
+      str((r or {}).get("result", {}).get("serverInfo")))
 by = {t["name"]: t for t in tools}
 check("read tools declare readOnlyHint, write tools don't",
       all(by[n].get("annotations", {}).get("readOnlyHint") is True for n in READ)
@@ -89,29 +97,59 @@ check("read tools declare readOnlyHint, write tools don't",
 check("edit_story declares itself destructive (new text replaces old)",
       by["edit_story"].get("annotations", {}).get("destructiveHint") is True)
 check("every tool has inputSchema", all("inputSchema" in t for t in tools))
-s, r = post({"jsonrpc": "2.0", "id": 9, "method": "tools/call",
-             "params": {"name": "search_stories", "arguments": {"query": "x"}}})
-check("tools/call without a token is refused", s == 401 or "error" in (r or {}), f"{s}")
-if not TOKEN:
-    print("WORKLORE_TOKEN not set: skipping tool calls (they need a signed-in session)")
 
-s, r = post({"jsonrpc": "2.0", "id": 4, "method": "no/such/method"}, headers=AUTH)  # anonymous: 401 by design
-check("unknown method → -32601", s == 200 and r["error"]["code"] == -32601, str(r.get("error")))
+# ---------- what answers without a token (0.5.0 access table) ----------
+def anon_call(name, args, mid=9):
+    return post({"jsonrpc": "2.0", "id": mid, "method": "tools/call",
+                 "params": {"name": name, "arguments": args}})
+
+
+s, r = anon_call("search_stories", {"query": "mcp"})
+check("search_stories without a token → answers", s == 200 and not r["result"].get("isError"), f"{s}")
+s, r = anon_call("get_story", {"slug": "no-such-slug-xyz"})
+check("get_story without a token → readable 'story not found'", s == 200 and refused(r, "story not found"), f"{s}")
+s, r = anon_call("check_capability", {"text": "echo hi"})
+check("check_capability text without a token → answers", s == 200 and not r["result"].get("isError"), f"{s}")
+s, r = anon_call("check_capability", {"url": STORY_MD})
+check("check_capability url without a token → 401", s == 401, f"{s}")
+for name, args in (("report_reproduction", {"slug": "no-such-slug-xyz", "result": "worked"}),
+                   ("report_check", {"slug": "no-such-slug-xyz", "result": "no_problem"}),
+                   ("publish_story", {"title": "never", "narrative": "never"}),
+                   ("edit_story", {"slug": "no-such-slug-xyz", "markdown": "# x"})):
+    req = urllib.request.Request(EP, data=json.dumps({"jsonrpc": "2.0", "id": 9, "method": "tools/call",
+                                                      "params": {"name": name, "arguments": args}}).encode(),
+                                 method="POST", headers={"Content-Type": "application/json"})
+    try:
+        urllib.request.urlopen(req, timeout=15)
+        code, wwwa = 200, ""
+    except urllib.error.HTTPError as e:
+        code, wwwa = e.code, e.headers.get("WWW-Authenticate", "")
+    check(f"{name} without a token → 401 + WWW-Authenticate", code == 401 and "resource_metadata" in wwwa, f"{code}")
+s, r = post([{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "search_stories", "arguments": {}}},
+             {"jsonrpc": "2.0", "id": 2, "method": "tools/call",
+              "params": {"name": "publish_story", "arguments": {"title": "never", "narrative": "never"}}}])
+check("batch: a write smuggled beside a public read → 401", s == 401, f"{s}")
+if not TOKEN:
+    print("WORKLORE_TOKEN not set: read tools run anonymously; token-only checks are skipped")
+
+s, r = post({"jsonrpc": "2.0", "id": 4, "method": "no/such/method"}, headers=AUTH)
+if TOKEN:
+    check("unknown method → -32601", s == 200 and r["error"]["code"] == -32601, str(r.get("error")))
+else:
+    check("unknown method without a token → 401 (not in the access table)", s == 401, f"{s}")
 
 s, r = post(b"{not valid json", raw=True, headers=AUTH)
-check("malformed JSON → 400 / -32700", s == 400 and r["error"]["code"] == -32700, f"{s} {r}")
+if TOKEN:
+    check("malformed JSON → 400 / -32700", s == 400 and r["error"]["code"] == -32700, f"{s} {r}")
+else:
+    check("malformed JSON without a token → 401", s == 401, f"{s}")
 
 s, r = post([{"jsonrpc": "2.0", "id": "a", "method": "ping"},
              {"jsonrpc": "2.0", "method": "notifications/initialized"},
              {"jsonrpc": "2.0", "id": "b", "method": "ping"}])
 check("batch → 2 responses (notif omitted)", s == 200 and isinstance(r, list) and len(r) == 2, f"len={len(r) if isinstance(r,list) else r}")
 
-# ---------- tool calls (signed in) ----------
-if not TOKEN:
-    for label, verdict, detail in results:
-        print(f"{verdict:4}  {label}  {detail if verdict == 'FAIL' else ''}")
-    sys.exit(1 if any(v == "FAIL" for _, v, _ in results) else 0)
-
+# ---------- read tool calls (signed in with WORKLORE_TOKEN, else anonymous) ----------
 # ---------- check_capability ----------
 r = call("check_capability", {"text": "Ask the user about constraints and edge cases before you start."})
 check("check_capability benign → T0", tool_json(r)["tier"] == "T0", tool_json(r)["tier"])
@@ -123,12 +161,18 @@ r = call("check_capability", {"text": "install `skills/foo/` into `~/.claude/ski
 tj = tool_json(r)
 check("check_capability skills-install → T1 (not T3)", tj["tier"] == "T1"
       and any(f["category"] == "skill-install" for f in tj["findings"]), tj["tier"])
-r = call("check_capability", {"url": STORY_MD})
-check("check_capability url → tier+sha256", "tier" in tool_json(r) and len(tool_json(r)["sha256"]) == 64, tool_json(r).get("tier"))
+if TOKEN:
+    r = call("check_capability", {"url": STORY_MD})
+    check("check_capability url → tier+sha256", "tier" in tool_json(r) and len(tool_json(r)["sha256"]) == 64, tool_json(r).get("tier"))
+else:
+    results.append(("SKIP", "check_capability url → tier+sha256", "needs WORKLORE_TOKEN"))
 s, r = post({"jsonrpc": "2.0", "id": 9, "method": "tools/call", "params": {"name": "check_capability", "arguments": {}}}, headers=AUTH)
 check("check_capability no args → isError result, not a protocol error", refused(r, "provide"), str(r)[:100])
-r = call("check_capability", {"url": "https://worklore.dev/definitely-not-a-real-page-xyz.md"})
-check("check_capability bad url → isError, no crash", r[0] == 200 and r[1]["result"].get("isError") is True, str(r[1]["result"])[:80])
+if TOKEN:
+    r = call("check_capability", {"url": "https://worklore.dev/definitely-not-a-real-page-xyz.md"})
+    check("check_capability bad url → isError, no crash", r[0] == 200 and r[1]["result"].get("isError") is True, str(r[1]["result"])[:80])
+else:
+    results.append(("SKIP", "check_capability bad url → isError", "needs WORKLORE_TOKEN"))
 
 # ---------- get_story ----------
 r = call("get_story", {"slug": STORY})
@@ -159,7 +203,10 @@ check("suggest → ≤3 with capability", 1 <= len(tj["suggested"]) <= 3 and all
 s, r = post({"jsonrpc": "2.0", "id": 20, "method": "tools/call", "params": {"name": "suggest_for_project", "arguments": {"context": ""}}}, headers=AUTH)
 check("suggest empty → isError result, not a protocol error", refused(r, "provide"), str(r)[:100])
 s, r = post({"jsonrpc": "2.0", "id": 21, "method": "tools/call", "params": {"name": "nope", "arguments": {}}}, headers=AUTH)
-check("tools/call unknown tool → -32601", r.get("error", {}).get("code") == -32601, str(r.get("error")))
+if TOKEN:
+    check("tools/call unknown tool → -32601", r.get("error", {}).get("code") == -32601, str(r.get("error")))
+else:
+    check("tools/call unknown tool without a token → 401 (not in the access table)", s == 401, f"{s}")
 
 # ---------- Security / transport ----------
 s, r = post({"jsonrpc": "2.0", "id": 30, "method": "ping"})

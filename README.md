@@ -3,11 +3,13 @@
 An MCP (Model Context Protocol) connector for [worklore.dev](https://worklore.dev) —
 it lets any MCP-capable agent (Claude, ChatGPT, Cursor, …) search worklore's
 developer stories, read one with its **capability disclosure** attached, x-ray any
-skill or story before running it, and — once you've signed in — record how a
-reproduction went, publish a story of your own, or revise one you published.
+skill or story before running it — all without an account — and, once you've
+signed in, record how a reproduction went, publish a story of your own, or revise
+one you published.
 
 - **Endpoint:** `https://worklore.dev/mcp` (Streamable HTTP, JSON-RPC over POST)
-- **Auth:** OAuth 2.1 (PKCE + dynamic client registration). Sign-in is with your
+- **Auth:** none to search and read public stories. Writes (and your private
+  stories) use OAuth 2.1 (PKCE + dynamic client registration). Sign-in is with your
   GitHub **public profile** only — worklore sees your handle and avatar, no
   scopes, no email, no repositories.
 - **Listed on:** the [official MCP Registry](https://registry.modelcontextprotocol.io)
@@ -29,7 +31,8 @@ Capability tiers: **T0** inert · **T1** local · **T2** network · **T3** eleva
 
 ## Tools
 
-Read-only — no sign-in needed beyond connecting:
+Read-only — no sign-in needed (public stories only; `check_capability` with a
+`url` needs sign-in, because the server fetches it for you):
 
 | Tool | Arguments | Returns |
 |------|-----------|---------|
@@ -64,19 +67,32 @@ rather than walking every page.
 
 ## What answers without a token
 
-Six methods answer with no credential at all — `initialize`, `ping`,
-`notifications/initialized`, **`tools/list`**, and (since 0.4.0)
-**`resources/list`** and **`resources/read`**. Resources go through the same
-visibility rule as the site: without a token you get public stories only; with
-one, public stories plus your own private ones; a private story read anonymously
-answers exactly as a missing one. `tools/call` still needs a session and returns
-`401` with a `WWW-Authenticate` pointing at the authorization server.
+Since 0.5.0 one rule decides it, everywhere — the site, the REST API and this
+server alike. It lives as a single table in worklore's backend (`access.py`,
+rendered as `docs/ACCESS.md`); the summary below is generated from it.
 
-The rule is: **the list and the call do not need the same answer.** Anonymous
-callers get the server's *description* — names, descriptions, input and output
+<!-- generated: python3 backend/src/access.py --readme (worklore repo) -->
+**The rule.** Anyone can search and read all public stories without signing in — site, REST API and MCP alike. Private stories and every write (publish, edit, report a reproduction or a check, visibility, per-user data, anything acting as a person) need a signed-in session. Anonymous reads go through the single visibility rule, so a private story answers exactly like a missing one. Anything that costs worklore on someone else's behalf — the server fetching an arbitrary URL — needs a session too, unless the input is inline text.
+
+- **Methods with no credential:** `initialize`, `notifications/initialized`, `notifications/cancelled`, `ping`, `tools/list`, `resources/list`, `resources/read`, `resources/templates/list`, `prompts/list`.
+- **Tools with no credential:** `search_stories`, `get_story`, `suggest_for_project`, `check_capability` (without `url`) — public stories only; a private story answers exactly like a missing one.
+- **Need a signed-in session:** `check_capability` with `url`, `report_reproduction`, `report_check`, `publish_story`, `edit_story`. Without one they answer `401` with a `WWW-Authenticate` header pointing at the authorization server.
+- A JSON-RPC batch answers without a token only if every message in it does.
+<!-- /generated -->
+
+In practice: you can connect worklore and search, read, get suggestions and
+x-ray pasted text without an account. Signing in adds your own private stories
+to what you can see, lets `check_capability` fetch a URL for you, and is what
+lets your agent record a reproduction or a check, publish, or edit — all of
+which act as you.
+
+**History.** Until 0.4.0 the line sat between describing the server and using
+it: **the list and the call do not need the same answer.** Anonymous
+callers got the server's *description* — names, descriptions, input and output
 schemas, annotations — which is the same information already published in the
-MCP Registry, in Smithery's listing and in this README. They get nothing that
-executes, nothing per-user, and no session.
+MCP Registry, in Smithery's listing and in this README. They got nothing that
+executed, nothing per-user, and no session. 0.5.0 keeps the last two and opens
+reading public stories, which the website never gated in the first place.
 
 This is written down because it was a mistake first. The original build gated
 the whole endpoint, on reasoning that felt airtight: one gate, one place to get
@@ -116,8 +132,9 @@ npx -y smithery mcp add worklore/worklore
 ```
 
 **Any other MCP client:** point it at `https://worklore.dev/mcp` (Streamable
-HTTP). Your client will be walked through OAuth on first connect — it registers
-itself, so there is nothing to paste and no API key to manage.
+HTTP). Searching and reading work right away; the first call that needs a session
+(a write, or a URL to x-ray) answers `401` and your client is walked through OAuth —
+it registers itself, so there is nothing to paste and no API key to manage.
 
 ## Example prompts
 
