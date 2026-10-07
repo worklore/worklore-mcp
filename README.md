@@ -65,6 +65,42 @@ paginated, so a client that browses resources sees the library without calling a
 tool. To *find* a specific story, use `search_stories` / `suggest_for_project`
 rather than walking every page.
 
+## Verify the surface yourself
+
+A version number is a promise that nothing a client depends on changed without
+it. The registry entry carries the version and, since 0.5.1, the sha256 of each
+part of the surface you can see without an account (in `server.json`,
+`_meta` → `io.modelcontextprotocol.registry/publisher-provided` → `surface`).
+So you don't have to take the promise on trust: recompute them.
+
+```bash
+python3 - <<'PY'
+import hashlib, json, urllib.request
+def rpc(method, params=None):
+    body = {"jsonrpc": "2.0", "id": 1, "method": method, "params": params or {}}
+    req = urllib.request.Request("https://worklore.dev/mcp", data=json.dumps(body).encode(),
+        headers={"Content-Type": "application/json", "Accept": "application/json, text/event-stream"})
+    return json.load(urllib.request.urlopen(req))["result"]
+h = lambda o: hashlib.sha256(json.dumps(o, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+init = rpc("initialize", {"protocolVersion": "2025-06-18", "capabilities": {},
+                          "clientInfo": {"name": "verify", "version": "1"}})
+version = init["serverInfo"].pop("version")
+reg = json.load(urllib.request.urlopen(
+    "https://registry.modelcontextprotocol.io/v0/servers?search=io.github.worklore/worklore"))
+entry = next(s["server"] for s in reg["servers"]
+             if s["_meta"]["io.modelcontextprotocol.registry/official"]["isLatest"])
+published = entry["_meta"]["io.modelcontextprotocol.registry/publisher-provided"]["surface"]["sections"]
+print("live version", version, "| registry", entry["version"])
+for name, live in (("initialize", h(init)), ("tools/list", h(rpc("tools/list")))):
+    print(name, "matches" if published[name] == live else "DIFFERS")
+PY
+```
+
+If the version is the same and a hash differs, the server changed without saying
+so. Tell me in an issue. The idea of publishing these hashes came from a comment
+by [@_firelinks](https://dev.to/_firelinks) under Sidney Bissoli's
+[Your MCP server changed. Its version didn't.](https://dev.to/sidneybissoli/your-mcp-server-changed-its-version-didnt-heres-how-to-catch-it-3ai5)
+
 ## What answers without a token
 
 Since 0.5.0 one rule decides it, everywhere — the site, the REST API and this

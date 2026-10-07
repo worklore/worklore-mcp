@@ -87,7 +87,7 @@ READ = ["check_capability", "get_story", "search_stories", "suggest_for_project"
 WRITE = ["edit_story", "publish_story", "report_check", "report_reproduction"]
 check("tools/list without a token → 8 tools", s == 200 and names == sorted(READ + WRITE), str(names))
 s, r = post({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2025-06-18"}})
-check("serverInfo.version is 0.5.0", (r or {}).get("result", {}).get("serverInfo", {}).get("version") == "0.5.0",
+check("serverInfo.version is 0.5.1", (r or {}).get("result", {}).get("serverInfo", {}).get("version") == "0.5.1",
       str((r or {}).get("result", {}).get("serverInfo")))
 by = {t["name"]: t for t in tools}
 check("read tools declare readOnlyHint, write tools don't",
