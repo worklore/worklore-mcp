@@ -1,0 +1,3973 @@
+{
+ "generated": "2026-10-07",
+ "n_sources": 91,
+ "sources": [
+  {
+   "id": "A1",
+   "title": "Writing effective tools for agents — with agents",
+   "url": "https://www.anthropic.com/engineering/writing-tools-for-agents",
+   "author_org": "Anthropic (Ken Aizawa et al.)",
+   "date": "2025-09-11",
+   "type": "official",
+   "quote": "More tools don't always lead to better outcomes. A common error we've observed is tools that merely wrap existing software functionality or API endpoints.",
+   "count": {
+    "stance": "few",
+    "numbers": "",
+    "note": "No number; 'too many tools or overlapping tools can also distract agents'; build a few thoughtful tools targeting high-impact workflows."
+   },
+   "grouping": {
+    "stance": "workflow",
+    "note": "Consolidate list_users+list_events+create_event into schedule_event; tools should match how a task is done, not mirror API endpoints."
+   },
+   "naming": {
+    "stance": "advice",
+    "note": "Namespace by service (asana_search, jira_search) and by resource (asana_projects_search); prefix vs suffix namespacing had 'non-trivial effects' on their evals, varies by LLM."
+   },
+   "evidence": {
+    "stance": "measured",
+    "note": "Internal evals (held-out test sets) on Slack and Asana MCP servers: human-written vs Claude-optimized tools, shown in charts only; naming-scheme effect asserted from evals but no numbers published. Not a tool-count sweep."
+   },
+   "client_limits": [],
+   "contrarian_or_nuance": "Says naming/prefix-vs-suffix effects differ by model, so pick by your own evals rather than a universal rule.",
+   "verified": "fetched",
+   "final": {
+    "count_stance": "FEW",
+    "recommended_number": "",
+    "hard_limit_reported": "",
+    "grouping": "workflow",
+    "naming_themes": [
+     "service/namespace prefix"
+    ],
+    "evidence": "measured",
+    "measurement_kind": "descriptions or names"
+   }
+  },
+  {
+   "id": "A2",
+   "title": "Effective context engineering for AI agents",
+   "url": "https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents",
+   "author_org": "Anthropic Applied AI team",
+   "date": "2025-09-29",
+   "type": "official",
+   "quote": "One of the most common failure modes we see is bloated tool sets that cover too much functionality or lead to ambiguous decision points about which tool to use.",
+   "count": {
+    "stance": "few",
+    "numbers": "",
+    "note": "Recommends 'a minimal viable set of tools'; no number."
+   },
+   "grouping": {
+    "stance": "not-addressed",
+    "note": "Focus is on non-overlapping tools; 'If a human engineer can't definitively say which tool should be used..., an AI agent can't be expected to do better.'"
+   },
+   "naming": {
+    "stance": "not-addressed",
+    "note": ""
+   },
+   "evidence": {
+    "stance": "opinion",
+    "note": "Field observation, no numbers."
+   },
+   "client_limits": [],
+   "contrarian_or_nuance": "Frames the problem as ambiguity/overlap between tools rather than raw count.",
+   "verified": "fetched",
+   "final": {
+    "count_stance": "FEW",
+    "recommended_number": "",
+    "hard_limit_reported": "",
+    "grouping": "not-addressed",
+    "naming_themes": [],
+    "evidence": "opinion",
+    "measurement_kind": ""
+   }
+  },
+  {
+   "id": "A3",
+   "title": "Code execution with MCP: building more efficient agents",
+   "url": "https://www.anthropic.com/engineering/code-execution-with-mcp",
+   "author_org": "Anthropic",
+   "date": "2025-11-04",
+   "type": "official",
+   "quote": "[paraphrase built from verbatim fragments] Tool definitions overload the context window; presenting MCP servers as code APIs cut usage 'from 150,000 tokens to 2,000 tokens—a time and cost saving of 98.7%.'",
+   "count": {
+    "stance": "no-limit",
+    "note": "Count becomes irrelevant if tools are exposed as a code API loaded on demand (filesystem of tool modules).",
+    "numbers": ""
+   },
+   "grouping": {
+    "stance": "not-addressed",
+    "note": "Shifts the question to code-API surface instead of tool list."
+   },
+   "naming": {
+    "stance": "not-addressed",
+    "note": ""
+   },
+   "evidence": {
+    "stance": "measured",
+    "note": "Token count of one example workflow (Google Drive -> Salesforce) with direct tool calls vs code execution: 150k -> 2k tokens. Measures tokens, not accuracy vs tool count."
+   },
+   "client_limits": [],
+   "contrarian_or_nuance": "Code-mode approach: cost/context is the main issue, and it is solved by on-demand loading rather than by having fewer tools.",
+   "verified": "fetched",
+   "final": {
+    "count_stance": "CODE",
+    "recommended_number": "",
+    "hard_limit_reported": "",
+    "grouping": "code-mode",
+    "naming_themes": [],
+    "evidence": "measured",
+    "measurement_kind": "token cost only"
+   }
+  },
+  {
+   "id": "A4",
+   "title": "Introducing advanced tool use on the Claude Developer Platform",
+   "url": "https://www.anthropic.com/engineering/advanced-tool-use",
+   "author_org": "Anthropic",
+   "date": "2025-11-24",
+   "type": "official",
+   "quote": "58 tools consuming approximately 55K tokens before the conversation even starts",
+   "count": {
+    "stance": "specific-number",
+    "numbers": "10+ tools -> use tool search",
+    "note": "Recommends Tool Search Tool when 10+ tools are available or definitions exceed 10K tokens."
+   },
+   "grouping": {
+    "stance": "not-addressed",
+    "note": ""
+   },
+   "naming": {
+    "stance": "advice",
+    "note": "Most common failures are wrong tool selection with similar names like notification-send-user vs notification-send-channel."
+   },
+   "evidence": {
+    "stance": "measured",
+    "note": "Anthropic internal MCP evals with large tool libraries: tool search on vs off — Opus 4 49% -> 74%, Opus 4.5 79.5% -> 88.1%. Token count of 5-server setup (~55K for 58 tools). Measures tool search vs all-upfront, not a tool-count curve."
+   },
+   "client_limits": [],
+   "contrarian_or_nuance": "With deferred loading (tool search) a large library becomes workable; accuracy rises when tools are hidden until searched.",
+   "verified": "fetched",
+   "final": {
+    "count_stance": "DEFER",
+    "recommended_number": "use tool search at 10+ tools or >10K tokens of definitions",
+    "hard_limit_reported": "",
+    "grouping": "not-addressed",
+    "naming_themes": [
+     "avoid near-duplicate / generic names"
+    ],
+    "evidence": "measured",
+    "measurement_kind": "search/retrieval/deferral vs all tools loaded"
+   }
+  },
+  {
+   "id": "A5",
+   "title": "Tool search tool (Claude API docs)",
+   "url": "https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-search-tool",
+   "author_org": "Anthropic",
+   "date": "unknown",
+   "type": "official",
+   "quote": "Claude's ability to pick the right tool degrades once you exceed 30–50 available tools.",
+   "count": {
+    "stance": "specific-number",
+    "numbers": "degrades past 30-50; use tool search at 10+; keep 3-5 non-deferred",
+    "note": "Standard calling is better under 10 tools; tool search supports up to 10,000 deferred tools."
+   },
+   "grouping": {
+    "stance": "not-addressed",
+    "note": ""
+   },
+   "naming": {
+    "stance": "advice",
+    "note": "Use consistent namespacing: prefix by service or resource (github_, slack_) so one search matches the whole group; put keywords in descriptions."
+   },
+   "evidence": {
+    "stance": "cites-measurement",
+    "note": "30-50 threshold stated without data on the page; links to Advanced tool use post for numbers."
+   },
+   "client_limits": [
+    {
+     "client": "Claude API (tool search)",
+     "limit": "10,000 deferred tools per request",
+     "as_stated": "Maximum deferred tools: 10,000 tools with defer_loading: true per request",
+     "date": "fetched 2026-10-07"
+    }
+   ],
+   "contrarian_or_nuance": "Says accuracy 'stays high even across thousands of tools' when tool search loads only relevant ones.",
+   "verified": "fetched",
+   "final": {
+    "count_stance": "DEFER",
+    "recommended_number": "selection degrades past 30-50 tools; <10 tools: no search needed; keep 3-5 always loaded",
+    "hard_limit_reported": "",
+    "grouping": "not-addressed",
+    "naming_themes": [
+     "service/namespace prefix"
+    ],
+    "evidence": "cites-measurement",
+    "measurement_kind": ""
+   }
+  },
+  {
+   "id": "A6",
+   "title": "Define tools (Claude API docs: best practices for tool definitions)",
+   "url": "https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools",
+   "author_org": "Anthropic",
+   "date": "unknown",
+   "type": "official",
+   "quote": "Rather than creating a separate tool for every action (create_pr, review_pr, merge_pr), group them into a single tool with an action parameter.",
+   "count": {
+    "stance": "few",
+    "numbers": "",
+    "note": "'Fewer, more capable tools reduce selection ambiguity.'"
+   },
+   "grouping": {
+    "stance": "grouped",
+    "note": "Consolidate related operations into one tool with an action parameter (create_pr/review_pr/merge_pr -> one tool)."
+   },
+   "naming": {
+    "stance": "advice",
+    "note": "Prefix with service (github_list_prs, slack_send_message); API name regex ^[a-zA-Z0-9_-]{1,128}$ — NO dots or slashes, unlike MCP spec/SEP-986."
+   },
+   "evidence": {
+    "stance": "opinion",
+    "note": "Guidance only; descriptions called 'by far the most important factor'."
+   },
+   "client_limits": [],
+   "contrarian_or_nuance": "Contrasts with OpenAI Apps SDK (A12) which lists one tool per operation (list/get/create/update/archive).",
+   "verified": "fetched",
+   "final": {
+    "count_stance": "FEW",
+    "recommended_number": "",
+    "hard_limit_reported": "",
+    "grouping": "grouped",
+    "naming_themes": [
+     "service/namespace prefix",
+     "length / charset limits"
+    ],
+    "evidence": "opinion",
+    "measurement_kind": ""
+   }
+  },
+  {
+   "id": "A7",
+   "title": "Connect Claude Code to tools via MCP — Scale with MCP tool search",
+   "url": "https://code.claude.com/docs/en/mcp",
+   "author_org": "Anthropic",
+   "date": "unknown",
+   "type": "official",
+   "quote": "Claude Code doesn't impose a fixed per-server tool cap; the practical limit is your context window budget.",
+   "count": {
+    "stance": "no-limit",
+    "numbers": "auto mode: defer once definitions reach 10% of context",
+    "note": "Tool search on by default; only tool names + server instructions load at start."
+   },
+   "grouping": {
+    "stance": "not-addressed",
+    "note": "Server authors should write server instructions: what category of tasks, when to search for your tools."
+   },
+   "naming": {
+    "stance": "not-addressed",
+    "note": "Tool descriptions and server instructions truncated at 2,048 chars by default; put critical details first."
+   },
+   "evidence": {
+    "stance": "opinion",
+    "note": "Product documentation."
+   },
+   "client_limits": [
+    {
+     "client": "Claude Code",
+     "limit": "no fixed cap (tool search default); description/instructions truncated at 2,048 chars",
+     "as_stated": "Claude Code doesn't impose a fixed per-server tool cap; the practical limit is your context window budget.",
+     "date": "fetched 2026-10-07"
+    }
+   ],
+   "contrarian_or_nuance": "Client-side deferral makes server tool count mostly a context/cost question; alwaysLoad advised only for a small number of tools.",
+   "verified": "fetched",
+   "final": {
+    "count_stance": "DEFER",
+    "recommended_number": "",
+    "hard_limit_reported": "",
+    "grouping": "not-addressed",
+    "naming_themes": [
+     "length / charset limits"
+    ],
+    "evidence": "opinion",
+    "measurement_kind": ""
+   }
+  },
+  {
+   "id": "A8",
+   "title": "MCP Specification 2025-11-25 — Server: Tools",
+   "url": "https://modelcontextprotocol.io/specification/2025-11-25/server/tools",
+   "author_org": "Model Context Protocol",
+   "date": "2025-11-25",
+   "type": "official",
+   "quote": "Tool names SHOULD be between 1 and 128 characters in length (inclusive).",
+   "count": {
+    "stance": "not-addressed",
+    "numbers": "",
+    "note": "Spec says nothing about how many tools; tools/list is paginated and list_changed allows dynamic tool sets."
+   },
+   "grouping": {
+    "stance": "not-addressed",
+    "note": ""
+   },
+   "naming": {
+    "stance": "advice",
+    "note": "1-128 chars, case-sensitive, A-Z a-z 0-9 _ - . only (no slash), unique within server; examples getUser, DATA_EXPORT_v2, admin.tools.list."
+   },
+   "evidence": {
+    "stance": "opinion",
+    "note": "Normative spec."
+   },
+   "client_limits": [],
+   "contrarian_or_nuance": "Spec allows dots and 128 chars, while Claude API regex disallows dots and Vertex AI caps at 64 — portable names should stay [a-z0-9_] and <=64.",
+   "verified": "fetched",
+   "final": {
+    "count_stance": "NONE",
+    "recommended_number": "",
+    "hard_limit_reported": "",
+    "grouping": "not-addressed",
+    "naming_themes": [
+     "length / charset limits"
+    ],
+    "evidence": "opinion",
+    "measurement_kind": ""
+   }
+  },
+  {
+   "id": "A9",
+   "title": "SEP-986: Specify Format for Tool Names",
+   "url": "https://modelcontextprotocol.io/community/seps/986-specify-format-for-tool-names",
+   "author_org": "Model Context Protocol (Kent C. Dodds)",
+   "date": "2025-07-16",
+   "type": "official",
+   "quote": "tool names should be 1–64 characters, case-sensitive, and may include alphanumeric characters, underscores (_), dashes (-), dots (.), and forward slashes (/).",
+   "count": {
+    "stance": "not-addressed",
+    "numbers": "",
+    "note": ""
+   },
+   "grouping": {
+    "stance": "not-addressed",
+    "note": "Motivation: 'Allow for hierarchical and namespaced tool names (e.g., using / and .)'."
+   },
+   "naming": {
+    "stance": "advice",
+    "note": "As accepted: 1-64 chars, dots and slashes allowed. Final spec (A8) diverged: 128 chars and no slash."
+   },
+   "evidence": {
+    "stance": "opinion",
+    "note": "Standards proposal; status Final."
+   },
+   "client_limits": [],
+   "contrarian_or_nuance": "The SEP text and the current spec disagree (64 vs 128 chars; slash allowed vs not) — cite the spec, not the SEP.",
+   "verified": "fetched",
+   "final": {
+    "count_stance": "NONE",
+    "recommended_number": "",
+    "hard_limit_reported": "",
+    "grouping": "not-addressed",
+    "naming_themes": [
+     "length / charset limits"
+    ],
+    "evidence": "opinion",
+    "measurement_kind": ""
+   }
+  },
+  {
+   "id": "A10",
+   "title": "Function calling (OpenAI API guide)",
+   "url": "https://developers.openai.com/api/docs/guides/function-calling",
+   "author_org": "OpenAI",
+   "date": "unknown",
+   "type": "official",
+   "quote": "Aim for fewer than 20 functions available at the start of a turn at any one time, though this is just a soft suggestion.",
+   "count": {
+    "stance": "specific-number",
+    "numbers": "under 20 (soft)",
+    "note": "'Keep the number of initially available functions small for higher accuracy. Evaluate your performance with different numbers of functions.' Defer the rest via tool search."
+   },
+   "grouping": {
+    "stance": "mixed",
+    "note": "Combine functions always called in sequence (query_location + mark_location); group related tools into namespaces (crm, billing, shipping)."
+   },
+   "naming": {
+    "stance": "advice",
+    "note": "Namespaces by domain help when the model must choose between tools for different systems; keep namespace descriptions concise."
+   },
+   "evidence": {
+    "stance": "opinion",
+    "note": "Guidance; no numbers published."
+   },
+   "client_limits": [],
+   "contrarian_or_nuance": "The 20 is counted per turn up front, not per server; tool_search (gpt-5.4+) defers the rest.",
+   "verified": "fetched",
+   "final": {
+    "count_stance": "FEW",
+    "recommended_number": "<20 functions available at the start of a turn (soft)",
+    "hard_limit_reported": "",
+    "grouping": "mixed",
+    "naming_themes": [
+     "service/namespace prefix"
+    ],
+    "evidence": "opinion",
+    "measurement_kind": ""
+   }
+  },
+  {
+   "id": "A11",
+   "title": "Tool search (OpenAI API guide)",
+   "url": "https://developers.openai.com/api/docs/guides/tools-tool-search",
+   "author_org": "OpenAI",
+   "date": "unknown",
+   "type": "official",
+   "quote": "aim to keep each namespace to fewer than 10 functions for better token efficiency and model performance.",
+   "count": {
+    "stance": "specific-number",
+    "numbers": "under 10 per namespace",
+    "note": "Prefers deferring whole namespaces or MCP servers rather than individual functions."
+   },
+   "grouping": {
+    "stance": "grouped",
+    "note": "Group into namespaces/MCP servers: 'Our models have primarily been trained to search those surfaces.'"
+   },
+   "naming": {
+    "stance": "advice",
+    "note": "Namespace = unit of discovery."
+   },
+   "evidence": {
+    "stance": "opinion",
+    "note": "No benchmark on page."
+   },
+   "client_limits": [],
+   "contrarian_or_nuance": "Search-based loading makes total count less important than namespace size.",
+   "verified": "fetched",
+   "final": {
+    "count_stance": "DEFER",
+    "recommended_number": "<10 functions per namespace",
+    "hard_limit_reported": "",
+    "grouping": "grouped",
+    "naming_themes": [
+     "service/namespace prefix"
+    ],
+    "evidence": "opinion",
+    "measurement_kind": ""
+   }
+  },
+  {
+   "id": "A12",
+   "title": "Define tools (OpenAI Apps SDK / plugins: plan)",
+   "url": "https://developers.openai.com/apps-sdk/plan/tools",
+   "author_org": "OpenAI",
+   "date": "unknown",
+   "type": "official",
+   "quote": "Group operations that represent one coherent action. Split operations when they have different permissions, safety risks, or confirmation requirements.",
+   "count": {
+    "stance": "not-addressed",
+    "numbers": "",
+    "note": "No count; current page has no 5-15 rule (that figure circulates on third-party sites)."
+   },
+   "grouping": {
+    "stance": "one-per-operation",
+    "note": "Example: list_projects, get_project, create_project, update_project, archive_project; separate read and write tools."
+   },
+   "naming": {
+    "stance": "advice",
+    "note": "'A stable, action-oriented identifier'; descriptions must distinguish similar tools."
+   },
+   "evidence": {
+    "stance": "opinion",
+    "note": ""
+   },
+   "client_limits": [],
+   "contrarian_or_nuance": "Splits read/write by safety/annotations (readOnlyHint, destructiveHint) — opposite direction to Anthropic's single tool + action parameter.",
+   "verified": "fetched",
+   "final": {
+    "count_stance": "NONE",
+    "recommended_number": "",
+    "hard_limit_reported": "",
+    "grouping": "one-per-operation",
+    "naming_themes": [
+     "verb_noun / action-first snake_case",
+     "avoid near-duplicate / generic names"
+    ],
+    "evidence": "opinion",
+    "measurement_kind": ""
+   }
+  },
+  {
+   "id": "A13",
+   "title": "Function calling with the Gemini API — Best practices",
+   "url": "https://ai.google.dev/gemini-api/docs/function-calling",
+   "author_org": "Google",
+   "date": "unknown",
+   "type": "official",
+   "quote": "Tool Selection: Keep active set to 10-20 tools maximum.",
+   "count": {
+    "stance": "specific-number",
+    "numbers": "10-20",
+    "note": "Active set, not total catalog."
+   },
+   "grouping": {
+    "stance": "not-addressed",
+    "note": ""
+   },
+   "naming": {
+    "stance": "advice",
+    "note": "'Use descriptive names without spaces or special characters'; names use underscores or camelCase."
+   },
+   "evidence": {
+    "stance": "opinion",
+    "note": "Bullet list, no data."
+   },
+   "client_limits": [],
+   "contrarian_or_nuance": "",
+   "verified": "fetched",
+   "final": {
+    "count_stance": "FEW",
+    "recommended_number": "10-20 active tools max",
+    "hard_limit_reported": "",
+    "grouping": "not-addressed",
+    "naming_themes": [
+     "verb_noun / action-first snake_case"
+    ],
+    "evidence": "opinion",
+    "measurement_kind": ""
+   }
+  },
+  {
+   "id": "A14",
+   "title": "Function calling reference (Vertex AI / Gemini)",
+   "url": "https://docs.cloud.google.com/vertex-ai/generative-ai/docs/model-reference/function-calling",
+   "author_org": "Google Cloud",
+   "date": "2026-10-07",
+   "type": "official",
+   "quote": "The maximum number of function declarations that can be provided with the request is 128.",
+   "count": {
+    "stance": "specific-number",
+    "numbers": "128 hard max",
+    "note": "API hard limit, not a recommendation."
+   },
+   "grouping": {
+    "stance": "not-addressed",
+    "note": ""
+   },
+   "naming": {
+    "stance": "advice",
+    "note": "Must start with a letter or underscore; a-z A-Z 0-9 _ . -; max length 64."
+   },
+   "evidence": {
+    "stance": "opinion",
+    "note": "API reference."
+   },
+   "client_limits": [
+    {
+     "client": "Gemini on Vertex AI",
+     "limit": "128 function declarations; names <=64 chars",
+     "as_stated": "The maximum number of function declarations that can be provided with the request is 128.",
+     "date": "page last updated 2026-10-07"
+    }
+   ],
+   "contrarian_or_nuance": "",
+   "verified": "fetched",
+   "final": {
+    "count_stance": "LIMIT",
+    "recommended_number": "",
+    "hard_limit_reported": "128 (Vertex AI Gemini, hard)",
+    "grouping": "not-addressed",
+    "naming_themes": [
+     "length / charset limits"
+    ],
+    "evidence": "opinion",
+    "measurement_kind": ""
+   }
+  },
+  {
+   "id": "A15",
+   "title": "Use tools with agents (VS Code docs)",
+   "url": "https://code.visualstudio.com/docs/agents/run/tools",
+   "author_org": "Microsoft (VS Code)",
+   "date": "unknown",
+   "type": "official",
+   "quote": "A chat request can have a maximum of 128 tools enabled at a time.",
+   "count": {
+    "stance": "specific-number",
+    "numbers": "128 hard max per request",
+    "note": "Workaround: deselect tools/servers or enable virtual tools (github.copilot.chat.virtualTools.threshold)."
+   },
+   "grouping": {
+    "stance": "grouped",
+    "note": "User-side tool sets (#web etc.) and virtual tools group related tools that the model expands on demand."
+   },
+   "naming": {
+    "stance": "not-addressed",
+    "note": ""
+   },
+   "evidence": {
+    "stance": "opinion",
+    "note": "Product docs."
+   },
+   "client_limits": [
+    {
+     "client": "VS Code / GitHub Copilot Chat",
+     "limit": "128 tools per request",
+     "as_stated": "A chat request can have a maximum of 128 tools enabled at a time.",
+     "date": "fetched 2026-10-07"
+    }
+   ],
+   "contrarian_or_nuance": "Virtual tools let users go past 128 by grouping.",
+   "verified": "fetched",
+   "final": {
+    "count_stance": "LIMIT",
+    "recommended_number": "",
+    "hard_limit_reported": "128 per request (VS Code, hard)",
+    "grouping": "grouped",
+    "naming_themes": [],
+    "evidence": "opinion",
+    "measurement_kind": ""
+   }
+  },
+  {
+   "id": "A16",
+   "title": "MCP developer guide (VS Code extension API docs)",
+   "url": "https://code.visualstudio.com/api/extension-guides/ai/mcp",
+   "author_org": "Microsoft (VS Code)",
+   "date": "unknown",
+   "type": "official",
+   "quote": "Keep tool operations focused and atomic to avoid complex interactions",
+   "count": {
+    "stance": "not-addressed",
+    "numbers": "",
+    "note": ""
+   },
+   "grouping": {
+    "stance": "one-per-operation",
+    "note": "'Focused and atomic' tools."
+   },
+   "naming": {
+    "stance": "advice",
+    "note": "Tool names: unique within server, action + target, snake case {verb}_{noun} (generate_report, fetch_data); params camelCase."
+   },
+   "evidence": {
+    "stance": "opinion",
+    "note": ""
+   },
+   "client_limits": [],
+   "contrarian_or_nuance": "Atomic-tool advice conflicts with Anthropic's consolidation advice (A1, A6).",
+   "verified": "fetched",
+   "final": {
+    "count_stance": "NONE",
+    "recommended_number": "",
+    "hard_limit_reported": "",
+    "grouping": "one-per-operation",
+    "naming_themes": [
+     "verb_noun / action-first snake_case"
+    ],
+    "evidence": "opinion",
+    "measurement_kind": ""
+   }
+  },
+  {
+   "id": "A17",
+   "title": "How we're making GitHub Copilot smarter with fewer tools",
+   "url": "https://github.blog/ai-and-ml/github-copilot/how-were-making-github-copilot-smarter-with-fewer-tools/",
+   "author_org": "GitHub (Anisha Agarwal, Connor Peet)",
+   "date": "2025-11-19",
+   "type": "official",
+   "quote": "[paraphrase] Cut Copilot's default built-in toolset from 40 to 13 core tools, grouping the rest into virtual tool categories; benchmarks improved 2-5 percentage points, latency fell ~400 ms.",
+   "count": {
+    "stance": "few",
+    "numbers": "40 -> 13 core tools",
+    "note": "Remaining tools in 4 virtual groups (Jupyter, Web, VS Code Workspace, Testing)."
+   },
+   "grouping": {
+    "stance": "grouped",
+    "note": "Virtual tools (clustered groups the model expands) + embedding-guided tool routing."
+   },
+   "naming": {
+    "stance": "not-addressed",
+    "note": ""
+   },
+   "evidence": {
+    "stance": "measured",
+    "note": "Client-side tool-count reduction: SWE-Lancer and SWE-bench Verified +2-5 pp success (GPT-5, Sonnet 4.5); online A/B -400 ms latency, -190 ms TTFT; embedding routing 94.5% tool-use coverage vs 87.5% LLM-based vs 69.0% static."
+   },
+   "client_limits": [],
+   "contrarian_or_nuance": "Measured on the client's built-in tool set, not on an MCP server's design; gains are modest (2-5 pp).",
+   "verified": "fetched",
+   "final": {
+    "count_stance": "FEW",
+    "recommended_number": "",
+    "hard_limit_reported": "",
+    "grouping": "grouped",
+    "naming_themes": [],
+    "evidence": "measured",
+    "measurement_kind": "tool count vs accuracy"
+   }
+  },
+  {
+   "id": "A18",
+   "title": "GitHub MCP Server README — Toolsets",
+   "url": "https://github.com/github/github-mcp-server",
+   "author_org": "GitHub",
+   "date": "unknown",
+   "type": "official",
+   "quote": "Enabling only the toolsets that you need can help the LLM with tool choice and reduce the context size.",
+   "count": {
+    "stance": "few",
+    "numbers": "",
+    "note": "Default toolsets only: context, repos, issues, pull_requests, users; 'all' opt-in."
+   },
+   "grouping": {
+    "stance": "grouped",
+    "note": "Toolsets selectable via --toolsets/--tools; Actions tools consolidated into actions_list/actions_get/actions_run_trigger with a method discriminant."
+   },
+   "naming": {
+    "stance": "not-addressed",
+    "note": ""
+   },
+   "evidence": {
+    "stance": "opinion",
+    "note": ""
+   },
+   "client_limits": [],
+   "contrarian_or_nuance": "The --dynamic-toolsets mode described in 2025 is no longer in the current README (Oct 2026); configuration is now static toolsets + consolidated tools.",
+   "verified": "fetched",
+   "final": {
+    "count_stance": "FEW",
+    "recommended_number": "",
+    "hard_limit_reported": "",
+    "grouping": "grouped",
+    "naming_themes": [],
+    "evidence": "opinion",
+    "measurement_kind": ""
+   }
+  },
+  {
+   "id": "A19",
+   "title": "Azure MCP Server concepts (server modes, managing tool counts)",
+   "url": "https://learn.microsoft.com/en-us/azure/developer/azure-mcp-server/concepts",
+   "author_org": "Microsoft",
+   "date": "2026-01-26",
+   "type": "official",
+   "quote": "Consolidated mode groups related operations into curated tools optimized for AI agents. This mode provides the best balance between functionality and usability.",
+   "count": {
+    "stance": "few",
+    "numbers": "all mode = 200+ tools; can exceed client limits",
+    "note": "Cites VS Code Copilot 128-tool limit as reason to use namespace/consolidated modes."
+   },
+   "grouping": {
+    "stance": "workflow",
+    "note": "Modes: namespace (default, one tool per Azure service), consolidated (recommended for agents, intent-named tools), single (one 'azure' tool), all (200+)."
+   },
+   "naming": {
+    "stance": "advice",
+    "note": "Consolidated tools 'named after user intents', e.g. get_azure_databases_details; individual tools use azmcp_ prefix."
+   },
+   "evidence": {
+    "stance": "opinion",
+    "note": "Page marked ai-generated content; no measurement."
+   },
+   "client_limits": [
+    {
+     "client": "VS Code Copilot",
+     "limit": "128",
+     "as_stated": "Visual Studio Code Copilot has a 128-tool limit per request.",
+     "date": "2026-01-26"
+    }
+   ],
+   "contrarian_or_nuance": "One vendor ships the same server in 4 granularities, from 1 tool to 200+, letting the client choose.",
+   "verified": "fetched",
+   "final": {
+    "count_stance": "FEW",
+    "recommended_number": "",
+    "hard_limit_reported": "",
+    "grouping": "workflow",
+    "naming_themes": [
+     "service/namespace prefix"
+    ],
+    "evidence": "opinion",
+    "measurement_kind": ""
+   }
+  },
+  {
+   "id": "A20",
+   "title": "Code Mode: the better way to use MCP",
+   "url": "https://blog.cloudflare.com/code-mode/",
+   "author_org": "Cloudflare (Kenton Varda, Sunil Pai)",
+   "date": "2025-09-26",
+   "type": "vendor",
+   "quote": "LLMs have seen a lot of code. They have not seen a lot of \"tool calls\".",
+   "count": {
+    "stance": "no-limit",
+    "numbers": "",
+    "note": "Agents 'are able to handle many more tools, and more complex tools, when those tools are presented as a TypeScript API'."
+   },
+   "grouping": {
+    "stance": "not-addressed",
+    "note": "Convert MCP tools to a TypeScript API the model writes code against."
+   },
+   "naming": {
+    "stance": "not-addressed",
+    "note": ""
+   },
+   "evidence": {
+    "stance": "opinion",
+    "note": "No benchmark numbers in the post."
+   },
+   "client_limits": [],
+   "contrarian_or_nuance": "Code mode changes the picture: many tools are fine if exposed as code, not as tool calls.",
+   "verified": "fetched",
+   "final": {
+    "count_stance": "CODE",
+    "recommended_number": "",
+    "hard_limit_reported": "",
+    "grouping": "code-mode",
+    "naming_themes": [],
+    "evidence": "opinion",
+    "measurement_kind": ""
+   }
+  },
+  {
+   "id": "A21",
+   "title": "Dynamic context discovery",
+   "url": "https://cursor.com/blog/dynamic-context-discovery",
+   "author_org": "Cursor (Jediah Katz)",
+   "date": "2026-01-06",
+   "type": "vendor",
+   "quote": "[paraphrase with verbatim fragment] Agent gets only tool names and looks up full definitions when needed; this 'reduced total agent tokens by 46.9%' in runs that called MCP tools.",
+   "count": {
+    "stance": "no-limit",
+    "numbers": "",
+    "note": "No count limit stated; the old 40-tool cap is superseded by lazy loading."
+   },
+   "grouping": {
+    "stance": "not-addressed",
+    "note": ""
+   },
+   "naming": {
+    "stance": "not-addressed",
+    "note": "Since only names are shown up front, names carry more of the selection signal."
+   },
+   "evidence": {
+    "stance": "measured",
+    "note": "A/B test in Cursor: static full tool descriptions vs names-only + lookup; -46.9% total agent tokens (significant, high variance by number of MCPs). Tokens, not accuracy."
+   },
+   "client_limits": [
+    {
+     "client": "Cursor (IDE)",
+     "limit": "no fixed cap stated (dynamic loading)",
+     "as_stated": "tool names in static context, details looked up on demand",
+     "date": "2026-01-06"
+    }
+   ],
+   "contrarian_or_nuance": "Tool count is a cost problem that the client solves with deferral.",
+   "verified": "fetched",
+   "final": {
+    "count_stance": "DEFER",
+    "recommended_number": "",
+    "hard_limit_reported": "",
+    "grouping": "not-addressed",
+    "naming_themes": [],
+    "evidence": "measured",
+    "measurement_kind": "token cost only"
+   }
+  },
+  {
+   "id": "A22",
+   "title": "CLI - MCP Tool Limits? (Cursor forum)",
+   "url": "https://forum.cursor.com/t/cli-mcp-tool-limits/165642",
+   "author_org": "Cursor forum (staff: deanrie)",
+   "date": "2026-07-14",
+   "type": "forum",
+   "quote": "The CLI now loads MCP tool definitions only when needed, instead of sending all schemas at the start of the session, similar to how the app works.",
+   "count": {
+    "stance": "no-limit",
+    "numbers": "",
+    "note": "Errors framed as per-model provider caps, not a Cursor number; fixed by lazy loading (2026-09-09)."
+   },
+   "grouping": {
+    "stance": "not-addressed",
+    "note": ""
+   },
+   "naming": {
+    "stance": "not-addressed",
+    "note": ""
+   },
+   "evidence": {
+    "stance": "opinion",
+    "note": "Staff support statements."
+   },
+   "client_limits": [
+    {
+     "client": "Cursor CLI",
+     "limit": "provider cap until 2026-09; now lazy loading",
+     "as_stated": "CLI 'ships all configured MCP tool definitions at the start of the session' (Jul 2026); fixed Sep 9 2026",
+     "date": "2026-09-09"
+    }
+   ],
+   "contrarian_or_nuance": "Confirms the hard 40 cap is no longer how Cursor works in 2026.",
+   "verified": "fetched",
+   "final": {
+    "count_stance": "DEFER",
+    "recommended_number": "",
+    "hard_limit_reported": "",
+    "grouping": "not-addressed",
+    "naming_themes": [],
+    "evidence": "opinion",
+    "measurement_kind": ""
+   }
+  },
+  {
+   "id": "A23",
+   "title": "Tools limited to 40 total (Cursor forum)",
+   "url": "https://forum.cursor.com/t/tools-limited-to-40-total/67976",
+   "author_org": "Cursor forum (staff: deanrie)",
+   "date": "2025-04-04",
+   "type": "forum",
+   "quote": "Currently, Cursor will only send the first 40 tools to the Agent",
+   "count": {
+    "stance": "specific-number",
+    "numbers": "40",
+    "note": "Quote is from Cursor docs (2025) as cited in thread; staff: 'I think we will be able to implement this soon.'"
+   },
+   "grouping": {
+    "stance": "not-addressed",
+    "note": ""
+   },
+   "naming": {
+    "stance": "not-addressed",
+    "note": ""
+   },
+   "evidence": {
+    "stance": "opinion",
+    "note": "No reason given officially."
+   },
+   "client_limits": [
+    {
+     "client": "Cursor",
+     "limit": "40 (historical, 2025)",
+     "as_stated": "Currently, Cursor will only send the first 40 tools to the Agent",
+     "date": "2025-04; superseded by dynamic context discovery 2026-01 — current Cursor MCP docs no longer mention a limit"
+    }
+   ],
+   "contrarian_or_nuance": "Outdated: still widely repeated by 2026 SEO articles, but the current docs page (cursor.com/docs/mcp) has no tool count limit.",
+   "verified": "fetched",
+   "final": {
+    "count_stance": "LIMIT",
+    "recommended_number": "",
+    "hard_limit_reported": "40 (Cursor 2025, outdated)",
+    "grouping": "not-addressed",
+    "naming_themes": [],
+    "evidence": "opinion",
+    "measurement_kind": ""
+   }
+  },
+  {
+   "id": "A24",
+   "title": "Cascade MCP integration (Windsurf docs, now docs.devin.ai)",
+   "url": "https://docs.devin.ai/desktop/cascade/mcp",
+   "author_org": "Windsurf / Cognition",
+   "date": "unknown",
+   "type": "official",
+   "quote": "Cascade has a limit of 100 total tools that it has access to at any given time.",
+   "count": {
+    "stance": "specific-number",
+    "numbers": "100 hard max",
+    "note": "Users toggle tools via disabledTools; page now labelled 'legacy Cascade agent'."
+   },
+   "grouping": {
+    "stance": "not-addressed",
+    "note": ""
+   },
+   "naming": {
+    "stance": "not-addressed",
+    "note": ""
+   },
+   "evidence": {
+    "stance": "opinion",
+    "note": "Product docs."
+   },
+   "client_limits": [
+    {
+     "client": "Windsurf Cascade",
+     "limit": "100 total tools",
+     "as_stated": "Cascade has a limit of 100 total tools that it has access to at any given time.",
+     "date": "fetched 2026-10-07 (docs.windsurf.com redirects to docs.devin.ai)"
+    }
+   ],
+   "contrarian_or_nuance": "",
+   "verified": "fetched",
+   "final": {
+    "count_stance": "LIMIT",
+    "recommended_number": "",
+    "hard_limit_reported": "100 (Windsurf Cascade, hard)",
+    "grouping": "not-addressed",
+    "naming_themes": [],
+    "evidence": "opinion",
+    "measurement_kind": ""
+   }
+  },
+  {
+   "id": "A25",
+   "title": "We removed 80% of our agent's tools",
+   "url": "https://vercel.com/blog/we-removed-80-percent-of-our-agents-tools",
+   "author_org": "Vercel (Andrew Qu)",
+   "date": "2025-12-22",
+   "type": "vendor",
+   "quote": "We deleted most of it and stripped the agent down to a single tool: execute arbitrary bash commands.",
+   "count": {
+    "stance": "few",
+    "numbers": "many specialized tools -> 1 (bash)",
+    "note": "Internal text-to-SQL agent d0."
+   },
+   "grouping": {
+    "stance": "workflow",
+    "note": "Replace specialized tools (schema lookup, query validation, error recovery) with one general sandboxed bash tool over semantic-layer files."
+   },
+   "naming": {
+    "stance": "not-addressed",
+    "note": ""
+   },
+   "evidence": {
+    "stance": "measured",
+    "note": "Own agent before/after: success 80% -> 100%, 3.5x faster (274.8s -> 77.4s), -37% tokens (~102k -> ~61k), -42% steps. Small internal eval; compares architecture, not a clean tool-count sweep."
+   },
+   "client_limits": [],
+   "contrarian_or_nuance": "Argues for one general-purpose tool (code/bash) over many narrow ones.",
+   "verified": "fetched",
+   "final": {
+    "count_stance": "CODE",
+    "recommended_number": "",
+    "hard_limit_reported": "",
+    "grouping": "code-mode",
+    "naming_themes": [],
+    "evidence": "measured",
+    "measurement_kind": "architecture (code/CLI vs tools)"
+   }
+  },
+  {
+   "id": "A26",
+   "title": "Understanding the MCP Server tools (AWS MCP Server user guide)",
+   "url": "https://docs.aws.amazon.com/agent-toolkit/latest/userguide/understanding-mcp-server-tools.html",
+   "author_org": "AWS",
+   "date": "unknown",
+   "type": "official",
+   "quote": "aws___run_script - Execute Python code in a sandboxed environment with AWS API access.",
+   "count": {
+    "stance": "few",
+    "numbers": "8 tools covering 15,000+ AWS APIs",
+    "note": "Knowledge tools (search/read docs, retrieve_skill) + run_script + presigned URL + task polling."
+   },
+   "grouping": {
+    "stance": "workflow",
+    "note": "One code-execution tool instead of per-API tools; skills retrieved on demand guide workflows."
+   },
+   "naming": {
+    "stance": "advice",
+    "note": "All tools prefixed aws___ (service namespace with triple underscore)."
+   },
+   "evidence": {
+    "stance": "opinion",
+    "note": "Product docs, no measurement."
+   },
+   "client_limits": [],
+   "contrarian_or_nuance": "Code mode in practice from a hyperscaler: tiny fixed tool surface over a huge API.",
+   "verified": "fetched",
+   "final": {
+    "count_stance": "CODE",
+    "recommended_number": "",
+    "hard_limit_reported": "",
+    "grouping": "code-mode",
+    "naming_themes": [
+     "service/namespace prefix"
+    ],
+    "evidence": "opinion",
+    "measurement_kind": ""
+   }
+  },
+  {
+   "id": "B1",
+   "title": "Block's Playbook for Designing MCP Servers",
+   "url": "https://engineering.block.xyz/blog/blocks-playbook-for-designing-mcp-servers",
+   "author_org": "Block (Salman Mohammed, Kalvin Chau)",
+   "date": "2025-06-16",
+   "type": "vendor",
+   "quote": "Combine multiple internal API calls into a single high-level tool.",
+   "count": {
+    "stance": "few",
+    "numbers": "",
+    "note": "No number; Linear MCP went from 30+ endpoint-mirroring tools to grouped get_*_info tools, then to 2 GraphQL tools. Notes 'a trade off between the number of tools and how simple permission management stays'."
+   },
+   "grouping": {
+    "stance": "workflow",
+    "note": "Top-down from workflows; upload_file absorbs get_user; Google Calendar list_calendars/list_calendar_events/retrieve_timezone/free_busy -> one query_database (DuckDB SQL); bundle related read-only actions via info_category param, but keep read and write in separate tools (one risk level per tool)."
+   },
+   "naming": {
+    "stance": "advice",
+    "note": "Names, descriptions, parameters are prompts - experiment with them; avoid long names (token cost when model must regenerate them)."
+   },
+   "evidence": {
+    "stance": "opinion",
+    "note": "Experience from 60+ internal servers; before/after case studies with tool-call counts (4-6 calls -> 1) but no accuracy measurement."
+   },
+   "client_limits": [],
+   "contrarian_or_nuance": "Extreme consolidation into generic query tools (SQL, GraphQL execute_readonly_query/execute_mutation_query) is presented as the end state; also warns read+write in one tool breaks per-tool permission approval in Goose/Claude Code/Codex.",
+   "verified": "fetched",
+   "final": {
+    "count_stance": "FEW",
+    "recommended_number": "",
+    "hard_limit_reported": "",
+    "grouping": "workflow",
+    "naming_themes": [
+     "length / charset limits"
+    ],
+    "evidence": "opinion",
+    "measurement_kind": ""
+   }
+  },
+  {
+   "id": "B2",
+   "title": "MCP Night 2.0 Demo Recap: Block's Goose - The Layered Tool Pattern",
+   "url": "https://workos.com/blog/mcp-night-block-goose-layered-tool-pattern",
+   "author_org": "WorkOS (Zack Proser), reporting talk by Richard Moot, Block/Square",
+   "date": "2025-08-29",
+   "type": "vendor",
+   "quote": "We really quickly realized that REST endpoints is not a good format for tool design,",
+   "count": {
+    "stance": "specific-number",
+    "numbers": "3 tools for 200+ endpoints",
+    "note": "Square API (30+ APIs, 200+ endpoints) reduced to three tools."
+   },
+   "grouping": {
+    "stance": "mixed",
+    "note": "Layered meta-tools: discovery -> planning -> execution, instead of per-endpoint or per-workflow tools."
+   },
+   "naming": {
+    "stance": "not-addressed",
+    "note": ""
+   },
+   "evidence": {
+    "stance": "opinion",
+    "note": "Anecdotal: 'tons and tons of errors' before vs 'fairly consistent workflow' after; no numbers."
+   },
+   "client_limits": [],
+   "contrarian_or_nuance": "Self-discovery pattern means the tool surface is decoupled from API changes; an early form of tool search/progressive discovery.",
+   "verified": "fetched",
+   "final": {
+    "count_stance": "DEFER",
+    "recommended_number": "",
+    "hard_limit_reported": "",
+    "grouping": "mixed",
+    "naming_themes": [],
+    "evidence": "opinion",
+    "measurement_kind": ""
+   }
+  },
+  {
+   "id": "B3",
+   "title": "GitHub MCP Server now comes with server instructions, better tools, and more",
+   "url": "https://github.blog/changelog/2025-10-29-github-mcp-server-now-comes-with-server-instructions-better-tools-and-more",
+   "author_org": "GitHub",
+   "date": "2025-10-29",
+   "type": "vendor",
+   "quote": "each consolidated tool supports multiple operations through a single method parameter, making configurations leaner, AI reasoning clearer, and performance faster.",
+   "count": {
+    "stance": "few",
+    "numbers": "",
+    "note": "Continues 'consolidating more tools into fewer, more powerful tools'; default toolset = context, repos, issues, pull_requests, users."
+   },
+   "grouping": {
+    "stance": "grouped",
+    "note": "4 PR review tools -> pull_request_review_write; issue tools -> issue_read + issue_write; 3 sub-issue tools -> sub_issue_write (operation chosen by a method parameter)."
+   },
+   "naming": {
+    "stance": "not-addressed",
+    "note": "Implicit pattern <noun>_read / <noun>_write, not stated as advice."
+   },
+   "evidence": {
+    "stance": "opinion",
+    "note": "No numbers in this changelog."
+   },
+   "client_limits": [],
+   "contrarian_or_nuance": "Also leans on server instructions to teach multi-tool workflows rather than only cutting tools.",
+   "verified": "fetched",
+   "final": {
+    "count_stance": "FEW",
+    "recommended_number": "",
+    "hard_limit_reported": "",
+    "grouping": "grouped",
+    "naming_themes": [],
+    "evidence": "opinion",
+    "measurement_kind": ""
+   }
+  },
+  {
+   "id": "B4",
+   "title": "GitHub MCP Server: New Projects tools, OAuth scope filtering, and new features",
+   "url": "https://github.blog/changelog/2026-01-28-github-mcp-server-new-projects-tools-oauth-scope-filtering-and-new-features/",
+   "author_org": "GitHub",
+   "date": "2026-01-28",
+   "type": "vendor",
+   "quote": "the Projects toolset, as with other now-consolidated toolsets, used a significant portion of the context window for the tools list.",
+   "count": {
+    "stance": "few",
+    "numbers": "",
+    "note": "Projects tools consolidated to projects_list, projects_get, projects_write; tools the token lacks scopes for are hidden."
+   },
+   "grouping": {
+    "stance": "grouped",
+    "note": "CRUD-style consolidation per resource (list/get/write) inside a toolset."
+   },
+   "naming": {
+    "stance": "not-addressed",
+    "note": "Implicit <resource>_list/_get/_write pattern."
+   },
+   "evidence": {
+    "stance": "measured",
+    "note": "Token cost of tool definitions only: Projects toolset consolidation saved ~23,000 tokens (50%). No accuracy measurement."
+   },
+   "client_limits": [],
+   "contrarian_or_nuance": "Reduces visible tools by filtering on OAuth/PAT scopes rather than by design alone.",
+   "verified": "fetched",
+   "final": {
+    "count_stance": "FEW",
+    "recommended_number": "",
+    "hard_limit_reported": "",
+    "grouping": "grouped",
+    "naming_themes": [],
+    "evidence": "measured",
+    "measurement_kind": "token cost only"
+   }
+  },
+  {
+   "id": "B5",
+   "title": "Enterprise MCP lessons from GitHub's MCP server launch",
+   "url": "https://www.arcade.dev/blog/enterprise-mcp-lessons-from-githubs-mcp-server-launch",
+   "author_org": "Arcade.dev (RL Nabors; interview with Sam Morrow, GitHub)",
+   "date": "2026-03-03",
+   "type": "vendor",
+   "quote": "In early 2025, most agents’ models struggled with even 20 tools in context.",
+   "count": {
+    "stance": "specific-number",
+    "numbers": "20 (early-2025 models); server had 100+ / 108 tools",
+    "note": "Users loaded all 100+ tools instead of cherry-picking; 'One-to-one mapping with APIs was a poor goal.'"
+   },
+   "grouping": {
+    "stance": "grouped",
+    "note": "Semantic, composable toolsets (issues, repos, pull_requests, actions, code_security) that survive tool consolidation; plus auth-scope filtering."
+   },
+   "naming": {
+    "stance": "not-addressed",
+    "note": ""
+   },
+   "evidence": {
+    "stance": "opinion",
+    "note": "Practitioner experience; no numbers for the 20-tool claim."
+   },
+   "client_limits": [],
+   "contrarian_or_nuance": "GitHub prototyped embeddings-based dynamic toolset selection and shelved it ('we were the wrong level in the stack') - leaves it to client tool search like Anthropic's; says right design depends on execution context (Copilot CLI can write big responses to files).",
+   "verified": "fetched",
+   "final": {
+    "count_stance": "FEW",
+    "recommended_number": "early-2025 models 'struggled with even 20 tools'",
+    "hard_limit_reported": "",
+    "grouping": "grouped",
+    "naming_themes": [],
+    "evidence": "opinion",
+    "measurement_kind": ""
+   }
+  },
+  {
+   "id": "B6",
+   "title": "Patterns for Agentic Tools: Your agents are only as good as your tools",
+   "url": "https://arcade.dev/blog/mcp-tool-patterns",
+   "author_org": "Arcade.dev",
+   "date": "2026-02-09",
+   "type": "vendor",
+   "quote": "Don’t over-engineer: start atomic, watch how agents actually use your tools, and level up when you see the signals in your traces.",
+   "count": {
+    "stance": "not-addressed",
+    "note": "Catalog of 54 patterns in 10 categories; no tool-count guidance.",
+    "numbers": ""
+   },
+   "grouping": {
+    "stance": "mixed",
+    "note": "Maturity axis atomic -> orchestrated; 'Repeated tool sequences mean it's time to bundle'; offer multiple abstraction levels and batch support."
+   },
+   "naming": {
+    "stance": "not-addressed",
+    "note": "Only general: descriptions/parameter names optimized for agent comprehension."
+   },
+   "evidence": {
+    "stance": "opinion",
+    "note": "Derived from building thousands of tools; no measurements."
+   },
+   "client_limits": [],
+   "contrarian_or_nuance": "Evidence-driven grouping: bundle only when traces show repeated sequences, rather than up-front consolidation.",
+   "verified": "fetched",
+   "final": {
+    "count_stance": "NONE",
+    "recommended_number": "",
+    "hard_limit_reported": "",
+    "grouping": "mixed",
+    "naming_themes": [],
+    "evidence": "opinion",
+    "measurement_kind": ""
+   }
+  },
+  {
+   "id": "B7",
+   "title": "Comparing Progressive Discovery and Semantic Search for Powering Dynamic MCP",
+   "url": "https://www.speakeasy.com/blog/100x-token-reduction-dynamic-toolsets",
+   "author_org": "Speakeasy (Chase Crumbaugh)",
+   "date": "2025-11-13",
+   "type": "vendor",
+   "quote": "Our benchmarks show that traditional MCP servers with 400 tools consume over 400,000 tokens before the LLM processes a single query.",
+   "count": {
+    "stance": "nuanced",
+    "numbers": "10-20 static fine; 40-400 via dynamic",
+    "note": "'For small servers with 10-20 tools, this works fine'; beyond that use 3 meta-tools (list_tools/describe_tools/execute_tool) or find_tools/execute_tool."
+   },
+   "grouping": {
+    "stance": "not-addressed",
+    "note": "Hierarchical prefix lookup (e.g. /hubspot/deals/*) for discovery, not tool consolidation."
+   },
+   "naming": {
+    "stance": "not-addressed",
+    "note": "Progressive search relies on hierarchical name/tag prefixes."
+   },
+   "evidence": {
+    "stance": "measured",
+    "note": "Claude Code (Sonnet 4), toolsets of 40/100/200/400 tools, static vs progressive vs semantic: initial tokens (static 43.3k/128.9k/261.7k/405.1k vs ~1.3-2.5k dynamic), per-task tokens and cost; static 200/400 exceeded 200k context. Success rate only described as 'nearly 100%', not tabulated by count."
+   },
+   "client_limits": [
+    {
+     "client": "Claude Code",
+     "limit": "200k tokens context",
+     "as_stated": "Claude Code's maximum context window is 200,000 tokens",
+     "date": "2025-11"
+    }
+   ],
+   "contrarian_or_nuance": "Token cost, not selection accuracy, is the measured problem; dynamic discovery keeps cost flat from 40 to 400 tools.",
+   "verified": "fetched",
+   "final": {
+    "count_stance": "DEFER",
+    "recommended_number": "10-20 tools fine as static list; beyond that use dynamic discovery",
+    "hard_limit_reported": "",
+    "grouping": "not-addressed",
+    "naming_themes": [],
+    "evidence": "measured",
+    "measurement_kind": "token cost only"
+   }
+  },
+  {
+   "id": "B8",
+   "title": "Less is more (MCP tool design guide)",
+   "url": "https://www.speakeasy.com/mcp/tool-design/less-is-more",
+   "author_org": "Speakeasy",
+   "date": "unknown",
+   "type": "vendor",
+   "quote": "We then created a server with 20 tools, which included a mixture of random dog breeds. The model got 19 out of 20 tool calls correct",
+   "count": {
+    "stance": "specific-number",
+    "numbers": "~20 or fewer; 10 per server best",
+    "note": "Recommends curating small servers; cites 30 (large models) / 19 vs 46 (Llama 3.1 8B) thresholds."
+   },
+   "grouping": {
+    "stance": "grouped",
+    "note": "Split one 107-tool server into focused smaller servers (common vs rare breeds, 10 tools each)."
+   },
+   "naming": {
+    "stance": "not-addressed",
+    "note": "Observed model hallucinating tool names from naming patterns (e.g. Golden Retriever)."
+   },
+   "evidence": {
+    "stance": "measured",
+    "note": "Informal test: Dog CEO API, one tool per breed; qwen/qwen3-1.7b in LM Studio: 107 tools mostly failed to select, 40 tools 3/4 correct, 20 tools 19/20, 10 tools all correct; Claude Sonnet 3.5 hallucinated an endpoint at 107. Also cites Drew Breunig summarizing two papers (DeepSeek-v3 30 tools; Llama 3.1 8B 19 ok / 46 fail)."
+   },
+   "client_limits": [],
+   "contrarian_or_nuance": "Tiny sample sizes; small 1.7B model; date not shown (mentions Sonnet 3.5, so likely mid-2025).",
+   "verified": "fetched",
+   "final": {
+    "count_stance": "FEW",
+    "recommended_number": "~20 or fewer; ~10 per server",
+    "hard_limit_reported": "",
+    "grouping": "grouped",
+    "naming_themes": [],
+    "evidence": "measured",
+    "measurement_kind": "tool count vs accuracy"
+   }
+  },
+  {
+   "id": "B9",
+   "title": "MCP tool filtering (Datadog's 142-tool server)",
+   "url": "https://www.speakeasy.com/blog/mcp-tool-filtering-datadog",
+   "author_org": "Speakeasy",
+   "date": "2026-06-11",
+   "type": "vendor",
+   "quote": "Every irrelevant tool is one more thing the model has to consider and rule out, which degrades tool selection and wastes context.",
+   "count": {
+    "stance": "nuanced",
+    "numbers": "142 (Datadog)",
+    "note": "Large servers are fine if clients receive a filtered subset (?toolsets=apm,llmobs / ?tags=monitoring,alerts)."
+   },
+   "grouping": {
+    "stance": "grouped",
+    "note": "Tag-based tool groups from OpenAPI operation tags; union of tags per URL."
+   },
+   "naming": {
+    "stance": "not-addressed",
+    "note": "Mentions spec discussions on namespacing not yet landed."
+   },
+   "evidence": {
+    "stance": "opinion",
+    "note": "No measurements."
+   },
+   "client_limits": [],
+   "contrarian_or_nuance": "Filtering (operator decision) + dynamic toolsets (runtime) 'make MCP servers with hundreds of tools not just possible, but practical'.",
+   "verified": "fetched",
+   "final": {
+    "count_stance": "DEFER",
+    "recommended_number": "",
+    "hard_limit_reported": "",
+    "grouping": "grouped",
+    "naming_themes": [],
+    "evidence": "opinion",
+    "measurement_kind": ""
+   }
+  },
+  {
+   "id": "B10",
+   "title": "MCP server design (+ companion page MCP server tool design)",
+   "url": "https://docs.workato.com/mcp/mcp-server-design",
+   "author_org": "Workato",
+   "date": "unknown",
+   "type": "vendor",
+   "quote": "Use 5-8 tools per MCP server. 8-12 tools is reasonable. Consider splitting the MCP server into separate domains if you have more than 15 tools.",
+   "count": {
+    "stance": "specific-number",
+    "numbers": "start 3-5; 5-8 target; 8-12 ok; split above 15",
+    "note": "Tool count used as a scope signal."
+   },
+   "grouping": {
+    "stance": "workflow",
+    "note": "Design around workflows LLMs need to complete; one domain per server (not HR+IT+Sales); composable tools with consistent field names."
+   },
+   "naming": {
+    "stance": "advice",
+    "note": "Needing prefixes like sales_search_items/support_search_items means server covers too many domains; prefer unambiguous search_items. Tool-design page: search_products not prod_lookup_v2, create_jira_issue not jira_create; no version numbers or abbreviations."
+   },
+   "evidence": {
+    "stance": "opinion",
+    "note": "Advises iterating on tool-selection accuracy but reports none."
+   },
+   "client_limits": [],
+   "contrarian_or_nuance": "Anti-prefix stance contrasts with archestra/Simple Observability who recommend namespacing.",
+   "verified": "fetched",
+   "final": {
+    "count_stance": "FEW",
+    "recommended_number": "5-8 per server (8-12 ok; split above 15)",
+    "hard_limit_reported": "",
+    "grouping": "workflow",
+    "naming_themes": [
+     "against prefixes (split server instead)",
+     "consistent vocabulary"
+    ],
+    "evidence": "opinion",
+    "measurement_kind": ""
+   }
+  },
+  {
+   "id": "B11",
+   "title": "MCP Server Best Practices",
+   "url": "https://docs.glean.com/administration/platform/mcp/best-practices",
+   "author_org": "Glean",
+   "date": "2026-09-30",
+   "type": "vendor",
+   "quote": "Create MCP servers around the job a user needs to do, not around every app your company uses.",
+   "count": {
+    "stance": "few",
+    "numbers": "",
+    "note": "'smaller and more relevant tool set'; current page gives no number (an older indexed version said 3-6 tools per server - not on the live page)."
+   },
+   "grouping": {
+    "stance": "workflow",
+    "note": "Servers per job-to-be-done/audience (Glean - Engineering, Glean - Sales); split when one server mixes unrelated workflows."
+   },
+   "naming": {
+    "stance": "advice",
+    "note": "Name servers by purpose or audience."
+   },
+   "evidence": {
+    "stance": "opinion",
+    "note": ""
+   },
+   "client_limits": [],
+   "contrarian_or_nuance": "Grouping happens at server level (many small servers), not by consolidating tools.",
+   "verified": "fetched",
+   "final": {
+    "count_stance": "FEW",
+    "recommended_number": "",
+    "hard_limit_reported": "",
+    "grouping": "workflow",
+    "naming_themes": [],
+    "evidence": "opinion",
+    "measurement_kind": ""
+   }
+  },
+  {
+   "id": "B12",
+   "title": "Top 5 MCP Server Best Practices",
+   "url": "https://www.docker.com/blog/mcp-server-best-practices/",
+   "author_org": "Docker (Ivan Pedrazas)",
+   "date": "2025-07-03",
+   "type": "vendor",
+   "quote": "the better strategy is to design your toolset around clear use cases and avoid mapping every API endpoint to a separate tool.",
+   "count": {
+    "stance": "few",
+    "numbers": "",
+    "note": "'Tool Budget': number of tools an agent can handle effectively; too many makes server complex and costly."
+   },
+   "grouping": {
+    "stance": "workflow",
+    "note": "Use-case toolsets; use MCP prompts as macros that chain several tools."
+   },
+   "naming": {
+    "stance": "not-addressed",
+    "note": ""
+   },
+   "evidence": {
+    "stance": "opinion",
+    "note": "Experience building 100+ servers for Docker MCP Catalog."
+   },
+   "client_limits": [],
+   "contrarian_or_nuance": "Notes some agents let users selectively enable tools, but prefers server-side design.",
+   "verified": "fetched",
+   "final": {
+    "count_stance": "FEW",
+    "recommended_number": "",
+    "hard_limit_reported": "",
+    "grouping": "workflow",
+    "naming_themes": [],
+    "evidence": "opinion",
+    "measurement_kind": ""
+   }
+  },
+  {
+   "id": "B13",
+   "title": "4 rules to build an efficient MCP server",
+   "url": "https://bump.sh/blog/4-rules-to-build-an-efficient-mcp-server",
+   "author_org": "Bump.sh (Sébastien Charrier)",
+   "date": "2026-06-23",
+   "type": "vendor",
+   "quote": "Aim to keep each server below 15 to 20 tools whenever possible.",
+   "count": {
+    "stance": "specific-number",
+    "numbers": "under 15-20",
+    "note": "Above that, avoid overlap at all costs."
+   },
+   "grouping": {
+    "stance": "workflow",
+    "note": "customer lookup + invoice generation + PDF download -> generate_invoice_and_get_pdf_link; 'MCP is a UI: design it like a UI'."
+   },
+   "naming": {
+    "stance": "advice",
+    "note": "Explicit names: 'tool names are one of the strongest signals models rely on'; don't repeat name in description."
+   },
+   "evidence": {
+    "stance": "cites-measurement",
+    "note": "Cites a Claude user: 7 servers = 67k tokens of tool definitions; GitHub server ~18k tokens / 27 tools. Own example of output filtering (response /10) is payload size, not tool count."
+   },
+   "client_limits": [],
+   "contrarian_or_nuance": "Says claims that MCP wrecks the context window are 'plain nonsense' - bloat is a design problem.",
+   "verified": "fetched",
+   "final": {
+    "count_stance": "FEW",
+    "recommended_number": "<15-20 per server",
+    "hard_limit_reported": "",
+    "grouping": "workflow",
+    "naming_themes": [],
+    "evidence": "cites-measurement",
+    "measurement_kind": ""
+   }
+  },
+  {
+   "id": "B14",
+   "title": "MCP Tool Naming Conventions for Reliable Agent Tool Selection",
+   "url": "https://archestra.ai/blog/mcp-tool-naming-conventions",
+   "author_org": "Archestra (Mack Chi)",
+   "date": "unknown",
+   "type": "vendor",
+   "quote": "MCP tool naming is the interface the planner LLM uses to choose which capability to invoke.",
+   "count": {
+    "stance": "nuanced",
+    "numbers": "80 -> split",
+    "note": "'if a server has 80 tools, it is probably two servers'."
+   },
+   "grouping": {
+    "stance": "not-addressed",
+    "note": "Consolidate near-duplicate siblings (read_file, read_file_v2, read_file_safe)."
+   },
+   "naming": {
+    "stance": "advice",
+    "note": "verb_object lowercase snake_case; one verb per operation (get/list/search/create/update/delete); no abbreviations; system prefix not suffix (github_get_user, not user_get_github); descriptions say when NOT to use and name sibling tools."
+   },
+   "evidence": {
+    "stance": "opinion",
+    "note": "Estimate: 40 tools x 500-char descriptions ~ 8-10k tokens; no experiment."
+   },
+   "client_limits": [],
+   "contrarian_or_nuance": "'Context tokens are cheap. Wrong tool calls are expensive.' - favors longer, unabbreviated names.",
+   "verified": "fetched",
+   "final": {
+    "count_stance": "FEW",
+    "recommended_number": "80 tools = probably two servers",
+    "hard_limit_reported": "",
+    "grouping": "not-addressed",
+    "naming_themes": [
+     "service/namespace prefix",
+     "verb_noun / action-first snake_case",
+     "avoid near-duplicate / generic names"
+    ],
+    "evidence": "opinion",
+    "measurement_kind": ""
+   }
+  },
+  {
+   "id": "B15",
+   "title": "How many MCP tools is too many?",
+   "url": "https://archestra.ai/blog/how-many-mcp-tools-too-many",
+   "author_org": "Archestra (Mack Chi)",
+   "date": "unknown",
+   "type": "vendor",
+   "quote": "Past roughly 40 tools in a single context, even frontier models start picking badly — wrong tool, near-miss tool, or no tool when one would have worked.",
+   "count": {
+    "stance": "specific-number",
+    "numbers": "<20 fine; 20-40 occasional errors; >40 knee; 70 reliably fails",
+    "note": "Per agent context, not per server."
+   },
+   "grouping": {
+    "stance": "mixed",
+    "note": "Role-scoped agents (split 70-tool monolith into three 15-tool agents), identity-scoped tools, search_tools + run_tool for the long tail."
+   },
+   "naming": {
+    "stance": "not-addressed",
+    "note": "Warns about near-duplicate names (get_user/find_user/lookup_user) across servers."
+   },
+   "evidence": {
+    "stance": "opinion",
+    "note": "Claims 'stress-tests against Archestra's dynamic tool engine and production traces' but publishes no data, models list only (Sonnet, Opus, GPT-5, Gemini 2.5)."
+   },
+   "client_limits": [],
+   "contrarian_or_nuance": "Search-and-run lets catalog grow to 500 without context growth.",
+   "verified": "fetched",
+   "final": {
+    "count_stance": "FEW",
+    "recommended_number": "<20 fine, 20-40 occasional errors, >40 knee, ~70 fails",
+    "hard_limit_reported": "",
+    "grouping": "mixed",
+    "naming_themes": [
+     "avoid near-duplicate / generic names"
+    ],
+    "evidence": "opinion",
+    "measurement_kind": ""
+   }
+  },
+  {
+   "id": "B16",
+   "title": "Implementing MCP tools (PostHog handbook)",
+   "url": "https://posthog.com/handbook/engineering/ai/implementing-mcp-tools",
+   "author_org": "PostHog",
+   "date": "unknown",
+   "type": "vendor",
+   "quote": "MCP tools should be basic capabilities – atomic CRUD operations and simple actions. Agents compose these primitives into higher-level workflows.",
+   "count": {
+    "stance": "not-addressed",
+    "numbers": "",
+    "note": "'Every product should be accessible through the MCP server'."
+   },
+   "grouping": {
+    "stance": "one-per-operation",
+    "note": "Bad: 'Search for session recordings of an experiment'; instead four tools: list experiments, get experiment, search session recordings, summarize sessions. Workflows go in agent skills."
+   },
+   "naming": {
+    "stance": "advice",
+    "note": "domain-action lowercase kebab-case (feature-flags-list, experiments-create); max 52 chars, CI lint enforces, because of client combined server+tool name limits."
+   },
+   "evidence": {
+    "stance": "opinion",
+    "note": "'agents are better at composing simple tools than navigating complex ones' - no data."
+   },
+   "client_limits": [
+    {
+     "client": "Claude Code",
+     "limit": "64 chars",
+     "as_stated": "[paraphrase] Claude Code 64 chars; prefixes tool names with mcp__ + server name",
+     "date": "unknown (live handbook, fetched 2026-10)"
+    },
+    {
+     "client": "Cursor",
+     "limit": "60 chars combined server+tool name",
+     "as_stated": "Cursor 60 chars combined server_name + tool_name ; tools exceeding this are silently filtered",
+     "date": "unknown (live handbook, fetched 2026-10)"
+    },
+    {
+     "client": "OpenAI API",
+     "limit": "64 chars, ^[a-zA-Z0-9_-]+$",
+     "as_stated": "No dots allowed",
+     "date": "unknown (live handbook, fetched 2026-10)"
+    },
+    {
+     "client": "MCP spec (draft)",
+     "limit": "1-128 chars, [A-Za-z0-9_\\-.]",
+     "as_stated": "Recommendation, not hard-enforced",
+     "date": "unknown (live handbook, fetched 2026-10)"
+    }
+   ],
+   "contrarian_or_nuance": "Directly opposite to the 'consolidate into workflow tools' camp: keeps atomic tools and puts workflows in skills/SQL sandbox.",
+   "verified": "fetched",
+   "final": {
+    "count_stance": "NONE",
+    "recommended_number": "",
+    "hard_limit_reported": "",
+    "grouping": "one-per-operation",
+    "naming_themes": [
+     "noun-first domain-action (kebab)",
+     "length / charset limits"
+    ],
+    "evidence": "opinion",
+    "measurement_kind": ""
+   }
+  },
+  {
+   "id": "B17",
+   "title": "Give your agent Neon tools",
+   "url": "https://neon.com/blog/give-your-agent-neon-tools",
+   "author_org": "Neon (Andre Landgraf)",
+   "date": "2026-09-03",
+   "type": "vendor",
+   "quote": "Progressive discovery (and, on some clients, programmatic tool calling) lets an agent work through a large catalog.",
+   "count": {
+    "stance": "nuanced",
+    "numbers": "104 tools (85 generated + 19 hand-written)",
+    "note": "Large catalog acceptable because hosts now do progressive discovery; clients can narrow via ?category= or readonly."
+   },
+   "grouping": {
+    "stance": "mixed",
+    "note": "Hybrid: generated 1:1 Management API tools plus workflow tools (branches.createAndConnect replaces create branch + attach compute + fetch connection string)."
+   },
+   "naming": {
+    "stance": "advice",
+    "note": "SDK path mapped to snake_case verb-first names (projects.createAndConnect -> create_and_connect_projects); 'fixed model-facing names and descriptions'."
+   },
+   "evidence": {
+    "stance": "opinion",
+    "note": ""
+   },
+   "client_limits": [],
+   "contrarian_or_nuance": "Reverses its own 2025 position that OpenAPI->MCP is a shaky default: context bloat considered solved by progressive discovery; remaining problem is workflow shape, not count.",
+   "verified": "fetched",
+   "final": {
+    "count_stance": "DEFER",
+    "recommended_number": "",
+    "hard_limit_reported": "",
+    "grouping": "mixed",
+    "naming_themes": [
+     "verb_noun / action-first snake_case"
+    ],
+    "evidence": "opinion",
+    "measurement_kind": ""
+   }
+  },
+  {
+   "id": "B18",
+   "title": "Building MCP Tools with GraphQL: A Better Way to Connect LLMs to Your API",
+   "url": "https://www.apollographql.com/blog/building-mcp-tools-with-graphql-a-better-way-to-connect-llms-to-your-api",
+   "author_org": "Apollo GraphQL (Michael Watson)",
+   "date": "2025-05-22",
+   "type": "vendor",
+   "quote": "Each new API endpoint brings in one or two additional tools and the pattern starts to have the LLM act as an API query planner based on these tools.",
+   "count": {
+    "stance": "not-addressed",
+    "numbers": "",
+    "note": ""
+   },
+   "grouping": {
+    "stance": "workflow",
+    "note": "One GraphQL operation per task-shaped tool; the graph does orchestration instead of the LLM chaining REST tools."
+   },
+   "naming": {
+    "stance": "not-addressed",
+    "note": ""
+   },
+   "evidence": {
+    "stance": "opinion",
+    "note": ""
+   },
+   "client_limits": [],
+   "contrarian_or_nuance": "",
+   "verified": "fetched",
+   "final": {
+    "count_stance": "NONE",
+    "recommended_number": "",
+    "hard_limit_reported": "",
+    "grouping": "workflow",
+    "naming_themes": [],
+    "evidence": "opinion",
+    "measurement_kind": ""
+   }
+  },
+  {
+   "id": "B19",
+   "title": "Tool Discovery for AI Agents (product page)",
+   "url": "https://www.stackone.com/platform/tools-discovery/",
+   "author_org": "StackOne",
+   "date": "unknown",
+   "type": "vendor",
+   "quote": "If your agent uses fewer than 10 tools, static definitions work fine: context cost is negligible and tool availability is deterministic.",
+   "count": {
+    "stance": "nuanced",
+    "numbers": "<10 static; 1,000 -> 2 meta-tools",
+    "note": "tool_search + tool_execute replace hundreds of definitions."
+   },
+   "grouping": {
+    "stance": "not-addressed",
+    "note": ""
+   },
+   "naming": {
+    "stance": "not-addressed",
+    "note": ""
+   },
+   "evidence": {
+    "stance": "measured",
+    "note": "Tool RETRIEVAL accuracy, not count vs accuracy: MetaTool nDCG@5 93.8% vs Anthropic Tool Use 91.3% (30-query sample) vs AgentCore 72.8% vs BM25 38.5%; ToolBench Hit@5 74.3% vs 40.0%; ToolRet-full nDCG@10 54.4%; '3.8x cheaper per request' tool search vs all tools loaded over 824 tasks."
+   },
+   "client_limits": [],
+   "contrarian_or_nuance": "Positions tool search as the answer; CTO talk title (WeAreDevelopers 2026) claims tool count, not model quality, is the ceiling (talk itself not fetched).",
+   "verified": "fetched",
+   "final": {
+    "count_stance": "DEFER",
+    "recommended_number": "<10 tools: static definitions fine",
+    "hard_limit_reported": "",
+    "grouping": "not-addressed",
+    "naming_themes": [],
+    "evidence": "measured",
+    "measurement_kind": "retrieval quality only"
+   }
+  },
+  {
+   "id": "B20",
+   "title": "Strata (core concepts)",
+   "url": "https://www.klavis.ai/docs/concepts/strata",
+   "author_org": "Klavis AI",
+   "date": "unknown",
+   "type": "vendor",
+   "quote": "Too many tools cause LLM choice paralysis",
+   "count": {
+    "stance": "nuanced",
+    "numbers": "most servers stuck at 40~50 tools",
+    "note": "Treats the 40-50 cap as a coverage gap that progressive discovery removes."
+   },
+   "grouping": {
+    "stance": "grouped",
+    "note": "Hierarchy servers -> categories -> actions -> action details, exposed via discover_server_categories_or_actions / get_category_actions / get_action_details / execute_action."
+   },
+   "naming": {
+    "stance": "not-addressed",
+    "note": ""
+   },
+   "evidence": {
+    "stance": "measured",
+    "note": "Self-reported: MCPMark pass@1 +15.2% vs official GitHub server, +13.4% vs official Notion server; human eval 83%+ on >2k queries. Compares discovery architecture vs official servers, not tool count."
+   },
+   "client_limits": [],
+   "contrarian_or_nuance": "Argues for exposing hundreds of granular actions behind progressive discovery instead of few high-level tools.",
+   "verified": "fetched",
+   "final": {
+    "count_stance": "DEFER",
+    "recommended_number": "",
+    "hard_limit_reported": "",
+    "grouping": "grouped",
+    "naming_themes": [],
+    "evidence": "measured",
+    "measurement_kind": "search/retrieval/deferral vs all tools loaded"
+   }
+  },
+  {
+   "id": "B21",
+   "title": "The MCP Tool Trap: Why Front-Loading Tools Doesn't Scale",
+   "url": "https://jentic.com/blog/the-mcp-tool-trap",
+   "author_org": "Jentic",
+   "date": "2025-05-26",
+   "type": "vendor",
+   "quote": "You start feeling the decline in tool calling accuracy surprisingly early, after adding just a handful of tools.",
+   "count": {
+    "stance": "few",
+    "numbers": "",
+    "note": "'a handful'; front-loading does not scale."
+   },
+   "grouping": {
+    "stance": "not-addressed",
+    "note": "Proposes just-in-time tool retrieval instead."
+   },
+   "naming": {
+    "stance": "not-addressed",
+    "note": ""
+   },
+   "evidence": {
+    "stance": "cites-measurement",
+    "note": "Cites the 'Less is More' paper on accuracy decline with more tools."
+   },
+   "client_limits": [],
+   "contrarian_or_nuance": "Calls multi-agent splitting a 'mirage'; argues bigger context windows can worsen attention; tool use as a retrieval problem.",
+   "verified": "fetched",
+   "final": {
+    "count_stance": "DEFER",
+    "recommended_number": "",
+    "hard_limit_reported": "",
+    "grouping": "not-addressed",
+    "naming_themes": [],
+    "evidence": "cites-measurement",
+    "measurement_kind": ""
+   }
+  },
+  {
+   "id": "B22",
+   "title": "MCP design is prompt engineering all over again",
+   "url": "https://simpleobservability.com/blog/mcp-is-prompt-engineering",
+   "author_org": "Simple Observability (Ali Ben)",
+   "date": "2026-05-08",
+   "type": "vendor",
+   "quote": "With MCPs you do the opposite. You compress workflows together because the real optimization target is not architectural purity, but reducing the cognitive and context burden on the model.",
+   "count": {
+    "stance": "few",
+    "numbers": "<10 -> 5",
+    "note": "'you want the smallest possible tool surface area'; went from <10 tools to 5."
+   },
+   "grouping": {
+    "stance": "workflow",
+    "note": "get_incident_details + get_server_details + get_alert_rule_details + get_job_details -> get_incident_context; get_available_metrics + get_available_logs -> get_available_sources."
+   },
+   "naming": {
+    "stance": "advice",
+    "note": "Extremely explicit names; namespace tool names because many servers are installed; natural-language time ranges instead of Unix timestamps."
+   },
+   "evidence": {
+    "stance": "opinion",
+    "note": "Tested on Gemma 3 4B locally but reports no numbers."
+   },
+   "client_limits": [],
+   "contrarian_or_nuance": "Expects some of these practices to become irrelevant as models change.",
+   "verified": "fetched",
+   "final": {
+    "count_stance": "FEW",
+    "recommended_number": "",
+    "hard_limit_reported": "",
+    "grouping": "workflow",
+    "naming_themes": [
+     "service/namespace prefix"
+    ],
+    "evidence": "opinion",
+    "measurement_kind": ""
+   }
+  },
+  {
+   "id": "B23",
+   "title": "MCP tool design best practices (SAP Integration Hub)",
+   "url": "https://docs.neptune-software.com/neptune-dxp-open-edition/24.15/cockpit-overview/sap-integration-hub-mcp-tool-design.html",
+   "author_org": "Neptune Software",
+   "date": "unknown",
+   "type": "vendor",
+   "quote": "A high tool count increases the input token volume of tool definitions on every invocation and degrades model accuracy at tool selection.",
+   "count": {
+    "stance": "few",
+    "numbers": "",
+    "note": "'Prefer fewer, well-scoped tools over a large overlapping catalog.'"
+   },
+   "grouping": {
+    "stance": "workflow",
+    "note": "Combine back-end steps into one intent-based tool; split catalog across servers by use case/domain; summary vs detail tools for progressive disclosure."
+   },
+   "naming": {
+    "stance": "advice",
+    "note": "Verb-first (get_order_status, find_orders, cancel_order); avoid generic process/handle; natural-language parameter names and enum values (created not CRTD)."
+   },
+   "evidence": {
+    "stance": "opinion",
+    "note": ""
+   },
+   "client_limits": [],
+   "contrarian_or_nuance": "Notes prompt caching lowers cost/latency of tool definitions but does not reduce context size.",
+   "verified": "fetched",
+   "final": {
+    "count_stance": "FEW",
+    "recommended_number": "",
+    "hard_limit_reported": "",
+    "grouping": "workflow",
+    "naming_themes": [
+     "verb_noun / action-first snake_case",
+     "avoid near-duplicate / generic names"
+    ],
+    "evidence": "opinion",
+    "measurement_kind": ""
+   }
+  },
+  {
+   "id": "B24",
+   "title": "Stainless MCP (Code Mode) - product page + changelog 'MCP servers now support Code Mode only'",
+   "url": "https://stainless.com/products/mcp",
+   "author_org": "Stainless",
+   "date": "2026-01-13",
+   "type": "vendor",
+   "quote": "Stainless generates code-mode MCP servers from your OpenAPI spec, letting agents use your SDKs and documentation instead of dozens of endpoint schemas.",
+   "count": {
+    "stance": "specific-number",
+    "numbers": "2 (search_docs, execute)",
+    "note": "Changelog 2026-01-13: removed all other tool schemes (regular/dynamic)."
+   },
+   "grouping": {
+    "stance": "mixed",
+    "note": "Code mode: agent writes TypeScript against the SDK in a sandbox; no per-operation tools."
+   },
+   "naming": {
+    "stance": "not-addressed",
+    "note": ""
+   },
+   "evidence": {
+    "stance": "measured",
+    "note": "Vendor-claimed evals '94-97% task accuracy, 3x fewer tool calls, 100k+ tokens saved on complex tasks'; methodology, models and baseline not shown on page."
+   },
+   "client_limits": [],
+   "contrarian_or_nuance": "Code mode sidesteps the tool-count question entirely.",
+   "verified": "fetched",
+   "final": {
+    "count_stance": "CODE",
+    "recommended_number": "",
+    "hard_limit_reported": "",
+    "grouping": "code-mode",
+    "naming_themes": [],
+    "evidence": "measured",
+    "measurement_kind": "architecture (code/CLI vs tools)"
+   }
+  },
+  {
+   "id": "C1",
+   "title": "MCP is Not the Problem, It's your Server: Best Practices for Building MCP Servers",
+   "url": "https://www.philschmid.de/mcp-best-practices",
+   "author_org": "Philipp Schmid (personal blog)",
+   "date": "2026-01-21",
+   "type": "blog",
+   "quote": "5–15 tools per server. One server, one job. Delete unused tools. Split by persona. (Admin/user)",
+   "count": {
+    "stance": "specific-number",
+    "numbers": "5-15 per server",
+    "note": "Explicit per-server budget; curate ruthlessly, split by persona."
+   },
+   "grouping": {
+    "stance": "workflow",
+    "note": "Replace get_user_by_email + list_orders + get_order_status with one track_latest_order(email); 'Do the orchestration in your code, not in the LLM's context window.'"
+   },
+   "naming": {
+    "stance": "advice",
+    "note": "Service-prefixed, action-oriented: {service}_{action}_{resource}, e.g. slack_send_message, linear_list_issues; avoids create_issue collisions between GitHub and Jira."
+   },
+   "evidence": {
+    "stance": "opinion",
+    "note": "No experiment; points to Block's MCP playbook and FastMCP material."
+   },
+   "client_limits": [],
+   "contrarian_or_nuance": "Title frames bad servers, not the protocol, as the cause of MCP's problems.",
+   "verified": "fetched",
+   "final": {
+    "count_stance": "FEW",
+    "recommended_number": "5-15 per server",
+    "hard_limit_reported": "",
+    "grouping": "workflow",
+    "naming_themes": [
+     "service/namespace prefix",
+     "verb_noun / action-first snake_case"
+    ],
+    "evidence": "opinion",
+    "measurement_kind": ""
+   }
+  },
+  {
+   "id": "C2",
+   "title": "Stop Converting Your REST APIs to MCP",
+   "url": "https://www.jlowin.dev/blog/stop-converting-rest-apis-to-mcp",
+   "author_org": "Jeremiah Lowin (FastMCP creator, personal blog)",
+   "date": "2025-07-10",
+   "type": "blog",
+   "quote": "every extra endpoint is a tax paid in tokens and latency on every interaction. Second, atomicity is an agent anti-pattern .",
+   "count": {
+    "stance": "few",
+    "numbers": "",
+    "note": "An agent-ready API should be 'ruthlessly curated and minimalist'. Gives no number."
+   },
+   "grouping": {
+    "stance": "workflow",
+    "note": "Against 1:1 OpenAPI endpoint->tool conversion. Chaining atomic calls is slow and error-prone, so curate higher-level tools (e.g. a focused find_products(keyword))."
+   },
+   "naming": {
+    "stance": "advice",
+    "note": "Avoid near-duplicate names (agents 'timed out' choosing between create_invoice and generate_invoice). Rename cryptic arguments and hide irrelevant parameters."
+   },
+   "evidence": {
+    "stance": "opinion",
+    "note": "Anecdotes from FastMCP GitHub issues; no measurement."
+   },
+   "client_limits": [],
+   "contrarian_or_nuance": "Calls auto-conversion fine for prototyping but not for production agents.",
+   "verified": "fetched",
+   "final": {
+    "count_stance": "FEW",
+    "recommended_number": "",
+    "hard_limit_reported": "",
+    "grouping": "workflow",
+    "naming_themes": [
+     "avoid near-duplicate / generic names"
+    ],
+    "evidence": "opinion",
+    "measurement_kind": ""
+   }
+  },
+  {
+   "id": "C3",
+   "title": "too many model context protocol servers and LLM allocations on the dance floor",
+   "url": "https://ghuntley.com/allocations/",
+   "author_org": "Geoffrey Huntley (personal blog)",
+   "date": "2025-08-22",
+   "type": "blog",
+   "quote": "For the record, Cursor caps the number of MCP tools that can be enabled in Cursor to just 40 tools, and it's for a good reason.",
+   "count": {
+    "stance": "few",
+    "numbers": "<=40 (endorses Cursor cap)",
+    "note": "Criticises VS Code for removing its 128-tool limit: 'Why would you need 128 tools or why would you want more than that?'"
+   },
+   "grouping": {
+    "stance": "not-addressed",
+    "note": "The detailed guidance is behind a subscriber paywall."
+   },
+   "naming": {
+    "stance": "not-addressed",
+    "note": ""
+   },
+   "evidence": {
+    "stance": "opinion",
+    "note": "Practitioner view. The token figures (176K usable, GitHub MCP 93 tools = 55K tokens) are in the paywalled part, as quoted by Simon Willison (C4)."
+   },
+   "client_limits": [
+    {
+     "client": "Cursor",
+     "limit": "40",
+     "as_stated": "Cursor caps the number of MCP tools that can be enabled in Cursor to just 40 tools",
+     "date": "2025-08"
+    },
+    {
+     "client": "VS Code",
+     "limit": "128 (removed)",
+     "as_stated": "the removal of the 128 tool limit from Visual Studio Code",
+     "date": "2025-08",
+     "note": "Huntley's claim that VS Code removed its 128 cap is NOT borne out: VS Code docs (updated 2026-10-07) still say 'A chat request can have a maximum of 128 tools enabled at a time.'"
+    }
+   ],
+   "contrarian_or_nuance": "",
+   "verified": "fetched",
+   "final": {
+    "count_stance": "FEW",
+    "recommended_number": "<=40 (endorses Cursor's cap)",
+    "hard_limit_reported": "",
+    "grouping": "not-addressed",
+    "naming_themes": [],
+    "evidence": "opinion",
+    "measurement_kind": ""
+   }
+  },
+  {
+   "id": "C4",
+   "title": "too many model context protocol servers and LLM allocations on the dance floor (link post)",
+   "url": "https://simonwillison.net/2025/Aug/22/too-many-mcps/",
+   "author_org": "Simon Willison (personal blog)",
+   "date": "2025-08-22",
+   "type": "blog",
+   "quote": "there is a much more token-efficient way of Interacting with many of these services: existing CLI tools.",
+   "count": {
+    "stance": "few",
+    "numbers": "",
+    "note": "Quotes Huntley: GitHub MCP 'defines 93 additional tools and swallows another 55,000' tokens of ~176K usable."
+   },
+   "grouping": {
+    "stance": "not-addressed",
+    "note": "Suggests small custom CLI tools with --help (including usage examples) instead of many MCP tools."
+   },
+   "naming": {
+    "stance": "not-addressed",
+    "note": ""
+   },
+   "evidence": {
+    "stance": "cites-measurement",
+    "note": "Cites Huntley's token count (93 tools = 55K tokens). Tokens only, not accuracy."
+   },
+   "client_limits": [],
+   "contrarian_or_nuance": "Says the main cost is context tokens and points to CLI as the alternative.",
+   "verified": "fetched",
+   "final": {
+    "count_stance": "FEW",
+    "recommended_number": "",
+    "hard_limit_reported": "",
+    "grouping": "not-addressed",
+    "naming_themes": [],
+    "evidence": "cites-measurement",
+    "measurement_kind": ""
+   }
+  },
+  {
+   "id": "C5",
+   "title": "Your MCP Doesn't Need 30 Tools: It Needs Code",
+   "url": "https://lucumr.pocoo.org/2025/8/18/code-mcps/",
+   "author_org": "Armin Ronacher (personal blog)",
+   "date": "2025-08-18",
+   "type": "blog",
+   "quote": "an interesting approach is using MCP servers exposing a single tool, that accepts programming code as tool inputs.",
+   "count": {
+    "stance": "few",
+    "numbers": "1 (code-accepting 'ubertool')",
+    "note": "Playwright: 'gets down from ~30 tool definitions to 1'. pexpect has 36 API functions that he would not wrap one-by-one."
+   },
+   "grouping": {
+    "stance": "grouped",
+    "note": "Collapse an API surface into one tool that executes code (Python/JS) against a stateful session."
+   },
+   "naming": {
+    "stance": "not-addressed",
+    "note": ""
+   },
+   "evidence": {
+    "stance": "opinion",
+    "note": "Anecdotal timing only (LLDB debug about 45 s / ~7 tool calls, versus 1 call when re-run from a dumped script). No tool-count accuracy measurement. HN 228 points."
+   },
+   "client_limits": [],
+   "contrarian_or_nuance": "Code mode: a code-executing tool replaces many tools. Follows his earlier 'Tools: Code Is All You Need' (2025-07-03).",
+   "verified": "fetched",
+   "final": {
+    "count_stance": "CODE",
+    "recommended_number": "",
+    "hard_limit_reported": "",
+    "grouping": "code-mode",
+    "naming_themes": [],
+    "evidence": "opinion",
+    "measurement_kind": ""
+   }
+  },
+  {
+   "id": "C6",
+   "title": "Model Context Protocol and the \"too many tools\" problem",
+   "url": "https://demiliani.com/2025/09/04/model-context-protocol-and-the-too-many-tools-problem/",
+   "author_org": "Stefano Demiliani (personal blog)",
+   "date": "2025-09-04",
+   "type": "blog",
+   "quote": "Having too many tools exposed in an MCP server can degrade the performances and the output of your LLM!",
+   "count": {
+    "stance": "few",
+    "numbers": "",
+    "note": "Shows one server's tools taking ~22.2% of the context window. No target number."
+   },
+   "grouping": {
+    "stance": "workflow",
+    "note": "Build focused MCP servers scoped to user goals or workflows rather than one monolithic server mirroring the API."
+   },
+   "naming": {
+    "stance": "not-addressed",
+    "note": ""
+   },
+   "evidence": {
+    "stance": "opinion",
+    "note": "Single screenshot of context usage (~22.2%), not a controlled measurement."
+   },
+   "client_limits": [
+    {
+     "client": "Cursor",
+     "limit": "40",
+     "as_stated": "Cursor has an hard limit of 40 MCP tools in total that can be exposed to LLMs ... will only send the first 40 tools",
+     "date": "2025-09"
+    },
+    {
+     "client": "GitHub Copilot (VS Code)",
+     "limit": "128",
+     "as_stated": "a chat request can have a maximum of 128 tools enabled at a time",
+     "date": "2025-09"
+    }
+   ],
+   "contrarian_or_nuance": "",
+   "verified": "fetched",
+   "final": {
+    "count_stance": "FEW",
+    "recommended_number": "",
+    "hard_limit_reported": "",
+    "grouping": "workflow",
+    "naming_themes": [],
+    "evidence": "opinion",
+    "measurement_kind": ""
+   }
+  },
+  {
+   "id": "C7",
+   "title": "MCP Server Design: 3 Principles We Learned in Production",
+   "url": "https://dev.to/trent-ai/mcp-server-design-3-principles-we-learned-in-production-57a6",
+   "author_org": "Himamsu Siriseni / Trent AI (dev.to, cross-posted from trent.ai)",
+   "date": "2026-06-17",
+   "type": "blog",
+   "quote": "Fewer tools, narrower surface. Consolidate around the workflow, not the underlying API. Consistent verbiage everywhere.",
+   "count": {
+    "stance": "few",
+    "numbers": "17 -> 11",
+    "note": "Cut their own server from 17 to 11 tools and saw 'visibly better tool usage'."
+   },
+   "grouping": {
+    "stance": "workflow",
+    "note": "The right size for a tool is the workflow the agent performs, not the smallest atomic API operation."
+   },
+   "naming": {
+    "stance": "advice",
+    "note": "'Same name for the same concept across every input, output, and value on the server.'"
+   },
+   "evidence": {
+    "stance": "opinion",
+    "note": "Production anecdote (17->11 tools, 'visibly better'). Gives no numbers."
+   },
+   "client_limits": [],
+   "contrarian_or_nuance": "Weak or unknown client models drive the advice ('the model on the other side of the wire is a variable you don't get to pick').",
+   "verified": "fetched",
+   "final": {
+    "count_stance": "FEW",
+    "recommended_number": "",
+    "hard_limit_reported": "",
+    "grouping": "workflow",
+    "naming_themes": [
+     "consistent vocabulary"
+    ],
+    "evidence": "opinion",
+    "measurement_kind": ""
+   }
+  },
+  {
+   "id": "C8",
+   "title": "Mitigating MCP Tool Limits",
+   "url": "https://apexti.substack.com/p/mitigating-mcp-tool-limits",
+   "author_org": "Nate / Apex TI (Substack; promotes their Toolbelt product)",
+   "date": "2025-07-18",
+   "type": "blog",
+   "quote": "platforms like Cursor impose hard limits on the number of tools available—typically around 40—to manage system resources effectively.",
+   "count": {
+    "stance": "few",
+    "numbers": "128 -> 24",
+    "note": "Example curates 128 raw tools from 7 services down to 24."
+   },
+   "grouping": {
+    "stance": "grouped",
+    "note": "Curate tools from several servers into one aggregated server with tailored names and descriptions."
+   },
+   "naming": {
+    "stance": "advice",
+    "note": "Re-name and re-describe curated tools ('tailored names and descriptions')."
+   },
+   "evidence": {
+    "stance": "opinion",
+    "note": "No measurement. Product pitch."
+   },
+   "client_limits": [
+    {
+     "client": "Cursor",
+     "limit": "~40",
+     "as_stated": "typically around 40",
+     "date": "2025-07"
+    }
+   ],
+   "contrarian_or_nuance": "",
+   "verified": "fetched",
+   "final": {
+    "count_stance": "FEW",
+    "recommended_number": "",
+    "hard_limit_reported": "",
+    "grouping": "grouped",
+    "naming_themes": [
+     "rename when curating"
+    ],
+    "evidence": "opinion",
+    "measurement_kind": ""
+   }
+  },
+  {
+   "id": "C9",
+   "title": "MCP vs CLI: Benchmarking Tools for Coding Agents",
+   "url": "https://mariozechner.at/posts/2025-08-15-mcp-vs-cli/",
+   "author_org": "Mario Zechner (personal blog)",
+   "date": "2025-08-15",
+   "type": "blog",
+   "quote": "The MCP server exposes a single terminalcp tool instead of one per command. This is not just voodoo.",
+   "count": {
+    "stance": "few",
+    "numbers": "1",
+    "note": "Recalls old Claude Code docs saying there is a limit to how many tools to expose (he can no longer find the reference)."
+   },
+   "grouping": {
+    "stance": "grouped",
+    "note": "One multiplexed tool with an action parameter instead of one tool per command."
+   },
+   "naming": {
+    "stance": "not-addressed",
+    "note": ""
+   },
+   "evidence": {
+    "stance": "measured",
+    "note": "120 runs (3 tasks x 4 tools x 10 reps) with Claude Sonnet/Haiku. Compares an MCP server vs a CLI vs tmux vs screen on success, cost, time and tokens (terminalcp MCP/CLI 100%, tmux 90%, screen 67%). Does NOT measure tool count vs accuracy."
+   },
+   "client_limits": [],
+   "contrarian_or_nuance": "MCP and CLI performed about the same when the tool was well designed. Tool quality mattered more than the protocol.",
+   "verified": "fetched",
+   "final": {
+    "count_stance": "FEW",
+    "recommended_number": "",
+    "hard_limit_reported": "",
+    "grouping": "grouped",
+    "naming_themes": [],
+    "evidence": "measured",
+    "measurement_kind": "architecture (code/CLI vs tools)"
+   }
+  },
+  {
+   "id": "C10",
+   "title": "What if you don't need MCP at all?",
+   "url": "https://mariozechner.at/posts/2025-11-02-what-if-you-dont-need-mcp/",
+   "author_org": "Mario Zechner (personal blog)",
+   "date": "2025-11-02",
+   "type": "blog",
+   "quote": "Playwright MCP has 21 tools using 13.7k tokens (6.8% of Claude's context). Chrome DevTools MCP has 26 tools using 18.0k tokens (9.0%).",
+   "count": {
+    "stance": "few",
+    "numbers": "21-26 tools 'will confuse your agent'",
+    "note": "'That many tools will confuse your agent, especially when combined with other MCP servers'."
+   },
+   "grouping": {
+    "stance": "not-addressed",
+    "note": "Replaces MCP with a few bash scripts plus a README (~225 tokens)."
+   },
+   "naming": {
+    "stance": "not-addressed",
+    "note": ""
+   },
+   "evidence": {
+    "stance": "measured",
+    "note": "Measured tool-definition token cost of two servers (13.7k/18.0k tokens) against his ~225-token README. Did not measure accuracy versus tool count. HN 237 points."
+   },
+   "client_limits": [],
+   "contrarian_or_nuance": "Argues for CLI or code instead of MCP for coding agents.",
+   "verified": "fetched",
+   "final": {
+    "count_stance": "CODE",
+    "recommended_number": "21-26 tools 'will confuse your agent'",
+    "hard_limit_reported": "",
+    "grouping": "code-mode",
+    "naming_themes": [],
+    "evidence": "measured",
+    "measurement_kind": "token cost only"
+   }
+  },
+  {
+   "id": "C11",
+   "title": "MCP is dead. Long live the CLI",
+   "url": "https://ejholmes.github.io/2026/02/28/mcp-is-dead-long-live-the-cli.html",
+   "author_org": "Eric Holmes (personal blog)",
+   "date": "2026-02-28",
+   "type": "blog",
+   "quote": "investing in an MCP server but you don’t have an official CLI, stop and rethink what you’re doing. Ship a good API, then ship a good CLI.",
+   "count": {
+    "stance": "not-addressed",
+    "numbers": "",
+    "note": "Argues against MCP in general; gives no tool-count advice."
+   },
+   "grouping": {
+    "stance": "not-addressed",
+    "note": "Notes that MCP forces either dumping large output into context or 'building custom filtering into the MCP server itself'."
+   },
+   "naming": {
+    "stance": "not-addressed",
+    "note": ""
+   },
+   "evidence": {
+    "stance": "opinion",
+    "note": "No measurement. HN #1, 447 points (posted as 'When does MCP make sense vs CLI?')."
+   },
+   "client_limits": [],
+   "contrarian_or_nuance": "Anti-MCP: CLIs compose (jq/grep), so the context cost lies in the protocol pattern, not only in tool count.",
+   "verified": "fetched",
+   "final": {
+    "count_stance": "NONE",
+    "recommended_number": "",
+    "hard_limit_reported": "",
+    "grouping": "not-addressed",
+    "naming_themes": [],
+    "evidence": "opinion",
+    "measurement_kind": ""
+   }
+  },
+  {
+   "id": "C12",
+   "title": "Why Your MCP Server Picks the Wrong Tool, and the Five Patterns That Fix It",
+   "url": "https://alphasignalai.substack.com/p/why-your-mcp-server-picks-the-wrong",
+   "author_org": "AlphaSignal (newsletter) summarising Rodrigues (Celabe) & Vas (U Waterloo), 'MCP Server Architecture Patterns for LLM-Integrated Applications'",
+   "date": "2026-07-07",
+   "type": "blog",
+   "quote": "Claude Haiku 4.5 picks the right tool 91% of the time when an MCP server shows it 10 tools. Add five more and accuracy falls to 87%.",
+   "count": {
+    "stance": "specific-number",
+    "numbers": "10-15 visible tools (Haiku-class); Sonnet 4 >=90% up to 20, below by 30",
+    "note": "'a single context should stay under roughly 10 to 15 visible tools for a Haiku-class model.'"
+   },
+   "grouping": {
+    "stance": "mixed",
+    "note": "Five patterns (Resource Gateway, Tool Orchestrator, Stateful Session, Proxy Aggregator, Domain Adapter). Anti-patterns include the 'God Tool' and vague descriptions."
+   },
+   "naming": {
+    "stance": "not-addressed",
+    "note": "Stresses descriptions over names."
+   },
+   "evidence": {
+    "stance": "cites-measurement",
+    "note": "Cites the paper's production telemetry from one company (Celabe ANSYR, Q1 2025): ~200 turns per tool-count bucket, tool count vs selection accuracy for Haiku 4.5 and Sonnet 4. Newsletter flags conflict of interest and single-org data."
+   },
+   "client_limits": [],
+   "contrarian_or_nuance": "Warns against over-consolidation too ('God Tool' anti-pattern). Recommends scoped retrieval when aggregating servers.",
+   "verified": "fetched",
+   "final": {
+    "count_stance": "FEW",
+    "recommended_number": "<10-15 visible tools for Haiku-class models",
+    "hard_limit_reported": "",
+    "grouping": "mixed",
+    "naming_themes": [],
+    "evidence": "cites-measurement",
+    "measurement_kind": ""
+   }
+  },
+  {
+   "id": "C13",
+   "title": "LLM Tools & MCP Are Not REST API: Here's a Better Design",
+   "url": "https://dev.to/pmbanugo/mcptools-are-not-rest-api-heres-a-better-design-46b3",
+   "author_org": "Peter Mbanugo (dev.to)",
+   "date": "2025-08-16",
+   "type": "blog",
+   "quote": "If it's hard for me or the model to pick the right tool because of information overload, the tools become useless.",
+   "count": {
+    "stance": "few",
+    "numbers": "8 -> 2 (example)",
+    "note": "Stock-data example merges 8 similar tools into 2. Criticises GitHub MCP's many get_pull_request_* tools."
+   },
+   "grouping": {
+    "stance": "grouped",
+    "note": "Merge get_pull_request_comments/_status/_files into a single get_pull_request; combine endpoints that share parameters."
+   },
+   "naming": {
+    "stance": "advice",
+    "note": "Similarly named tools with near-identical arguments confuse models. Differentiate them or merge them."
+   },
+   "evidence": {
+    "stance": "opinion",
+    "note": "No measurement."
+   },
+   "client_limits": [],
+   "contrarian_or_nuance": "",
+   "verified": "fetched",
+   "final": {
+    "count_stance": "FEW",
+    "recommended_number": "",
+    "hard_limit_reported": "",
+    "grouping": "grouped",
+    "naming_themes": [
+     "avoid near-duplicate / generic names"
+    ],
+    "evidence": "opinion",
+    "measurement_kind": ""
+   }
+  },
+  {
+   "id": "C14",
+   "title": "\"MCP Sucks\" (Until It Doesn't): When Each Wins",
+   "url": "https://kaxil.substack.com/p/mcp-vs-cli-vs-rest",
+   "author_org": "Kaxil Naik (Substack)",
+   "date": "2026-04-07",
+   "type": "blog",
+   "quote": "The MCP critics correctly identified the problem (bloated, auto-converted MCP servers) but in my opinion they incorrectly blamed the protocol!",
+   "count": {
+    "stance": "nuanced",
+    "numbers": "GitHub MCP 93 tools ~55K tokens, defaults later cut to 52",
+    "note": "Bloat is a server-design problem. Clients now defer tool schemas."
+   },
+   "grouping": {
+    "stance": "workflow",
+    "note": "Avoid auto-converted, endpoint-per-tool servers."
+   },
+   "naming": {
+    "stance": "advice",
+    "note": "Identical tool names across multiple instances (two Slack workspaces) make Claude Code/Cursor route to the wrong instance or suppress one."
+   },
+   "evidence": {
+    "stance": "cites-measurement",
+    "note": "Cites a ScaleKit benchmark (75 runs, Claude Sonnet 4: CLI 4-32x fewer tokens, 100% vs 72% success) and Cursor's reported 46.9% token reduction from deferred loading. These are MCP-vs-CLI and token figures, not tool count vs accuracy."
+   },
+   "client_limits": [],
+   "contrarian_or_nuance": "Claude Code and Cursor now 'defer MCP tool schemas by default and load them on demand', which reduces the tool-count cost.",
+   "verified": "fetched",
+   "final": {
+    "count_stance": "DEFER",
+    "recommended_number": "",
+    "hard_limit_reported": "",
+    "grouping": "workflow",
+    "naming_themes": [
+     "avoid near-duplicate / generic names"
+    ],
+    "evidence": "cites-measurement",
+    "measurement_kind": ""
+   }
+  },
+  {
+   "id": "C15",
+   "title": "MCP is Dead; Long Live MCP!",
+   "url": "https://chrlschn.dev/blog/2026/03/mcp-is-dead-long-live-mcp/",
+   "author_org": "Charles Chen (personal blog)",
+   "date": "2026-03-14",
+   "type": "blog",
+   "quote": "Don't give your agent complex, useless MCP tools in the first place? CLI and MCP are not mutually exclusive. Be selective in both cases.",
+   "count": {
+    "stance": "few",
+    "numbers": "",
+    "note": "Be selective; gives no number."
+   },
+   "grouping": {
+    "stance": "not-addressed",
+    "note": ""
+   },
+   "naming": {
+    "stance": "not-addressed",
+    "note": ""
+   },
+   "evidence": {
+    "stance": "opinion",
+    "note": "No measurement. HN 295 points."
+   },
+   "client_limits": [],
+   "contrarian_or_nuance": "Rebuts Holmes: CLI progressive discovery doesn't save much on complex tasks. Bad tool design hurts both CLI and MCP. Mentions 1M-context windows.",
+   "verified": "fetched",
+   "final": {
+    "count_stance": "FEW",
+    "recommended_number": "",
+    "hard_limit_reported": "",
+    "grouping": "not-addressed",
+    "naming_themes": [],
+    "evidence": "opinion",
+    "measurement_kind": ""
+   }
+  },
+  {
+   "id": "C16",
+   "title": "A Practical Meta-MCP Architecture for Claude Code: Compressing 60+ Tools into Just Two",
+   "url": "https://dev.to/tgfjt/a-practical-meta-mcp-architecture-for-claude-code-compressing-60-tools-into-just-two-oje",
+   "author_org": "Takashi Fujita (dev.to)",
+   "date": "2025-12-04",
+   "type": "blog",
+   "quote": "the tool definitions alone can consume 36.6k tokens of context. To reduce this overhead, I built a meta MCP server called Code Mode , which exposes only two tools",
+   "count": {
+    "stance": "few",
+    "numbers": "63 -> 2",
+    "note": "search_docs + execute_code replace 63 tools."
+   },
+   "grouping": {
+    "stance": "grouped",
+    "note": "Meta-server: a search tool plus a code-execution tool over child servers (code mode)."
+   },
+   "naming": {
+    "stance": "not-addressed",
+    "note": ""
+   },
+   "evidence": {
+    "stance": "measured",
+    "note": "Measured Claude Code context use of tool definitions: 36.6k tokens (18.3%) before, 4.4k (2.2%) after. Accuracy not measured."
+   },
+   "client_limits": [],
+   "contrarian_or_nuance": "Code mode / search-and-execute replaces exposing many tools.",
+   "verified": "fetched",
+   "final": {
+    "count_stance": "CODE",
+    "recommended_number": "",
+    "hard_limit_reported": "",
+    "grouping": "code-mode",
+    "naming_themes": [],
+    "evidence": "measured",
+    "measurement_kind": "token cost only"
+   }
+  },
+  {
+   "id": "C17",
+   "title": "Everything Wrong with MCP",
+   "url": "https://blog.sshh.io/p/everything-wrong-with-mcp",
+   "author_org": "Shrivu Shankar (Substack)",
+   "date": "2025-04-13",
+   "type": "blog",
+   "quote": "as the servers get bigger (i.e. more tools) and users integrate more of them, an assistants performance will degrade all while increasing the cost of every single request.",
+   "count": {
+    "stance": "few",
+    "numbers": "",
+    "note": "Expects performance to degrade as tool count grows. Notes apps may force users to pick tool subsets."
+   },
+   "grouping": {
+    "stance": "not-addressed",
+    "note": "Says getting query-tool patterns right is hard, and one tool definition does not suit every LLM."
+   },
+   "naming": {
+    "stance": "advice",
+    "note": "Warns about name masquerading/collisions (malicious write_secure_file vs write_file)."
+   },
+   "evidence": {
+    "stance": "cites-measurement",
+    "note": "Cites Tau-Bench (Sonnet 3.7 16% on airline tasks) for general tool-use reliability. Nothing on tool count. HN 516 points."
+   },
+   "client_limits": [],
+   "contrarian_or_nuance": "",
+   "verified": "fetched",
+   "final": {
+    "count_stance": "FEW",
+    "recommended_number": "",
+    "hard_limit_reported": "",
+    "grouping": "not-addressed",
+    "naming_themes": [
+     "avoid near-duplicate / generic names"
+    ],
+    "evidence": "cites-measurement",
+    "measurement_kind": ""
+   }
+  },
+  {
+   "id": "C18",
+   "title": "I Made MCP 94% Cheaper (And It Only Took One Command)",
+   "url": "https://kanyilmaz.me/2026/02/23/cli-vs-mcp.html",
+   "author_org": "Kan Yilmaz (personal blog; promotes his CLIHub)",
+   "date": "2026-02-23",
+   "type": "blog",
+   "quote": "MCP's answer is to dump the entire tool catalog into the conversation as JSON Schema. Every tool, every parameter, every option.",
+   "count": {
+    "stance": "not-addressed",
+    "numbers": "84 tools ~15.5K tokens",
+    "note": "Cost framing only: ~185 tokens per tool schema."
+   },
+   "grouping": {
+    "stance": "not-addressed",
+    "note": "Proposes lazy loading via CLI --help instead of upfront schemas."
+   },
+   "naming": {
+    "stance": "not-addressed",
+    "note": ""
+   },
+   "evidence": {
+    "stance": "measured",
+    "note": "Token arithmetic/estimates for 6 servers x 14 tools: MCP ~15.5K, CLI ~300, Anthropic Tool Search ~500 at session start. Rough estimates, not a controlled run. No accuracy data. HN 324 points ('Making MCP cheaper via CLI')."
+   },
+   "client_limits": [],
+   "contrarian_or_nuance": "Compares with Anthropic Tool Search ('typically drops token usage by 85%'). Treats cost as the problem, not accuracy.",
+   "verified": "fetched",
+   "final": {
+    "count_stance": "DEFER",
+    "recommended_number": "",
+    "hard_limit_reported": "",
+    "grouping": "not-addressed",
+    "naming_themes": [],
+    "evidence": "measured",
+    "measurement_kind": "token cost only"
+   }
+  },
+  {
+   "id": "C19",
+   "title": "Stop Burning Your Context Window — We Built Context Mode",
+   "url": "https://mksg.lu/blog/context-mode",
+   "author_org": "Mert Köseoğlu (personal blog)",
+   "date": "2026-02-26",
+   "type": "blog",
+   "quote": "every tool interaction fills the context window from both sides — definitions on the way in, raw output on the way out.",
+   "count": {
+    "stance": "not-addressed",
+    "numbers": "81+ tools = 143K tokens (72%)",
+    "note": "Cost framing. Focus is on compressing tool output."
+   },
+   "grouping": {
+    "stance": "not-addressed",
+    "note": ""
+   },
+   "naming": {
+    "stance": "not-addressed",
+    "note": ""
+   },
+   "evidence": {
+    "stance": "measured",
+    "note": "Measured output-size reductions (e.g. Playwright snapshot 56 KB -> 299 B, session 315 KB -> 5.4 KB). The 81 tools = 143K figure is stated without method. No accuracy data. HN 570 points."
+   },
+   "client_limits": [],
+   "contrarian_or_nuance": "Tool responses, not just definitions, are a major context cost. Server authors should return compact output.",
+   "verified": "fetched",
+   "final": {
+    "count_stance": "NONE",
+    "recommended_number": "",
+    "hard_limit_reported": "",
+    "grouping": "not-addressed",
+    "naming_themes": [],
+    "evidence": "measured",
+    "measurement_kind": "token cost only"
+   }
+  },
+  {
+   "id": "D1",
+   "title": "RAG-MCP: Mitigating Prompt Bloat in LLM Tool Selection via Retrieval-Augmented Generation",
+   "url": "https://arxiv.org/abs/2505.03275",
+   "author_org": "Tiantian Gan, Qiyao Sun",
+   "date": "2025-05-06",
+   "type": "paper",
+   "quote": "RAG-MCP significantly cuts prompt tokens (e.g., by over 50%) and more than triples tool selection accuracy",
+   "count": {
+    "stance": "specific-number",
+    "numbers": ">90% success below ~30 MCP servers; degradation 31-70; near-collapse beyond ~100",
+    "note": "Stress test varies N candidate MCP servers in the prompt (from mcp.so pool of 4,400+); threshold read from a heatmap, not stated in conclusion"
+   },
+   "grouping": {
+    "stance": "not-addressed",
+    "note": "Unit is a whole MCP server description, not individual tools"
+   },
+   "naming": {
+    "stance": "not-addressed",
+    "note": ""
+   },
+   "evidence": {
+    "stance": "measured",
+    "note": "IV1: retrieval vs all-in-prompt ('Blank Conditioning' = all N MCP descriptions at once) vs keyword 'Actual Match'. Qwen-max-0125, 20 web-search tasks, DeepSeek-v3 judge. Accuracy 43.13% (RAG) vs 18.20% (Actual Match) vs 13.62% (Blank); prompt tokens 1,084 vs 2,133.84. IV2: number of MCP servers N in stress test (needle-in-haystack). Small task set (20 queries), single model."
+   },
+   "client_limits": [],
+   "contrarian_or_nuance": "The 13.62% figure is with ALL servers in prompt at large N on one model (Qwen-max) and 20 queries; often misquoted downstream (e.g., attributed to Anthropic). Units are servers, not tools.",
+   "verified": "fetched",
+   "final": {
+    "count_stance": "DEFER",
+    "recommended_number": ">90% below ~30 MCP servers in prompt, collapse beyond ~100 (servers, not tools)",
+    "hard_limit_reported": "",
+    "grouping": "not-addressed",
+    "naming_themes": [],
+    "evidence": "measured",
+    "measurement_kind": "tool count vs accuracy"
+   }
+  },
+  {
+   "id": "D2",
+   "title": "How Many Tools Should an LLM Agent See? A Chance-Corrected Answer",
+   "url": "https://arxiv.org/abs/2605.24660",
+   "author_org": "Vyzantinos Repantis, Ameya Gawde, Harshvardhan Singh, Joey Blackwell II",
+   "date": "2026-05-23",
+   "type": "paper",
+   "quote": "show too many tools and the model struggles to choose.",
+   "count": {
+    "stance": "nuanced",
+    "numbers": "adaptive avg 2.2 tools beat fixed 5; BFCL: 7 tools ~= 50 tools coverage",
+    "note": "Argues for adaptive per-query shortlist depth chosen by RL, not a fixed cutoff"
+   },
+   "grouping": {
+    "stance": "not-addressed",
+    "note": ""
+   },
+   "naming": {
+    "stance": "not-addressed",
+    "note": ""
+   },
+   "evidence": {
+    "stance": "measured",
+    "note": "IV: shortlist depth K shown to the LLM (adaptive BoR vs fixed-K). Benchmarks with 20-3,251 tools (BFCL 370, ToolBench 3,251). BFCL: 90.3% coverage with 7 tools vs 90.8% with 50. Downstream with Claude Sonnet 4.6: gold-tool selection 93.1% at K=2.2 vs 87.1% at fixed K=5; medium-difficulty 76.8% vs 60.9%."
+   },
+   "client_limits": [],
+   "contrarian_or_nuance": "Even going from ~2 to 5 shortlisted tools costs ~6pp choice accuracy on a frontier model - distractor load matters at small K, not just at 100+.",
+   "verified": "fetched",
+   "final": {
+    "count_stance": "DEFER",
+    "recommended_number": "",
+    "hard_limit_reported": "",
+    "grouping": "not-addressed",
+    "naming_themes": [],
+    "evidence": "measured",
+    "measurement_kind": "tool count vs accuracy"
+   }
+  },
+  {
+   "id": "D3",
+   "title": "Less is More: Optimizing Function Calling for LLM Execution on Edge Devices",
+   "url": "https://arxiv.org/abs/2411.15399",
+   "author_org": "Paramanayakam, Karatzas, Anagnostopoulos, Stamoulis (Southern Illinois Univ., UT Austin); DATE 2025",
+   "date": "2024-11-23",
+   "type": "paper",
+   "quote": "selectively reducing the number of tools available to LLMs significantly improves their function-calling performance, execution time, and power efficiency on edge devices.",
+   "count": {
+    "stance": "few",
+    "numbers": "default 46-51 tools per query vs reduced set",
+    "note": "2024 preprint (DATE 2025) - included as central; small 1.5-8B quantized models only"
+   },
+   "grouping": {
+    "stance": "not-addressed",
+    "note": "Uses tool clusters as a search level, not as server design advice"
+   },
+   "naming": {
+    "stance": "not-addressed",
+    "note": ""
+   },
+   "evidence": {
+    "stance": "measured",
+    "note": "IV: number of tools presented (all 51 on BFCL / 46 on GeoEngine vs dynamically reduced). Models: Hermes2-Pro-8b, Llama3.1-8b, Mistral-8b, Phi3-8b, Qwen2-1.5b/7b (quantized). Reports success-rate gains (e.g. Qwen2-7b ~45%->68% on BFCL per results table, read approximately), execution time -70%, power -40%."
+   },
+   "client_limits": [],
+   "contrarian_or_nuance": "Small local models only; says nothing about frontier models.",
+   "verified": "fetched",
+   "final": {
+    "count_stance": "FEW",
+    "recommended_number": "",
+    "hard_limit_reported": "",
+    "grouping": "not-addressed",
+    "naming_themes": [],
+    "evidence": "measured",
+    "measurement_kind": "tool count vs accuracy"
+   }
+  },
+  {
+   "id": "D4",
+   "title": "LongFuncEval: Measuring the effectiveness of long context models for function calling",
+   "url": "https://arxiv.org/abs/2505.10570",
+   "author_org": "IBM Research",
+   "date": "2025-04-30",
+   "type": "paper",
+   "quote": "when the tool catalog is increased to reach a context length of 65,536 and 120,000, the performance deteriorates.",
+   "count": {
+    "stance": "nuanced",
+    "numbers": "~49 / 102 / 207 / 417 / 741 tools (8K-120K tokens)",
+    "note": "Degradation 7%-85% as catalog grows; strongest beyond 64K tokens of tools"
+   },
+   "grouping": {
+    "stance": "not-addressed",
+    "note": ""
+   },
+   "naming": {
+    "stance": "not-addressed",
+    "note": ""
+   },
+   "evidence": {
+    "stance": "measured",
+    "note": "IV: tool-catalog size (tokens/tool count) and gold-tool position. Models: Mistral-large, ToolACE-8B, BitAgent-8B, Granite-3.1-8B, Llama-3.1-70B, GPT-4o (subset). BFCL-derived simple/live_simple tasks. Mistral-large -94% at 120K; GPT-4o only -12.88%; most -40% to -85%. Also position bias (lost-in-the-middle)."
+   },
+   "client_limits": [],
+   "contrarian_or_nuance": "GPT-4o was relatively robust - degradation is strongly model-dependent; also measures long tool responses (7-91% drop) and long conversations as separate failure sources.",
+   "verified": "fetched",
+   "final": {
+    "count_stance": "NONE",
+    "recommended_number": "",
+    "hard_limit_reported": "",
+    "grouping": "not-addressed",
+    "naming_themes": [],
+    "evidence": "measured",
+    "measurement_kind": "tool count vs accuracy"
+   }
+  },
+  {
+   "id": "D5",
+   "title": "MCP-Zero: Active Tool Discovery for Autonomous LLM Agents",
+   "url": "https://arxiv.org/abs/2506.01056",
+   "author_org": "Xiang Fei et al.",
+   "date": "2025-06",
+   "type": "paper",
+   "quote": "standard schema-injection accuracy on Claude-3.5 plummets from 97.60 to 69.23 (single-turn)",
+   "count": {
+    "stance": "nuanced",
+    "numbers": "Domain subset vs Full pool (40x more APIs); MCP-tools pool 308 servers / 2,797 tools",
+    "note": "Model requests tools on demand (server then tool, hierarchical)"
+   },
+   "grouping": {
+    "stance": "mixed",
+    "note": "Hierarchical server->tool routing; relies on server-level descriptions"
+   },
+   "naming": {
+    "stance": "not-addressed",
+    "note": ""
+   },
+   "evidence": {
+    "stance": "measured",
+    "note": "IV: tool pool size (needle-in-haystack 1 to 2,797 tools) and schema injection vs proactive retrieval. Models: Claude-3.5-Sonnet, GPT-4.1, Gemini-2.5-Flash. APIBank: Claude-3.5 97.60% -> 69.23% with full-pool injection; MCP-Zero 95.19%. Tokens ~111 vs 6,308 (60-98% reduction)."
+   },
+   "client_limits": [],
+   "contrarian_or_nuance": "",
+   "verified": "fetched",
+   "final": {
+    "count_stance": "DEFER",
+    "recommended_number": "",
+    "hard_limit_reported": "",
+    "grouping": "mixed",
+    "naming_themes": [],
+    "evidence": "measured",
+    "measurement_kind": "tool count vs accuracy"
+   }
+  },
+  {
+   "id": "D6",
+   "title": "Model Context Protocol (MCP) Tool Descriptions Are Smelly! Towards Improving AI Agent Efficiency with Augmented MCP Tool Descriptions",
+   "url": "https://arxiv.org/abs/2602.14878",
+   "author_org": "Hasan, Li, Rajbahadur, Adams, Hassan (Queen's University)",
+   "date": "2026-02-16",
+   "type": "paper",
+   "quote": "Augmented tool descriptions yield a statistically significant increase of 5.85 percentage points in task success rate across domain-model combinations, while causing regressions in 16.67% of cases.",
+   "count": {
+    "stance": "not-addressed",
+    "numbers": "",
+    "note": ""
+   },
+   "grouping": {
+    "stance": "not-addressed",
+    "note": ""
+   },
+   "naming": {
+    "stance": "not-addressed",
+    "note": "Focus is description components (purpose, guidelines, limitations, params, length, examples)"
+   },
+   "evidence": {
+    "stance": "measured",
+    "note": "IV: description quality (original vs augmented with six components; component ablations). 856 tools / 103 servers audited: 97.1% have >=1 smell, 56% unclear purpose. Agent runs on MCP-Universe (231 tasks, 202 tools) with GPT-4.1, Qwen3-Coder-480B, GLM-4.5 (+Qwen3-Next-80B): success +5.85pp median, evaluator score +15.12%, steps +67.46%. Dropping Examples did not significantly hurt."
+   },
+   "client_limits": [],
+   "contrarian_or_nuance": "Better descriptions are not free: more steps/tokens and regressions in 1 of 6 cases; examples can be omitted.",
+   "verified": "fetched",
+   "final": {
+    "count_stance": "NONE",
+    "recommended_number": "",
+    "hard_limit_reported": "",
+    "grouping": "not-addressed",
+    "naming_themes": [],
+    "evidence": "measured",
+    "measurement_kind": "descriptions or names"
+   }
+  },
+  {
+   "id": "D7",
+   "title": "From Docs to Descriptions: Smell-Aware Evaluation of MCP Server Descriptions",
+   "url": "https://arxiv.org/abs/2602.18914",
+   "author_org": "Peiran Wang, Ying Li, Yuqiang Sun, Chengwei Liu, Yang Liu, Yuan Tian",
+   "date": "2026-02-21",
+   "type": "paper",
+   "quote": "Across all 10 server groups, the standard-compliant server achieved an average selection probability of 72%, compared to the 20% baseline expected under uniform random selection.",
+   "count": {
+    "stance": "not-addressed",
+    "numbers": "",
+    "note": ""
+   },
+   "grouping": {
+    "stance": "not-addressed",
+    "note": ""
+   },
+   "naming": {
+    "stance": "advice",
+    "note": "Repeated/generic tool names are the most common smell (7,894 cases, ~73% of 10,831 servers) - names must be distinct in a shared agent namespace"
+   },
+   "evidence": {
+    "stance": "measured",
+    "note": "IV: description quality of one of 5 functionally equivalent competing servers (10 domains, 1,000 queries, gpt-4o-mini). Compliant server chosen 72% vs 20% chance. Per-dimension gain: Functionality +11.6%, Accuracy +8.8%, Completeness +5.9%, Conciseness +1.5%. Naming prevalence is an audit count, not an accuracy experiment."
+   },
+   "client_limits": [],
+   "contrarian_or_nuance": "Measures competitive selection among equivalent servers (i.e. descriptions as 'SEO' for agents), not task accuracy.",
+   "verified": "fetched",
+   "final": {
+    "count_stance": "NONE",
+    "recommended_number": "",
+    "hard_limit_reported": "",
+    "grouping": "not-addressed",
+    "naming_themes": [
+     "avoid near-duplicate / generic names"
+    ],
+    "evidence": "measured",
+    "measurement_kind": "descriptions or names"
+   }
+  },
+  {
+   "id": "D8",
+   "title": "Don't Adapt Small Language Models for Tools; Adapt Tool Schemas to the Models (PA-Tool)",
+   "url": "https://arxiv.org/abs/2510.07248",
+   "author_org": "Jonggeun Lee, Woojung Song, Jongwook Han, Haesung Pyun, Yohan Jo (Seoul National University)",
+   "date": "2025-10 (v3 2026-04-19)",
+   "type": "paper",
+   "quote": "Even when appropriate tools are provided in context, models fail to invoke them and instead hallucinate plausible-looking components that are not in the provided schema.",
+   "count": {
+    "stance": "not-addressed",
+    "numbers": "",
+    "note": ""
+   },
+   "grouping": {
+    "stance": "not-addressed",
+    "note": ""
+   },
+   "naming": {
+    "stance": "advice",
+    "note": "Rename tools/params to names the model finds familiar from pretraining (peakedness signal); cuts schema-misalignment errors"
+   },
+   "evidence": {
+    "stance": "measured",
+    "note": "IV: tool and parameter NAMES (original vs model-familiar renaming). Models: Qwen2.5-3B/7B, Llama3.1-8B, Llama3.2-3B (+GPT-4.1-mini, Gemini-2.5-Flash, Claude-Sonnet-4.5 comparisons). MetaTool (199 tools) up to +17%, multi-tool +9.6%; RoTBench up to +10.5%; schema-misalignment errors -80%."
+   },
+   "client_limits": [],
+   "contrarian_or_nuance": "The cleanest controlled evidence that tool NAMES alone move accuracy - mainly for small models.",
+   "verified": "fetched",
+   "final": {
+    "count_stance": "NONE",
+    "recommended_number": "",
+    "hard_limit_reported": "",
+    "grouping": "not-addressed",
+    "naming_themes": [
+     "names the model already knows"
+    ],
+    "evidence": "measured",
+    "measurement_kind": "descriptions or names"
+   }
+  },
+  {
+   "id": "D9",
+   "title": "ToolScope: Enhancing LLM Agent Tool Use through Tool Merging and Context-Aware Filtering",
+   "url": "https://arxiv.org/abs/2510.20036",
+   "author_org": "Marianne Menglin Liu, Daniel Garcia, ..., Dan Roth (Oracle / UPenn)",
+   "date": "2025-10-22",
+   "type": "paper",
+   "quote": "Overlapping tool descriptions, which introduce ambiguity that reduces both retrieval and selection accuracy.",
+   "count": {
+    "stance": "few",
+    "numbers": "top-k retrieval; BFCL 400, Seal-Tools 4,076, UltraTool 1,885 tools",
+    "note": "Merging redundant tools (-14% BFCL, -25.3% UltraTool) plus retrieval"
+   },
+   "grouping": {
+    "stance": "grouped",
+    "note": "Automatically merges semantically redundant/overlapping tools into one"
+   },
+   "naming": {
+    "stance": "not-addressed",
+    "note": ""
+   },
+   "evidence": {
+    "stance": "measured",
+    "note": "IV: tool merging (dedupe) and retrieval vs full toolset. GPT-4o, LLaMA-3.3-70B, Command-R. Correct selection rate +8.8% (BFCL), +34.6% (Seal-Tools), +38.6% (UltraTool); description tokens e.g. BFCL 32,563 -> 469."
+   },
+   "client_limits": [],
+   "contrarian_or_nuance": "Gains bundle merging and retrieval together; overlap, not raw count, is named as the cause.",
+   "verified": "fetched",
+   "final": {
+    "count_stance": "FEW",
+    "recommended_number": "",
+    "hard_limit_reported": "",
+    "grouping": "grouped",
+    "naming_themes": [],
+    "evidence": "measured",
+    "measurement_kind": "search/retrieval/deferral vs all tools loaded"
+   }
+  },
+  {
+   "id": "D10",
+   "title": "MCP-Universe: Benchmarking Large Language Models with Real-World Model Context Protocol Servers",
+   "url": "https://arxiv.org/abs/2508.14704",
+   "author_org": "Salesforce AI Research",
+   "date": "2025-08-20",
+   "type": "paper",
+   "quote": "For all tasks, we connect a total of 7 MCP servers, comprising 94 tools. This configuration introduces additional noise and results in a noticeable decline in performance.",
+   "count": {
+    "stance": "nuanced",
+    "numbers": "task-specific servers vs 7 servers / 94 tools",
+    "note": "One ablation adds unrelated servers as noise"
+   },
+   "grouping": {
+    "stance": "not-addressed",
+    "note": ""
+   },
+   "naming": {
+    "stance": "not-addressed",
+    "note": ""
+   },
+   "evidence": {
+    "stance": "measured",
+    "note": "Main benchmark (11 servers, 231 tasks; GPT-5 best at 43.72%) does NOT vary tool count. Section 4.5 ablation: IV = extra unrelated servers connected. Claude-4.0-Sonnet Location Navigation 22.22% -> 11.11%; GPT-4.1 Browser Automation 23.08% -> 15.38%; GPT-4.1 Financial Analysis 40.00% -> 35.00%. Small per-domain task counts."
+   },
+   "client_limits": [],
+   "contrarian_or_nuance": "Also finds long context and unfamiliar tools are major failure sources independent of count.",
+   "verified": "fetched",
+   "final": {
+    "count_stance": "NONE",
+    "recommended_number": "",
+    "hard_limit_reported": "",
+    "grouping": "not-addressed",
+    "naming_themes": [],
+    "evidence": "measured",
+    "measurement_kind": "tool count vs accuracy"
+   }
+  },
+  {
+   "id": "D11",
+   "title": "MCP-Bench: Benchmarking Tool-Using LLM Agents with Complex Real-World Tasks via MCP Servers",
+   "url": "https://arxiv.org/abs/2508.20453",
+   "author_org": "Accenture Center for Advanced AI, UC Berkeley",
+   "date": "2025-08",
+   "type": "paper",
+   "quote": "MCP-Bench stress-tests retrieval precision by attaching 10 distractor servers to every task, introducing 100+ additional tools per instance.",
+   "count": {
+    "stance": "nuanced",
+    "numbers": "28 servers / 250 tools; +10 distractor servers (100+ tools) per task",
+    "note": "Single- vs multi-server tasks compared, but that varies task complexity too"
+   },
+   "grouping": {
+    "stance": "not-addressed",
+    "note": ""
+   },
+   "naming": {
+    "stance": "not-addressed",
+    "note": "Tasks deliberately avoid naming tools (fuzzy instructions)"
+   },
+   "evidence": {
+    "stance": "measured",
+    "note": "Not a clean tool-count measurement: distractors are constant across runs; the only comparison is single-server vs multi-server tasks (confounded with task difficulty). Weak models drop (llama-3.1-8b 0.438 -> 0.415; nova-micro 0.520 -> 0.471); gpt-5, o3, qwen3-235b roughly stable."
+   },
+   "client_limits": [],
+   "contrarian_or_nuance": "Frontier models stayed stable with more servers; weaker models degraded.",
+   "verified": "fetched",
+   "final": {
+    "count_stance": "NONE",
+    "recommended_number": "",
+    "hard_limit_reported": "",
+    "grouping": "not-addressed",
+    "naming_themes": [],
+    "evidence": "measured",
+    "measurement_kind": "benchmark, tool count not varied"
+   }
+  },
+  {
+   "id": "D12",
+   "title": "LiveMCPBench: Can Agents Navigate an Ocean of MCP Tools?",
+   "url": "https://arxiv.org/abs/2508.01780",
+   "author_org": "Chinese Academy of Sciences (Mo et al.)",
+   "date": "2025-08",
+   "type": "paper",
+   "quote": "Retrieve errors, on the other hand, largely reflect the limitations of the tool retrieval system, testing its effectiveness in identifying relevant tools based on the server-tool description.",
+   "count": {
+    "stance": "not-addressed",
+    "numbers": "fixed 70 servers / 527 tools",
+    "note": "Uses a retrieval-routing 'MCP Copilot' agent over the whole pool"
+   },
+   "grouping": {
+    "stance": "not-addressed",
+    "note": ""
+   },
+   "naming": {
+    "stance": "not-addressed",
+    "note": ""
+   },
+   "evidence": {
+    "stance": "measured",
+    "note": "NOT a tool-count measurement: tool pool fixed, no all-in-context vs retrieval ablation. Measures model task success over 95 tasks: Claude-Sonnet-4 78.95%, Claude-Opus-4 70.53%, most models 30-50%. Retrieval errors the largest failure category (~half)."
+   },
+   "client_limits": [],
+   "contrarian_or_nuance": "Points to retrieval over server/tool descriptions as the bottleneck when tools are many.",
+   "verified": "fetched",
+   "final": {
+    "count_stance": "NONE",
+    "recommended_number": "",
+    "hard_limit_reported": "",
+    "grouping": "not-addressed",
+    "naming_themes": [],
+    "evidence": "measured",
+    "measurement_kind": "benchmark, tool count not varied"
+   }
+  },
+  {
+   "id": "D13",
+   "title": "MCP-Atlas: A Large-Scale Benchmark for Tool-Use Competency with Real MCP Servers",
+   "url": "https://arxiv.org/abs/2602.00933",
+   "author_org": "Scale AI",
+   "date": "2026-02",
+   "type": "paper",
+   "quote": "Distractors are typically sampled from the same servers (e.g., google-maps_maps_distance_matrix vs. google-maps_maps_geocode; desktop-commander_get_config vs. desktop-commander_read_file)",
+   "count": {
+    "stance": "not-addressed",
+    "numbers": "10-25 tools exposed per task, 3-7 needed, 5-10 distractors",
+    "note": "Fixed exposure policy"
+   },
+   "grouping": {
+    "stance": "not-addressed",
+    "note": ""
+   },
+   "naming": {
+    "stance": "not-addressed",
+    "note": "Uses server-prefixed names (server_tool) in its harness, not studied"
+   },
+   "evidence": {
+    "stance": "measured",
+    "note": "NOT a tool-count measurement: distractor count not varied. 36 servers, 220 tools, 1,000 tasks. Pass rates: Claude Opus 4.5 62.3%, Gemini 3 Pro 54.1%, GPT-5 44.5%. Tool-usage failures 56.7% of failures; 'no tools called' 36.0% of those."
+   },
+   "client_limits": [],
+   "contrarian_or_nuance": "",
+   "verified": "fetched",
+   "final": {
+    "count_stance": "NONE",
+    "recommended_number": "",
+    "hard_limit_reported": "",
+    "grouping": "not-addressed",
+    "naming_themes": [],
+    "evidence": "measured",
+    "measurement_kind": "benchmark, tool count not varied"
+   }
+  },
+  {
+   "id": "D14",
+   "title": "MCPToolBench++: A Large Scale AI Agent Model Context Protocol MCP Tool Use Benchmark",
+   "url": "https://arxiv.org/abs/2508.07575",
+   "author_org": "Ant Group (Fan, Ding, Zhang, Mo)",
+   "date": "2025-08-11",
+   "type": "paper",
+   "quote": "Tool Dispatcher aims to select relevant tools given users' original query, which can help reduce the average number of tools consumed by LLM from Nt(~100) to Nk(~10).",
+   "count": {
+    "stance": "few",
+    "numbers": "~100 -> ~10 tools via dispatcher",
+    "note": "Design choice, not an ablation"
+   },
+   "grouping": {
+    "stance": "not-addressed",
+    "note": ""
+   },
+   "naming": {
+    "stance": "not-addressed",
+    "note": ""
+   },
+   "evidence": {
+    "stance": "opinion",
+    "note": "Benchmark of GPT-4o, Qwen2.5-max, Claude-3.7-Sonnet, Kimi-K2, Qwen3-coder across 4,000+ marketplace servers; does NOT report accuracy vs tool count - the dispatcher reduction is motivated by context length, not measured."
+   },
+   "client_limits": [],
+   "contrarian_or_nuance": "",
+   "verified": "fetched",
+   "final": {
+    "count_stance": "DEFER",
+    "recommended_number": "",
+    "hard_limit_reported": "",
+    "grouping": "not-addressed",
+    "naming_themes": [],
+    "evidence": "opinion",
+    "measurement_kind": ""
+   }
+  },
+  {
+   "id": "D15",
+   "title": "ScaleMCP: Dynamic and Auto-Synchronizing Model Context Protocol Tools for LLM Agents",
+   "url": "https://arxiv.org/abs/2505.06416",
+   "author_org": "PwC (Lumer et al.)",
+   "date": "2025-05-09",
+   "type": "paper",
+   "quote": "synthetic queries drive accuracy more than other tool document components",
+   "count": {
+    "stance": "few",
+    "numbers": "top-k 1/5/10 retrieved from 5,000 servers",
+    "note": "Agent retrieves tools into memory on demand"
+   },
+   "grouping": {
+    "stance": "not-addressed",
+    "note": ""
+   },
+   "naming": {
+    "stance": "advice",
+    "note": "Tool name gets explicit weight (e.g. 20%) in TDWA embedding, but synthetic example questions matter more than name"
+   },
+   "evidence": {
+    "stance": "measured",
+    "note": "IV: retriever type, embedding model, tool-document component weighting (name/description/params/synthetic questions), top-k. 5,000 financial MCP servers, 140k queries, 10 LLMs. Best Recall@10 0.94; tool correctness 23-54%; task completion up to 94.4% (o3 + reranking). No all-tools-in-context baseline."
+   },
+   "client_limits": [],
+   "contrarian_or_nuance": "Measures retrievability of tool docs, not how many tools an LLM can handle.",
+   "verified": "fetched",
+   "final": {
+    "count_stance": "DEFER",
+    "recommended_number": "",
+    "hard_limit_reported": "",
+    "grouping": "not-addressed",
+    "naming_themes": [],
+    "evidence": "measured",
+    "measurement_kind": "retrieval quality only"
+   }
+  },
+  {
+   "id": "D16",
+   "title": "Retrieval Models Aren't Tool-Savvy: Benchmarking Tool Retrieval for Large Language Models (ToolRet)",
+   "url": "https://arxiv.org/abs/2503.01763",
+   "author_org": "Shi et al.; ACL 2025 Findings",
+   "date": "2025-03 (v2 2025-05-26)",
+   "type": "paper",
+   "quote": "[paraphrase] All retrievers score under 35% Completeness@10 and under 52% recall@10; ColBERT can underperform plain BM25 on tool retrieval.",
+   "count": {
+    "stance": "not-addressed",
+    "numbers": "",
+    "note": "Corpus of 43k tools, 7.6k tasks"
+   },
+   "grouping": {
+    "stance": "not-addressed",
+    "note": ""
+   },
+   "naming": {
+    "stance": "not-addressed",
+    "note": ""
+   },
+   "evidence": {
+    "stance": "measured",
+    "note": "IV: retriever model and retrieved vs gold tool set. Downstream: GPT-3.5 on ToolBench-G1 loses 11.40pp pass rate with bge-large-retrieved tools vs annotated tools (50.60 with retrieval). ToolRet-trained retrievers add 10-20% to downstream pass rates."
+   },
+   "client_limits": [],
+   "contrarian_or_nuance": "Retrieval/tool-search is itself a lossy step - shrinking the toolset by retrieval can cost accuracy when the right tool is not retrieved.",
+   "verified": "fetched",
+   "final": {
+    "count_stance": "NONE",
+    "recommended_number": "",
+    "hard_limit_reported": "",
+    "grouping": "not-addressed",
+    "naming_themes": [],
+    "evidence": "measured",
+    "measurement_kind": "retrieval quality only"
+   }
+  },
+  {
+   "id": "D17",
+   "title": "Tool-to-Agent Retrieval: Bridging Tools and Agents for Scalable LLM Multi-Agent Systems",
+   "url": "https://arxiv.org/abs/2511.01854",
+   "author_org": "PwC (Lumer, Nizar, Gulati, Basavaraju, Subbiah)",
+   "date": "2025-11-03",
+   "type": "paper",
+   "quote": "ensuring that agents and their underlying tools or MCP servers are equally represented without the context dilution that arises from chunking many tools together.",
+   "count": {
+    "stance": "not-addressed",
+    "numbers": "",
+    "note": ""
+   },
+   "grouping": {
+    "stance": "mixed",
+    "note": "Indexes both individual tools and parent agent/server; coarse server-level descriptions hide tool functionality"
+   },
+   "naming": {
+    "stance": "not-addressed",
+    "note": ""
+   },
+   "evidence": {
+    "stance": "measured",
+    "note": "Retrieval metrics only (no LLM accuracy). LiveMCPBench (70 servers, 527 tools), 8 embedding models: +19.4% Recall@5, +17.7% nDCG@5 vs prior agent retrievers."
+   },
+   "client_limits": [],
+   "contrarian_or_nuance": "",
+   "verified": "fetched",
+   "final": {
+    "count_stance": "DEFER",
+    "recommended_number": "",
+    "hard_limit_reported": "",
+    "grouping": "mixed",
+    "naming_themes": [],
+    "evidence": "measured",
+    "measurement_kind": "retrieval quality only"
+   }
+  },
+  {
+   "id": "D18",
+   "title": "Dynamic ReAct: Scalable Tool Selection for Large-Scale MCP Environments",
+   "url": "https://arxiv.org/abs/2509.20386",
+   "author_org": "Nishant Gaurav, Adit Akarsh, Ankit Ranjan, Manoj Bajaj",
+   "date": "2025-09-22",
+   "type": "paper",
+   "quote": "Our Search and Load architecture with voyage-context-3 embeddings and Sonnet-generated context enrichment provides a production-ready solution that scales.",
+   "count": {
+    "stance": "few",
+    "numbers": "",
+    "note": "Search-and-load meta-tool instead of loading all tools; up to 50% less tool loading"
+   },
+   "grouping": {
+    "stance": "not-addressed",
+    "note": "Application-aware hierarchical search tested as one variant"
+   },
+   "naming": {
+    "stance": "not-addressed",
+    "note": ""
+   },
+   "evidence": {
+    "stance": "measured",
+    "note": "IV: five tool-selection architectures and embedding models. Top-5 retrieval accuracy 40% (text-embedding-3-large) -> 60% (voyage-context-3 + Sonnet 4 enrichment), Top-10 68%. Mostly retrieval metrics; tool count not varied."
+   },
+   "client_limits": [],
+   "contrarian_or_nuance": "",
+   "verified": "fetched",
+   "final": {
+    "count_stance": "DEFER",
+    "recommended_number": "",
+    "hard_limit_reported": "",
+    "grouping": "not-addressed",
+    "naming_themes": [],
+    "evidence": "measured",
+    "measurement_kind": "retrieval quality only"
+   }
+  },
+  {
+   "id": "D19",
+   "title": "Hammer: Robust Function-Calling for On-Device Language Models via Function Masking",
+   "url": "https://arxiv.org/abs/2410.04587",
+   "author_org": "Lin et al. (Huawei Noah's Ark / SJTU)",
+   "date": "2024-10-10",
+   "type": "paper",
+   "quote": "This result confirms the model's overreliance on function and parameter names, highlighting the potential risks this behavior may pose in real-world applications.",
+   "count": {
+    "stance": "not-addressed",
+    "numbers": "",
+    "note": "2024 - included only as naming evidence"
+   },
+   "grouping": {
+    "stance": "not-addressed",
+    "note": ""
+   },
+   "naming": {
+    "stance": "advice",
+    "note": "Models lean on names over descriptions; misleading/unfamiliar names hurt"
+   },
+   "evidence": {
+    "stance": "measured",
+    "note": "IV: function/parameter names masked with random strings. xLAM-1B-fc on Seal-Tools drops substantially; Hammer (trained with masking) barely changes. Small models only."
+   },
+   "client_limits": [],
+   "contrarian_or_nuance": "",
+   "verified": "fetched",
+   "final": {
+    "count_stance": "NONE",
+    "recommended_number": "",
+    "hard_limit_reported": "",
+    "grouping": "not-addressed",
+    "naming_themes": [
+     "names the model already knows"
+    ],
+    "evidence": "measured",
+    "measurement_kind": "descriptions or names"
+   }
+  },
+  {
+   "id": "E1",
+   "title": "Benchmarking Single Agent Performance",
+   "url": "https://www.langchain.com/blog/react-agent-benchmarking",
+   "author_org": "LangChain team",
+   "date": "2025-02-10",
+   "type": "vendor",
+   "quote": "Both more context and more tools degrade agent performance",
+   "count": {
+    "stance": "few",
+    "numbers": "",
+    "note": "No number; motivates splitting work across agents (multi-agent) rather than one agent with all domains."
+   },
+   "grouping": {
+    "stance": "not-addressed",
+    "note": "Groups tools by domain only as an experimental unit."
+   },
+   "naming": {
+    "stance": "not-addressed",
+    "note": ""
+   },
+   "evidence": {
+    "stance": "measured",
+    "note": "IV: number of domains (each adds instructions + tools) given to one ReAct agent, 1 to 14+ domains. Models: Claude 3.5 Sonnet, GPT-4o, o1, o3-mini, Llama-3.3-70B. Calendar task: o1 71% -> ~40% at 7 domains, o3-mini 68% -> ~15%, GPT-4o -> 2% at 7 domains, Claude 3.5 Sonnet ~50% -> ~40% at 14. Confounds tool count with added instructions/context."
+   },
+   "client_limits": [],
+   "contrarian_or_nuance": "Degradation strongly model-dependent: Claude 3.5 Sonnet / o1 held up far better than GPT-4o / Llama. Tool count is confounded with instruction length.",
+   "verified": "fetched",
+   "final": {
+    "count_stance": "FEW",
+    "recommended_number": "",
+    "hard_limit_reported": "",
+    "grouping": "not-addressed",
+    "naming_themes": [],
+    "evidence": "measured",
+    "measurement_kind": "tool count vs accuracy"
+   }
+  },
+  {
+   "id": "E2",
+   "title": "MCP Server Architecture Patterns for LLM-Integrated Applications",
+   "url": "https://arxiv.org/abs/2606.30317",
+   "author_org": "Carson Rodrigues (Celabe/ANSYR), Oysturn Vas (U Waterloo)",
+   "date": "2026-06-29",
+   "type": "paper",
+   "quote": "[paraphrase of section VI-C] when a single MCP server exposes more than about 10-15 tools, use the scoped Proxy Aggregator so only relevant subsets appear per context",
+   "count": {
+    "stance": "specific-number",
+    "numbers": "~10-15 (Haiku 4.5); 20-30 (Sonnet 4)",
+    "note": "Accuracy drops below 90% between 10 and 15 tools (Haiku 4.5) and between 20 and 30 (Sonnet 4)."
+   },
+   "grouping": {
+    "stance": "mixed",
+    "note": "Five patterns; 'God Tool' anti-pattern: do not hide many actions behind one undifferentiated schema - decompose into distinct named tools; scope subsets per context."
+   },
+   "naming": {
+    "stance": "not-addressed",
+    "note": ""
+   },
+   "evidence": {
+    "stance": "measured",
+    "note": "IV: tools visible per context, buckets {1,3,5,10,15,20,30,50}; 200 production turns per bucket from one company's voice-AI platform (ANSYR, Q1 2025); Claude Haiku 4.5 and Sonnet 4; human-confirmed ground truth; Wilson CI +/-4pp. Haiku 91% @10 -> 87% @15. Author works for the platform operator."
+   },
+   "client_limits": [],
+   "contrarian_or_nuance": "Warns against over-consolidation (God Tool) as much as against too many tools.",
+   "verified": "fetched",
+   "final": {
+    "count_stance": "FEW",
+    "recommended_number": "accuracy <90% between 10-15 tools (Haiku 4.5) / 20-30 (Sonnet 4)",
+    "hard_limit_reported": "",
+    "grouping": "mixed",
+    "naming_themes": [],
+    "evidence": "measured",
+    "measurement_kind": "tool count vs accuracy"
+   }
+  },
+  {
+   "id": "E3",
+   "title": "How to Fix Your Context (companion to 'How Long Contexts Fail')",
+   "url": "https://www.dbreunig.com/2025/06/26/how-to-fix-your-context.html",
+   "author_org": "Drew Breunig (personal blog)",
+   "date": "2025-06-26",
+   "type": "blog",
+   "quote": "selecting the right tools becomes critical when you have more than 30 tools ... Beyond 100 tools, the model was virtually guaranteed to fail.",
+   "count": {
+    "stance": "few",
+    "numbers": "30 / 100 (DeepSeek-v3, from RAG-MCP); 19 vs 46 (Llama 3.1 8B, from Less is More)",
+    "note": "'Tool loadout': pick a few hand-curated tools, or retrieve tools per task (RAG over tool descriptions)."
+   },
+   "grouping": {
+    "stance": "not-addressed",
+    "note": ""
+   },
+   "naming": {
+    "stance": "not-addressed",
+    "note": ""
+   },
+   "evidence": {
+    "stance": "cites-measurement",
+    "note": "Cites RAG-MCP (D1) and Less is More (D3). Note: RAG-MCP's stress test counts MCP server descriptions, which this post restates as 'tools'."
+   },
+   "client_limits": [],
+   "contrarian_or_nuance": "Likely origin of the widely repeated '30 tools' threshold; the underlying unit in RAG-MCP is servers, single model (DeepSeek-v3 as judge / Qwen-max as agent) - see D1.",
+   "verified": "fetched",
+   "final": {
+    "count_stance": "FEW",
+    "recommended_number": ">30 tools critical, >100 fails (restating D1 as tools); 19 vs 46 for Llama 3.1 8B",
+    "hard_limit_reported": "",
+    "grouping": "not-addressed",
+    "naming_themes": [],
+    "evidence": "cites-measurement",
+    "measurement_kind": ""
+   }
+  }
+ ],
+ "skipped": [
+  {
+   "url": "https://community.openai.com/t/limit-on-the-number-of-functions-definitions-for-assistant/537992",
+   "reason": "2023 forum thread mentioning OpenAI 128-function limit; not 2025-26 and no staff; recorded only in client_limits_found as unverified-current."
+  },
+  {
+   "url": "https://community.openai.com/t/limit-of-functions-that-can-be-passed/276287",
+   "reason": "2023, no 128 statement on page."
+  },
+  {
+   "url": "https://forum.cursor.com/t/regarding-the-quantity-limit-of-mcp-tools/153432",
+   "reason": "No staff statements; user says <2.3 versions warned at ~50 tools."
+  },
+  {
+   "url": "https://cursor.com/docs/mcp",
+   "reason": "Fetched: current Cursor MCP docs contain no tool count limit (used as evidence that 40 cap is gone, not a separate source)."
+  },
+  {
+   "url": "https://adk.dev/tools/limitations",
+   "reason": "Google ADK limitation is about built-in tools that cannot coexist, not tool count; no design advice."
+  },
+  {
+   "url": "https://fast.io/resources/mcp-tool-limit/",
+   "reason": "Third-party SEO aggregation of client limits (segment B/C territory); not official."
+  },
+  {
+   "url": "https://www.mindstudio.ai/blog/subtraction-principle-ai-agents-fewer-tools",
+   "reason": "Rehash of Vercel post."
+  },
+  {
+   "url": "https://code.visualstudio.com/docs/copilot/customization/mcp-servers",
+   "reason": "Fetched; no tool-count or design guidance."
+  },
+  {
+   "url": "https://aws.amazon.com/about-aws/whats-new/2025/11/aws-mcp-server/",
+   "reason": "Announcement only (snippet: two tools call_aws/suggest_aws_commands at preview); superseded by A26 docs."
+  },
+  {
+   "url": "https://blog.sentry.io/yes-sentry-has-an-mcp-server-and-its-pretty-good",
+   "reason": "Product/architecture post (16 tools, OAuth, Cloudflare); no tool-design advice."
+  },
+  {
+   "url": "https://www.atlassian.com/blog/announcements/atlassian-rovo-mcp-ga",
+   "reason": "GA announcement; no design reasoning."
+  },
+  {
+   "url": "https://github.com/supabase/mcp",
+   "reason": "README documents features= tool groups but gives no design rationale."
+  },
+  {
+   "url": "https://docs.datadoghq.com/mcp_server/",
+   "reason": "Only mentions toolsets/omit_tools parameters; rationale covered via Speakeasy B9."
+  },
+  {
+   "url": "https://jentic.com/blog/just-in-time-tooling",
+   "reason": "Same-day companion to B21, overlapping argument."
+  },
+  {
+   "url": "https://newsletter.posthog.com/p/what-we-wish-we-knew-before-building",
+   "reason": "About agent harness; tool-design content duplicated by handbook B16."
+  },
+  {
+   "url": "https://www.stainless.com/changelog/mcp-servers-now-support-code-mode-only",
+   "reason": "Merged into B24."
+  },
+  {
+   "url": "https://docs.workato.com/mcp/mcp-server-tool-design",
+   "reason": "Merged into B10 (naming note)."
+  },
+  {
+   "url": "https://www.speakeasy.com/blog/how-we-reduced-token-usage-by-100x-dynamic-toolsets-v2",
+   "reason": "Follow-up/duplicate of B7 (not opened in detail)."
+  },
+  {
+   "url": "https://hn.nuxt.dev/item/45347914",
+   "reason": "HN launch thread (forum, mirror) for Strata; vendor docs used instead (B20)."
+  },
+  {
+   "url": "https://nerdleveltech.com/how-many-tools-can-an-ai-agent-handle",
+   "reason": "SEO rehash, not vendor."
+  },
+  {
+   "url": "https://www.stackone.com/events/wearedevelopers-world-congress-2026/",
+   "reason": "Talk listing only ('tool count ceiling'), no content."
+  },
+  {
+   "url": "https://www.mintlify.com/vudovn/antigravity-kit/skills/mcp-builder",
+   "reason": "Third-party skill copy, not a vendor post."
+  },
+  {
+   "note": "Not found / not covered within budget: Stripe, Linear, Notion own engineering posts on tool design; Merge, Zapier, Postman, Composio, Writer, Port, Honeycomb - searches returned no relevant first-party design article.",
+   "url": "",
+   "reason": "not found"
+  },
+  {
+   "url": "https://lucumr.pocoo.org/2025/7/3/tools/",
+   "reason": "Armin Ronacher 'Tools: Code Is All You Need' (2025-07-03). Opened; general code-over-MCP argument with no tool-design specifics. Covered by his follow-up C5."
+  },
+  {
+   "url": "https://dev.to/piotr_hajdas/mcp-token-limits-the-hidden-cost-of-tool-overload-2d5",
+   "reason": "Cross-post of a DeployStack vendor blog (deploystack.io), so it belongs to the vendor segment. Notable content: Cursor 40-tool limit, GitHub MCP 55K tokens/93 tools, cites Scott Spence's 66K-token measurement."
+  },
+  {
+   "url": "https://earendil.com/posts/you-said-no-mcp/",
+   "reason": "Company (Earendil/Pi) engineering blog, so vendor segment. Notable: tools 'can be configured to just be deferred or be a Codemode specific thing'. HN 686 points."
+  },
+  {
+   "url": "https://david.coffee/i-still-prefer-mcp-over-skills/",
+   "reason": "Opened; argues MCP vs Skills with no tool-count, grouping or naming advice."
+  },
+  {
+   "url": "https://maharship.com/blog/why-mcp-was-always-a-bad-idea/",
+   "reason": "Opened; opinion on context bloat with no design advice or numbers."
+  },
+  {
+   "url": "https://tianpan.co/blog/2025-10-01-over-tooled-agent",
+   "reason": "Guessed URL returned 404 and searches did not find the post."
+  },
+  {
+   "url": "machinelearningmastery.com (tool selection guide)",
+   "reason": "Searches did not find the article."
+  },
+  {
+   "url": "https://aischool.lillytechsystems.com/mcp-server/best-practices.html",
+   "reason": "Expired TLS certificate, then a 301 redirect; could not open."
+  },
+  {
+   "url": "https://www.reddit.com/r/mcp/",
+   "reason": "Reddit blocks fetches from this environment (WebFetch refused, JSON API 403, pullpush rate-limited), so no r/mcp or r/ClaudeAI self-posts could be verified."
+  },
+  {
+   "url": "https://glassbead-tc.medium.com/design-patterns-in-mcp-toolhost-pattern-59e887885df3",
+   "reason": "Medium returned 403; not verified (Toolhost/dispatcher pattern)."
+  },
+  {
+   "url": "https://www.quandri.io/engineering-blog/mcp-is-dead",
+   "reason": "Company engineering blog (HN 400 points); not opened. Left for the vendor segment."
+  },
+  {
+   "url": "https://archestra.ai/blog/how-many-mcp-tools-too-many",
+   "reason": "Vendor blog, so vendor segment."
+  },
+  {
+   "url": "https://presenc.ai/research/ai-agent-tool-calling-accuracy-benchmarks-2026",
+   "reason": "SEO-style aggregate with unsourced numbers ('95-96% single tool, 65-78% at 20+ tools'); also misattributes RAG-MCP to Anthropic"
+  },
+  {
+   "url": "https://arxiv.org/abs/2605.18857",
+   "reason": "The 99% Success Paradox - same authors as D2; retrieval-metric paper, tool selection is peripheral"
+  },
+  {
+   "url": "https://arxiv.org/abs/2605.29561",
+   "reason": "ParaTool - moves tools into parameters (training); no tool-count-in-context numbers found in abstract"
+  },
+  {
+   "url": "https://gorilla.cs.berkeley.edu/leaderboard.html",
+   "reason": "BFCL does not report accuracy as a function of number of tools; only used as a dataset by D2/D3/D4/D9"
+  },
+  {
+   "url": "https://arxiv.org/abs/2602.23367",
+   "reason": "HumanMCP query dataset for retrieval - not opened in time; retrieval-only"
+  },
+  {
+   "url": "https://www.dbreunig.com/2025/06/22/how-contexts-fail-and-how-to-fix-them.html",
+   "reason": "Companion post with the same tool-count citations as E3; counted once."
+  }
+ ],
+ "client_limits_raw": [
+  {
+   "client": "VS Code / GitHub Copilot Chat",
+   "limit": "128 tools per request (virtual tools setting can exceed)",
+   "source": "https://code.visualstudio.com/docs/agents/run/tools",
+   "date": "fetched 2026-10-07",
+   "current": "yes"
+  },
+  {
+   "client": "Windsurf Cascade",
+   "limit": "100 total tools",
+   "source": "https://docs.devin.ai/desktop/cascade/mcp",
+   "date": "fetched 2026-10-07",
+   "current": "yes (page labelled legacy Cascade)"
+  },
+  {
+   "client": "Cursor (IDE)",
+   "limit": "40 (2025) -> no fixed cap since dynamic context discovery",
+   "source": "https://forum.cursor.com/t/tools-limited-to-40-total/67976 ; https://cursor.com/blog/dynamic-context-discovery",
+   "date": "2025-04 / 2026-01-06",
+   "current": "40 is NOT current; current docs mention no limit"
+  },
+  {
+   "client": "Cursor CLI",
+   "limit": "sent all tools up front (provider cap errors) until lazy loading shipped",
+   "source": "https://forum.cursor.com/t/cli-mcp-tool-limits/165642",
+   "date": "2026-09-09",
+   "current": "lazy loading now"
+  },
+  {
+   "client": "Claude Code",
+   "limit": "no fixed cap; tool search default; auto mode defers at 10% of context; 2,048-char description truncation",
+   "source": "https://code.claude.com/docs/en/mcp",
+   "date": "fetched 2026-10-07",
+   "current": "yes"
+  },
+  {
+   "client": "Claude API (tool search)",
+   "limit": "10,000 deferred tools/request; accuracy degrades past 30-50 loaded tools; name regex ^[a-zA-Z0-9_-]{1,128}$",
+   "source": "https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-search-tool",
+   "date": "fetched 2026-10-07",
+   "current": "yes"
+  },
+  {
+   "client": "Gemini (Vertex AI)",
+   "limit": "128 function declarations; names <=64 chars",
+   "source": "https://docs.cloud.google.com/vertex-ai/generative-ai/docs/model-reference/function-calling",
+   "date": "2026-10-07",
+   "current": "yes"
+  },
+  {
+   "client": "Gemini API (recommendation)",
+   "limit": "10-20 active tools",
+   "source": "https://ai.google.dev/gemini-api/docs/function-calling",
+   "date": "fetched 2026-10-07",
+   "current": "yes"
+  },
+  {
+   "client": "OpenAI API (recommendation)",
+   "limit": "under 20 functions up front (soft); under 10 per namespace with tool search",
+   "source": "https://developers.openai.com/api/docs/guides/function-calling",
+   "date": "fetched 2026-10-07",
+   "current": "yes"
+  },
+  {
+   "client": "OpenAI API (hard)",
+   "limit": "128 tools/functions per request",
+   "source": "https://community.openai.com/t/limit-on-the-number-of-functions-definitions-for-assistant/537992",
+   "date": "2023-12",
+   "current": "unverified: not stated in current official docs found; widely repeated by third parties"
+  },
+  {
+   "client": "Claude Code",
+   "limit": "64 chars tool name (incl. mcp__server__ prefix)",
+   "source": "B16 PostHog handbook"
+  },
+  {
+   "client": "Cursor",
+   "limit": "60 chars combined server_name + tool_name; longer tools silently filtered",
+   "source": "B16 PostHog handbook"
+  },
+  {
+   "client": "OpenAI API",
+   "limit": "64 chars, ^[a-zA-Z0-9_-]+$, no dots",
+   "source": "B16 PostHog handbook"
+  },
+  {
+   "client": "MCP spec (draft)",
+   "limit": "1-128 chars, [A-Za-z0-9_-.], recommendation only",
+   "source": "B16 PostHog handbook"
+  },
+  {
+   "client": "Claude Code",
+   "limit": "200k-token context; static 200- and 400-tool servers could not complete tasks",
+   "source": "B7 Speakeasy"
+  },
+  {
+   "client": "Cursor",
+   "limit": "40",
+   "as_stated": "Cursor caps the number of MCP tools that can be enabled in Cursor to just 40 tools",
+   "date": "2025-08",
+   "source": "C3"
+  },
+  {
+   "client": "VS Code",
+   "limit": "128 (removed mid-2025)",
+   "as_stated": "the removal of the 128 tool limit from Visual Studio Code",
+   "date": "2025-08",
+   "source": "C3"
+  },
+  {
+   "client": "Cursor",
+   "limit": "40",
+   "as_stated": "Cursor will only send the first 40 tools to the agent",
+   "date": "2025-09",
+   "source": "C6"
+  },
+  {
+   "client": "GitHub Copilot",
+   "limit": "128",
+   "as_stated": "a chat request can have a maximum of 128 tools enabled at a time",
+   "date": "2025-09",
+   "source": "C6"
+  },
+  {
+   "client": "Cursor",
+   "limit": "~40",
+   "as_stated": "typically around 40",
+   "date": "2025-07",
+   "source": "C8"
+  },
+  {
+   "client": "Claude Code / Cursor",
+   "limit": "deferred loading",
+   "as_stated": "defer MCP tool schemas by default and load them on demand (Cursor: 46.9% token reduction)",
+   "date": "2026-04",
+   "source": "C14"
+  }
+ ]
+}
