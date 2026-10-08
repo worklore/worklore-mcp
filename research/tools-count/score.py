@@ -112,9 +112,23 @@ err_txt = open(os.path.join(R, "agent.err"), errors="replace").read() if os.path
 u = {"model_id": None, "input_tokens_total": None, "input_uncached": None, "cache_read": None, "cache_write": None,
      "output_tokens": None, "reasoning_tokens": None, "first_call_input": None, "model_calls": None,
      "cost_usd": None, "cli_duration_s": None, "builtin_calls": 0, "builtin_names": [], "harness_error": "", "final_text": ""}
-ALLOWED = set()
-if M == "claude":
+ALLOWED = {"ToolSearch"} if M == "claude-search" else set()   # ToolSearch only finds/loads MCP tools: not a bypass
+
+def grouped_tool(op):
+    """The GROUPED tool that performs a separate-tool op (inverse of server.canonical)."""
+    if op in ("pdf_info", "qr_make"): return op
+    if op.startswith("zip_"): return "archive"
+    if op in ("image_info", "ocr_image", "qr_read", "xlsx_read", "doc_word_count", "docx_read", "pdf_extract_text"): return "doc_read"
+    if op in ("pdf_from_images", "pptx_to_pdf", "epub_to_pdf", "html_to_pdf", "doc_to_pdf", "md_to_docx", "pdf_to_docx",
+              "json_to_csv", "xlsx_to_csv", "csv_to_json", "pdf_to_images"): return "doc_convert"
+    if op.startswith("image_"): return "image_edit"
+    if op.startswith("pdf_"): return "pdf_edit"
+    return op
+
+if M in ("claude", "claude-search"):
     seen = {}
+    ts_ids = {}                      # ToolSearch tool_use id -> query
+    ts_results = []                  # (query, [matched tool names])
     for o in agent:
         if o.get("type") == "system" and o.get("subtype") == "init":
             u["model_id"] = o.get("model")
@@ -126,8 +140,13 @@ if M == "claude":
                 us = m["usage"]
                 seen[m["id"]] = (us.get("input_tokens") or 0) + (us.get("cache_creation_input_tokens") or 0) + (us.get("cache_read_input_tokens") or 0)
             for c in m.get("content", []):
-                if c.get("type") == "tool_use" and not c["name"].startswith("mcp__"):
+                if c.get("type") == "tool_use" and c["name"] in ALLOWED:
+                    ts_ids[c.get("id")] = (c.get("input") or {}).get("query", "")
+                elif c.get("type") == "tool_use" and not c["name"].startswith("mcp__"):
                     u["builtin_calls"] += 1; u["builtin_names"].append(c["name"])
+        elif o.get("type") == "user" and isinstance(o.get("tool_use_result"), dict) and "matches" in o["tool_use_result"]:
+            tr = o["tool_use_result"]
+            ts_results.append((tr.get("query", ""), [x.split("__")[-1] for x in tr.get("matches") or []]))
         elif o.get("type") == "result":
             us = o.get("usage", {})
             u["input_uncached"] = us.get("input_tokens"); u["cache_read"] = us.get("cache_read_input_tokens"); u["cache_write"] = us.get("cache_creation_input_tokens")
@@ -139,6 +158,18 @@ if M == "claude":
                 u["harness_error"] = (o.get("result") or o.get("subtype") or "error")[:300]
     if seen:
         u["first_call_input"] = list(seen.values())[0]; u["model_calls"] = len(seen)
+    if M == "claude-search":
+        need = set(exp_tools) if meta["variant"] != "GROUPED" else {grouped_tool(t) for t in exp_tools}
+        found = set(x for _, ms in ts_results for x in ms)
+        u["toolsearch_calls"] = len(ts_ids)
+        u["toolsearch_select"] = sum(1 for q in ts_ids.values() if str(q).startswith("select:"))
+        u["toolsearch_keyword"] = u["toolsearch_calls"] - u["toolsearch_select"]
+        u["toolsearch_loaded"] = len(found)
+        # a search that returned tools, none of them a needed one
+        u["toolsearch_offtarget"] = sum(1 for _, ms in ts_results if ms and not (set(ms) & need))
+        u["toolsearch_empty"] = sum(1 for _, ms in ts_results if not ms)
+        u["needed_not_found"] = sorted(need - found)
+        u["toolsearch_queries"] = [q for q, _ in ts_results]
 elif M == "codex":
     for o in agent:
         t = o.get("type")
@@ -224,6 +255,10 @@ else:
     status = "ok"
 
 success = bool(tools_ok and args_ok and not wrong)
+if M == "claude-search":
+    # search hid the right tool: a needed tool never came back from ToolSearch, and the run then went wrong
+    # (a wrong tool executed, or the expected calls never happened)
+    u["search_hid_tool"] = bool(u.get("needed_not_found") and (wrong or not tools_ok))
 row = {
     "phase": meta["phase"], "model": M, "variant": meta["variant"], "n_tools": len(start.get("tools") or []) or None,
     "task": meta["task"], "kind": task["kind"], "rep": meta["rep"], "status": status,

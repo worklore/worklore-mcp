@@ -15,6 +15,9 @@ def cell(m, v):
     x = S.get((m, v)); return f"{x['success']:.0%} ({x['n']})" if x else "n/a"
 F = {}
 F["TOTAL_RUNS"] = f"{len(counted):,}"
+search_rows = [r for r in counted if r["model"] == "claude-search"]
+counted = [r for r in counted if r["model"] != "claude-search"]   # the original three lanes; claude-search is reported on its own
+F["ORIG_RUNS"] = f"{len(counted):,}"; F["CS_RUNS"] = str(len(search_rows))
 sep = [r for r in counted if r["variant"] != "GROUPED" and int(r["variant"]) <= 50]
 sep100 = [r for r in counted if r["variant"] in ("75", "100")]
 sep_fail = [r for r in sep if r["success"] != "True"]
@@ -56,24 +59,71 @@ def rows_with_gap(fn, k):
         if v == "75": out.append(GAPROW(k))
         out.append(fn(v))
     return "\n".join(out)
-F["ACC_TABLE"] = rows_with_gap(lambda v: f"| {lab(v)} | {cell('claude', v)} | {cell('codex', v)} | {cell('gemini', v)} |", 3)
-F["TOK_TABLE"] = rows_with_gap(lambda v: f"| {lab(v)} | " + " | ".join(f"{k0(s(m, v, 'first'))} | {k0(s(m, v, 'input'))}" for m in ("claude", "codex", "gemini")) + " |", 6)
+F["ACC_TABLE"] = rows_with_gap(lambda v: f"| {lab(v)} | {cell('claude', v)} | {cell('claude-search', v) if S.get(('claude-search', v)) else 'not run'} | {cell('codex', v)} | {cell('gemini', v)} |", 4)
+F["TOK_TABLE"] = rows_with_gap(lambda v: f"| {lab(v)} | " + " | ".join(f"{k0(s(m, v, 'first'))} | {k0(s(m, v, 'input'))}" if S.get((m, v)) else "not run | not run" for m in ("claude", "claude-search", "codex", "gemini")) + " |", 8)
 ver = defaultdict(list)
 for r in counted:
     if r["status"] == "ok": ver[(r["model"], r["variant"])].append(int(r["extra_readonly"] or 0) > 0)
-F["VERIFY_TABLE"] = "\n".join(f"| {m} | " + " | ".join(pct(sum(ver[(m, v)]) / len(ver[(m, v)])) if ver[(m, v)] else "n/a" for v in ("5", "10", "20", "30", "40", "50", "75", "100", "GROUPED")) + " |" for m in ("claude", "codex", "gemini"))
-F["WALL_TABLE"] = "\n".join(f"| {m} | " + " | ".join(f"{s(m, v, 'wall'):.1f} s" if s(m, v, "wall") else "n/a" for v in ("5", "25", "50", "75", "100", "GROUPED")) + " |" for m in ("claude", "codex", "gemini"))
+for r in search_rows:
+    if r["status"] == "ok": ver[(r["model"], r["variant"])].append(int(r["extra_readonly"] or 0) > 0)
+MLAB = {"claude": "claude (search off)", "claude-search": "claude (search on)", "codex": "codex", "gemini": "gemini"}
+M4 = ("claude", "claude-search", "codex", "gemini")
+F["VERIFY_TABLE"] = "\n".join(f"| {MLAB[m]} | " + " | ".join(pct(sum(ver[(m, v)]) / len(ver[(m, v)])) if ver[(m, v)] else "n/a" for v in ("5", "10", "20", "30", "40", "50", "75", "100", "GROUPED")) + " |" for m in M4)
+F["WALL_TABLE"] = "\n".join(f"| {MLAB[m]} | " + " | ".join(f"{s(m, v, 'wall'):.1f} s" if s(m, v, "wall") else "n/a" for v in ("5", "25", "50", "75", "100", "GROUPED")) + " |" for m in M4)
 gt = ["| model | variant | fully correct | first-call input | input per run | calls/run | failed calls/run | wall s |", "|---|---|---|---|---|---|---|---|"]
-for m in ("claude", "codex", "gemini"):
+for m in M4:
     for v in ("25", "50", "GROUPED"):
         x = S.get((m, v))
-        if x: gt.append(f"| {m} | {v if v!='GROUPED' else 'GROUPED (7)'} | {x['success']:.0%} | {k0(x['first'])} | {k0(x['input'])} | {x['calls']:.2f} | {x['errc']:.2f} | {x['wall']:.1f} |")
+        if x: gt.append(f"| {MLAB[m]} | {v if v!='GROUPED' else 'GROUPED (7)'} | {x['success']:.0%} | {k0(x['first'])} | {k0(x['input'])} | {x['calls']:.2f} | {x['errc']:.2f} | {x['wall']:.1f} |")
 F["GROUP_TABLE"] = "\n".join(gt)
 miss = [r for r in rows if r["model"] == "codex" and r["status"] == "ratelimited"]
 xn = len([r for r in counted if r["model"] == "codex"])
 note_file = os.path.join(H, "codex-quota-note.txt")
 F["CODEX_QUOTA_NOTE"] = open(note_file).read().strip() if os.path.exists(note_file) else ""
 F["CODEX_QUOTA_NOTE"] += f" Final count: {xn} of 396 Codex runs scored; {396 - xn} missing."
+# ---------- Claude Code with tool search on (default) vs off ----------
+CSV = ["5", "10", "25", "50", "75", "100", "GROUPED"]
+def x(m, v, k):
+    return S.get((m, v), {}).get(k)
+cs_ok = [r for r in search_rows if r["status"] == "ok"]
+cs_succ = sum(r["success"] == "True" for r in search_rows)
+F.update(CS_SUCC=f"{cs_succ} of {len(search_rows)}", CS_FAILS=str(len(search_rows) - cs_succ),
+         CS_TS=f"{st.mean(int(r['toolsearch_calls'] or 0) for r in cs_ok):.2f}",
+         CS_KW_RUNS=str(sum(int(r["toolsearch_keyword"] or 0) > 0 for r in cs_ok)),
+         CS_OFF_RUNS=str(sum(int(r["toolsearch_offtarget"] or 0) > 0 for r in cs_ok)),
+         CS_NF_RUNS=str(sum(bool(r["needed_not_found"]) for r in cs_ok)),
+         CS_HID_RUNS=str(sum(r["search_hid_tool"] == "True" for r in cs_ok)),
+         CS_BUILTIN=str(sum(int(r["builtin_calls"] or 0) for r in search_rows)),
+         CS_TS_MIN=f"{min(x('claude-search', v, 'ts_calls') for v in CSV if x('claude-search', v, 'ts_calls') is not None):.2f}",
+         CS_TS_MAX=f"{max(x('claude-search', v, 'ts_calls') for v in CSV if x('claude-search', v, 'ts_calls') is not None):.2f}")
+for v in CSV:
+    tag = "G" if v == "GROUPED" else v
+    F[f"CS_FIRST_{tag}"] = k0(x("claude-search", v, "first")); F[f"CS_IN_{tag}"] = k0(x("claude-search", v, "input"))
+    F[f"CS_MC_{tag}"] = f"{x('claude-search', v, 'model_calls'):.2f}" if x("claude-search", v, "model_calls") else "n/a"
+    F[f"C_MC_{tag}"] = f"{x('claude', v, 'model_calls'):.2f}" if x("claude", v, "model_calls") else "n/a"
+csf, csi = S.get(("claude-search", "fit_first")), S.get(("claude-search", "fit_input"))
+F.update(CS_FIRST_B=f"{csf['b']:.0f}", CS_FIRST_A=f"{csf['a']:,.0f}", CS_FIRST_R2=f"{csf['r2']:.2f}", CS_IN_B=f"{csi['b']:.0f}", CS_IN_A=f"{csi['a']:,.0f}", CS_IN_R2=f"{csi['r2']:.2f}",
+         CS_RATIO100=f"{x('claude-search','100','input')/x('claude-search','5','input'):.2f}",
+         C_SAVE_FIRST_100=f"{1 - x('claude-search','100','first')/x('claude','100','first'):.0%}",
+         C_SAVE_IN_100=f"{1 - x('claude-search','100','input')/x('claude','100','input'):.0%}",
+         C_SAVE_IN_50=f"{1 - x('claude-search','50','input')/x('claude','50','input'):.0%}",
+         C_EXTRA_IN_5=f"{x('claude-search','5','input')/x('claude','5','input') - 1:.0%}")
+# break-even N for per-run input (where the search-on line crosses the search-off line), from the two linear fits
+be = (csi["a"] - fi["a"]) / (fi["b"] - csi["b"]) if fi["b"] != csi["b"] else float("nan")
+F["C_BREAKEVEN"] = f"{be:.0f}"
+st_rows = ["| tools | accuracy off | accuracy on | first call off | first call on | per run off | per run on | model calls off | model calls on | ToolSearch calls/run | $/run off | $/run on | wall s off | wall s on |",
+           "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
+for v in CSV:
+    st_rows.append(f"| {lab(v)} | {cell('claude', v)} | {cell('claude-search', v)} | {k0(x('claude', v, 'first'))} | {k0(x('claude-search', v, 'first'))} | "
+                   f"{k0(x('claude', v, 'input'))} | {k0(x('claude-search', v, 'input'))} | {x('claude', v, 'model_calls') or 0:.2f} | {x('claude-search', v, 'model_calls') or 0:.2f} | "
+                   f"{x('claude-search', v, 'ts_calls') or 0:.2f} | {x('claude', v, 'cost'):.3f} | {x('claude-search', v, 'cost'):.3f} | {x('claude', v, 'wall'):.1f} | {x('claude-search', v, 'wall'):.1f} |")
+for v in CSV:
+    tag = "G" if v == "GROUPED" else v
+    F[f"C_COSTV_{tag}"] = f"{x('claude', v, 'cost'):.3f}"; F[f"CS_COSTV_{tag}"] = f"{x('claude-search', v, 'cost'):.3f}"
+    F[f"C_WALL_{tag}"] = f"{x('claude', v, 'wall'):.1f}"; F[f"CS_WALL_{tag}"] = f"{x('claude-search', v, 'wall'):.1f}"
+cw = lambda m, v: st.mean(float(r["cache_write"] or 0) for r in rows if r["model"] == m and r["variant"] == v and r["status"] == "ok")
+F.update(C_CW_100=k0(cw("claude", "100")), CS_CW_100=k0(cw("claude-search", "100")))
+F["SEARCH_TABLE"] = "\n".join(st_rows)
 F["AT100"] = open(os.path.join(H, "at100.md")).read().strip() if os.path.exists(os.path.join(H, "at100.md")) else ""
 t = open(os.path.join(H, "report.template.md")).read()
 for k, v in F.items():

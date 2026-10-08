@@ -6,7 +6,9 @@ COLS = ["phase", "model", "model_id", "variant", "n_tools", "task", "kind", "rep
         "n_calls", "n_expected", "wrong_calls", "wrong_ops", "failed_wrong_attempts", "extra_readonly", "repeat_calls", "error_calls", "called_ops",
         "neighbors_present", "input_tokens_total", "input_uncached", "cache_read", "cache_write", "output_tokens", "reasoning_tokens",
         "first_call_input", "model_calls", "cost_usd", "wall_s", "cli_duration_s", "exit_code", "builtin_calls", "builtin_names",
-        "schema_reads", "exec_calls", "harness_error"]
+        "schema_reads", "exec_calls", "harness_error",
+        "toolsearch_calls", "toolsearch_select", "toolsearch_keyword", "toolsearch_loaded", "toolsearch_offtarget", "toolsearch_empty",
+        "needed_not_found", "search_hid_tool", "toolsearch_queries"]
 rows = []
 for p in sorted(glob.glob(os.path.join(HERE, "runs", "*", "*", "*", "*", "row.json"))):
     try:
@@ -19,7 +21,7 @@ with open(out, "w", newline="") as f:
     w.writeheader()
     for r in rows:
         r = dict(r)
-        for k in ("wrong_ops", "called_ops", "neighbors_present", "builtin_names"):
+        for k in ("wrong_ops", "called_ops", "neighbors_present", "builtin_names", "needed_not_found", "toolsearch_queries"):
             if isinstance(r.get(k), list):
                 r[k] = "|".join(map(str, r[k]))
         w.writerow(r)

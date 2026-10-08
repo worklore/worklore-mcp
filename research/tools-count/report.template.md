@@ -1,6 +1,8 @@
 # Does the number of MCP tools hurt an agent? Measured from 5 to 100 tools
 
-Date: 2026-10-07. This experiment ran 3 agents on 1 fake MCP server exposing 5, 10, …, 50 tools, then 75 and 100, plus a grouped variant: 18 tasks × 2 repetitions per cell, {{TOTAL_RUNS}} scored runs. Sizes 55–70 were not run. The 75/100 extension was added after nothing broke at 50.
+Date: 2026-10-07, with a follow-up run on 2026-10-08. This experiment ran 3 agents on 1 fake MCP server exposing 5, 10, …, 50 tools, then 75 and 100, plus a grouped variant: 18 tasks × 2 repetitions per cell, {{ORIG_RUNS}} scored runs. Sizes 55–70 were not run. The 75/100 extension was added after nothing broke at 50.
+
+**Follow-up (2026-10-08): Claude Code was measured in two modes.** The original Claude Code runs used `--tools ""`, which removes every built-in tool, including `ToolSearch`. Without `ToolSearch`, Claude Code cannot defer MCP tools, so it put every schema into the prompt. That is a real configuration (the same happens with `ENABLE_TOOL_SEARCH=false`, or behind a proxy that does not support tool references), but it is **not Claude Code's default**: by default MCP tools are deferred and loaded through `ToolSearch` ([docs: "Scale with MCP tool search"](https://code.claude.com/docs/en/mcp.md)). A fourth lane, `claude-search`, repeats the Claude runs with `--tools "ToolSearch"` (everything else identical) at N = 5, 10, 25, 50, 75, 100 and GROUPED: {{CS_RUNS}} more runs, {{TOTAL_RUNS}} in total. Below, "Claude Code, tool search off" is the original lane and "tool search on (default)" is the new one.
 
 ## Why
 
@@ -13,15 +15,16 @@ Ashton's dev.to post ("Tool count is context cost: why my MCP server exposes 6 t
   - With 36 runs per cell, the 95% lower bound on accuracy is about 90% per cell. Pooled over all twelve sizes (432 runs per model), it is about 99%.
   - So whatever breaking point exists lies beyond 100 tools, or needs harder or less clearly described tools than ours.
 - **The cost of more tools is real, and how big it is depends on the harness, not on the model.**
-  - **Claude Code** puts every tool's full schema into the prompt. First-call input grows exactly linearly: **{{C_FIRST_A}} + {{C_FIRST_B}} tokens per tool** (R² = {{C_FIRST_R2}}), from {{C_FIRST_5}} at 5 tools to {{C_FIRST_50}} at 50 and {{C_FIRST_100}} at 100. Per run (all model calls), the cost is {{C_IN_A}} + {{C_IN_B}} × N tokens (R² = {{C_IN_R2}}), from {{C_IN_5}} at 5 to {{C_IN_50}} at 50, which is {{C_RATIO}}× as many input tokens for the same answer. At 100 it is {{C_IN_100}}, or {{C_RATIO100}}×. The fit made on 5–50 predicts 75 and 100 within ±0.5% for the first call.
+  - **Claude Code, tool search on (the default):** MCP tools are deferred. Only their names go into the prompt, and the model loads the schemas it needs with `ToolSearch` (here always by exact name, `select:…`). First-call input goes from {{CS_FIRST_5}} at 5 tools to {{CS_FIRST_50}} at 50 and {{CS_FIRST_100}} at 100 (about {{CS_FIRST_B}} tokens per tool); per run, {{CS_IN_5}} → {{CS_IN_50}} → {{CS_IN_100}} ({{CS_RATIO100}}× from 5 to 100). The price is one extra model call per run (the search), so at small N it costs *more* than loading everything: {{C_EXTRA_IN_5}} more input per run at 5 tools. The lines cross at about {{C_BREAKEVEN}} tools; at 100 tools tool search saves {{C_SAVE_FIRST_100}} of the first call and {{C_SAVE_IN_100}} of the per-run input. Accuracy: {{CS_SUCC}} runs fully correct. Fewer tokens did not mean a cheaper run here: nearly all input is cache reads, and the search adds a call, output and cache writes, so at list price a run cost ${{CS_COSTV_100}} with search on vs ${{C_COSTV_100}} off at 100 tools (details in "Claude Code: tool search on vs off").
+  - **Claude Code, tool search off** (`--tools ""`, `ENABLE_TOOL_SEARCH=false`, or a proxy without tool-reference support) puts every tool's full schema into the prompt. First-call input grows exactly linearly: **{{C_FIRST_A}} + {{C_FIRST_B}} tokens per tool** (R² = {{C_FIRST_R2}}), from {{C_FIRST_5}} at 5 tools to {{C_FIRST_50}} at 50 and {{C_FIRST_100}} at 100. Per run (all model calls), the cost is {{C_IN_A}} + {{C_IN_B}} × N tokens (R² = {{C_IN_R2}}), from {{C_IN_5}} at 5 to {{C_IN_50}} at 50, which is {{C_RATIO}}× as many input tokens for the same answer. At 100 it is {{C_IN_100}}, or {{C_RATIO100}}×. The fit made on 5–50 predicts 75 and 100 within ±0.5% for the first call.
   - **Codex CLI** (code mode) does not put MCP tool schemas into the prompt at all. First-call input is a flat ~{{X_FIRST}} tokens at every N. The model searches `ALL_TOOLS` with a regex from inside its `exec` JS tool, and the matching definitions come back as tool output. So per-run input still grows, by about {{X_IN_B}} tokens per tool (R² = {{X_IN_R2}}; {{X_IN_5}} → {{X_IN_50}} → {{X_IN_100}} at 100), but from a much higher base. At 100 tools its tool search outgrew the exec output cap (see "What happens at 100").
   - **Antigravity** (Gemini) loads MCP tools lazily. Only the tool names go into the prompt (**about {{G_FIRST_B}} tokens per tool**). The model opens a schema file on demand. First-call input goes from {{G_FIRST_5}} to {{G_FIRST_50}}; per-run input is roughly flat ({{G_IN_5}} at 5, {{G_IN_45}} at 45) rises to {{G_IN_50}} at 50, where Gemini started skipping the schema read and guessing arguments, and is {{G_IN_100}} at 100.
 - **Grouped tools (7 noun tools covering all 50 operations):**
-  - In Claude Code it is the cheapest way to offer all 50 operations: {{C_FIRST_G}} first-call tokens, about what {{C_EQUIV}} separate tools cost, and {{C_IN_G}} per run (vs {{C_IN_50}} for 50 separate tools and {{C_IN_25}} for 25). Accuracy stays at {{C_ACC_G}}, but the model made more calls ({{C_CALLS_G}} per run vs {{C_CALLS_50}} at N = 50), mostly extra verification.
+  - In Claude Code with tool search off it is the cheapest way to offer all 50 operations: {{C_FIRST_G}} first-call tokens, about what {{C_EQUIV}} separate tools cost, and {{C_IN_G}} per run (vs {{C_IN_50}} for 50 separate tools and {{C_IN_25}} for 25). Accuracy stays at {{C_ACC_G}}, but the model made more calls ({{C_CALLS_G}} per run vs {{C_CALLS_50}} at N = 50), mostly extra verification. With tool search on (the default), grouping saves little: {{CS_FIRST_G}} first call and {{CS_IN_G}} per run, vs {{CS_FIRST_50}} and {{CS_IN_50}} for 50 separate tools; and 7 grouped tools are cheaper with search off ({{C_IN_G}} per run) than on, because the search call is pure overhead when the whole list is small.
   - In Codex: {{X_IN_G}} input tokens per run (vs {{X_IN_25}} at 25 and {{X_IN_50}} at 50), with {{X_ACC_G}} accuracy.
   - **In Antigravity it was the only place anything failed: {{G_ACC_G}} fully correct, vs 100% for every separate-tool size.** It also cost the most: {{G_IN_G}} input tokens per run, {{G_CALLS_G}} calls and {{G_ERRC_G}} failed calls per run, and {{G_WALL_G}} s per run instead of 18–23 s. The mechanism is that Gemini often skipped reading the lazy schema of a multi-operation tool. It probed the tool with empty arguments, guessed operation names (`help`, `delete`, `remove_pages`, `linearize`, `clear_metadata`, `decrypt`), and in 3 runs executed a wrong operation (`merge` instead of images → PDF, twice; `split` while looking for delete).
 
-So Ashton's direction holds for **context cost in a harness that loads schemas eagerly**: 7 grouped tools cost what about {{C_EQUIV}} separate ones do. It does not show up as **accuracy** at these sizes. And grouping can **hurt** when the harness hides schemas (Antigravity).
+So Ashton's direction holds for **context cost in a harness that loads schemas eagerly** (Claude Code with tool search off): 7 grouped tools cost what about {{C_EQUIV}} separate ones do. It does not show up as **accuracy** at these sizes. And grouping can **hurt** when the harness hides schemas (Antigravity).
 
 ## Setup
 
@@ -92,7 +95,7 @@ The prompt (`prompts/template.txt`) lists the same 17 imaginary files for every 
 | CLI | Claude Code 2.1.285, `claude -p` | Codex CLI 0.160.0, `codex exec` | Antigravity `agy` 1.2.17, `-p` |
 | model | `claude-opus-5-5` | **`gpt-6.1-sol`**, the `codex` default on this ChatGPT Plus account, at default reasoning effort; recorded per run from the session file. "Astra" is not what `codex` defaults to here. | `gemini-3.1-pro-high` through the Google AI Pro subscription. The API-key flash-lite substitute was not needed. |
 | MCP | `--strict-mcp-config --mcp-config` with only the test server | `--ignore-user-config`; server set with `-c mcp_servers.filekit.*` and `default_tools_approval_mode="approve"` | workspace plugin `.agents/plugins/filekit/mcp_config.json` |
-| built-ins | `--tools ""` (0 built-ins; checked in every init event), `--disable-slash-commands`, hooks off, user settings off, `--no-session-persistence` | `-s read-only`, approval `never`, web search off, features off: shell, unified exec, apps, plugins, browser, computer use, image gen, multi-agent, view_image, memories, hooks. Code mode (the `exec` JS tool) stays: it is how this Codex calls MCP tools. | custom main agent `.agents/agents/assistant.md` with `tools: [view_file]` + inherited MCP. Final tool list: `view_file`, `call_mcp_tool`, `list_resources`, `read_resource`, `manage_task`. No shell, no write, no web. |
+| built-ins | lane `claude` (tool search off): `--tools ""` (0 built-ins; checked in every init event). Lane `claude-search` (tool search on, default): `--tools "ToolSearch"`; every init event lists only `ToolSearch` + the MCP tools. `ToolSearch` can only find and load deferred MCP tools, so it is not counted as a built-in call. Both: `ENABLE_TOOL_SEARCH` unset, `--disable-slash-commands`, hooks off, user settings off, `--no-session-persistence` | `-s read-only`, approval `never`, web search off, features off: shell, unified exec, apps, plugins, browser, computer use, image gen, multi-agent, view_image, memories, hooks. Code mode (the `exec` JS tool) stays: it is how this Codex calls MCP tools. | custom main agent `.agents/agents/assistant.md` with `tools: [view_file]` + inherited MCP. Final tool list: `view_file`, `call_mcp_tool`, `list_resources`, `read_resource`, `manage_task`. No shell, no write, no web. |
 | tokens / time / cost from | stream-json: per-message usage + `result` (usage incl. cache; `total_cost_usd` at list price) | `turn.completed` usage + `token_count` per model call in the session rollout; no cost | `step_update` usage per step + `result` usage; no cost |
 
 Isolation:
@@ -101,7 +104,7 @@ Isolation:
 - Call logs went to `/tmp/fk-*.jsonl` and were then moved into `runs/`.
 - `WORKLORE_*`, `GEMINI_API_KEY`, `ANTHROPIC_API_KEY` and `OPENAI_API_KEY` were unset.
 - Codex session files were moved out of `~/.codex/sessions` into each run folder.
-- **There were 0 built-in tool calls in all {{TOTAL_RUNS}} counted runs.** Gemini's reads of the MCP schema cache are counted separately as `schema_reads`.
+- **There were 0 built-in tool calls in all {{TOTAL_RUNS}} counted runs** (`ToolSearch` in the `claude-search` lane excepted, see above; any other built-in would have counted). Gemini's reads of the MCP schema cache are counted separately as `schema_reads`.
 
 ## Results
 
@@ -111,11 +114,21 @@ Full tables, including every failed run, are in `tables-full.md`. Per-run data i
 
 ![accuracy](charts/accuracy-vs-n.png)
 
-| tools | Claude | Codex | Gemini |
-|---|---|---|---|
+| tools | Claude (search off) | Claude (search on, default) | Codex | Gemini |
+|---|---|---|---|---|
 {{ACC_TABLE}}
 
-**Wrong-tool rate on ambiguous tasks** was **0% at every separate-tool size for all three models.** The only wrong executions were in Gemini GROUPED ({{G_WRONG_AMB_G}} of its ambiguous-task runs). The chart is `charts/wrong-ambiguous-vs-n.png`.
+**Wrong-tool rate on ambiguous tasks** was **0% at every separate-tool size for all three models, in both Claude Code modes.** The only wrong executions were in Gemini GROUPED ({{G_WRONG_AMB_G}} of its ambiguous-task runs). The chart is `charts/wrong-ambiguous-vs-n.png`.
+
+### Claude Code: tool search on (default) vs off
+
+{{SEARCH_TABLE}}
+
+- **Accuracy** with tool search on: {{CS_SUCC}} runs fully correct ({{CS_FAILS}} failures), the same as with it off.
+- **How the model searched:** every one of the {{CS_RUNS}} runs made exactly one `ToolSearch` call, as its first action. The deferred tool *names* are in the prompt, so the model never searched by keyword ({{CS_KW_RUNS}} keyword searches): it picked the tool(s) from the name list and loaded them by exact name in one call (`select:mcp__filekit__pdf_optimize`, or all the tools of a chain at once, often plus `pdf_info` / `image_info` to verify). So in this setup ToolSearch never had a chance to hide a tool: the choice between look-alikes was made from names alone, before any schema was seen, and it was right every time. Runs where a search returned tools but none the task needed: {{CS_OFF_RUNS}}. Runs where a needed tool never came back from a search: {{CS_NF_RUNS}}. **Runs where search hid the right tool and the run went wrong: {{CS_HID_RUNS}}.**
+- **Cost:** the search is one more model round trip ({{CS_MC_5}} model calls per run at 5 tools vs {{C_MC_5}} with search off), so tool search costs more at small N and saves a lot at large N; the crossover from the linear fits is at about {{C_BREAKEVEN}} tools. Per run, tool search on grows by {{CS_IN_B}} tokens per tool instead of {{C_IN_B}}. It saves {{C_SAVE_IN_50}} of per-run input at 50 tools and {{C_SAVE_IN_100}} at 100.
+- **Fewer tokens is not the same as cheaper or faster here.** Almost all of Claude Code's input is cache reads (the prompt prefix, including the tool list, stays cached between calls), and cache reads are billed at a tenth of the input price. Tool search adds a model call, about 130 output tokens for the search call, and more cache writes (the loaded schemas change the prefix: {{CS_CW_100}} written per run at 100 tools vs {{C_CW_100}} with search off). So at list price a run cost more with tool search on at every size we ran except 10 (equal): ${{CS_COSTV_5}} vs ${{C_COSTV_5}} at 5 tools, ${{CS_COSTV_50}} vs ${{C_COSTV_50}} at 50, ${{CS_COSTV_100}} vs ${{C_COSTV_100}} at 100. Wall time was 1–5 s longer ({{CS_WALL_100}} vs {{C_WALL_100}} s at 100). What tool search buys is context: at 100 tools each call carries ~{{CS_FIRST_100}} instead of ~{{C_FIRST_100}}, which matters for long sessions, the context window and many servers at once, none of which these one-task runs measure.
+- The `claude-search` lane ran the sizes 5, 10, 25, 50, 75, 100 and GROUPED, not every 5. Per-task details and every search query are in `tables-full.md` and `results.csv` (`toolsearch_*`, `needed_not_found`, `search_hid_tool` columns).
 
 ### Context cost
 
@@ -125,12 +138,13 @@ Full tables, including every failed run, are in `tables-full.md`. Per-run data i
 
 Mean input tokens: on the first model call, and over all calls in the run (cache reads included).
 
-| tools | Claude first call | Claude per run | Codex first call | Codex per run | Gemini first call | Gemini per run |
-|---|---|---|---|---|---|---|
+| tools | Claude off: first call | Claude off: per run | Claude on (default): first call | Claude on (default): per run | Codex first call | Codex per run | Gemini first call | Gemini per run |
+|---|---|---|---|---|---|---|---|---|
 {{TOK_TABLE}}
 
 - **Is the cost linear?**
-  - **Claude Code: yes.** {{C_FIRST_B}} tokens per tool on the first call (R² = {{C_FIRST_R2}}) and {{C_IN_B}} per tool per run. The tool list is re-sent on every model call (from cache), and a run makes 2–3 model calls. At list price, per-run cost moves between ${{C_COST_MIN}} and ${{C_COST_MAX}} without a clear trend, because cache writes and cache reads vary between runs. Tokens are the cleaner measure. The total list-price cost of the {{C_RUNS}} Claude runs was ${{C_COST_TOTAL}}.
+  - **Claude Code with tool search off: yes.** {{C_FIRST_B}} tokens per tool on the first call (R² = {{C_FIRST_R2}}) and {{C_IN_B}} per tool per run. The tool list is re-sent on every model call (from cache), and a run makes 2–3 model calls. At list price, per-run cost moves between ${{C_COST_MIN}} and ${{C_COST_MAX}} without a clear trend, because cache writes and cache reads vary between runs. Tokens are the cleaner measure. The total list-price cost of the {{C_RUNS}} Claude runs (search off) was ${{C_COST_TOTAL}}.
+  - **Claude Code with tool search on (default):** only names in the prompt, about {{CS_FIRST_B}} tokens per tool on the first call and {{CS_IN_B}} per run; see the section above.
   - **Codex:** flat on the first call. Per run it is roughly linear ({{X_IN_B}} tokens per tool, R² = {{X_IN_R2}}), because the tool search results it pulls in grow with N.
   - **Gemini in Antigravity:** {{G_FIRST_B}} tokens per tool for the name list, through 100 tools. Per run it is flat within noise (15–21k at every N).
 - **Hidden second-order effect: more tools mean more optional calls.** As N grows, read-only tools join the set: `pdf_info` at N ≈ 20, `image_info` at N ≈ 35 in the distractor order. The models then start verifying their work. Share of runs with an extra read-only call:
@@ -139,7 +153,7 @@ Mean input tokens: on the first model call, and over all calls in the run (cache
 |---|---|---|---|---|---|---|---|---|---|
 {{VERIFY_TABLE}}
 
-That is part of why per-run tokens grow faster than the schema cost alone (Claude: {{C_IN_B}} vs {{C_FIRST_B}} tokens per tool).
+That is part of why per-run tokens grow faster than the schema cost alone (Claude, tool search off: {{C_IN_B}} vs {{C_FIRST_B}} tokens per tool).
 
 - **Wall time per run:**
 
@@ -161,17 +175,16 @@ That is part of why per-run tokens grow faster than the schema cost alone (Claud
 
 - **Accuracy with separate tools:** it does not break between 5 and 100, for any of the three. {{SEP_FAIL_SHORT}} A real breaking point must lie past 100 tools, or appear with worse descriptions, overlapping domains or several servers at once.
 - **Tokens:** this is a budget question, not a cliff.
-  - In Claude Code every 10 tools add about {{C_10}} tokens to every model call.
-  - 50 tools make a one-call task cost {{C_RATIO}}× the input of 5 tools ({{C_IN_5}} → {{C_IN_50}} per run); 100 tools make it {{C_RATIO100}}× ({{C_IN_100}}).
-  - In Codex and Antigravity the harness already hides most of that cost, so tool count barely moves the first-call context.
+  - In Claude Code with tool search off, every 10 tools add about {{C_10}} tokens to every model call. 50 tools make a one-call task cost {{C_RATIO}}× the input of 5 tools ({{C_IN_5}} → {{C_IN_50}} per run); 100 tools make it {{C_RATIO100}}× ({{C_IN_100}}).
+  - In Claude Code's default mode (tool search on), Codex and Antigravity the harness already hides most of that cost, so tool count barely moves the first-call context. Claude Code with search on: {{CS_IN_5}} → {{CS_IN_100}} per run from 5 to 100 tools.
 - **Grouping:**
-  - It saves context where schemas are loaded eagerly (Claude Code: 7 grouped ≈ {{C_EQUIV}} separate).
+  - It saves context where schemas are loaded eagerly (Claude Code with tool search off: 7 grouped ≈ {{C_EQUIV}} separate). With tool search on it changes little.
   - It does nothing for Codex's first call.
   - It **costs accuracy, calls and time in Antigravity**, where Gemini guessed operation names instead of reading the schema.
 - **The first strain points (accuracy unaffected):**
   - **Codex at 100 tools:** its first, broad tool search no longer fits the exec output cap. The output was truncated in 34 of 36 runs, and 6 runs had to search again.
   - **Gemini in Antigravity:** it sometimes skips the lazy schema read and learns the arguments from an error instead. That happened in 10 of 36 runs at 50 tools, 0 of 36 at 75 and 7 of 36 at 100, so it is noisy rather than a clean trend with N. It costs failed calls and a few thousand tokens, not correctness.
-  - **Claude Code** shows no strain at 100 beyond the linear token bill.
+  - **Claude Code** shows no strain at 100: with tool search off the bill is linear, with it on (default) the model loads 1–2 schemas by name and the bill barely moves.
   - In two of three harnesses, the first thing to give way is how the harness *shows* the tools to the model, not the model's choice.
 
 ## Limitations
@@ -182,7 +195,7 @@ That is part of why per-run tokens grow faster than the schema cost alone (Claud
 - **Synthetic, single-domain tasks.** There are 18 short file and document tasks with clear wording. All three models are strong, so the task set turned out too easy to find an accuracy cliff. The 3 harder ambiguous tasks added after pilot 1 did not change that. A null result means "no drop up to 50 tools on tasks like these", not "never". Our tool descriptions were honest and distinct; real servers often have worse ones.
 - **The tool set is built per task.** The needed tools are always present, and distractors are added in one fixed seeded order. A task's tempting neighbour enters at a task-specific N; at N = 50 all neighbours are present. A different seed would change which tools sit near the needed ones at small N.
 - **Harness overheads are inside the token counts.** Each CLI has its own system prompt and its own way of exposing MCP tools:
-  - Claude Code: about 2.5k tokens with no tools; eager schemas.
+  - Claude Code: about 2.5k tokens with no tools; eager schemas with tool search off, deferred names + the `ToolSearch` definition with it on (first-call fit intercept {{CS_FIRST_A}} tokens).
   - Codex: about 13k tokens; schemas found by code-mode search.
   - Antigravity: about 3.8k tokens; lazy names.
   So **compare slopes within a model, not absolute numbers between models.** The columns compare harness + model pairs, not bare models.
@@ -207,7 +220,7 @@ That is part of why per-run tokens grow faster than the schema cost alone (Claud
 - `tasks.json`: 18 tasks with expected calls, key-argument checks and tempting neighbours.
 - `prompts/template.txt`: the prompt.
 - Scripts:
-  - `run.sh`: one isolated headless run.
+  - `run.sh`: one isolated headless run (`claude`, `claude-search`, `codex`, `gemini`).
   - `job.sh`: rate-limit back-off and the 6 h budget guard.
   - `lane.sh`: a resumable sweep (skips finished runs).
   - `score.py`: scoring from the call log and the CLI usage.
@@ -215,4 +228,4 @@ That is part of why per-run tokens grow faster than the schema cost alone (Claud
   - `analyze.py`: writes `tables-*.md`, `summary-*.json` and `charts/*.png`.
   - `make_report.py`: fills this report from the data.
 - `pilot-report.md`: pilot findings and fixes. `tables-pilot1.md` and `tables-pilot2.md` hold the pilot numbers.
-- `runs.tar.gz` (13 MB; `tar -xzf runs.tar.gz` restores `runs/`, which is git-ignored because it is about 12k files): raw logs per run (prompt, CLI event log, stderr, server call log, Codex rollout, meta, scored row). `runs/superseded/` keeps runs made before the grouped-server fix and the harness-error runs; they are not counted. The `runs-*.out*` files are the lane logs.
+- `runs.tar.gz` (14 MB; `tar -xzf runs.tar.gz` restores `runs/`, which is git-ignored because it is about 12k files): raw logs per run (prompt, CLI event log, stderr, server call log, Codex rollout, meta, scored row). `runs/superseded/` keeps runs made before the grouped-server fix and the harness-error runs; they are not counted. The `runs-*.out*` files are the lane logs.

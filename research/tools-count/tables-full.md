@@ -5,10 +5,11 @@ Status counts per model (ok = scored; error/timeout = counted as failures in acc
 | model | ok | error | timeout | ratelimited (missing) |
 |---|---|---|---|---|
 | claude | 468 | 0 | 0 | 0 |
+| claude-search | 252 | 0 | 0 | 0 |
 | codex | 468 | 0 | 0 | 0 |
 | gemini | 468 | 0 | 0 | 0 |
 
-## Claude Opus 5.5 (Claude Code)
+## Claude Opus 5.5 (Claude Code, tool search off)
 
 | tools | runs | success | 95% CI | right tools | right args | runs with a wrong tool | wrong (ambiguous tasks) | calls/run | failed calls/run | first-call input tok | input tok/run | output tok/run | wall s | cost $/run |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
@@ -28,6 +29,21 @@ Status counts per model (ok = scored; error/timeout = counted as failures in acc
 
 - Linear fit on N = 5–50, first-call input tokens = 3182 + 169.3 × N  (R² = 1.000); at N=75: predicted 15882, measured 15800 (-0.5%); at N=100: predicted 20116, measured 20222 (+0.5%)
 - Linear fit on N = 5–50, input tokens per run = 6989 + 429.2 × N  (R² = 0.997); at N=75: predicted 39176, measured 37157 (-5.2%); at N=100: predicted 49905, measured 48619 (-2.6%)
+
+## Claude Opus 5.5 (Claude Code, tool search on = default)
+
+| tools | runs | success | 95% CI | right tools | right args | runs with a wrong tool | wrong (ambiguous tasks) | calls/run | failed calls/run | first-call input tok | input tok/run | output tok/run | wall s | cost $/run |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 5 | 36 | 100% | 90%–100% | 100% | 100% | 0% | 0% | 1.22 | 0.00 | 3929 | 13839 | 321 | 8.5 | 0.0339 |
+| 10 | 36 | 100% | 90%–100% | 100% | 100% | 0% | 0% | 1.28 | 0.00 | 4001 | 14334 | 317 | 9.5 | 0.0346 |
+| 25 | 36 | 100% | 90%–100% | 100% | 100% | 0% | 0% | 1.44 | 0.00 | 4238 | 15622 | 317 | 7.9 | 0.0370 |
+| 50 | 36 | 100% | 90%–100% | 100% | 100% | 0% | 0% | 1.53 | 0.00 | 4612 | 17421 | 338 | 11.0 | 0.0412 |
+| 75 | 36 | 100% | 90%–100% | 100% | 100% | 0% | 0% | 1.58 | 0.00 | 5007 | 19060 | 337 | 7.9 | 0.0445 |
+| 100 | 36 | 100% | 90%–100% | 100% | 100% | 0% | 0% | 1.50 | 0.00 | 5396 | 19911 | 331 | 9.4 | 0.0474 |
+| GROUPED | 36 | 100% | 90%–100% | 100% | 100% | 0% | 0% | 1.47 | 0.00 | 3940 | 16057 | 350 | 9.1 | 0.0387 |
+
+- Linear fit on N = 5–50, first-call input tokens = 3852 + 15.2 × N  (R² = 1.000); at N=75: predicted 4994, measured 5007 (+0.3%); at N=100: predicted 5375, measured 5396 (+0.4%)
+- Linear fit on N = 5–50, input tokens per run = 13527 + 79.0 × N  (R² = 0.997); at N=75: predicted 19451, measured 19060 (-2.0%); at N=100: predicted 21425, measured 19911 (-7.1%)
 
 ## GPT-6.1-sol (Codex CLI default)
 
@@ -71,6 +87,20 @@ Status counts per model (ok = scored; error/timeout = counted as failures in acc
 - Linear fit on N = 5–50, first-call input tokens = 3807 + 4.9 × N  (R² = 1.000); at N=75: predicted 4175, measured 4185 (+0.2%); at N=100: predicted 4298, measured 4309 (+0.3%)
 - Linear fit on N = 5–50, input tokens per run = 14107 + 73.5 × N  (R² = 0.470); at N=75: predicted 19622, measured 17385 (-11.4%); at N=100: predicted 21460, measured 18577 (-13.4%)
 
+## Tool search (claude-search lane)
+
+ToolSearch calls per run; `select:` = loaded by exact name from the deferred-name list, keyword = a free-text search. Off-target = a search returned tools but none the task needed. Not found = a needed tool never came back from any search. Hid = not found AND the run then went wrong (wrong tool executed or expected call missing).
+
+| tools | ok runs | model calls/run | ToolSearch calls/run | keyword searches/run | tools loaded/run | runs with an off-target search | runs where a needed tool was never found | runs where search hid the right tool |
+|---|---|---|---|---|---|---|---|---|
+| 5 | 36 | 3.22 | 1.00 | 0.00 | 1.22 | 0 | 0 | 0 |
+| 10 | 36 | 3.28 | 1.00 | 0.00 | 1.28 | 0 | 0 | 0 |
+| 25 | 36 | 3.36 | 1.00 | 0.00 | 1.53 | 0 | 0 | 0 |
+| 50 | 36 | 3.44 | 1.00 | 0.00 | 1.72 | 0 | 0 | 0 |
+| 75 | 36 | 3.50 | 1.00 | 0.00 | 1.64 | 0 | 0 | 0 |
+| 100 | 36 | 3.42 | 1.00 | 0.00 | 1.58 | 0 | 0 | 0 |
+| GROUPED | 36 | 3.47 | 1.00 | 0.00 | 1.69 | 0 | 0 | 0 |
+
 ## Every failed run
 
 | model | tools | task | kind | rep | status | called (canonical ops) | why |
@@ -82,24 +112,24 @@ Status counts per model (ok = scored; error/timeout = counted as failures in acc
 
 ## Success by task (share of runs, all variants pooled)
 
-| task | kind | claude | codex | gemini |
-|---|---|---|---|---|
-| t01 | simple | 26/26 | 26/26 | 26/26 |
-| t02 | simple | 26/26 | 26/26 | 26/26 |
-| t03 | simple | 26/26 | 26/26 | 26/26 |
-| t04 | simple | 26/26 | 26/26 | 26/26 |
-| t05 | simple | 26/26 | 26/26 | 26/26 |
-| t06 | ambiguous | 26/26 | 26/26 | 26/26 |
-| t07 | ambiguous | 26/26 | 26/26 | 26/26 |
-| t08 | ambiguous | 26/26 | 26/26 | 24/26 |
-| t09 | ambiguous | 26/26 | 26/26 | 26/26 |
-| t10 | ambiguous | 26/26 | 26/26 | 25/26 |
-| t11 | ambiguous | 26/26 | 26/26 | 26/26 |
-| t12 | ambiguous | 26/26 | 26/26 | 26/26 |
-| t13 | chain | 26/26 | 26/26 | 26/26 |
-| t14 | chain | 26/26 | 26/26 | 26/26 |
-| t15 | chain | 26/26 | 26/26 | 26/26 |
-| t16 | ambiguous | 26/26 | 26/26 | 26/26 |
-| t17 | ambiguous | 26/26 | 26/26 | 25/26 |
-| t18 | ambiguous | 26/26 | 26/26 | 26/26 |
+| task | kind | claude | claude-search | codex | gemini |
+|---|---|---|---|---|---|
+| t01 | simple | 26/26 | 14/14 | 26/26 | 26/26 |
+| t02 | simple | 26/26 | 14/14 | 26/26 | 26/26 |
+| t03 | simple | 26/26 | 14/14 | 26/26 | 26/26 |
+| t04 | simple | 26/26 | 14/14 | 26/26 | 26/26 |
+| t05 | simple | 26/26 | 14/14 | 26/26 | 26/26 |
+| t06 | ambiguous | 26/26 | 14/14 | 26/26 | 26/26 |
+| t07 | ambiguous | 26/26 | 14/14 | 26/26 | 26/26 |
+| t08 | ambiguous | 26/26 | 14/14 | 26/26 | 24/26 |
+| t09 | ambiguous | 26/26 | 14/14 | 26/26 | 26/26 |
+| t10 | ambiguous | 26/26 | 14/14 | 26/26 | 25/26 |
+| t11 | ambiguous | 26/26 | 14/14 | 26/26 | 26/26 |
+| t12 | ambiguous | 26/26 | 14/14 | 26/26 | 26/26 |
+| t13 | chain | 26/26 | 14/14 | 26/26 | 26/26 |
+| t14 | chain | 26/26 | 14/14 | 26/26 | 26/26 |
+| t15 | chain | 26/26 | 14/14 | 26/26 | 26/26 |
+| t16 | ambiguous | 26/26 | 14/14 | 26/26 | 26/26 |
+| t17 | ambiguous | 26/26 | 14/14 | 26/26 | 25/26 |
+| t18 | ambiguous | 26/26 | 14/14 | 26/26 | 26/26 |
 

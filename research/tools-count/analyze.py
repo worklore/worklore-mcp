@@ -8,9 +8,9 @@ PHASE = sys.argv[1] if len(sys.argv) > 1 else "full"
 rows = [r for r in csv.DictReader(open(os.path.join(HERE, "results.csv"))) if r["phase"] == PHASE]
 B = lambda x: x == "True"
 F = lambda x: float(x) if x not in ("", None, "None") else None
-MODELS = [m for m in ("claude", "codex", "gemini") if any(r["model"] == m for r in rows)]
+MODELS = [m for m in ("claude", "claude-search", "codex", "gemini") if any(r["model"] == m for r in rows)]
 VARS = sorted({r["variant"] for r in rows if r["variant"] != "GROUPED"}, key=int) + (["GROUPED"] if any(r["variant"] == "GROUPED" for r in rows) else [])
-LABEL = {"claude": "Claude Opus 5.5 (Claude Code)", "codex": "GPT-6.1-sol (Codex CLI default)", "gemini": "Gemini 3.1 Pro (Antigravity)"}
+LABEL = {"claude": "Claude Opus 5.5 (Claude Code, tool search off)", "claude-search": "Claude Opus 5.5 (Claude Code, tool search on = default)", "codex": "GPT-6.1-sol (Codex CLI default)", "gemini": "Gemini 3.1 Pro (Antigravity)"}
 
 def wilson(k, n, z=1.96):
     if n == 0: return (float("nan"),) * 2
@@ -55,7 +55,14 @@ for m in MODELS:
              "wrong_amb": (sum(int(r["wrong_calls"] or 0) > 0 for r in amb) / len(amb)) if amb else None,
              "calls": mean([F(r["n_calls"]) for r in okr]), "errc": mean([F(r["error_calls"]) for r in okr]), "first": mean([F(r["first_call_input"]) for r in okr]),
              "input": mean([F(r["input_tokens_total"]) for r in okr]), "output": mean([F(r["output_tokens"]) for r in okr]),
-             "wall": mean([F(r["wall_s"]) for r in okr]), "cost": mean([F(r["cost_usd"]) for r in okr])}
+             "wall": mean([F(r["wall_s"]) for r in okr]), "cost": mean([F(r["cost_usd"]) for r in okr]),
+             "model_calls": mean([F(r["model_calls"]) for r in okr])}
+        if m == "claude-search":
+            s.update(ts_calls=mean([F(r["toolsearch_calls"]) for r in okr]), ts_keyword=mean([F(r["toolsearch_keyword"]) for r in okr]),
+                     ts_loaded=mean([F(r["toolsearch_loaded"]) for r in okr]),
+                     ts_offtarget_runs=sum(int(r["toolsearch_offtarget"] or 0) > 0 for r in okr),
+                     ts_notfound_runs=sum(bool(r["needed_not_found"]) for r in okr),
+                     ts_hid_runs=sum(B(r["search_hid_tool"]) for r in okr), n_ok=len(okr))
         summary[(m, v)] = s
         fmt = lambda x, f="{:.0f}": "" if x is None else f.format(x)
         P(f"| {v} | {n} | {s['success']:.0%} | {lo:.0%}–{hi:.0%} | {s['tools_ok']:.0%} | {s['args_ok']:.0%} | {s['wrong_rate']:.0%} | "
@@ -78,6 +85,26 @@ for m in MODELS:
             P(f"- Linear fit on N = 5–50, {lab} = {a:.0f} + {b:.1f} × N  (R² = {r2:.3f}){extra}")
             summary[(m, "fit_" + key)] = {"a": a, "b": b, "r2": r2}
     P()
+
+if "claude-search" in MODELS:
+    P("## Tool search (claude-search lane)\n")
+    P("ToolSearch calls per run; `select:` = loaded by exact name from the deferred-name list, keyword = a free-text search. "
+      "Off-target = a search returned tools but none the task needed. Not found = a needed tool never came back from any search. "
+      "Hid = not found AND the run then went wrong (wrong tool executed or expected call missing).\n")
+    P("| tools | ok runs | model calls/run | ToolSearch calls/run | keyword searches/run | tools loaded/run | runs with an off-target search | runs where a needed tool was never found | runs where search hid the right tool |")
+    P("|---|---|---|---|---|---|---|---|---|")
+    for v in VARS:
+        x = summary.get(("claude-search", v))
+        if not x: continue
+        P(f"| {v} | {x['n_ok']} | {x['model_calls']:.2f} | {x['ts_calls']:.2f} | {x['ts_keyword']:.2f} | {x['ts_loaded']:.2f} | {x['ts_offtarget_runs']} | {x['ts_notfound_runs']} | {x['ts_hid_runs']} |")
+    P()
+    kw = [r for r in rows if r["model"] == "claude-search" and int(r["toolsearch_keyword"] or 0) > 0]
+    if kw:
+        P("Runs with a keyword (non-`select:`) search:\n")
+        P("| tools | task | rep | queries | needed never found | success |"); P("|---|---|---|---|---|---|")
+        for r in sorted(kw, key=lambda r: (VARS.index(r["variant"]), r["task"], r["rep"])):
+            P(f"| {r['variant']} | {r['task']} | {r['rep']} | `{r['toolsearch_queries']}` | {r['needed_not_found'] or '-'} | {r['success']} |")
+        P()
 
 # failures listing
 P("## Every failed run\n")
@@ -115,15 +142,15 @@ try:
 except ImportError:
     print("matplotlib missing; tables only"); sys.exit(0)
 os.makedirs(os.path.join(HERE, "charts"), exist_ok=True)
-COL = {"claude": "#2a78d6", "codex": "#eb6834", "gemini": "#1baf7a"}
-MK = {"claude": "o", "codex": "s", "gemini": "^"}
+COL = {"claude": "#2a78d6", "claude-search": "#8a4fd0", "codex": "#eb6834", "gemini": "#1baf7a"}
+MK = {"claude": "o", "claude-search": "D", "codex": "s", "gemini": "^"}
 INK, MUTED, GRID = "#0b0b0b", "#52514e", "#e4e3df"
 plt.rcParams.update({"font.size": 10, "axes.edgecolor": MUTED, "axes.labelcolor": INK, "xtick.color": MUTED, "ytick.color": MUTED,
                      "axes.spines.top": False, "axes.spines.right": False, "figure.facecolor": "#fcfcfb", "axes.facecolor": "#fcfcfb"})
 NS = [int(v) for v in VARS if v != "GROUPED"]
 GX = (max(NS) + 10) if NS else 0
 
-def chart(fname, key, ylabel, title, pct=False, ylim=None, ci=False):
+def chart(fname, key, ylabel, title, pct=False, ylim=None, ci=False, loc="upper left"):
     fig, ax = plt.subplots(figsize=(7.6, 4.3))
     gap = any(n > 50 for n in NS) and not any(50 < n < 75 for n in NS)
     if gap:  # sizes 55-70 were not run: shade them and draw the 50 -> 75 link dashed
@@ -154,11 +181,11 @@ def chart(fname, key, ylabel, title, pct=False, ylim=None, ci=False):
         ax.yaxis.set_major_formatter(matplotlib.ticker.PercentFormatter(1.0))
     if ylim: ax.set_ylim(*ylim)
     else: ax.set_ylim(bottom=0)
-    ax.legend(frameon=False, fontsize=9, loc="best")
+    ax.legend(frameon=False, fontsize=8.5, loc=loc)
     fig.tight_layout(); fig.savefig(os.path.join(HERE, "charts", fname), dpi=150); plt.close(fig)
 
 sfx = "" if PHASE == "full" else f"-{PHASE}"
-chart(f"accuracy-vs-n{sfx}.png", "success", "runs fully correct", "Accuracy vs number of tools (all three lines overlap at 100%; shaded: 95% CI)", pct=True, ylim=(0, 1.05), ci=True)
+chart(f"accuracy-vs-n{sfx}.png", "success", "runs fully correct", "Accuracy vs number of tools (all lines overlap at 100%; shaded: 95% CI)", pct=True, ylim=(0, 1.05), ci=True, loc="lower left")
 chart(f"first-call-tokens-vs-n{sfx}.png", "first", "input tokens, first model call", "Context cost of the tool list (first call)")
 chart(f"input-tokens-vs-n{sfx}.png", "input", "input tokens per run (all calls)", "Input tokens per run")
 chart(f"wrong-ambiguous-vs-n{sfx}.png", "wrong_amb", "ambiguous-task runs with a wrong tool", "Wrong-tool rate on ambiguous tasks", pct=True, ylim=(0, 1.05))

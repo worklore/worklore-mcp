@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# One clean headless run.  usage: run.sh <claude|codex|gemini> <5..50|GROUPED> <task-id> <rep> [phase]
+# One clean headless run.  usage: run.sh <claude|claude-search|codex|gemini> <5..50|GROUPED> <task-id> <rep> [phase]
 # Writes runs/<phase>/<model>/<variant>/<task>-r<rep>/ : prompt.txt agent.log agent.err calls.jsonl meta.json row.json
 set -u
 D="$(cd "$(dirname "$0")" && pwd)"
@@ -22,13 +22,17 @@ printf '%s\n' "$P" > "$R/prompt.txt"
 W=$(mktemp -d /tmp/work-XXXXXX)
 L=$(mktemp /tmp/fk-XXXXXX); mv "$L" "$L.jsonl"; L="$L.jsonl"
 cd "$W" && git init -q
-E=(env -u WORKLORE_TOKEN -u WORKLORE_API -u GEMINI_API_KEY -u ANTHROPIC_API_KEY -u OPENAI_API_KEY)
+E=(env -u ENABLE_TOOL_SEARCH -u WORKLORE_TOKEN -u WORKLORE_API -u GEMINI_API_KEY -u ANTHROPIC_API_KEY -u OPENAI_API_KEY)
 start=$(date +%s.%N)
 case $M in
-  claude)
+  claude|claude-search)
+    # claude: --tools "" = no built-ins at all, which also removes ToolSearch, so every MCP schema is loaded upfront
+    #         (same as ENABLE_TOOL_SEARCH=false). claude-search: only the ToolSearch built-in, i.e. Claude Code's
+    #         default deferred loading of MCP tools; ToolSearch can only find/load MCP tools, it is not a bypass.
+    [ $M = claude-search ] && BUILTINS="ToolSearch" || BUILTINS=""
     MCP=$(jq -cn --arg s "$SRV" --arg v "$V" --arg n "$NEED" --arg l "$L" \
       '{mcpServers:{filekit:{command:"python3",args:[$s],env:{TC_VARIANT:$v,TC_NEED:$n,TC_LOG:$l}}}}')
-    timeout -k 10 $TIMEOUT "${E[@]}" claude -p "$P" --model claude-opus-5-5 --tools "" \
+    timeout -k 10 $TIMEOUT "${E[@]}" claude -p "$P" --model claude-opus-5-5 --tools "$BUILTINS" \
       --strict-mcp-config --mcp-config "$MCP" --dangerously-skip-permissions --disable-slash-commands \
       --setting-sources project,local --settings '{"disableAllHooks":true}' --no-session-persistence \
       --output-format stream-json --verbose < /dev/null > "$R/agent.log" 2> "$R/agent.err";;
