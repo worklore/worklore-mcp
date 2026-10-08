@@ -10,7 +10,13 @@ check_capability with a url and every write tool answer 401. Without
 WORKLORE_TOKEN the read tools run anonymously and the token-only checks are
 skipped; with it (a worklore author token) they run signed in. No case here
 ever writes: the write tools are only probed anonymously, where they are
-refused before they run."""
+refused before they run.
+
+Since 0.6.0: resources/list is a fixed list of three documents and stories are
+read through the worklore://story/{slug} template; and the mcp-surface/1
+declared sha256 computed from the endpoint must equal the one ../server.json
+publishes (the version checked is server.json's too)."""
+import hashlib
 import json
 import os
 import sys
@@ -18,6 +24,12 @@ import urllib.error
 import urllib.request
 
 EP = sys.argv[1] if len(sys.argv) > 1 else "https://worklore.dev/mcp"
+HERE = os.path.dirname(os.path.abspath(__file__))
+with open(os.path.join(HERE, "..", "server.json")) as _f:
+    SERVER_JSON = json.load(_f)
+VERSION = SERVER_JSON["version"]
+FINGERPRINT = SERVER_JSON["_meta"]["io.modelcontextprotocol.registry/publisher-provided"][
+    "io.github.sidneybissoli/mcp-surface"]
 STORY = "2026-09-10-the-relay-board-my-agent-runs-the-github-kanban-i-just-close"
 STORY_MD = f"https://worklore.dev/s/{STORY}.md"
 
@@ -87,7 +99,8 @@ READ = ["check_capability", "get_story", "search_stories", "suggest_for_project"
 WRITE = ["edit_story", "publish_story", "report_check", "report_reproduction"]
 check("tools/list without a token → 8 tools", s == 200 and names == sorted(READ + WRITE), str(names))
 s, r = post({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2025-06-18"}})
-check("serverInfo.version is 0.5.1", (r or {}).get("result", {}).get("serverInfo", {}).get("version") == "0.5.1",
+check(f"serverInfo.version is {VERSION} (server.json)",
+      (r or {}).get("result", {}).get("serverInfo", {}).get("version") == VERSION,
       str((r or {}).get("result", {}).get("serverInfo")))
 by = {t["name"]: t for t in tools}
 check("read tools declare readOnlyHint, write tools don't",
@@ -97,6 +110,82 @@ check("read tools declare readOnlyHint, write tools don't",
 check("edit_story declares itself destructive (new text replaces old)",
       by["edit_story"].get("annotations", {}).get("destructiveHint") is True)
 check("every tool has inputSchema", all("inputSchema" in t for t in tools))
+
+# ---------- resources (0.6.0: a fixed list + one story template) ----------
+DOCS = ["worklore://guide", "worklore://story-format", "worklore://access"]
+s, r = post({"jsonrpc": "2.0", "id": 5, "method": "resources/list"})
+check("resources/list without a token → the three fixed documents",
+      s == 200 and [x["uri"] for x in r["result"]["resources"]] == DOCS
+      and "nextCursor" not in r["result"], str(r)[:160])
+s, r = post({"jsonrpc": "2.0", "id": 6, "method": "resources/templates/list"})
+check("resources/templates/list → worklore://story/{slug}",
+      s == 200 and [t["uriTemplate"] for t in r["result"]["resourceTemplates"]] == ["worklore://story/{slug}"],
+      str(r)[:160])
+for uri in DOCS:
+    s, r = post({"jsonrpc": "2.0", "id": 7, "method": "resources/read", "params": {"uri": uri}})
+    c = ((r or {}).get("result") or {}).get("contents") or [{}]
+    check(f"resources/read {uri} without a token → markdown",
+          s == 200 and c[0].get("mimeType") == "text/markdown" and c[0].get("text", "").startswith("# "),
+          str(r)[:120])
+s, r = post({"jsonrpc": "2.0", "id": 8, "method": "resources/read",
+             "params": {"uri": f"worklore://story/{STORY}"}})
+check("resources/read worklore://story/{slug} (public) without a token → the story",
+      s == 200 and len(((r or {}).get("result") or {}).get("contents", [{}])[0].get("text", "")) > 200,
+      str(r)[:120])
+s, r = post({"jsonrpc": "2.0", "id": 8, "method": "resources/read",
+             "params": {"uri": "worklore://story/no-such-slug-xyz"}})
+check("resources/read of a missing story → JSON-RPC error", s == 200 and "error" in (r or {}), str(r)[:120])
+
+
+# ---------- the published fingerprint (mcp-surface/1, server.json) ----------
+def _canon(v):
+    """SPEC §3: keys by UTF-16 code unit, no whitespace, JSON.stringify strings."""
+    if isinstance(v, dict):
+        return "{" + ",".join(json.dumps(k, ensure_ascii=False) + ":" + _canon(v[k])
+                              for k in sorted(v, key=lambda x: x.encode("utf-16-be"))) + "}"
+    if isinstance(v, list):
+        return "[" + ",".join(_canon(x) for x in v) + "]"
+    return json.dumps(v, ensure_ascii=False)
+
+
+def _sha(v):
+    return hashlib.sha256(_canon(v).encode()).hexdigest()
+
+
+def _list(method, key, sort_key):
+    items, params = [], None
+    for _ in range(100):
+        st, resp = post({"jsonrpc": "2.0", "id": 1, "method": method, **({"params": params} if params else {})})
+        res = (resp or {}).get("result") if isinstance(resp, dict) else None
+        if not isinstance(res, dict) or not isinstance(res.get(key), list):
+            return None
+        items += res[key]
+        if not res.get("nextCursor"):
+            return sorted(items, key=lambda x: str(x.get(sort_key)).encode("utf-16-be"))
+        params = {"cursor": res["nextCursor"]}
+    return None
+
+
+s, r = post({"jsonrpc": "2.0", "id": 1, "method": "mcp-surface/metodo-que-nao-existe"})
+check("a made-up method gets no result (the probe can say no)", "result" not in (r or {}), f"{s}")
+s, r = post({"jsonrpc": "2.0", "id": 1, "method": "initialize",
+             "params": {"protocolVersion": "2025-06-18", "capabilities": {},
+                        "clientInfo": {"name": "mcp_test", "version": "1"}}})
+init = (r or {}).get("result") or {}
+declared = {"initialize": {"protocolVersion": init.get("protocolVersion"),
+                           "capabilities": init.get("capabilities"),
+                           "instructions": init.get("instructions"),
+                           "serverInfo": {k: v for k, v in (init.get("serverInfo") or {}).items()
+                                          if k != "version"}},
+            "tools": _list("tools/list", "tools", "name"),
+            "resources": _list("resources/list", "resources", "uri"),
+            "resourceTemplates": _list("resources/templates/list", "resourceTemplates", "uriTemplate"),
+            "prompts": _list("prompts/list", "prompts", "name")}
+check("mcp-surface/1 declared sha256 (live) = server.json",
+      _sha(declared) == FINGERPRINT["declared"]["sha256"],
+      f"live {_sha(declared)[:12]} vs server.json {FINGERPRINT['declared']['sha256'][:12]}")
+check("mcp-surface/1 anonymous.sha256 = sha256(answers)",
+      _sha(FINGERPRINT["anonymous"]["answers"]) == FINGERPRINT["anonymous"]["sha256"])
 
 # ---------- what answers without a token (0.5.0 access table) ----------
 def anon_call(name, args, mid=9):

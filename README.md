@@ -60,45 +60,104 @@ nothing`) so a tier code is never shown bare.
 
 ## Resources
 
-Published stories are also exposed as MCP **resources** under `worklore://story/`,
-paginated, so a client that browses resources sees the library without calling a
-tool. To *find* a specific story, use `search_stories` / `suggest_for_project`
-rather than walking every page.
+Since 0.6.0 `resources/list` is a **fixed** list of three documents — the same
+for everyone, every day — all readable without an account:
+
+| URI | What it is |
+|-----|------------|
+| `worklore://guide` | How to use worklore through MCP: search, read a story **with** the user before acting, reproduce it, report honestly (`failed` is useful), x-ray unfamiliar skills and prompts with `check_capability`, publish or edit only with the user's approval |
+| `worklore://story-format` | The story format: frontmatter fields, the narrative, the "Reproduce this" contract (prerequisites / your agent will need from you / steps / verify), the optional read-only check, fail stories, proposals, sanitising, the exact-references rule. Read it before drafting a story |
+| `worklore://access` | What answers without a token and what needs sign-in — rendered from the one access table the server enforces |
+
+Stories are reached through one **resource template**, `worklore://story/{slug}`
+(`resources/templates/list`). Public stories read without a token; a private
+story reads only for its author and answers like a missing one to everyone else.
+Every `worklore://story/…` URI that `resources/list` handed out before 0.6.0
+still reads. To *find* a story, use `search_stories` / `suggest_for_project`.
+
+Why the stories left the list: a list that changes whenever someone publishes
+cannot be part of a surface fingerprint — the fingerprint would "break" every day
+without anything breaking, and teach clients to ignore a mismatch. The contents
+of the three documents may change between releases; the list entries may not
+without a new version.
 
 ## Verify the surface yourself
 
 A version number is a promise that nothing a client depends on changed without
-it. The registry entry carries the version and, since 0.5.1, the sha256 of each
-part of the surface you can see without an account (in `server.json`,
-`_meta` → `io.modelcontextprotocol.registry/publisher-provided` → `surface`).
-So you don't have to take the promise on trust: recompute them.
+it. Since 0.6.0 worklore publishes its surface fingerprint in the shared form
+**`mcp-surface/1`** ([SPEC](https://github.com/SidneyBissoli/mcp-br-commons/blob/main/packages/mcp-surface/SPEC.md),
+by Sidney Bissoli), so you check worklore exactly the way you check every other
+server that publishes it. The registry entry carries it in `server.json` under
+`_meta` → `io.modelcontextprotocol.registry/publisher-provided` →
+`io.github.sidneybissoli/mcp-surface`:
+
+- `declared.sha256` — the sha256 of what a client sees before it calls anything:
+  the `initialize` result (protocol version, capabilities, instructions,
+  serverInfo without its version) and the four lists (tools, resources, resource
+  templates, prompts), normalised and serialised as the SPEC says;
+- `anonymous` — which methods answer **without a token** (plus one named,
+  harmless `tools/call`: `check_capability` on inline text), and its sha256.
+
+The fastest check is Sidney's dependency-free
+[`verify.mjs`](https://github.com/SidneyBissoli/mcp-br-commons/blob/main/packages/mcp-surface/exemplos/verify.mjs)
+(Node 18+). It reads the registry entry for the version, makes sure the endpoint
+can say "no" to a method that does not exist, captures the live surface, and
+compares:
+
+```bash
+curl -sO https://raw.githubusercontent.com/SidneyBissoli/mcp-br-commons/main/packages/mcp-surface/exemplos/verify.mjs
+node verify.mjs io.github.worklore/worklore 0.6.0
+```
+
+Or in Python, with nothing installed (the declared hash only):
 
 ```bash
 python3 - <<'PY'
 import hashlib, json, urllib.request
+EP = "https://worklore.dev/mcp"
 def rpc(method, params=None):
-    body = {"jsonrpc": "2.0", "id": 1, "method": method, "params": params or {}}
-    req = urllib.request.Request("https://worklore.dev/mcp", data=json.dumps(body).encode(),
+    body = {"jsonrpc": "2.0", "id": 1, "method": method, **({"params": params} if params else {})}
+    req = urllib.request.Request(EP, data=json.dumps(body).encode(),
         headers={"Content-Type": "application/json", "Accept": "application/json, text/event-stream"})
-    return json.load(urllib.request.urlopen(req))["result"]
-h = lambda o: hashlib.sha256(json.dumps(o, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+    return json.load(urllib.request.urlopen(req)).get("result")
+def canon(v):  # SPEC §3: keys by UTF-16 code unit, no whitespace, JSON.stringify strings
+    if isinstance(v, dict):
+        return "{" + ",".join(json.dumps(k, ensure_ascii=False) + ":" + canon(v[k])
+                              for k in sorted(v, key=lambda s: s.encode("utf-16-be"))) + "}"
+    if isinstance(v, list):
+        return "[" + ",".join(canon(x) for x in v) + "]"
+    return json.dumps(v, ensure_ascii=False)
+def listed(method, key):  # this server answers each list in one page
+    res = rpc(method)
+    return res.get(key) if isinstance(res, dict) else None
+def by(items, key):
+    return None if items is None else sorted(items, key=lambda x: str(x.get(key)).encode("utf-16-be"))
 init = rpc("initialize", {"protocolVersion": "2025-06-18", "capabilities": {},
                           "clientInfo": {"name": "verify", "version": "1"}})
-version = init["serverInfo"].pop("version")
-reg = json.load(urllib.request.urlopen(
-    "https://registry.modelcontextprotocol.io/v0/servers?search=io.github.worklore/worklore"))
-entry = next(s["server"] for s in reg["servers"]
-             if s["_meta"]["io.modelcontextprotocol.registry/official"]["isLatest"])
-published = entry["_meta"]["io.modelcontextprotocol.registry/publisher-provided"]["surface"]["sections"]
-print("live version", version, "| registry", entry["version"])
-for name, live in (("initialize", h(init)), ("tools/list", h(rpc("tools/list")))):
-    print(name, "matches" if published[name] == live else "DIFFERS")
+version = init["serverInfo"]["version"]
+surface = {"initialize": {"protocolVersion": init.get("protocolVersion"),
+                          "capabilities": init.get("capabilities"),
+                          "instructions": init.get("instructions"),
+                          "serverInfo": {k: v for k, v in init["serverInfo"].items() if k != "version"}},
+           "tools": by(listed("tools/list", "tools"), "name"),
+           "resources": by(listed("resources/list", "resources"), "uri"),
+           "resourceTemplates": by(listed("resources/templates/list", "resourceTemplates"), "uriTemplate"),
+           "prompts": by(listed("prompts/list", "prompts"), "name")}
+live = hashlib.sha256(canon(surface).encode()).hexdigest()
+entry = json.load(urllib.request.urlopen(
+    "https://registry.modelcontextprotocol.io/v0.1/servers/io.github.worklore%2Fworklore/versions/" + version))
+published = entry["server"]["_meta"]["io.modelcontextprotocol.registry/publisher-provided"][
+    "io.github.sidneybissoli/mcp-surface"]["declared"]["sha256"]
+print("version", version, "| live", live[:12], "| registry", published[:12],
+      "| match" if live == published else "| DIFFERS")
 PY
 ```
 
-If the version is the same and a hash differs, the server changed without saying
-so. Tell me in an issue. The idea of publishing these hashes came from a comment
-by [@_firelinks](https://dev.to/_firelinks) under Sidney Bissoli's
+If the version is the same and the hash differs, the server changed without
+saying so. Tell me in an issue. 0.5.1 published worklore's own per-section
+hashes under a `surface` key; 0.6.0 replaced them with this one shared format.
+The idea of publishing the fingerprint with each release came from a comment by
+[@_firelinks](https://dev.to/_firelinks) under Sidney Bissoli's
 [Your MCP server changed. Its version didn't.](https://dev.to/sidneybissoli/your-mcp-server-changed-its-version-didnt-heres-how-to-catch-it-3ai5)
 
 ## What answers without a token

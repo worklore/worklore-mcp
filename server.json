@@ -6,7 +6,7 @@
     "url": "https://github.com/worklore/worklore-mcp",
     "source": "github"
   },
-  "version": "0.5.1",
+  "version": "0.6.0",
   "remotes": [
     {
       "type": "streamable-http",
@@ -15,16 +15,32 @@
   ],
   "_meta": {
     "io.modelcontextprotocol.registry/publisher-provided": {
-      "surface": {
-        "version": "0.5.1",
-        "hash": "sha256 of json.dumps(section, sort_keys=True, ensure_ascii=False); initialize is requested with protocolVersion 2025-06-18 and has serverInfo.version removed",
-        "sections": {
-          "initialize": "35b4d265c7625c833079c1342136a27191e4c53f2cbbff676a167132a6519e12",
-          "tools/list": "7edcf70ad11db2c0f9976001841acec3bfc8fc58e24f051002b6d6bfbbf46981",
-          "answers_without_token": "a1477383d6ac6e0c78d8c6be01f5c64e036ebcad357a9c7d0bde92266097d44e",
-          "tools_without_token": "b420e3047cf6d5760ff47186ee2dc031ae1da66d362638355b486ec383e7317d"
+      "io.github.sidneybissoli/mcp-surface": {
+        "form": "mcp-surface/1",
+        "spec": "https://github.com/SidneyBissoli/mcp-br-commons/blob/main/packages/mcp-surface/SPEC.md",
+        "endpoint": "https://worklore.dev/mcp",
+        "declared": {
+          "sha256": "d5e4e0a80b32aa4ac702553b1ed3a9bb95ec35fc7be15c176c868d6d6bb5ddbd",
+          "lockedAt": "0.6.0"
         },
-        "how_to_verify": "https://github.com/worklore/worklore-mcp#verify-the-surface-yourself"
+        "anonymous": {
+          "sha256": "ade1bd429bdfc63453a924614520010bb782ffd8d24fdd6483aa17d5b36b61a4",
+          "answers": {
+            "initialize": true,
+            "ping": true,
+            "tools/list": true,
+            "resources/list": true,
+            "resources/templates/list": true,
+            "prompts/list": true,
+            "tools/call": true
+          },
+          "call": {
+            "name": "check_capability",
+            "arguments": {
+              "text": "echo mcp-surface"
+            }
+          }
+        }
       }
     }
   }
