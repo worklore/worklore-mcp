@@ -1,0 +1,541 @@
+{
+ "files": [
+  "a.pdf",
+  "b.pdf",
+  "report.pdf",
+  "scan.pdf",
+  "statement.pdf",
+  "contract.docx",
+  "slides.pptx",
+  "budget.xlsx",
+  "archive.zip",
+  "photo.jpg",
+  "IMG_2041.heic",
+  "logo.png",
+  "page1.jpg",
+  "page2.jpg",
+  "page3.jpg",
+  "receipt.jpg",
+  "vacation.jpg"
+ ],
+ "check_ops": {
+  "eq": "argument equals the value (file names compared by basename, case-insensitive)",
+  "seq": "argument is a list equal to the value, same order",
+  "in": "argument is one of the values",
+  "contains": "argument (string) contains the value",
+  "from_step": "argument equals the output file returned by expected step k (0-based)",
+  "pageset": "argument (string like \"2,5\" or \"2-3\", or a list) denotes exactly this set of pages"
+ },
+ "tasks": [
+  {
+   "id": "t01",
+   "kind": "simple",
+   "prompt": "Compress report.pdf so it is small enough to attach to an email.",
+   "expected": [
+    {
+     "tool": "pdf_compress",
+     "checks": [
+      {
+       "arg": "file",
+       "op": "eq",
+       "value": "report.pdf"
+      }
+     ]
+    }
+   ],
+   "neighbors": [
+    "pdf_optimize",
+    "image_compress",
+    "gzip_compress",
+    "pdf_to_pdfa"
+   ]
+  },
+  {
+   "id": "t02",
+   "kind": "simple",
+   "prompt": "Resize photo.jpg to 800 pixels wide.",
+   "expected": [
+    {
+     "tool": "image_resize",
+     "checks": [
+      {
+       "arg": "file",
+       "op": "eq",
+       "value": "photo.jpg"
+      },
+      {
+       "arg": "width",
+       "op": "eq",
+       "value": 800
+      }
+     ]
+    }
+   ],
+   "neighbors": [
+    "image_crop",
+    "image_compress",
+    "image_thumbnail"
+   ]
+  },
+  {
+   "id": "t03",
+   "kind": "simple",
+   "prompt": "Make a QR code that opens https://worklore.dev",
+   "expected": [
+    {
+     "tool": "qr_make",
+     "checks": [
+      {
+       "arg": "data",
+       "op": "contains",
+       "value": "worklore.dev"
+      }
+     ]
+    }
+   ],
+   "neighbors": [
+    "qr_read",
+    "barcode_make"
+   ]
+  },
+  {
+   "id": "t04",
+   "kind": "simple",
+   "prompt": "Unpack everything in archive.zip.",
+   "expected": [
+    {
+     "tool": "zip_extract",
+     "checks": [
+      {
+       "arg": "file",
+       "op": "eq",
+       "value": "archive.zip"
+      }
+     ]
+    }
+   ],
+   "neighbors": [
+    "zip_list",
+    "zip_create",
+    "tar_extract",
+    "seven_zip_extract"
+   ]
+  },
+  {
+   "id": "t05",
+   "kind": "simple",
+   "prompt": "Convert budget.xlsx to CSV.",
+   "expected": [
+    {
+     "tool": "xlsx_to_csv",
+     "checks": [
+      {
+       "arg": "file",
+       "op": "eq",
+       "value": "budget.xlsx"
+      }
+     ]
+    }
+   ],
+   "neighbors": [
+    "xlsx_read",
+    "csv_to_json",
+    "json_to_csv",
+    "csv_to_xlsx",
+    "xlsx_merge"
+   ]
+  },
+  {
+   "id": "t06",
+   "kind": "ambiguous",
+   "prompt": "scan.pdf takes forever to show up when people open it from our website. Make it display page by page while it is still downloading.",
+   "expected": [
+    {
+     "tool": "pdf_optimize",
+     "checks": [
+      {
+       "arg": "file",
+       "op": "eq",
+       "value": "scan.pdf"
+      }
+     ]
+    }
+   ],
+   "neighbors": [
+    "pdf_compress",
+    "pdf_to_pdfa",
+    "pdf_repair"
+   ]
+  },
+  {
+   "id": "t07",
+   "kind": "ambiguous",
+   "prompt": "Shrink the file size of logo.png without changing its dimensions.",
+   "expected": [
+    {
+     "tool": "image_compress",
+     "checks": [
+      {
+       "arg": "file",
+       "op": "eq",
+       "value": "logo.png"
+      }
+     ]
+    }
+   ],
+   "neighbors": [
+    "image_resize",
+    "pdf_compress",
+    "image_convert",
+    "image_optimize_web",
+    "image_thumbnail"
+   ]
+  },
+  {
+   "id": "t08",
+   "kind": "ambiguous",
+   "prompt": "Turn page1.jpg, page2.jpg and page3.jpg into a single PDF, in that order.",
+   "expected": [
+    {
+     "tool": "pdf_from_images",
+     "checks": [
+      {
+       "arg": "files",
+       "op": "seq",
+       "value": [
+        "page1.jpg",
+        "page2.jpg",
+        "page3.jpg"
+       ]
+      }
+     ]
+    }
+   ],
+   "neighbors": [
+    "doc_to_pdf",
+    "pdf_merge",
+    "image_convert",
+    "image_collage"
+   ]
+  },
+  {
+   "id": "t09",
+   "kind": "ambiguous",
+   "prompt": "Turn contract.docx into a PDF.",
+   "expected": [
+    {
+     "tool": "doc_to_pdf",
+     "checks": [
+      {
+       "arg": "file",
+       "op": "eq",
+       "value": "contract.docx"
+      }
+     ]
+    }
+   ],
+   "neighbors": [
+    "pdf_from_images",
+    "pdf_to_docx",
+    "html_to_pdf",
+    "txt_to_pdf",
+    "odt_to_docx"
+   ]
+  },
+  {
+   "id": "t10",
+   "kind": "ambiguous",
+   "prompt": "Get the text out of receipt.jpg.",
+   "expected": [
+    {
+     "tool": "ocr_image",
+     "checks": [
+      {
+       "arg": "file",
+       "op": "eq",
+       "value": "receipt.jpg"
+      }
+     ]
+    }
+   ],
+   "neighbors": [
+    "pdf_extract_text",
+    "qr_read",
+    "image_info",
+    "pdf_ocr",
+    "summarize_doc"
+   ]
+  },
+  {
+   "id": "t11",
+   "kind": "ambiguous",
+   "prompt": "Before I post vacation.jpg online, remove the GPS location and camera details from it.",
+   "expected": [
+    {
+     "tool": "image_strip_metadata",
+     "checks": [
+      {
+       "arg": "file",
+       "op": "eq",
+       "value": "vacation.jpg"
+      }
+     ]
+    }
+   ],
+   "neighbors": [
+    "pdf_metadata_set",
+    "image_info",
+    "image_crop",
+    "image_blur_faces",
+    "image_optimize_web"
+   ]
+  },
+  {
+   "id": "t12",
+   "kind": "ambiguous",
+   "prompt": "statement.pdf asks for a password every time I open it. The password is blue42. Make it open without one.",
+   "expected": [
+    {
+     "tool": "pdf_unlock",
+     "checks": [
+      {
+       "arg": "file",
+       "op": "eq",
+       "value": "statement.pdf"
+      },
+      {
+       "arg": "password",
+       "op": "eq",
+       "value": "blue42"
+      }
+     ]
+    }
+   ],
+   "neighbors": [
+    "pdf_protect",
+    "zip_protect",
+    "pdf_repair"
+   ]
+  },
+  {
+   "id": "t13",
+   "kind": "chain",
+   "prompt": "Merge a.pdf and b.pdf (a first), then protect the merged file with the password Orchid-7.",
+   "expected": [
+    {
+     "tool": "pdf_merge",
+     "checks": [
+      {
+       "arg": "files",
+       "op": "seq",
+       "value": [
+        "a.pdf",
+        "b.pdf"
+       ]
+      }
+     ]
+    },
+    {
+     "tool": "pdf_protect",
+     "checks": [
+      {
+       "arg": "file",
+       "op": "from_step",
+       "value": 0
+      },
+      {
+       "arg": "password",
+       "op": "eq",
+       "value": "Orchid-7"
+      }
+     ]
+    }
+   ],
+   "neighbors": [
+    "pdf_unlock",
+    "zip_create",
+    "zip_protect",
+    "pdf_stamp"
+   ]
+  },
+  {
+   "id": "t14",
+   "kind": "chain",
+   "prompt": "Convert slides.pptx to PDF, then make that PDF small enough to email.",
+   "expected": [
+    {
+     "tool": "pptx_to_pdf",
+     "checks": [
+      {
+       "arg": "file",
+       "op": "eq",
+       "value": "slides.pptx"
+      }
+     ]
+    },
+    {
+     "tool": "pdf_compress",
+     "checks": [
+      {
+       "arg": "file",
+       "op": "from_step",
+       "value": 0
+      }
+     ]
+    }
+   ],
+   "neighbors": [
+    "doc_to_pdf",
+    "pdf_optimize",
+    "pdf_to_pdfa"
+   ]
+  },
+  {
+   "id": "t15",
+   "kind": "chain",
+   "prompt": "Take IMG_2041.heic: convert it to JPG, then remove its metadata, then resize it to 1080 pixels wide.",
+   "expected": [
+    {
+     "tool": "image_convert",
+     "checks": [
+      {
+       "arg": "file",
+       "op": "eq",
+       "value": "IMG_2041.heic"
+      },
+      {
+       "arg": "format",
+       "op": "in",
+       "value": [
+        "jpg",
+        "jpeg"
+       ]
+      }
+     ]
+    },
+    {
+     "tool": "image_strip_metadata",
+     "checks": [
+      {
+       "arg": "file",
+       "op": "from_step",
+       "value": 0
+      }
+     ]
+    },
+    {
+     "tool": "image_resize",
+     "checks": [
+      {
+       "arg": "file",
+       "op": "from_step",
+       "value": 1
+      },
+      {
+       "arg": "width",
+       "op": "eq",
+       "value": 1080
+      }
+     ]
+    }
+   ],
+   "neighbors": [
+    "pdf_from_images",
+    "image_compress",
+    "image_thumbnail",
+    "image_optimize_web",
+    "image_flip"
+   ]
+  },
+  {
+   "id": "t16",
+   "kind": "ambiguous",
+   "prompt": "Clear the author and title fields from report.pdf before I send it out.",
+   "expected": [
+    {
+     "tool": "pdf_metadata_set",
+     "checks": [
+      {
+       "arg": "file",
+       "op": "eq",
+       "value": "report.pdf"
+      }
+     ]
+    }
+   ],
+   "neighbors": [
+    "image_strip_metadata",
+    "pdf_redact",
+    "pdf_info",
+    "pdf_remove_annotations",
+    "pdf_header_footer"
+   ]
+  },
+  {
+   "id": "t17",
+   "kind": "ambiguous",
+   "prompt": "Remove pages 2 and 5 from report.pdf.",
+   "expected": [
+    {
+     "tool": "pdf_delete_pages",
+     "checks": [
+      {
+       "arg": "file",
+       "op": "eq",
+       "value": "report.pdf"
+      },
+      {
+       "arg": "pages",
+       "op": "pageset",
+       "value": [
+        2,
+        5
+       ]
+      }
+     ]
+    }
+   ],
+   "neighbors": [
+    "pdf_extract_pages",
+    "pdf_split",
+    "pdf_redact",
+    "pdf_resize_pages"
+   ]
+  },
+  {
+   "id": "t18",
+   "kind": "ambiguous",
+   "prompt": "Page 3 of report.pdf was scanned upside down. Fix it.",
+   "expected": [
+    {
+     "tool": "pdf_rotate",
+     "checks": [
+      {
+       "arg": "file",
+       "op": "eq",
+       "value": "report.pdf"
+      },
+      {
+       "arg": "degrees",
+       "op": "eq",
+       "value": 180
+      },
+      {
+       "arg": "pages",
+       "op": "pageset",
+       "value": [
+        3
+       ]
+      }
+     ]
+    }
+   ],
+   "neighbors": [
+    "image_rotate",
+    "pdf_reorder_pages",
+    "image_flip",
+    "pdf_resize_pages"
+   ]
+  }
+ ]
+}

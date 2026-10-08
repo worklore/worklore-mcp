@@ -1,0 +1,6 @@
+full gemini 5 t01 r1 rc=0 {"status":"ok","success":true,"tools_ok":true,"args_ok":true,"wrong":0,"n":1,"in":13405,"s":17.45}
+full gemini 10 t01 r1 rc=0 {"status":"ok","success":true,"tools_ok":true,"args_ok":true,"wrong":0,"n":1,"in":13169,"s":15.28}
+full gemini 15 t01 r1 rc=0 {"status":"ok","success":true,"tools_ok":true,"args_ok":true,"wrong":0,"n":1,"in":13478,"s":15.58}
+xargs: ~/projects/worklore/research/2026-10-07-tool-count/job.sh: terminated by signal 15
+Terminated: 15             timeout -k 10 $TIMEOUT "${E[@]}" ~/.local/bin/agy --agent assistant --model gemini-3.1-pro-high --dangerously-skip-permissions --disable-slash-commands --output-format stream-json -p "$P" < /dev/null > "$R/agent.log" 2> "$R/agent.err"
+full gemini 20 t01 r1 rc=143 {"status":"error","success":false,"tools_ok":false,"args_ok":false,"wrong":0,"n":0,"in":null,"s":0.27}
