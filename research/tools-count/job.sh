@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # One run with rate-limit back-off and the 6-hour budget guard. usage: job.sh <model> <variant> <task> <rep> <phase>
-D=~/projects/worklore/research/2026-10-07-tool-count
+D="$(cd "$(dirname "$0")" && pwd)"
 M=$1; V=$2; T=$3; REP=$4; PH=$5; R=$D/runs/$PH/$M/$V/$T-r$REP
 st(){ jq -r .status "$R/row.json" 2>/dev/null; }
 case "$(st)" in ok|error|timeout) exit 0;; esac          # resumable: already done

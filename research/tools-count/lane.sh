@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # usage: lane.sh <model> <phase> <reps> <parallel> <variants...>
-D=~/projects/worklore/research/2026-10-07-tool-count
+D="$(cd "$(dirname "$0")" && pwd)"
 M=$1; PH=$2; REPS=$3; PAR=$4; shift 4; VARS=("$@")
 mkdir -p "$D/runs/$PH"; [ -f "$D/runs/$PH/.t0" ] || date +%s > "$D/runs/$PH/.t0"
 TASKS=$(jq -r '.tasks[].id' "$D/tasks.json")

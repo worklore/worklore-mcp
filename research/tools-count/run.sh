@@ -2,7 +2,7 @@
 # One clean headless run.  usage: run.sh <claude|codex|gemini> <5..50|GROUPED> <task-id> <rep> [phase]
 # Writes runs/<phase>/<model>/<variant>/<task>-r<rep>/ : prompt.txt agent.log agent.err calls.jsonl meta.json row.json
 set -u
-D=~/projects/worklore/research/2026-10-07-tool-count
+D="$(cd "$(dirname "$0")" && pwd)"
 M=$1; V=$2; T=$3; REP=$4; PHASE=${5:-full}
 TIMEOUT=180
 R=$D/runs/$PHASE/$M/$V/$T-r$REP

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Re-score every finished run from its saved logs (scoring is deterministic), then rebuild results.csv.
-D=~/projects/worklore/research/2026-10-07-tool-count
+D="$(cd "$(dirname "$0")" && pwd)"
 for R in "$D"/runs/*/*/*/*/; do
   [ -f "$R/meta.json" ] || continue
   python3 "$D/score.py" "$R" > "$R/row.json.new" 2> "$R/score.err" && mv "$R/row.json.new" "$R/row.json"
