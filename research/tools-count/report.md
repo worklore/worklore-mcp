@@ -4,6 +4,8 @@ Date: 2026-10-07, with a follow-up run on 2026-10-08. This experiment ran 3 agen
 
 **Follow-up (2026-10-08): Claude Code was measured in two modes.** The original Claude Code runs used `--tools ""`, which removes every built-in tool, including `ToolSearch`. Without `ToolSearch`, Claude Code cannot defer MCP tools, so it put every schema into the prompt. That is a real configuration (the same happens with `ENABLE_TOOL_SEARCH=false`, or behind a proxy that does not support tool references), but it is **not Claude Code's default**: by default MCP tools are deferred and loaded through `ToolSearch` ([docs: "Scale with MCP tool search"](https://code.claude.com/docs/en/mcp.md)). A fourth lane, `claude-search`, repeats the Claude runs with `--tools "ToolSearch"` (everything else identical) at N = 5, 10, 25, 50, 75, 100 and GROUPED: 252 more runs, 1,656 in total. Below, "Claude Code, tool search off" is the original lane and "tool search on (default)" is the new one.
 
+**Second follow-up (2026-10-08): vague names.** All of the runs above used honest, distinct tool names. The section ["Do names decide? Vague names under deferred loading"](#do-names-decide-vague-names-under-deferred-loading) repeats N = 50 and 100 with the same tools, descriptions and schemas under generic names (`optimize_file`, `process_image`, `convert_document`, …). That is 276 more runs: 216 for Claude Code (search on and off) and Antigravity, plus 60 for Codex before its quota ran out. They are counted separately from the totals above.
+
 ## Why
 
 Ashton's dev.to post ("Tool count is context cost: why my MCP server exposes 6 tools instead of 26") argues that 6 grouped tools beat 26 one-per-operation tools. But his measurement compared "server vs no tools at all", not tool counts. "Fewer tools is better" is repeated everywhere, but nobody shows where it breaks. Here we sweep the tool count on a single fake server, keep the tasks fixed, and measure accuracy, tokens, time and cost.
@@ -23,6 +25,8 @@ Ashton's dev.to post ("Tool count is context cost: why my MCP server exposes 6 t
   - In Claude Code with tool search off it is the cheapest way to offer all 50 operations: 5.5k first-call tokens, about what 14 separate tools cost, and 14.2k per run (vs 27.9k for 50 separate tools and 17.8k for 25). Accuracy stays at 100%, but the model made more calls (1.61 per run vs 1.39 at N = 50), mostly extra verification. With tool search on (the default), grouping saves little: 3.9k first call and 16.1k per run, vs 4.6k and 17.4k for 50 separate tools; and 7 grouped tools are cheaper with search off (14.2k per run) than on, because the search call is pure overhead when the whole list is small.
   - In Codex: 50.6k input tokens per run (vs 52.3k at 25 and 61.4k at 50), with 100% accuracy.
   - **In Antigravity it was the only place anything failed: 89% (32/36) fully correct, vs 100% for every separate-tool size.** It also cost the most: 34.1k input tokens per run, 3.5 calls and 1.5 failed calls per run, and 31 s per run instead of 18–23 s. The mechanism is that Gemini often skipped reading the lazy schema of a multi-operation tool. It probed the tool with empty arguments, guessed operation names (`help`, `delete`, `remove_pages`, `linearize`, `clear_metadata`, `decrypt`), and in 3 runs executed a wrong operation (`merge` instead of images → PDF, twice; `split` while looking for delete).
+
+- **Vague names (follow-up):** with the same 100 tools renamed to generic names, all 276 runs were still fully correct, so the descriptions decided the choice. Under deferred loading the names decided how much the agent read first. Claude Code (default) loaded 3–5× as many schemas, switched to keyword searches in 28 of 36 runs at 100 tools, and used 21% more input. Gemini opened a wrong schema first in 34 of 72 runs, probed wrong tools with empty arguments in 10 runs, and used 38% more input at 100 tools. With every schema in the prompt (tool search off), names changed nothing.
 
 So Ashton's direction holds for **context cost in a harness that loads schemas eagerly** (Claude Code with tool search off): 7 grouped tools cost what about 14 separate ones do. It does not show up as **accuracy** at these sizes. And grouping can **hurt** when the harness hides schemas (Antigravity).
 
@@ -261,6 +265,84 @@ There were 216 runs: 3 models × N = 75 and 100 × 18 tasks × 2 repetitions, pl
   - That matches what we saw at 50 (10 of 36 skipped) but not at 75 (0 of 36). So it looks like run-to-run behaviour, not a trend with N.
   - No refusal, truncation or API error appeared at 100 tools. The lazy design means the model never receives 100 schemas at once.
 
+## Do names decide? Vague names under deferred loading
+
+Every run above used honest, distinct names (`pdf_compress` next to `pdf_optimize` and `image_compress`). In two of the four harnesses the model sees **only the names** before it chooses what to load: Claude Code with tool search on (the default) and Antigravity. So did the names do the work? This variant keeps everything else fixed and makes the names bad.
+
+**Setup (2026-10-08).**
+- `TC_NAMES=vague` exposes the same 100 tools, with the same descriptions, schemas, exposure order, tasks and scoring, under the names in [`vague-names.json`](vague-names.json). The server maps every call back to the honest operation, so scoring still works on the canonical op.
+- **How the names were made:**
+  - They are generic verbs and nouns of the kind a careless real server ships: `optimize_file`, `process_image`, `convert_document`, `handle_archive`, `edit_pages`, `run_pdf_job`, `image_utils`, `file_action`.
+  - A name never says the exact operation, and never says the format pair. "document" and "file" are used for PDFs, Word files and everything else alike. Some names keep a coarse noun (`image`, `pages`, `data`, `archive`), as real ones do.
+  - **Look-alike operations get look-alike names:**
+    - `pdf_compress` / `pdf_optimize` / `image_compress` / `image_optimize_web` → `optimize_file` / `optimize_document` / `process_image` / `optimize_image`
+    - `pdf_protect` / `pdf_unlock` / `zip_protect` → `secure_file` / `secure_document` / `secure_archive`
+    - `pdf_delete_pages` / `pdf_split` / `pdf_reorder_pages` / `pdf_extract_pages` / `pdf_crop` → `edit_pages` / `handle_pages` / `manage_pages` / `page_tools` / `adjust_pages`
+    - `doc_to_pdf` / `pptx_to_pdf` / `pdf_to_docx` → `convert_document` / `convert_file` / `convert_pdf`
+    - `pdf_from_images` / `pdf_merge` / `image_collage` → `build_document` / `combine_files` / `build_image`
+    - `ocr_image` / `qr_read` / `pdf_extract_text` → `read_image` / `scan_image` / `read_document`
+    - `pdf_metadata_set` / `image_strip_metadata` / `pdf_redact` → `update_document` / `update_image` / `sanitize_document`
+  - The names are unique, valid MCP names (`^[a-zA-Z0-9_-]{1,64}$`), plausible (no `tool_7`), and none of them is one of the honest names.
+- **Compatibility:** without `TC_NAMES`, the server sends the same bytes as before. `verify_compat.py` checks the exact `initialize` + `tools/list` bytes for all 234 task × size exposures (5–100 and GROUPED) against hashes recorded before the change. It also checks that the vague exposure differs only in names. All earlier runs were re-scored with the extended `score.py`, and every previously reported column came out identical.
+- **Runs:** N = 50 and 100 × 18 tasks × 2 repetitions, in three lanes:
+  - `claude-search` (tool search on, the default: names only, schemas loaded with `ToolSearch`);
+  - `claude` (tool search off: every description and schema is in the prompt). This is the control: can descriptions rescue vague names?
+  - `gemini` (Antigravity: names in the prompt, schema files read on demand).
+  That is 216 runs, all scored, with 0 built-in tool calls. Gemini never opened a file outside the schema cache, including the `vague-names.json` that sits next to the server. Codex was added last as an optional lane. It hit its ChatGPT Plus usage limit ("try again at 3:25 AM") after 60 of 72 runs (30 at each N), and the lane was stopped there. The Codex numbers below cover those 60 runs.
+
+![accuracy, honest vs vague](charts/names-accuracy.png)
+
+**Accuracy did not move. 276 of 276 vague-name runs were fully correct** (Claude search on 72/72, Claude search off 72/72, Gemini 72/72, Codex 60/60). No wrong tool was executed in any run. In every harness, the final choice came from the description, not the name.
+
+**What the names did decide is how much the agent had to read before it acted:**
+
+![schemas loaded, honest vs vague](charts/names-schema-loads.png)
+
+| lane | N | names | fully correct | schemas loaded/run | extra (not needed) schemas/run | runs whose first load was wrong | input tok/run | wall s |
+|---|---|---|---|---|---|---|---|---|
+| Claude, search on | 50 | honest | 36/36 | 1.72 | 0.06 | 0 | 17.4k | 11.0 |
+| Claude, search on | 50 | vague | 36/36 | 5.36 | 3.81 | 3 | 19.9k | 9.9 |
+| Claude, search on | 100 | honest | 36/36 | 1.58 | 0.03 | 0 | 19.9k | 9.4 |
+| Claude, search on | 100 | vague | 36/36 | 7.61 | 6.00 | 5 | 24.1k | 8.6 |
+| Claude, search off | 50 | honest | 36/36 | all | – | – | 27.9k | 6.2 |
+| Claude, search off | 50 | vague | 36/36 | all | – | – | 28.0k | 7.9 |
+| Claude, search off | 100 | honest | 36/36 | all | – | – | 48.6k | 6.7 |
+| Claude, search off | 100 | vague | 36/36 | all | – | – | 47.5k | 8.4 |
+| Gemini | 50 | honest | 36/36 | 0.83 | 0.00 | 0 | 20.5k | 23.0 |
+| Gemini | 50 | vague | 36/36 | 3.11 | 1.78 | 15 | 19.4k | 24.4 |
+| Gemini | 100 | honest | 36/36 | 0.94 | 0.06 | 0 | 18.6k | 19.9 |
+| Gemini | 100 | vague | 36/36 | 3.69 | 2.33 | 19 | 25.7k | 28.5 |
+| Codex | 50 | honest | 36/36 | (code search) | – | – | 61.4k | 14.2 |
+| Codex | 50 | vague | 30/30 | (code search) | – | – | 60.2k | 14.8 |
+| Codex | 100 | honest | 36/36 | (code search) | – | – | 78.2k | 13.8 |
+| Codex | 100 | vague | 30/30 | (code search) | – | – | 73.2k | 13.3 |
+
+"Schemas loaded" means: for Claude, the distinct tools returned by its `ToolSearch` calls; for Gemini, the schema files it opened. "First load wrong" means the first search, or the first schema file opened, contained no tool the task needed.
+
+- **Claude Code, tool search on (default).**
+  - With honest names it picked from the name list and loaded exactly the needed schema by exact name (`select:`) in 69 of 72 runs. It never ran a keyword search.
+  - With vague names that worked in only 7 of 72 runs. In the other runs it did one of two things. It loaded a handful of plausible candidates by name, e.g. `select:optimize_file,process_image,transform_image,update_image,inspect_image` for "shrink logo.png". Or it fell back to a **keyword search**, which matches descriptions, e.g. `linearize pdf fast web view`, `ocr text from image`, `remove delete pages pdf`. Keyword searches happened in 15 of 36 runs at 50 tools and 28 of 36 at 100.
+  - Schemas loaded per run went from 1.7 to 5.4 at 50 tools and from 1.6 to 7.6 at 100. Up to 23 tools came back in one run (t08, "3 JPGs into one PDF").
+  - The first search missed the needed tool in 8 runs: `combine_files` (= `pdf_merge`) for t08 four times, `optimize_image` / `convert_image` for t07 three times, `handle_pdf` (= `pdf_sign`) for t18 once. Every one of those runs then searched again and found the right tool.
+  - Cost: per-run input +14% at 50 and +21% at 100 (24.1k vs 19.9k), list price $0.056 vs $0.047 at 100 (+19%), and 0.2–0.3 more model calls per run. Wall time did not grow (8.6 vs 9.4 s at 100).
+- **Claude Code, tool search off (the control).** All descriptions are in the prompt, so vague names changed nothing measurable: 100%, the same tokens (vague names are slightly shorter: 20.0k vs 20.2k on the first call at 100), the same number of calls. So yes, the descriptions rescue vague names. With tool search on, the rescue costs the reads above.
+- **Antigravity (Gemini).**
+  - With honest names Gemini often skipped the schema read and guessed the arguments (10 of 36 runs at 50, 7 of 36 at 100). With vague names it almost always read schemas (it skipped in 1 of 72 runs), and it read several: 3.1–3.7 per run instead of 0.8–0.9, up to 15 in one run.
+  - Its first schema read was a wrong tool in 34 of 72 runs. Most often: `optimize_document` (= `pdf_optimize`) for "compress for email", `combine_files` (= `pdf_merge`) for images → PDF, `convert_document` (= `doc_to_pdf`) for pptx → PDF, `sanitize_document` (= `pdf_redact`) for "clear author and title", `edit_image` (= `remove_background`) for "resize".
+  - In 10 runs it went further and **called a wrong tool with empty arguments (`{}`) to see what it does**: 16 such probes. Examples: `edit_pages`' neighbours `handle_pages` / `manage_pages` / `adjust_pages` for "remove pages 2 and 5", `combine_files` and `pack_files` (= `zip_create`) for images → PDF, `convert_file` (= `pptx_to_pdf`) for docx → PDF and xlsx → CSV, `run_pdf_job` (= `pdf_flatten`) while merging. Every probe was rejected for missing required arguments, so nothing wrong executed. On a real server, the same probe would *run* any tool that has no required arguments.
+  - Cost: at 100 tools, +38% input per run (25.7k vs 18.6k), 2× the output (1.6k vs 0.8k tokens, mostly reasoning about which tool is which), and 43% more wall time (28.5 vs 19.9 s). At 50 tools it was a wash (19.4k vs 20.5k), because the honest-name baseline already paid for its own failed argument guesses.
+- **Codex** searches the tool definitions with code (a regex over `ALL_TOOLS`, which includes descriptions), so names barely mattered. It was 100% correct, with the same or slightly fewer tokens. At 100 tools its broad first search was still truncated by the exec output cap (31 of 31 runs).
+
+**Most common confusions** (vague name picked or loaded first instead of the needed one): images → PDF read as "combine files" (`combine_files` = `pdf_merge`; 8 first loads and 1 probe, plus 1 probe of `pack_files` = `zip_create`); "shrink a PNG" read as `optimize_image` (= `image_optimize_web`; 4 first loads, 1 probe); "compress for email" read as `optimize_document` (= `pdf_optimize`; 4 first loads, 2 probes); delete pages read as other page tools (3 probes in one run); pptx → PDF and docx → PDF swapped between `convert_file` and `convert_document` (4 first loads, 2 probes). The full list per task is in `tables-vague.md`.
+
+**So do names decide?** Not the final choice, at least not here: four harnesses and 276 runs got every task right with names that do not say which object or which operation. The descriptions decided it. But under deferred loading the name is the only thing the model sees up front, so a vague name costs reads instead of accuracy:
+- 3–5× as many schemas loaded;
+- a keyword search in most Claude runs at 100 tools;
+- wrong first loads in 8 of 72 Claude runs and 34 of 72 Gemini runs;
+- empty-argument probes of wrong tools in Gemini;
+- +21% (Claude Code, default) and +38% (Antigravity) input per run at 100 tools.
+Where every schema is in the prompt anyway (Claude Code with tool search off), names changed nothing. This holds with good descriptions. Vague names *and* vague descriptions, which real servers also ship, were not tested.
+
 ## Where it breaks
 
 - **Accuracy with separate tools:** it does not break between 5 and 100, for any of the three. There were 0 failures in 1,296 separate-tool runs. A real breaking point must lie past 100 tools, or appear with worse descriptions, overlapping domains or several servers at once.
@@ -276,13 +358,14 @@ There were 216 runs: 3 models × N = 75 and 100 × 18 tasks × 2 repetitions, pl
   - **Gemini in Antigravity:** it sometimes skips the lazy schema read and learns the arguments from an error instead. That happened in 10 of 36 runs at 50 tools, 0 of 36 at 75 and 7 of 36 at 100, so it is noisy rather than a clean trend with N. It costs failed calls and a few thousand tokens, not correctness.
   - **Claude Code** shows no strain at 100: with tool search off the bill is linear, with it on (default) the model loads 1–2 schemas by name and the bill barely moves.
   - In two of three harnesses, the first thing to give way is how the harness *shows* the tools to the model, not the model's choice.
+- **Names:** vague names did not break accuracy either (276 of 276). In the harnesses that show only names up front, they cost reads, wrong first loads and tokens (see "Do names decide?").
 
 ## Limitations
 
 - **Fake tools.** Results are deterministic and plausible, but nothing real happens. The models could not see real failures or real file contents, so verification behaviour may differ from real use. Two fake-server flaws were fixed before the counted runs:
   - info tools contradicted earlier edits (found in the pilot);
   - grouped operations were accepted without their inputs (found in the full run; the affected grouped runs were redone).
-- **Synthetic, single-domain tasks.** There are 18 short file and document tasks with clear wording. All three models are strong, so the task set turned out too easy to find an accuracy cliff. The 3 harder ambiguous tasks added after pilot 1 did not change that. A null result means "no drop up to 50 tools on tasks like these", not "never". Our tool descriptions were honest and distinct; real servers often have worse ones.
+- **Synthetic, single-domain tasks.** There are 18 short file and document tasks with clear wording. All three models are strong, so the task set turned out too easy to find an accuracy cliff. The 3 harder ambiguous tasks added after pilot 1 did not change that. A null result means "no drop up to 50 tools on tasks like these", not "never". Our tool descriptions were honest and distinct; real servers often have worse ones. The vague-names variant changes only the names; vague names *combined with* vague descriptions were not tested.
 - **The tool set is built per task.** The needed tools are always present, and distractors are added in one fixed seeded order. A task's tempting neighbour enters at a task-specific N; at N = 50 all neighbours are present. A different seed would change which tools sit near the needed ones at small N.
 - **Harness overheads are inside the token counts.** Each CLI has its own system prompt and its own way of exposing MCP tools:
   - Claude Code: about 2.5k tokens with no tools; eager schemas with tool search off, deferred names + the `ToolSearch` definition with it on (first-call fit intercept 3,852 tokens).
@@ -296,26 +379,27 @@ There were 216 runs: 3 models × N = 75 and 100 × 18 tasks × 2 repetitions, pl
   - The schema cache (`~/.gemini/antigravity-cli/mcp/`) is global, so parallel runs shared it. Every tool's schema is identical across sizes, so sharing is harmless.
   - One run sent the tools eagerly as Gemini function declarations, and the Gemini API rejected it: integer `enum`s are not allowed (`degrees: [90,180,270]`). It happened while the cache was being reset; the run was redone and the original is in `runs/superseded/gemini-harness-errors/`. A real server with integer enums would hit this whenever Antigravity loads it eagerly.
   - One more run was cut off by a lane restart and redone.
-- **Codex quota:** Codex hit the ChatGPT Plus usage limit after about 300 runs ("You've hit your usage limit … try again at 10:19 PM"). The lane was stopped, and the remaining runs, plus the 75/100 runs, were finished after the reset. No Codex run is missing. Final count: 468 of 396 Codex runs scored; -72 missing.
+- **Codex quota:** Codex hit the ChatGPT Plus usage limit after about 300 runs ("You've hit your usage limit … try again at 10:19 PM"). The lane was stopped, and the remaining runs, plus the 75/100 runs, were finished after the reset. No Codex run is missing. Final count: 468 of 468 Codex runs scored; 0 missing.
 - **Sizes 55–70 were not run.** The charts link 50 → 75 with a dashed line over a shaded gap. Only the 75 and 100 points include the extension tools, so the look-alikes added there were never tested at smaller N.
 - **Quotas:**
   - Gemini (Google AI Pro) hit its individual quota during the 75/100 runs ("Individual quota reached … resets in 2h30m"). Those runs were paused and finished after the reset.
   - Codex hit the ChatGPT Plus usage limit once (see below).
-  - No run is missing.
+  - No run of the main experiment is missing. In the vague-names follow-up, Codex (an optional lane) hit its usage limit again after 60 of 72 runs. The 12 missing runs are t13–t18, repetition 2 (2 of them ended "ratelimited" and are excluded), and the lane was not resumed. All 216 runs of the three required lanes are scored.
 - **Repetitions:** 2 per cell, 36 runs per model per size. The 95% CI at 36/36 is 90–100%, so a drop of a few percentage points would not be detectable.
 
 ## Files
 
-- `server.py`: the fake MCP server (50-tool pool + 50 extension tools, GROUPED, call log, per-run file state). `verify_compat.py` and `exposure-hashes-n50.json` prove that N ≤ 50 and GROUPED are unchanged by the extension. `python3 server.py --list <N|GROUPED> <task>` prints an exposed set.
+- `server.py`: the fake MCP server (50-tool pool + 50 extension tools, GROUPED, call log, per-run file state). `TC_NAMES=vague` renames the tools with `vague-names.json` (honest → vague name). `verify_compat.py`, with `exposure-hashes-n50.json` and `exposure-hashes-wire.json`, proves that N ≤ 50 and GROUPED are unchanged by the extension, that the default `tools/list` bytes are unchanged by `TC_NAMES` for every task × size, and that the vague variant differs only in names. `python3 server.py --list <N|GROUPED> <task>` prints an exposed set.
 - `tasks.json`: 18 tasks with expected calls, key-argument checks and tempting neighbours.
 - `prompts/template.txt`: the prompt.
 - Scripts:
-  - `run.sh`: one isolated headless run (`claude`, `claude-search`, `codex`, `gemini`).
+  - `run.sh`: one isolated headless run (`claude`, `claude-search`, `codex`, `gemini`); `TC_NAMES=vague ./lane.sh <model> vague 2 2 50 100` reruns the vague-names sweep.
   - `job.sh`: rate-limit back-off and the 6 h budget guard.
   - `lane.sh`: a resumable sweep (skips finished runs).
   - `score.py`: scoring from the call log and the CLI usage.
   - `rescore.sh` and `aggregate.py`: rebuild `results.csv`.
   - `analyze.py`: writes `tables-*.md`, `summary-*.json` and `charts/*.png`.
-  - `make_report.py`: fills this report from the data.
+  - `analyze_names.py`: vague vs honest names → `tables-vague.md`, `summary-vague.json`, `charts/names-*.png`.
+  - `make_report.py`: fills this report from the data (`at100.md` and `names.md` are its hand-written sections).
 - `pilot-report.md`: pilot findings and fixes. `tables-pilot1.md` and `tables-pilot2.md` hold the pilot numbers.
-- `runs.tar.gz` (14 MB; `tar -xzf runs.tar.gz` restores `runs/`, which is git-ignored because it is about 12k files): raw logs per run (prompt, CLI event log, stderr, server call log, Codex rollout, meta, scored row). `runs/superseded/` keeps runs made before the grouped-server fix and the harness-error runs; they are not counted. The `runs-*.out*` files are the lane logs.
+- `runs.tar.gz` (16 MB; `tar -xzf runs.tar.gz` restores `runs/`, which is git-ignored because it is about 12k files): raw logs per run (prompt, CLI event log, stderr, server call log, Codex rollout, meta, scored row). `runs/superseded/` keeps runs made before the grouped-server fix and the harness-error runs; they are not counted. The `runs-*.out*` files are the lane logs.

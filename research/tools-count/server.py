@@ -12,6 +12,9 @@ Environment:
   TC_TASKS    path to tasks.json (default: next to this file)
   TC_LOG      path of the JSONL call log (default: none)
   TC_SEED     seed for the distractor order (default 20261007)
+  TC_NAMES    "vague": expose the same tools (same descriptions and schemas) under the vague names in
+              vague-names.json; calls are mapped back to the honest name for logging and scoring.
+              Unset (default): honest names, byte-identical to the original runs. Ignored for GROUPED.
 
 Exposed set for separate variant N: the task's needed tools, then distractors taken in a fixed
 seeded order of the whole pool, until N tools. So the set for N is a superset of the set for N-5.
@@ -468,6 +471,11 @@ def tool_defs(variant, names):
     src = GROUPED if variant == "GROUPED" else POOL
     return [{"name": n, "description": src[n][0], "inputSchema": src[n][1]} for n in names]
 
+def vague_names():
+    """honest name -> vague name (TC_NAMES=vague)."""
+    with open(os.path.join(HERE, "vague-names.json")) as f:
+        return json.load(f)["names"]
+
 def log(entry):
     p = os.environ.get("TC_LOG")
     if p:
@@ -480,8 +488,17 @@ def main():
     seed = int(os.environ.get("TC_SEED", "20261007"))
     names = exposed_tools(variant, task_id, seed, os.environ.get("TC_NEED"))
     defs = tool_defs(variant, names)
+    vague = os.environ.get("TC_NAMES") == "vague" and variant != "GROUPED"
+    honest_of = {}
+    if vague:
+        vn = vague_names()
+        honest_of = {vn[n]: n for n in names}
+        defs = [{**d, "name": vn[d["name"]]} for d in defs]
     schemas = {d["name"]: d["inputSchema"] for d in defs}
-    log({"event": "start", "variant": variant, "task": task_id, "tools": names})
+    if vague:
+        log({"event": "start", "variant": variant, "task": task_id, "tools": names, "names": "vague", "exposed": [d["name"] for d in defs]})
+    else:
+        log({"event": "start", "variant": variant, "task": task_id, "tools": names})
     for line in sys.stdin:
         line = line.strip()
         if not line: continue
@@ -507,7 +524,7 @@ def main():
                 log({"event": "call", "tool": tool, "op": None, "args": a, "result": None, "error": "unknown tool"})
             else:
                 missing = [r for r in schemas[tool].get("required", []) if r not in a]
-                op = canonical(tool, a) if variant == "GROUPED" else tool
+                op = canonical(tool, a) if variant == "GROUPED" else honest_of.get(tool, tool)
                 ca = canonical_args(tool, a) if variant == "GROUPED" else a
                 if missing:
                     res = {"ok": False, "error": f"missing required argument(s): {', '.join(missing)}"}

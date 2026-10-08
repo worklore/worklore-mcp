@@ -31,6 +31,14 @@ repetitions per cell. October 2026.
   - Codex keeps schemas out of the prompt and searches them with code (flat first
     call, but its search output was truncated at 100 tools). Antigravity sends
     only names (~5 tokens per tool).
+- **Do names decide? Not the choice, but the reading.** The same 100 tools renamed to
+  vague names (`optimize_file`, `process_image`, `convert_document`, …; look-alikes get
+  look-alike names) were still picked right in 276 of 276 runs, because the
+  descriptions decided. Under deferred loading, though, the agent had to read more first.
+  Claude Code (default) loaded 3–5× as many schemas and used keyword searches,
+  with +21% input at 100 tools. Gemini opened a wrong schema first in 34 of 72 runs
+  and probed wrong tools with empty arguments, with +38% input. With every schema
+  upfront (tool search off), names changed nothing.
 - **Grouping helps or hurts depending on the client**: the cheapest option in
   Claude Code with tool search off (7 grouped tools cost about as much as 14
   separate ones), little difference with tool search on, and the only accuracy
@@ -42,12 +50,13 @@ repetitions per cell. October 2026.
 |---|---|
 | [report.md](report.md) | the write-up, including "What happens at 100" |
 | [pilot-report.md](pilot-report.md) | the pilot, the self-checks and the fixes made before the full run |
+| [vague-names.json](vague-names.json) | the vague-name mapping (`TC_NAMES=vague`); results in [tables-vague.md](tables-vague.md) and `charts/names-*.png` |
 | [charts/](charts/) | accuracy, tokens, wrong picks on ambiguous tasks, time — all vs tool count |
 | [results.csv](results.csv) | one row per run, scored from the server's own call log |
 | [server.py](server.py) | the fake MCP server (Python stdlib, stdio): 100 tools, grouped variant, per-run call log |
 | [tasks.json](tasks.json) | the 18 tasks and their expected calls |
 | `run.sh`, `job.sh`, `lane.sh`, `score.py`, `analyze.py`, `make_report.py` | runner, scorer and analysis (`run.sh claude` = tool search off, `run.sh claude-search` = on) |
-| `runs.tar.gz` | every raw run (transcripts, call logs), 14 MB packed |
+| `runs.tar.gz` | every raw run (transcripts, call logs), 16 MB packed |
 
 The tools are fake (nothing touches a file), the tasks come from one domain
 (files and documents), and token counts include each client's own overhead, so

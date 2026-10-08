@@ -12,6 +12,12 @@ rm -rf "$R"; mkdir -p "$R"
 SRV=/tmp/filekit-mcp/server.py
 mkdir -p /tmp/filekit-mcp
 if ! cmp -s "$D/server.py" "$SRV"; then cp "$D/server.py" "$SRV.tmp.$$" && mv -f "$SRV.tmp.$$" "$SRV"; fi
+# TC_NAMES=vague: same tools under vague names (vague-names.json). Unset: honest names, MCP config unchanged.
+NAMES=${TC_NAMES:-}
+if [ -n "$NAMES" ]; then
+  if ! cmp -s "$D/vague-names.json" /tmp/filekit-mcp/vague-names.json; then cp "$D/vague-names.json" /tmp/filekit-mcp/vn.tmp.$$ && mv -f /tmp/filekit-mcp/vn.tmp.$$ /tmp/filekit-mcp/vague-names.json; fi
+fi
+NX=$( [ -n "$NAMES" ] && jq -cn --arg x "$NAMES" '{TC_NAMES:$x}' || echo '{}')
 
 NEED=$(jq -r --arg t "$T" '.tasks[]|select(.id==$t)|[.expected[].tool]|unique|join(",")' "$D/tasks.json")
 TASK=$(jq -r --arg t "$T" '.tasks[]|select(.id==$t)|.prompt' "$D/tasks.json")
@@ -31,7 +37,7 @@ case $M in
     #         default deferred loading of MCP tools; ToolSearch can only find/load MCP tools, it is not a bypass.
     [ $M = claude-search ] && BUILTINS="ToolSearch" || BUILTINS=""
     MCP=$(jq -cn --arg s "$SRV" --arg v "$V" --arg n "$NEED" --arg l "$L" \
-      '{mcpServers:{filekit:{command:"python3",args:[$s],env:{TC_VARIANT:$v,TC_NEED:$n,TC_LOG:$l}}}}')
+      --argjson x "$NX" '{mcpServers:{filekit:{command:"python3",args:[$s],env:({TC_VARIANT:$v,TC_NEED:$n,TC_LOG:$l}+$x)}}}')
     timeout -k 10 $TIMEOUT "${E[@]}" claude -p "$P" --model claude-opus-5-5 --tools "$BUILTINS" \
       --strict-mcp-config --mcp-config "$MCP" --dangerously-skip-permissions --disable-slash-commands \
       --setting-sources project,local --settings '{"disableAllHooks":true}' --no-session-persistence \
@@ -45,7 +51,7 @@ case $M in
       -c web_search='"disabled"' -c approval_policy='"never"' \
       -c 'mcp_servers.filekit.command="python3"' -c "mcp_servers.filekit.args=[\"$SRV\"]" \
       -c 'mcp_servers.filekit.default_tools_approval_mode="approve"' \
-      -c "mcp_servers.filekit.env={TC_VARIANT=\"$V\",TC_NEED=\"$NEED\",TC_LOG=\"$L\"}" \
+      -c "mcp_servers.filekit.env={TC_VARIANT=\"$V\",TC_NEED=\"$NEED\",TC_LOG=\"$L\"${NAMES:+,TC_NAMES=\"$NAMES\"}}" \
       --json -o "$R/final.txt" "$P" < /dev/null > "$R/agent.log" 2> "$R/agent.err";;
   gemini)
     # Antigravity: workspace plugin carries the MCP server; a custom main agent keeps only view_file
@@ -54,8 +60,8 @@ case $M in
     # (schema cache is shared; all tool schemas are identical across variants, so parallel runs are safe)
     mkdir -p .agents/plugins/filekit .agents/agents
     echo '{"name":"filekit"}' > .agents/plugins/filekit/plugin.json
-    jq -n --arg s "$SRV" --arg v "$V" --arg n "$NEED" --arg l "$L" \
-      '{mcpServers:{filekit:{command:"python3",args:[$s],env:{TC_VARIANT:$v,TC_NEED:$n,TC_LOG:$l}}}}' > .agents/plugins/filekit/mcp_config.json
+    jq -n --arg s "$SRV" --arg v "$V" --arg n "$NEED" --arg l "$L" --argjson x "$NX" \
+      '{mcpServers:{filekit:{command:"python3",args:[$s],env:({TC_VARIANT:$v,TC_NEED:$n,TC_LOG:$l}+$x)}}}' > .agents/plugins/filekit/mcp_config.json
     printf '%s\n' '---' 'name: assistant' 'description: General assistant.' 'mainAgent: true' 'inheritMcp: true' 'tools:' '  - view_file' '---' \
       '# assistant' 'You are a helpful assistant. Use the available tools to do what the user asks.' > .agents/agents/assistant.md
     git add -A >/dev/null 2>&1; git -c user.name=u -c user.email=u@local commit -qm init >/dev/null 2>&1

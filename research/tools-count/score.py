@@ -34,6 +34,10 @@ def jl(path):
 log = jl(os.path.join(R, "calls.jsonl"))
 start = next((e for e in log if e.get("event") == "start"), {})
 calls = [e for e in log if e.get("event") == "call"]
+NAMES = start.get("names", "honest")
+# exposed name -> honest (canonical) name; identity for honest runs
+HON = dict(zip(start.get("exposed") or [], start.get("tools") or [])) if NAMES == "vague" else {}
+hon = lambda n: HON.get(n, n)
 
 def norm(x):
     return os.path.basename(str(x).strip().lstrip("./")).lower()
@@ -146,7 +150,7 @@ if M in ("claude", "claude-search"):
                     u["builtin_calls"] += 1; u["builtin_names"].append(c["name"])
         elif o.get("type") == "user" and isinstance(o.get("tool_use_result"), dict) and "matches" in o["tool_use_result"]:
             tr = o["tool_use_result"]
-            ts_results.append((tr.get("query", ""), [x.split("__")[-1] for x in tr.get("matches") or []]))
+            ts_results.append((tr.get("query", ""), [hon(x.split("__")[-1]) for x in tr.get("matches") or []]))
         elif o.get("type") == "result":
             us = o.get("usage", {})
             u["input_uncached"] = us.get("input_tokens"); u["cache_read"] = us.get("cache_read_input_tokens"); u["cache_write"] = us.get("cache_creation_input_tokens")
@@ -170,6 +174,9 @@ if M in ("claude", "claude-search"):
         u["toolsearch_empty"] = sum(1 for _, ms in ts_results if not ms)
         u["needed_not_found"] = sorted(need - found)
         u["toolsearch_queries"] = [q for q, _ in ts_results]
+        # schema loads in honest names, in load order (first occurrence)
+        u["loaded_tools"] = list(dict.fromkeys(x for _, ms in ts_results for x in ms))
+        u["first_load_wrong"] = bool(ts_results) and not (set(ts_results[0][1]) & need)
 elif M == "codex":
     for o in agent:
         t = o.get("type")
@@ -225,6 +232,7 @@ elif M == "gemini":
                     pass
                 elif nm == "view_file" and "/antigravity-cli/mcp/" in str(params.get("AbsolutePath", "")):
                     u.setdefault("schema_reads", 0); u["schema_reads"] += 1
+                    u.setdefault("loaded_tools", []).append(hon(os.path.splitext(os.path.basename(str(params["AbsolutePath"])))[0]))
                 else:
                     u["builtin_calls"] += 1; u["builtin_names"].append(f"{nm}:{json.dumps(params)[:120]}")
         if o.get("event") == "result":
@@ -235,6 +243,10 @@ elif M == "gemini":
             u["final_text"] = (r.get("response") or "")[:500]
             if r.get("status") not in (None, "SUCCESS"):
                 u["harness_error"] = f"status={r.get('status')}"
+    if "loaded_tools" in u:
+        need = set(exp_tools) if meta["variant"] != "GROUPED" else {grouped_tool(x) for x in exp_tools}
+        u["first_load_wrong"] = u["loaded_tools"][0] not in need
+        u["loaded_tools"] = list(dict.fromkeys(u["loaded_tools"]))
     u["model_id"] = "gemini-3.1-pro-high (agy --model)"
     u["first_call_input"] = first; u["model_calls"] = n_steps or None
     m = re.search(r"AGY_ERROR: (.*)", err_txt)
@@ -255,12 +267,19 @@ else:
     status = "ok"
 
 success = bool(tools_ok and args_ok and not wrong)
+# names experiment: every pick of a wrong (non-read-only) tool, executed or failed; the first mutating pick; extra schemas loaded
+mut = [c for c in calls if c.get("op") not in READONLY]
+u["wrong_tool_picks"] = len(wrong) + len(wrong_attempts)
+u["wrong_attempt_ops"] = [c.get("op") for c in wrong_attempts]
+u["first_pick_wrong"] = bool(mut) and mut[0].get("op") != exp_tools[0]
+if "loaded_tools" in u and meta["variant"] != "GROUPED":
+    u["loaded_extra"] = len([x for x in u["loaded_tools"] if x not in exp_tools and x not in READONLY])
 if M == "claude-search":
     # search hid the right tool: a needed tool never came back from ToolSearch, and the run then went wrong
     # (a wrong tool executed, or the expected calls never happened)
     u["search_hid_tool"] = bool(u.get("needed_not_found") and (wrong or not tools_ok))
 row = {
-    "phase": meta["phase"], "model": M, "variant": meta["variant"], "n_tools": len(start.get("tools") or []) or None,
+    "phase": meta["phase"], "model": M, "names": NAMES, "variant": meta["variant"], "n_tools": len(start.get("tools") or []) or None,
     "task": meta["task"], "kind": task["kind"], "rep": meta["rep"], "status": status,
     "success": success, "tools_ok": tools_ok, "args_ok": args_ok, "strict": bool(success and not extra_ro and repeats == 0),
     "n_calls": len(calls), "n_expected": len(expected), "wrong_calls": len(wrong), "wrong_ops": [c.get("op") for c in wrong], "failed_wrong_attempts": len(wrong_attempts),

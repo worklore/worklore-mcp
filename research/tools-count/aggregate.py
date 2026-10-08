@@ -8,7 +8,8 @@ COLS = ["phase", "model", "model_id", "variant", "n_tools", "task", "kind", "rep
         "first_call_input", "model_calls", "cost_usd", "wall_s", "cli_duration_s", "exit_code", "builtin_calls", "builtin_names",
         "schema_reads", "exec_calls", "harness_error",
         "toolsearch_calls", "toolsearch_select", "toolsearch_keyword", "toolsearch_loaded", "toolsearch_offtarget", "toolsearch_empty",
-        "needed_not_found", "search_hid_tool", "toolsearch_queries"]
+        "needed_not_found", "search_hid_tool", "toolsearch_queries",
+        "names", "wrong_tool_picks", "wrong_attempt_ops", "first_pick_wrong", "loaded_tools", "loaded_extra", "first_load_wrong"]
 rows = []
 for p in sorted(glob.glob(os.path.join(HERE, "runs", "*", "*", "*", "*", "row.json"))):
     try:
@@ -21,7 +22,7 @@ with open(out, "w", newline="") as f:
     w.writeheader()
     for r in rows:
         r = dict(r)
-        for k in ("wrong_ops", "called_ops", "neighbors_present", "builtin_names", "needed_not_found", "toolsearch_queries"):
+        for k in ("wrong_ops", "called_ops", "neighbors_present", "builtin_names", "needed_not_found", "toolsearch_queries", "wrong_attempt_ops", "loaded_tools"):
             if isinstance(r.get(k), list):
                 r[k] = "|".join(map(str, r[k]))
         w.writerow(r)

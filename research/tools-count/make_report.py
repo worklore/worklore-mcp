@@ -80,7 +80,8 @@ miss = [r for r in rows if r["model"] == "codex" and r["status"] == "ratelimited
 xn = len([r for r in counted if r["model"] == "codex"])
 note_file = os.path.join(H, "codex-quota-note.txt")
 F["CODEX_QUOTA_NOTE"] = open(note_file).read().strip() if os.path.exists(note_file) else ""
-F["CODEX_QUOTA_NOTE"] += f" Final count: {xn} of 396 Codex runs scored; {396 - xn} missing."
+XEXP = 36 * len(NX + ["GROUPED"])   # 12 sizes + GROUPED, 36 runs each
+F["CODEX_QUOTA_NOTE"] += f" Final count: {xn} of {XEXP} Codex runs scored; {XEXP - xn} missing."
 # ---------- Claude Code with tool search on (default) vs off ----------
 CSV = ["5", "10", "25", "50", "75", "100", "GROUPED"]
 def x(m, v, k):
@@ -124,6 +125,7 @@ for v in CSV:
 cw = lambda m, v: st.mean(float(r["cache_write"] or 0) for r in rows if r["model"] == m and r["variant"] == v and r["status"] == "ok")
 F.update(C_CW_100=k0(cw("claude", "100")), CS_CW_100=k0(cw("claude-search", "100")))
 F["SEARCH_TABLE"] = "\n".join(st_rows)
+F["NAMES"] = open(os.path.join(H, "names.md")).read().strip() if os.path.exists(os.path.join(H, "names.md")) else ""
 F["AT100"] = open(os.path.join(H, "at100.md")).read().strip() if os.path.exists(os.path.join(H, "at100.md")) else ""
 t = open(os.path.join(H, "report.template.md")).read()
 for k, v in F.items():

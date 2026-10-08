@@ -4,6 +4,8 @@ Date: 2026-10-07, with a follow-up run on 2026-10-08. This experiment ran 3 agen
 
 **Follow-up (2026-10-08): Claude Code was measured in two modes.** The original Claude Code runs used `--tools ""`, which removes every built-in tool, including `ToolSearch`. Without `ToolSearch`, Claude Code cannot defer MCP tools, so it put every schema into the prompt. That is a real configuration (the same happens with `ENABLE_TOOL_SEARCH=false`, or behind a proxy that does not support tool references), but it is **not Claude Code's default**: by default MCP tools are deferred and loaded through `ToolSearch` ([docs: "Scale with MCP tool search"](https://code.claude.com/docs/en/mcp.md)). A fourth lane, `claude-search`, repeats the Claude runs with `--tools "ToolSearch"` (everything else identical) at N = 5, 10, 25, 50, 75, 100 and GROUPED: {{CS_RUNS}} more runs, {{TOTAL_RUNS}} in total. Below, "Claude Code, tool search off" is the original lane and "tool search on (default)" is the new one.
 
+**Second follow-up (2026-10-08): vague names.** All of the runs above used honest, distinct tool names. The section ["Do names decide? Vague names under deferred loading"](#do-names-decide-vague-names-under-deferred-loading) repeats N = 50 and 100 with the same tools, descriptions and schemas under generic names (`optimize_file`, `process_image`, `convert_document`, …). That is 276 more runs: 216 for Claude Code (search on and off) and Antigravity, plus 60 for Codex before its quota ran out. They are counted separately from the totals above.
+
 ## Why
 
 Ashton's dev.to post ("Tool count is context cost: why my MCP server exposes 6 tools instead of 26") argues that 6 grouped tools beat 26 one-per-operation tools. But his measurement compared "server vs no tools at all", not tool counts. "Fewer tools is better" is repeated everywhere, but nobody shows where it breaks. Here we sweep the tool count on a single fake server, keep the tasks fixed, and measure accuracy, tokens, time and cost.
@@ -23,6 +25,8 @@ Ashton's dev.to post ("Tool count is context cost: why my MCP server exposes 6 t
   - In Claude Code with tool search off it is the cheapest way to offer all 50 operations: {{C_FIRST_G}} first-call tokens, about what {{C_EQUIV}} separate tools cost, and {{C_IN_G}} per run (vs {{C_IN_50}} for 50 separate tools and {{C_IN_25}} for 25). Accuracy stays at {{C_ACC_G}}, but the model made more calls ({{C_CALLS_G}} per run vs {{C_CALLS_50}} at N = 50), mostly extra verification. With tool search on (the default), grouping saves little: {{CS_FIRST_G}} first call and {{CS_IN_G}} per run, vs {{CS_FIRST_50}} and {{CS_IN_50}} for 50 separate tools; and 7 grouped tools are cheaper with search off ({{C_IN_G}} per run) than on, because the search call is pure overhead when the whole list is small.
   - In Codex: {{X_IN_G}} input tokens per run (vs {{X_IN_25}} at 25 and {{X_IN_50}} at 50), with {{X_ACC_G}} accuracy.
   - **In Antigravity it was the only place anything failed: {{G_ACC_G}} fully correct, vs 100% for every separate-tool size.** It also cost the most: {{G_IN_G}} input tokens per run, {{G_CALLS_G}} calls and {{G_ERRC_G}} failed calls per run, and {{G_WALL_G}} s per run instead of 18–23 s. The mechanism is that Gemini often skipped reading the lazy schema of a multi-operation tool. It probed the tool with empty arguments, guessed operation names (`help`, `delete`, `remove_pages`, `linearize`, `clear_metadata`, `decrypt`), and in 3 runs executed a wrong operation (`merge` instead of images → PDF, twice; `split` while looking for delete).
+
+- **Vague names (follow-up):** with the same 100 tools renamed to generic names, all 276 runs were still fully correct, so the descriptions decided the choice. Under deferred loading the names decided how much the agent read first. Claude Code (default) loaded 3–5× as many schemas, switched to keyword searches in 28 of 36 runs at 100 tools, and used 21% more input. Gemini opened a wrong schema first in 34 of 72 runs, probed wrong tools with empty arguments in 10 runs, and used 38% more input at 100 tools. With every schema in the prompt (tool search off), names changed nothing.
 
 So Ashton's direction holds for **context cost in a harness that loads schemas eagerly** (Claude Code with tool search off): 7 grouped tools cost what about {{C_EQUIV}} separate ones do. It does not show up as **accuracy** at these sizes. And grouping can **hurt** when the harness hides schemas (Antigravity).
 
@@ -171,6 +175,10 @@ That is part of why per-run tokens grow faster than the schema cost alone (Claud
 
 {{AT100}}
 
+## Do names decide? Vague names under deferred loading
+
+{{NAMES}}
+
 ## Where it breaks
 
 - **Accuracy with separate tools:** it does not break between 5 and 100, for any of the three. {{SEP_FAIL_SHORT}} A real breaking point must lie past 100 tools, or appear with worse descriptions, overlapping domains or several servers at once.
@@ -186,13 +194,14 @@ That is part of why per-run tokens grow faster than the schema cost alone (Claud
   - **Gemini in Antigravity:** it sometimes skips the lazy schema read and learns the arguments from an error instead. That happened in 10 of 36 runs at 50 tools, 0 of 36 at 75 and 7 of 36 at 100, so it is noisy rather than a clean trend with N. It costs failed calls and a few thousand tokens, not correctness.
   - **Claude Code** shows no strain at 100: with tool search off the bill is linear, with it on (default) the model loads 1–2 schemas by name and the bill barely moves.
   - In two of three harnesses, the first thing to give way is how the harness *shows* the tools to the model, not the model's choice.
+- **Names:** vague names did not break accuracy either (276 of 276). In the harnesses that show only names up front, they cost reads, wrong first loads and tokens (see "Do names decide?").
 
 ## Limitations
 
 - **Fake tools.** Results are deterministic and plausible, but nothing real happens. The models could not see real failures or real file contents, so verification behaviour may differ from real use. Two fake-server flaws were fixed before the counted runs:
   - info tools contradicted earlier edits (found in the pilot);
   - grouped operations were accepted without their inputs (found in the full run; the affected grouped runs were redone).
-- **Synthetic, single-domain tasks.** There are 18 short file and document tasks with clear wording. All three models are strong, so the task set turned out too easy to find an accuracy cliff. The 3 harder ambiguous tasks added after pilot 1 did not change that. A null result means "no drop up to 50 tools on tasks like these", not "never". Our tool descriptions were honest and distinct; real servers often have worse ones.
+- **Synthetic, single-domain tasks.** There are 18 short file and document tasks with clear wording. All three models are strong, so the task set turned out too easy to find an accuracy cliff. The 3 harder ambiguous tasks added after pilot 1 did not change that. A null result means "no drop up to 50 tools on tasks like these", not "never". Our tool descriptions were honest and distinct; real servers often have worse ones. The vague-names variant changes only the names; vague names *combined with* vague descriptions were not tested.
 - **The tool set is built per task.** The needed tools are always present, and distractors are added in one fixed seeded order. A task's tempting neighbour enters at a task-specific N; at N = 50 all neighbours are present. A different seed would change which tools sit near the needed ones at small N.
 - **Harness overheads are inside the token counts.** Each CLI has its own system prompt and its own way of exposing MCP tools:
   - Claude Code: about 2.5k tokens with no tools; eager schemas with tool search off, deferred names + the `ToolSearch` definition with it on (first-call fit intercept {{CS_FIRST_A}} tokens).
@@ -211,21 +220,22 @@ That is part of why per-run tokens grow faster than the schema cost alone (Claud
 - **Quotas:**
   - Gemini (Google AI Pro) hit its individual quota during the 75/100 runs ("Individual quota reached … resets in 2h30m"). Those runs were paused and finished after the reset.
   - Codex hit the ChatGPT Plus usage limit once (see below).
-  - No run is missing.
+  - No run of the main experiment is missing. In the vague-names follow-up, Codex (an optional lane) hit its usage limit again after 60 of 72 runs. The 12 missing runs are t13–t18, repetition 2 (2 of them ended "ratelimited" and are excluded), and the lane was not resumed. All 216 runs of the three required lanes are scored.
 - **Repetitions:** 2 per cell, 36 runs per model per size. The 95% CI at 36/36 is 90–100%, so a drop of a few percentage points would not be detectable.
 
 ## Files
 
-- `server.py`: the fake MCP server (50-tool pool + 50 extension tools, GROUPED, call log, per-run file state). `verify_compat.py` and `exposure-hashes-n50.json` prove that N ≤ 50 and GROUPED are unchanged by the extension. `python3 server.py --list <N|GROUPED> <task>` prints an exposed set.
+- `server.py`: the fake MCP server (50-tool pool + 50 extension tools, GROUPED, call log, per-run file state). `TC_NAMES=vague` renames the tools with `vague-names.json` (honest → vague name). `verify_compat.py`, with `exposure-hashes-n50.json` and `exposure-hashes-wire.json`, proves that N ≤ 50 and GROUPED are unchanged by the extension, that the default `tools/list` bytes are unchanged by `TC_NAMES` for every task × size, and that the vague variant differs only in names. `python3 server.py --list <N|GROUPED> <task>` prints an exposed set.
 - `tasks.json`: 18 tasks with expected calls, key-argument checks and tempting neighbours.
 - `prompts/template.txt`: the prompt.
 - Scripts:
-  - `run.sh`: one isolated headless run (`claude`, `claude-search`, `codex`, `gemini`).
+  - `run.sh`: one isolated headless run (`claude`, `claude-search`, `codex`, `gemini`); `TC_NAMES=vague ./lane.sh <model> vague 2 2 50 100` reruns the vague-names sweep.
   - `job.sh`: rate-limit back-off and the 6 h budget guard.
   - `lane.sh`: a resumable sweep (skips finished runs).
   - `score.py`: scoring from the call log and the CLI usage.
   - `rescore.sh` and `aggregate.py`: rebuild `results.csv`.
   - `analyze.py`: writes `tables-*.md`, `summary-*.json` and `charts/*.png`.
-  - `make_report.py`: fills this report from the data.
+  - `analyze_names.py`: vague vs honest names → `tables-vague.md`, `summary-vague.json`, `charts/names-*.png`.
+  - `make_report.py`: fills this report from the data (`at100.md` and `names.md` are its hand-written sections).
 - `pilot-report.md`: pilot findings and fixes. `tables-pilot1.md` and `tables-pilot2.md` hold the pilot numbers.
-- `runs.tar.gz` (14 MB; `tar -xzf runs.tar.gz` restores `runs/`, which is git-ignored because it is about 12k files): raw logs per run (prompt, CLI event log, stderr, server call log, Codex rollout, meta, scored row). `runs/superseded/` keeps runs made before the grouped-server fix and the harness-error runs; they are not counted. The `runs-*.out*` files are the lane logs.
+- `runs.tar.gz` (16 MB; `tar -xzf runs.tar.gz` restores `runs/`, which is git-ignored because it is about 12k files): raw logs per run (prompt, CLI event log, stderr, server call log, Codex rollout, meta, scored row). `runs/superseded/` keeps runs made before the grouped-server fix and the harness-error runs; they are not counted. The `runs-*.out*` files are the lane logs.
