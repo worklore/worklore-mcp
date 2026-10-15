@@ -106,7 +106,7 @@ compares:
 
 ```bash
 curl -sO https://raw.githubusercontent.com/SidneyBissoli/mcp-br-commons/main/packages/mcp-surface/exemplos/verify.mjs
-node verify.mjs io.github.worklore/worklore 0.6.1
+node verify.mjs io.github.worklore/worklore 0.7.0
 ```
 
 Or in Python, with nothing installed (the declared hash only):
