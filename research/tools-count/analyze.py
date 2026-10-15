@@ -11,6 +11,8 @@ F = lambda x: float(x) if x not in ("", None, "None") else None
 MODELS = [m for m in ("claude", "claude-search", "codex", "gemini") if any(r["model"] == m for r in rows)]
 VARS = sorted({r["variant"] for r in rows if r["variant"] != "GROUPED"}, key=int) + (["GROUPED"] if any(r["variant"] == "GROUPED" for r in rows) else [])
 LABEL = {"claude": "Claude Opus 5.5 (Claude Code, tool search off)", "claude-search": "Claude Opus 5.5 (Claude Code, tool search on = default)", "codex": "GPT-6.1-sol (Codex CLI default)", "gemini": "Gemini 3.1 Pro (Antigravity)"}
+if PHASE == "cheap":
+    LABEL = {"claude": "Claude Haiku 5.5 (Claude Code, tool search off)", "codex": "GPT-Reserve (Codex CLI)", "gemini": "Gemini 3.8 Flash low (Antigravity)"}
 
 def wilson(k, n, z=1.96):
     if n == 0: return (float("nan"),) * 2

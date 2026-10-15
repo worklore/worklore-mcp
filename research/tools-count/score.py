@@ -247,7 +247,7 @@ elif M == "gemini":
         need = set(exp_tools) if meta["variant"] != "GROUPED" else {grouped_tool(x) for x in exp_tools}
         u["first_load_wrong"] = u["loaded_tools"][0] not in need
         u["loaded_tools"] = list(dict.fromkeys(u["loaded_tools"]))
-    u["model_id"] = "gemini-3.1-pro-high (agy --model)"
+    u["model_id"] = (meta.get("model_id_requested") or "gemini-3.1-pro-high") + " (agy --model)"
     u["first_call_input"] = first; u["model_calls"] = n_steps or None
     m = re.search(r"AGY_ERROR: (.*)", err_txt)
     if m:

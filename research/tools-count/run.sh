@@ -5,6 +5,8 @@ set -u
 D="$(cd "$(dirname "$0")" && pwd)"
 M=$1; V=$2; T=$3; REP=$4; PHASE=${5:-full}
 TIMEOUT=180
+# MODEL_ID overrides the default model per client (the cheap-model phase, 2026-10-14)
+case $M in claude|claude-search) MID=${MODEL_ID:-claude-opus-5-5};; codex) MID=${MODEL_ID:-};; gemini) MID=${MODEL_ID:-gemini-3.1-pro-high};; esac
 R=$D/runs/$PHASE/$M/$V/$T-r$REP
 rm -rf "$R"; mkdir -p "$R"
 
@@ -38,12 +40,12 @@ case $M in
     [ $M = claude-search ] && BUILTINS="ToolSearch" || BUILTINS=""
     MCP=$(jq -cn --arg s "$SRV" --arg v "$V" --arg n "$NEED" --arg l "$L" \
       --argjson x "$NX" '{mcpServers:{filekit:{command:"python3",args:[$s],env:({TC_VARIANT:$v,TC_NEED:$n,TC_LOG:$l}+$x)}}}')
-    timeout -k 10 $TIMEOUT "${E[@]}" claude -p "$P" --model claude-opus-5-5 --tools "$BUILTINS" \
+    timeout -k 10 $TIMEOUT "${E[@]}" claude -p "$P" --model "$MID" --tools "$BUILTINS" \
       --strict-mcp-config --mcp-config "$MCP" --dangerously-skip-permissions --disable-slash-commands \
       --setting-sources project,local --settings '{"disableAllHooks":true}' --no-session-persistence \
       --output-format stream-json --verbose < /dev/null > "$R/agent.log" 2> "$R/agent.err";;
   codex)
-    timeout -k 10 $TIMEOUT "${E[@]}" codex exec --ignore-user-config --ignore-rules --skip-git-repo-check -s read-only -C "$W" \
+    timeout -k 10 $TIMEOUT "${E[@]}" codex exec ${MID:+-m "$MID"} --ignore-user-config --ignore-rules --skip-git-repo-check -s read-only -C "$W" \
       --disable shell_tool --disable unified_exec --disable apps --disable plugins --disable browser_use --disable browser_use_external \
       --disable computer_use --disable image_generation --disable multi_agent --disable multi_agent_v2 --disable view_image \
       --disable in_app_browser --disable tool_suggest --disable skill_search --disable goals --disable hooks --disable memories \
@@ -65,7 +67,7 @@ case $M in
     printf '%s\n' '---' 'name: assistant' 'description: General assistant.' 'mainAgent: true' 'inheritMcp: true' 'tools:' '  - view_file' '---' \
       '# assistant' 'You are a helpful assistant. Use the available tools to do what the user asks.' > .agents/agents/assistant.md
     git add -A >/dev/null 2>&1; git -c user.name=u -c user.email=u@local commit -qm init >/dev/null 2>&1
-    timeout -k 10 $TIMEOUT "${E[@]}" ~/.local/bin/agy --agent assistant --model gemini-3.1-pro-high --dangerously-skip-permissions \
+    timeout -k 10 $TIMEOUT "${E[@]}" ~/.local/bin/agy --agent assistant --model "$MID" --dangerously-skip-permissions \
       --disable-slash-commands --output-format stream-json -p "$P" < /dev/null > "$R/agent.log" 2> "$R/agent.err";;
 esac
 rc=$?
@@ -76,7 +78,7 @@ if [ $M = codex ]; then
   if [ -n "$TID" ]; then f=$(find ~/.codex/sessions -name "*$TID.jsonl" 2>/dev/null | head -1); [ -n "$f" ] && mv "$f" "$R/rollout.jsonl"; fi
 fi
 cd /; rm -rf "$W"
-python3 -c "import json,sys;json.dump({'model':sys.argv[1],'variant':sys.argv[2],'task':sys.argv[3],'rep':int(sys.argv[4]),'phase':sys.argv[5],'exit_code':int(sys.argv[6]),'wall_s':round(float(sys.argv[8])-float(sys.argv[7]),2),'timeout':int(sys.argv[6]) in (124,137)},open(sys.argv[9],'w'))" \
-  "$M" "$V" "$T" "$REP" "$PHASE" "$rc" "$start" "$end" "$R/meta.json"
+python3 -c "import json,sys;json.dump({'model':sys.argv[1],'variant':sys.argv[2],'task':sys.argv[3],'rep':int(sys.argv[4]),'phase':sys.argv[5],'exit_code':int(sys.argv[6]),'wall_s':round(float(sys.argv[8])-float(sys.argv[7]),2),'timeout':int(sys.argv[6]) in (124,137),'model_id_requested':sys.argv[10]},open(sys.argv[9],'w'))" \
+  "$M" "$V" "$T" "$REP" "$PHASE" "$rc" "$start" "$end" "$R/meta.json" "$MID"
 python3 "$D/score.py" "$R" > "$R/row.json" 2> "$R/score.err"
 echo "$PHASE $M $V $T r$REP rc=$rc $(jq -c '{status,success,tools_ok,args_ok,wrong:.wrong_calls,n:.n_calls,in:.input_tokens_total,s:.wall_s}' "$R/row.json" 2>/dev/null)"

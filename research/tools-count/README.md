@@ -43,6 +43,17 @@ repetitions per cell. October 2026.
   Claude Code with tool search off (7 grouped tools cost about as much as 14
   separate ones), little difference with tool search on, and the only accuracy
   drop anywhere in Antigravity (89%).
+- **The cheapest models** (added 2026-10-14, 1,404 more runs, phase `cheap`): Claude
+  Haiku 5.5 in Claude Code (tool search off), GPT-Reserve in Codex CLI, Gemini 3.8
+  Flash (low) in Antigravity, same tasks and sizes. Separate tools: 1,288 of 1,296
+  fully correct (Haiku 432/432, GPT-Reserve 428/432, Gemini Flash 428/432). This is
+  the first time a wrong tool was executed with separate tools: GPT-Reserve in 4 runs
+  (at 40, 45 and twice at 100). 3 of Gemini Flash's 4 misses are API rejections of an
+  integer-enum schema, not model choices. Per-run input grows faster than with the
+  frontier models (GPT-Reserve +655 tokens per tool vs +408; Haiku +488 vs +429).
+  Grouped: Haiku 34/36, GPT-Reserve 36/36, Gemini Flash 35/36. Haiku cost $0.0012 per
+  run. Tables in [tables-cheap.md](tables-cheap.md), charts `charts/*-cheap.png`,
+  runner `night-cheap.sh` (`MODEL_ID` picks the model per client).
 
 ## What's here
 
@@ -56,7 +67,7 @@ repetitions per cell. October 2026.
 | [server.py](server.py) | the fake MCP server (Python stdlib, stdio): 100 tools, grouped variant, per-run call log |
 | [tasks.json](tasks.json) | the 18 tasks and their expected calls |
 | `run.sh`, `job.sh`, `lane.sh`, `score.py`, `analyze.py`, `make_report.py` | runner, scorer and analysis (`run.sh claude` = tool search off, `run.sh claude-search` = on) |
-| `runs.tar.gz` | every raw run (transcripts, call logs), 16 MB packed |
+| `runs.tar.gz` | every raw run (transcripts, call logs), 32 MB packed |
 
 The tools are fake (nothing touches a file), the tasks come from one domain
 (files and documents), and token counts include each client's own overhead, so
