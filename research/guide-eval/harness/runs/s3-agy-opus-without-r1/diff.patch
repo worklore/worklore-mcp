@@ -1,0 +1,33 @@
+diff --git a/journal.py b/journal.py
+index b0453dc..3851cd4 100644
+--- a/journal.py
++++ b/journal.py
+@@ -24,21 +24,21 @@ def publish(entry, client_tz, now=None):
+     post = dict(entry)
+     post["client_tz"] = client_tz
+     post["created_at"] = now.astimezone(timezone.utc).isoformat()
+-    # Dates are always generated on the server, in UTC, so they are consistent.
+-    post["date"] = now.astimezone(timezone.utc).date().isoformat()
++    # The date is the author's local calendar day, so convert to their zone.
++    post["date"] = now.astimezone(ZoneInfo(client_tz)).date().isoformat()
+     _POSTS.append(post)
+     return post
+ 
+ 
+ def display_date(post, viewer_tz):
+-    """Date shown on a post card, converted to the viewer's zone.
++    """Date shown on a post card.
+ 
+-    Anchored at noon UTC so the conversion can never flip the calendar day.
++    The stored date is the author's local calendar day, which is the
++    canonical date of the post — return it directly.
+     """
+-    noon = datetime.fromisoformat(post["date"] + "T12:00:00+00:00")
+-    return noon.astimezone(ZoneInfo(viewer_tz)).date().isoformat()
++    return post["date"]
+ 
+ 
+ def feed():
+     """Home feed, newest first."""
+-    return sorted(_POSTS, key=lambda p: (p["date"], p["author"]), reverse=True)
++    return sorted(_POSTS, key=lambda p: (p["created_at"], p["author"]), reverse=True)

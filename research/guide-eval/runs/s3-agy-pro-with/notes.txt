@@ -1,0 +1,1 @@
+Replaced the client_tz parameter with local_date (same position): an existing caller passing client_tz would silently store 'America/Argentina/Buenos_Aires' as the date. Passed via named-arg call only.

@@ -1,0 +1,40 @@
+# 1-Page Marketing Plan — Taller Lento
+
+**The Item:** Monthly wheel-throwing classes and taster sessions in a Chacarita ceramics studio.
+**The Sale:** A student booking a monthly class (or a taster that converts to monthly) and staying for multiple months.
+
+## BEFORE (Prospect)
+*Getting the attention of people who don't know you.*
+
+**1. Target market**
+Women 28–45 in office/tech/design jobs living in Chacarita, Colegiales, Villa Crespo, and Palermo seeking a calm, off-screen manual activity. Also English-speaking expats and digital nomads.
+
+**2. Message**
+"Escape the screen and find your calm." Focus on the feeling of working with your hands in a small, cozy environment (max 6 students). Highlight that they get to keep what they make.
+
+**3. Media**
+Instagram (specifically Reels of the wheel, which get 5-10x more views), your Sunday craft fair stall in Palermo, and local word-of-mouth.
+
+## DURING (Lead)
+*Turning interested people into paying students.*
+
+**4. Capture leads**
+Instead of just saying "follow me on Instagram" at the fair, get their contact. Have a QR code at your stall and a clear Linktree link for a "Class Waitlist" (a WhatsApp group or simple form).
+
+**5. Nurture leads**
+Show the experience. Post Instagram Stories of the class atmosphere and finished student pieces. Send a WhatsApp broadcast to your waitlist when a new Taster class or monthly spot opens.
+
+**6. Sales conversion**
+Follow up. The Taster class is your best conversion tool, but you don't follow up. Message Taster students individually via WhatsApp a few days later inviting them to the monthly class.
+
+## AFTER (Customer)
+*Turning students into fans who stay and refer others.*
+
+**7. World-class experience**
+A calm, welcoming, and intimate studio vibe. Provide everything they need (clay, firing) and ensure they finish a piece they can be proud of by the end of their first month.
+
+**8. Lifetime value**
+Give them a reason to stay past month 1. Create a structured "Month 2" and "Month 3" project so they have a goal. For those whose schedule changes, offer the new Wednesday evening slot to keep them from dropping out entirely.
+
+**9. Referrals**
+Your best students already bring friends. Make it official: offer a "bring a friend" discount for Taster classes, or give current students a small gift (like a mini bowl) when they refer a new monthly student.

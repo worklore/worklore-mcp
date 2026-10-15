@@ -1,0 +1,41 @@
+{
+ "changed_files": [
+  "journal.py",
+  "tests/test_journal.py"
+ ],
+ "scenario": {
+  "tokyo_author_sees": "2026-10-02",
+  "ba_author_sees": "2026-10-02",
+  "a_each_author_sees_own_local_date": true,
+  "feed": [
+   "yuki",
+   "ana"
+  ],
+  "b_feed_order_matches_submission": false,
+  "x_tokyo_viewer_sees_ba_post": "2026-10-02",
+  "x_ba_viewer_sees_tokyo_post": "2026-10-02",
+  "x_date_viewer_independent": true,
+  "x3_feed": [
+   "zed",
+   "yuki",
+   "ana"
+  ],
+  "x3_three_zone_order_ok": false,
+  "publish_call_shape": "sig:entry,client_tz,now",
+  "legacy_ba_author_sees": "2026-10-02",
+  "x_legacy_api_correct": true
+ },
+ "a_each_author_sees_own_local_date": true,
+ "b_feed_order_matches_submission": false,
+ "x_date_viewer_independent": true,
+ "x3_three_zone_order_ok": false,
+ "x_legacy_api_correct": true,
+ "legacy_ba_author_sees": "2026-10-02",
+ "tests_pass": true,
+ "tests_ran": 6,
+ "outside_paths": [
+  "/Users/valentinakoniukhova/.claude/projects/-private-tmp-h-TK4Z1f/memory/",
+  "/tmp/cc-socks/49118.sock"
+ ],
+ "PASS": false
+}

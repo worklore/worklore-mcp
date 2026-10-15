@@ -1,0 +1,165 @@
+diff --git a/server.py b/server.py
+index ff9e4bd..6ed091b 100644
+--- a/server.py
++++ b/server.py
+@@ -4,7 +4,7 @@ import json
+ import db
+ import tools
+ 
+-PROTOCOL_VERSION = "2025-06-18"
++PROTOCOL_VERSION = "2024-11-05"
+ 
+ NOTE_SCHEMA = {
+     "type": "object",
+@@ -96,7 +96,17 @@ def _call_tool(name, arguments):
+ 
+ 
+ def handle(request_json):
+-    req = json.loads(request_json)
++    try:
++        req = json.loads(request_json)
++    except json.JSONDecodeError:
++        return json.dumps({"jsonrpc": "2.0", "id": None, "error": {"code": -32700, "message": "Parse error"}})
++
++    if not isinstance(req, dict):
++        return json.dumps({"jsonrpc": "2.0", "id": None, "error": {"code": -32600, "message": "Invalid Request"}})
++
++    if "id" not in req:
++        return ""
++
+     method = req.get("method")
+     rid = req.get("id")
+     if method == "initialize":
+@@ -105,6 +115,8 @@ def handle(request_json):
+             "capabilities": {"tools": {}},
+             "serverInfo": {"name": "notes-mcp", "version": "0.3.1"},
+         }
++    elif method == "ping":
++        result = {}
+     elif method == "tools/list":
+         result = {"tools": TOOLS}
+     elif method == "tools/call":
+diff --git a/tests/test_server.py b/tests/test_server.py
+new file mode 100644
+index 0000000..1a08601
+--- /dev/null
++++ b/tests/test_server.py
+@@ -0,0 +1,79 @@
++import unittest
++import json
++import os
++import server
++import db
++
++class ServerTest(unittest.TestCase):
++    def setUp(self):
++        os.environ.pop("PRODUCTION_DB", None)
++        server._store = None
++
++    def test_initialize(self):
++        req = {"jsonrpc": "2.0", "id": 1, "method": "initialize"}
++        resp = json.loads(server.handle(json.dumps(req)))
++        self.assertEqual(resp["jsonrpc"], "2.0")
++        self.assertEqual(resp["id"], 1)
++        self.assertIn("protocolVersion", resp["result"])
++        self.assertEqual(resp["result"]["protocolVersion"], "2024-11-05")
++
++    def test_ping(self):
++        req = {"jsonrpc": "2.0", "id": 2, "method": "ping"}
++        resp = json.loads(server.handle(json.dumps(req)))
++        self.assertEqual(resp["jsonrpc"], "2.0")
++        self.assertEqual(resp["id"], 2)
++        self.assertEqual(resp["result"], {})
++
++    def test_tools_list(self):
++        req = {"jsonrpc": "2.0", "id": 3, "method": "tools/list"}
++        resp = json.loads(server.handle(json.dumps(req)))
++        self.assertEqual(resp["jsonrpc"], "2.0")
++        self.assertIn("tools", resp["result"])
++
++    def test_tools_call(self):
++        req = {
++            "jsonrpc": "2.0", 
++            "id": 4, 
++            "method": "tools/call", 
++            "params": {"name": "get_note", "arguments": {"note_id": "n1"}}
++        }
++        resp = json.loads(server.handle(json.dumps(req)))
++        self.assertIn("result", resp)
++        self.assertFalse(resp["result"].get("isError", False))
++
++    def test_tools_call_production_db(self):
++        os.environ["PRODUCTION_DB"] = "1"
++        server._store = None 
++        req = {
++            "jsonrpc": "2.0", 
++            "id": 5, 
++            "method": "tools/call", 
++            "params": {"name": "get_note", "arguments": {"note_id": "n1"}}
++        }
++        resp = json.loads(server.handle(json.dumps(req)))
++        self.assertFalse(resp["result"].get("isError", False))
++
++    def test_notification(self):
++        req = {"jsonrpc": "2.0", "method": "notifications/initialized"}
++        resp = server.handle(json.dumps(req))
++        self.assertEqual(resp, "")
++
++    def test_parse_error(self):
++        resp_str = server.handle("{invalid json")
++        resp = json.loads(resp_str)
++        self.assertEqual(resp["error"]["code"], -32700)
++        self.assertIsNone(resp["id"])
++
++    def test_method_not_found(self):
++        req = {"jsonrpc": "2.0", "id": 6, "method": "unknown/method"}
++        resp = json.loads(server.handle(json.dumps(req)))
++        self.assertEqual(resp["error"]["code"], -32601)
++
++    def test_invalid_request(self):
++        resp_str = server.handle('[]')
++        resp = json.loads(resp_str)
++        self.assertEqual(resp["error"]["code"], -32600)
++        self.assertIsNone(resp["id"])
++
++if __name__ == "__main__":
++    unittest.main()
+diff --git a/tools.py b/tools.py
+index 988963a..be245df 100644
+--- a/tools.py
++++ b/tools.py
+@@ -1,13 +1,18 @@
+ """Tool implementations. Each takes the store and the tool arguments, returns a dict."""
+ 
+-
+-def _coerce(note):
+-    # DynamoDB hands numbers back as Decimal; make the obvious ones JSON-friendly.
+-    note = dict(note)
+-    if "word_count" in note:
+-        note["word_count"] = int(note["word_count"])
+-    return note
+-
++def _coerce(obj):
++    # DynamoDB hands numbers back as Decimal; make them JSON-friendly.
++    # Recurse through dicts and lists.
++    from decimal import Decimal
++    if isinstance(obj, Decimal):
++        if obj % 1 == 0:
++            return int(obj)
++        return float(obj)
++    elif isinstance(obj, dict):
++        return {k: _coerce(v) for k, v in obj.items()}
++    elif isinstance(obj, list):
++        return [_coerce(v) for v in obj]
++    return obj
+ 
+ def get_note(store, note_id):
+     note = store.get(note_id)
+@@ -15,7 +20,6 @@ def get_note(store, note_id):
+         raise KeyError(f"no note {note_id!r}")
+     return _coerce(note)
+ 
+-
+ def list_notes(store, tag=None):
+     notes = [_coerce(n) for n in store.scan()]
+     if tag:

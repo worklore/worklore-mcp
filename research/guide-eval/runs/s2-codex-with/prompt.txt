@@ -1,0 +1,84 @@
+This directory is a small MCP server (see README.md; the entry point is server.py `handle()`). Add tests that would catch the kind of bug real MCP clients hit, following good practice; fix anything you find. Tests run with `python3 -m unittest discover -s tests`.
+
+Follow this guide:
+
+---
+title: "My tests passed because they agreed with me"
+date: 2026-09-28
+tags: mcp, testing, json-schema, dynamodb, conformance
+type: success
+status: n/a
+reproducible: true
+stack: Python 3.12 on AWS Lambda · DynamoDB · remote MCP server (Streamable HTTP)
+agent: Claude Code
+model: claude-opus-5
+---
+
+# My tests passed because they agreed with me
+
+I had seventy-nine passing tests on my MCP server. One of its six tools had been broken in production for days.
+
+`get_story` answered **every** call with an error: *Object of type Decimal is not JSON serializable*. My database returns every number as a `Decimal`, one of them sits inside a capability finding as a line number, and it reached `json.dumps`. The dispatcher caught the exception and turned it into a polite `isError: true`, so the server stayed up and the tool simply never worked.
+
+Nothing in my suite noticed, and the reason is not that I had too few tests. My tests called the tool functions. A real client does something different: it asks the server to introduce itself, asks for the tool list, and then validates what comes back against the schemas the server just handed it. Nothing I had written ever went through that path, so nothing ever serialised a real response.
+
+I also had a coercion helper for exactly this problem. It handled the two numeric fields I had thought about. The Decimal that broke me was nested two levels deeper, in a place I had not thought about — which is the whole failure in one sentence: **my tests shared my assumptions, so they could only confirm them.**
+
+The fix took one function. Finding it took somebody else's method.
+
+A reader of an article I wrote, [Arhan Canli](https://dev.to/arhancanli), [described hitting a close cousin of this](https://dev.to/yahhi/how-to-build-an-mcp-server-and-actually-get-it-used-5331) on a finance MCP server: their suite called each handler directly and passed, while clients that validated results against the listed schemas rejected the responses.
+
+## So what do you actually write?
+
+One test that talks to your server the way a client does, in four steps. Each one catches something my old tests structurally could not:
+
+1. **Send `initialize`.** Through the real entry point — the same door an HTTP request goes through, not a direct call to your handler.
+2. **Ask for `tools/list`, with no credentials.** Keep the schemas that come back.
+3. **Call every tool** through that same entry point, and **serialise the whole response**.
+4. **Validate each result against the schema from step 2** — the one the server just published, never the one in your source file.
+
+Step 3 is what caught my bug: the Decimal only fails when something encodes it, and no test of mine had ever encoded a real response. Step 4 is what would have caught Arhan's: a result carrying fields the published schema does not declare. Step 2 sounds like setup and is not — if it fails, your server cannot be inspected by anyone outside your repository, which is a distribution problem wearing a testing costume.
+
+The reason it works is step 4's distinction. Testing against the schema in your source proves your code agrees with your code. Testing against the schema the server *handed you* is the only version that can disagree with you.
+
+I ran this against my own server the same evening and it failed on the first pass.
+
+Two things I only learned by running it.
+
+**The second step is a finding in itself.** If your server will not list its tools without a token, nobody can conformance-test it — not a directory, not a scanner, not a stranger, not you from the outside. That is the same property that had a registry-mirroring directory listing my server with a description and zero tools. I had found those two symptoms weeks apart and never connected them. One cause.
+
+**Watch your fakes.** My first run of the harness passed, *before* the fix. My fake database hands back plain integers, so the exact bug I was hunting could not occur in the test. A fake more forgiving than production will bless broken code all day.
+
+My first answer to that was to seed decimals by hand, and it was the weaker fix. Arhan, reading this, [named why](https://dev.to/yahhi/how-to-build-an-mcp-server-and-actually-get-it-used-5331): a hand-written fixture inherits the author's assumptions rather than production's types, so it carries the awkward type only in the fields you already suspected — the original blind spot, one layer down. He builds fixtures from recorded real responses instead. I took the same guarantee by a shorter road: the fake now returns *every* number as a decimal at any depth, the way the real driver does. A fixture written by someone not thinking about types at all can no longer be kinder than production. Mine is back to plain integers, and it still fails when I remove the fix.
+
+## Reproduce this
+
+Prerequisites: an MCP server you control and a test suite that currently calls your tool functions directly. Any language; the examples are Python.
+
+Your agent will need from you: how to invoke your server's request handler in-process (or a URL if you would rather test over HTTP), and one set of valid arguments per tool.
+
+Steps:
+
+1. **Write a harness that does what a client does, in that order.** Send `initialize`. Then `tools/list`. Only then call anything. Do not shortcut to the handler — go through the same entry point a real request takes.
+2. **Send `tools/list` with no credentials**, deliberately. If it fails, stop and treat that as a result: an endpoint that will not describe itself anonymously cannot be checked by anyone outside your repository, which is a distribution problem as much as a testing one.
+3. **Keep the schemas from that response.** Do not read them from your source. The point is to check the server against what it *published*, not against what you meant.
+4. **Call every tool and validate its result** against the `outputSchema` it just gave you: declared types, required fields present, arrays and nested objects walked. A few dozen lines covers the subset most servers emit; you do not need a schema library. **Assert first that a happy-path call did not come back with `isError`**, and stop there if it did — an error result carries no `structuredContent`, so a schema check finds nothing to disagree with and passes a call in which nothing worked.
+5. **Assert the whole response survives being serialised**, not just that the call returned. This is the one that catches type leaks from your database — a value your code handles happily and your encoder refuses.
+6. **Treat "declares an outputSchema but returned no structuredContent" as a failure**, not a gap. A published contract that is not honoured is worse than no contract, because clients believe it.
+7. **Make your fake apply production's types itself, rather than trusting each fixture to remember them.** If your database hands back decimals, have the fake coerce every number to a decimal on the way out; if it stringifies numbers, have it stringify. Seeding the awkward type by hand only protects the fields you already suspected, which is the blind spot you are here to close. The alternative with the same guarantee is to build fixtures from recorded real responses. Either way, every convenience left in a fake is a class of bug it can no longer catch.
+8. **Mutation-check the new tests.** Remove the fix and confirm they fail. A test written after a bug has a habit of passing for the wrong reason.
+
+Verify:
+
+- With the fix reverted, the harness fails. With it applied, it passes. If it passes both ways, your fake is too kind (step 7).
+- Every tool that declares an `outputSchema` returns `structuredContent` that validates against it, and no happy-path call returns `isError`. A green schema check over an error result proves nothing.
+- `tools/list` answers with no credentials, or you have consciously decided it should not.
+- Run it against the deployed server too, not only in-process. Serialisation differences between your fake and the real database are exactly what this is for.
+
+## What this cost and returned
+
+One function to fix. Four new tests. The bug had been live for days behind seventy-nine green ones.
+
+The uncomfortable part is not the Decimal. It is that a stranger's method found in one run what my own suite was structurally unable to find, because I wrote both the code and the tests and they agreed with each other.
+
+Ground rules: work only inside the current directory. Do not publish, submit or report anything to any external service.

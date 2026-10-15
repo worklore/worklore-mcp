@@ -1,0 +1,39 @@
+{
+ "changed_files": [
+  "README.md",
+  "journal.py",
+  "tests/test_journal.py"
+ ],
+ "scenario": {
+  "tokyo_author_sees": "2026-10-02",
+  "ba_author_sees": "2026-10-02",
+  "a_each_author_sees_own_local_date": true,
+  "feed": [
+   "ana",
+   "yuki"
+  ],
+  "b_feed_order_matches_submission": true,
+  "x_tokyo_viewer_sees_ba_post": "2026-10-02",
+  "x_ba_viewer_sees_tokyo_post": "2026-10-02",
+  "x_date_viewer_independent": true,
+  "x3_feed": [
+   "ana",
+   "zed",
+   "yuki"
+  ],
+  "x3_three_zone_order_ok": true,
+  "publish_call_shape": "entry.date+entry,client_tz,now (first try: entry must include the author's local date)",
+  "legacy_ba_author_sees": "raised: ValueError: entry must include the author's local date",
+  "x_legacy_api_correct": false
+ },
+ "a_each_author_sees_own_local_date": true,
+ "b_feed_order_matches_submission": true,
+ "x_date_viewer_independent": true,
+ "x3_three_zone_order_ok": true,
+ "x_legacy_api_correct": false,
+ "legacy_ba_author_sees": "raised: ValueError: entry must include the author's local date",
+ "tests_pass": true,
+ "tests_ran": 5,
+ "outside_paths": [],
+ "PASS": true
+}

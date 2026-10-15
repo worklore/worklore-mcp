@@ -1,0 +1,68 @@
+import csv
+S = {}
+S[1] = """1. TARGET MARKET — who exactly this is for
+• Main: women 28–45 with office / design / tech jobs, living in Chacarita, Colegiales, Villa Crespo, Palermo. Tired of screens; want a calm weekly ritual with their hands. Often come with a friend.
+• Wednesday group = the same women who can't give up their Saturday morning (after-work plan).
+• Second: English-speaking expats & digital nomads in the same barrios (class in English).
+• NOT for classes: tourists (one mug, gone in a week) and cafés wanting wholesale — say no kindly."""
+S[2] = """2. MESSAGE — what you say to them
+• ES: "3 horas por semana lejos de la pantalla, con las manos en el barro." / EN: "Three hours a week off-screen, hands in clay."
+• Proof: max 6 people, clay + firing included, you keep everything you make, 10 min from Lacroze.
+• At the fair, hook = the mug in their hand: "¿Te gusta? Te enseño a hacerla." / "Like it? I'll teach you to make it."
+• First step is low-risk: the taster "Probá el torno" (2.5 h). Every post and caption in Spanish AND English."""
+S[3] = """3. MEDIA — where you reach them
+• The Sunday fair: your best room — people already touching your work and asking about classes.
+• Instagram: 2 Reels of the wheel per week (they get 5–10x the views), bilingual captions, local hashtags (#Chacarita #ceramica #clasesdeceramica).
+• Google Maps: free listing "Taller Lento – clases de cerámica" (people search "clases de cerámica cerca").
+• 1 post a month in BA expat groups (Facebook/WhatsApp) for the English class.
+• ~US$25/month: boost your best Reel to women 25–45 in the 4 barrios."""
+S[4] = """4. CAPTURE LEADS — get a way to contact interested people
+(A "lead" = someone interested who gave you their WhatsApp.)
+• Fair: small sign + cards with a QR that opens WhatsApp with a ready message "Hola! Quiero info de clases". Plus a notebook: "Avisame del próximo taller de prueba" (name + WhatsApp).
+• Instagram bio: replace the PDF with the same WhatsApp link + "Next taster: [date]".
+• Switch to WhatsApp Business (free): labels Interesada / Taster / Alumna / Ex-alumna.
+• One Google Sheet "Leads": name, WhatsApp, where from, date, status."""
+S[5] = """5. NURTURE LEADS — build trust before asking
+• Within 48 h of each fair: message everyone from the notebook/QR with a Reel + next taster date.
+• Every 2 weeks: one WhatsApp broadcast (only people who saved your number get it): a photo from the kiln, seats left, next taster. Never more often.
+• Instagram stories: students' pieces (with permission), kiln openings, "a Saturday in the taller".
+• Expats get the English version of every message."""
+S[6] = """6. SALES CONVERSION — turning a lead into a booked, staying student
+• Fixed taster date every month (e.g. last Saturday 15:00) — sell a date, don't wait to "have enough people".
+• Taster pieces get fired later → the pickup visit / photo message is your natural follow-up: "Your mug is out of the kiln! There's a seat on Saturday/Wednesday."
+• Taster-to-monthly credit: join within 7 days → ARS 20,000 off the first month.
+• Pairs: 2 friends joining together get 10% off each.
+• Wednesday group: opens as soon as 4 people pay the first month (Mercado Pago link)."""
+S[7] = """7. WORLD-CLASS EXPERIENCE — so good they become fans
+• Welcome WhatsApp the day before: address, how to walk from Lacroze, what to wear, aprons provided.
+• Everyone leaves the 1st class having thrown something; you send them a photo of their first piece.
+• A month with a goal: wk1 centering → wk2 cylinders → wk3 mugs/bowls → wk4 trimming & glazing (yes, they can use the yerba green).
+• Mate break every class. Kiln-opening = a small celebration.
+• Missed a class? Message the same day: "We missed you — here's what we did." """
+S[8] = """8. LIFETIME VALUE — keep students longer, worth more
+• Make-up classes: miss a Saturday, come on Wednesday (and vice-versa) — the answer to "my schedule changed".
+• Renewal message 1 week before month ends: "Your seat is saved until [date]" + what they'll make next month.
+• Month 2–3 projects: a set of 4 matching mugs, a serving bowl, their own glaze test.
+• 3-month pack: ARS 330,000 (vs 360,000) paid up front.
+• Students get 15% off mugs; sell taster GIFT VOUCHERS (Día de la Madre 18 Oct, Christmas) to locals at the fair.
+• Every ~3 months message ex-students: "A seat opened on Wednesday." """
+S[9] = """9. REFERRALS — make students bring friends
+• "Traé una amiga": when a friend you bring signs up for a month, you get a mug of your choice (costs you clay + kiln, worth ARS 28,000 to them).
+• Ask at happy moments: kiln opening, end of month 3.
+• Make it easy: a ready-to-forward WhatsApp message with the QR + taster date.
+• Ask happy students for a Google Maps review, and to tag @taller.lento when they post their pieces."""
+
+rows = [
+ ["1-Page Marketing Plan — Taller Lento (Lucía Ferreyra, Chacarita, Buenos Aires)", "", ""],
+ ["THE ITEM: Wheel-throwing classes at Taller Lento — the monthly group (Sat 10–13, max 6, ARS 120,000/month, clay + firing included) and the 2.5 h taster (ARS 40,000). Mugs are the shop window that brings people in.", "", ""],
+ ["THE SALE: A stranger books a class — the monthly group, or a taster that becomes the monthly — and STAYS past month 2. A single mug sale is nice but is not the goal. 6-month target: Saturday 6/6, Wednesday 19–22 group with 4+, more students past month 2. Limits: 5 h/week, US$50/month.", "", ""],
+ ["", "", ""],
+ ["BEFORE — strangers who don't know you yet (prospects)", "", ""],
+ [S[1], S[2], S[3]],
+ ["DURING — people who showed interest (leads)", "", ""],
+ [S[4], S[5], S[6]],
+ ["AFTER — your students (customers)", "", ""],
+ [S[7], S[8], S[9]],
+]
+with open("plan.csv", "w", newline="", encoding="utf-8") as f:
+    csv.writer(f, quoting=csv.QUOTE_MINIMAL).writerows(rows)

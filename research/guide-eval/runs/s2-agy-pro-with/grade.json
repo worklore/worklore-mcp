@@ -1,0 +1,91 @@
+{
+ "changed_files": [
+  "db.py",
+  "tests/test_server.py",
+  "tools.py"
+ ],
+ "a_client_harness_files": [
+  "tests/test_server.py"
+ ],
+ "a_harness_reads_schema_from_source": [],
+ "a_client_harness_any_schema": true,
+ "a_client_harness": true,
+ "uses_pytest": false,
+ "c_tests_pass_with_fix": true,
+ "c_tests_ran": 6,
+ "c_tail": [
+  "----------------------------------------------------------------------",
+  "Ran 6 tests in 0.000s",
+  "",
+  "OK"
+ ],
+ "b_tests_fail_with_fix_reverted": true,
+ "b_ran": 6,
+ "b_tail": [
+  "----------------------------------------------------------------------",
+  "Ran 6 tests in 0.001s",
+  "",
+  "FAILED (failures=1)"
+ ],
+ "b_failures_mention_decimal": true,
+ "b_failure_count": 1,
+ "b_import_errors": 0,
+ "prod_code_files_changed": [
+  "db.py",
+  "tools.py"
+ ],
+ "prod_probe": {
+  "initialize_ok": true,
+  "tools": [
+   "get_note",
+   "list_notes"
+  ],
+  "calls": {
+   "get_note": {
+    "isError": false,
+    "has_structuredContent": true,
+    "schema_errors": [],
+    "serialises": true
+   },
+   "list_notes": {
+    "isError": false,
+    "has_structuredContent": true,
+    "schema_errors": [],
+    "serialises": true
+   }
+  },
+  "PROD_OK": true
+ },
+ "bs_mutant_reinstates_bug": true,
+ "bs_tests_fail": true,
+ "bs_failures_mention_decimal": true,
+ "bs_tail": [
+  "----------------------------------------------------------------------",
+  "Ran 6 tests in 0.001s",
+  "",
+  "FAILED (failures=1)"
+ ],
+ "bs_import_errors": 0,
+ "e_production_fixed": true,
+ "d_fake_number_types": {
+  "FakeStore": [
+   "Decimal",
+   "Decimal",
+   "Decimal",
+   "Decimal",
+   "Decimal",
+   "Decimal"
+  ]
+ },
+ "d_test_side_decimal": [],
+ "d_fake_applies_prod_types": "yes",
+ "dynamo_store_modified": false,
+ "tests_use_production_store": [],
+ "outside_paths": [
+  "/private/tmp/claude-501/-User",
+  "/tmp/claude-501/-Users-valentinakoni"
+ ],
+ "b_catches_bug": true,
+ "b_method": "surgical (tools.py only)",
+ "PASS": true
+}

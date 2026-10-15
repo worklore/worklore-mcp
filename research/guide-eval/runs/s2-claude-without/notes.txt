@@ -1,0 +1,1 @@
+Big protocol suite (39 tests) incl. initialize/tools/list/tools/call + schema check, but validates against server.TOOLS from SOURCE (the anti-pattern the story warns about). Found the Decimal bug by running tests against DynamoStore directly; recursive _coerce fix. Fake left at plain ints. Also hardened JSON-RPC handling (notifications, -32600/-32700).

@@ -1,0 +1,1 @@
+Added tests that call handle('tools/call') against DynamoStore (catches Decimal) and fixed it with a recursive _json_numbers. No initialize/tools/list, no outputSchema validation.

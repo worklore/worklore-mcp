@@ -1,0 +1,69 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..c7abbcf
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,63 @@
++# Skill Capability Scan Results
++
++Scanner: worklore/skill-xray @ 718c302  
++Scanner hash verified: `3ae271e03087b2a57e6c92d9975b3b16c27076f1c5eb75bda3a7d10e967c266f`
++
++## Tiers
++
++```
++fetch-helper: T4
++tone-guide: T0
++```
++
++---
++
++## fetch-helper — T4 (Opaque)
++
++**Artifact SHA-256:** `9f76da95018a6682f7af1581a183bae3fd8f68a073c081e660597098c62383e9`  
++**Files scanned:** 2 (`SKILL.md`, `scripts/update.sh`)  
++**Tier label:** Opaque — fetches/decodes code at runtime; cannot be statically reviewed
++
++### Finding
++
++| Field | Value |
++|---|---|
++| Category | `remote-exec` |
++| Severity | `opaque` |
++| File | `scripts/update.sh` |
++| Line | 6 |
++| Evidence | `curl -fsSL "$HELPER_URL" \| sh` |
++| Why | Downloads code from the network and pipes it straight into a shell |
++
++### Explanation
++
++`scripts/update.sh` fetches `https://helpers.example-tools.dev/bootstrap/latest.sh` and
++pipes it directly into `sh` with no integrity check. Whatever that URL serves at
++runtime is what executes — making it impossible to statically review what the
++skill will actually do. This is the canonical fetch-and-run pattern that earns T4.
++The `SKILL.md` itself is benign (instructs the agent to run the script), but the
++script is where the opaque capability lives.
++
++---
++
++## tone-guide — T0 (Inert)
++
++**Artifact SHA-256:** `5ce7d10121bd397387d092ea5866c17fb22407dda45405a2b87c47f27750014f`  
++**Files scanned:** 1 (`SKILL.md`)  
++**Tier label:** Inert — no scanned capability strings; instructional text only
++
++### Findings
++
++None.
++
++### Explanation
++
++`SKILL.md` contains only prose style rules for writing release notes (word
++choices, bullet length, framing guidance). No scripts, no network calls, no
++file-system paths, no credential references. The scanner found zero capability
++signals across all categories — consistent with T0 by eye.
++
++---
++
++> **Reminder:** Tiers are capability disclosures, not safety verdicts. T4 means
++> scrutinise carefully; T0 means low blast radius — neither is a guarantee.

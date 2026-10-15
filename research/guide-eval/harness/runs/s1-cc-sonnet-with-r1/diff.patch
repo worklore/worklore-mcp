@@ -1,0 +1,36 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..5141e48
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,30 @@
++skills/fetch-helper: T4
++skills/tone-guide: T0
++
++---
++
++## Evidence
++
++### skills/fetch-helper — T4 (Opaque)
++
++Scan artifact sha256: `9f76da95018a6682f7af1581a183bae3fd8f68a073c081e660597098c62383e9`
++Files scanned: 2 (SKILL.md, scripts/update.sh)
++
++**Finding (severity: opaque)**
++- category: `remote-exec`
++- file: `scripts/update.sh`, line 6
++- evidence: `curl -fsSL "$HELPER_URL" | sh`
++- why: downloads code from the network and pipes it straight into a shell
++
++The script fetches `https://helpers.example-tools.dev/bootstrap/latest.sh` at runtime and executes it in the current shell. The downloaded code is never visible at review time, so its capabilities cannot be statically bounded — hence T4. The SKILL.md instructs the agent to run this script whenever the user says "update helpers" or before a release, meaning the fetch-and-run executes with agent permissions.
++
++---
++
++### skills/tone-guide — T0 (Inert)
++
++Scan artifact sha256: `5ce7d10121bd397387d092ea5866c17fb22407dda45405a2b87c47f27750014f`
++Files scanned: 1 (SKILL.md)
++
++**Findings: none**
++
++The single file contains only prose style rules for writing release notes (bullet length, word choice, structure). No URLs, no file paths, no shell commands, no credential references, no config writes. The scanner found zero capability strings across all categories — the skill can only influence what the agent writes, not what it reads or executes.

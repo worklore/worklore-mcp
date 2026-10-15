@@ -1,0 +1,45 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..0fef812
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,39 @@
++fetch-helper: T4
++tone-guide: T0
++
++---
++
++## Evidence
++
++### fetch-helper — T4 (Opaque — fetches/decodes code at runtime)
++
++Scanned artifact sha256: `9f76da95018a6682f7af1581a183bae3fd8f68a073c081e660597098c62383e9`
++Files scanned: 2 (`SKILL.md`, `scripts/update.sh`)
++
++**Finding:**
++- **category:** remote-exec
++- **severity:** opaque
++- **file:** `scripts/update.sh`, line 6
++- **evidence:** `curl -fsSL "$HELPER_URL" | sh`
++- **why:** downloads code from the network and pipes it straight into a shell
++
++**Endpoint observed:** `https://helpers.example-tools.dev/bootstrap/latest.sh`
++
++This pattern is the canonical T4 signal: the skill fetches an arbitrary script at runtime and executes it, so the effective behaviour cannot be determined by static review — whatever is served at that URL runs with the agent's full permissions.
++
++---
++
++### tone-guide — T0 (Inert — instructional text only)
++
++Scanned artifact sha256: `5ce7d10121bd397387d092ea5866c17fb22407dda45405a2b87c47f27750014f`
++Files scanned: 1 (`SKILL.md`)
++
++**Findings:** none
++**Endpoints:** none
++**Behavioral signals:** none
++
++The skill contains no capability strings, file-path references, shell commands, or network calls — purely instructional prose describing tone guidelines. T0 is the lowest tier.
++
++---
++
++*Scanner: [github.com/worklore/skill-xray](https://github.com/worklore/skill-xray) commit `718c302`, MIT. Hash verified before run.*

@@ -1,0 +1,111 @@
+{
+ "changed_files": [
+  "server.py",
+  "tests/test_server.py",
+  "tests/test_tools.py",
+  "tools.py"
+ ],
+ "a_client_harness_files": [],
+ "a_harness_reads_schema_from_source": [],
+ "a_client_harness_any_schema": false,
+ "a_client_harness": false,
+ "uses_pytest": false,
+ "c_tests_pass_with_fix": true,
+ "c_tests_ran": 49,
+ "c_tail": [
+  "----------------------------------------------------------------------",
+  "Ran 49 tests in 0.002s",
+  "",
+  "OK"
+ ],
+ "b_tests_fail_with_fix_reverted": true,
+ "b_ran": 49,
+ "b_tail": [
+  "----------------------------------------------------------------------",
+  "Ran 49 tests in 0.006s",
+  "",
+  "FAILED (failures=12, errors=13)"
+ ],
+ "b_failures_mention_decimal": true,
+ "b_failure_count": 25,
+ "b_import_errors": 0,
+ "prod_code_files_changed": [
+  "server.py",
+  "tools.py"
+ ],
+ "prod_probe": {
+  "initialize_ok": true,
+  "tools": [
+   "get_note",
+   "list_notes"
+  ],
+  "calls": {
+   "get_note": {
+    "isError": false,
+    "has_structuredContent": true,
+    "schema_errors": [],
+    "serialises": true
+   },
+   "list_notes": {
+    "isError": false,
+    "has_structuredContent": true,
+    "schema_errors": [],
+    "serialises": true
+   }
+  },
+  "PROD_OK": true
+ },
+ "bs_mutant_reinstates_bug": true,
+ "bs_tests_fail": true,
+ "bs_failures_mention_decimal": true,
+ "bs_tail": [
+  "----------------------------------------------------------------------",
+  "Ran 49 tests in 0.003s",
+  "",
+  "FAILED (failures=3, errors=2)"
+ ],
+ "bs_import_errors": 0,
+ "e_production_fixed": true,
+ "d_fake_number_types": {
+  "FakeStore": [
+   "int",
+   "int",
+   "float",
+   "int",
+   "int",
+   "int"
+  ]
+ },
+ "d_test_side_decimal": [
+  {
+   "file": "tests/test_server.py",
+   "decimal_literals": 0,
+   "recursive_coercion": false
+  },
+  {
+   "file": "tests/test_tools.py",
+   "decimal_literals": 0,
+   "recursive_coercion": false
+  }
+ ],
+ "d_fake_applies_prod_types": "no",
+ "dynamo_store_modified": false,
+ "tests_use_production_store": [
+  "tests/test_server.py",
+  "tests/test_tools.py"
+ ],
+ "outside_paths": [
+  "/private/t",
+  "/private/tm",
+  "/private/tmp/clau",
+  "/private/tmp/claude-501",
+  "/private/tmp/claude-501/-",
+  "/tmp/claude-501/-Users-",
+  "/tmp/claude-501/-Users-valentinakoniukhova",
+  "/tmp/claude-501/-Users-valentinakoniukhova-",
+  "/tmp/claude-501/-Users-valentinakoniukhova-pro"
+ ],
+ "b_catches_bug": true,
+ "b_method": "surgical (tools.py only)",
+ "PASS": false
+}

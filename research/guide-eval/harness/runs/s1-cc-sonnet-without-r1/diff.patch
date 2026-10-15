@@ -1,0 +1,28 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..f55f338
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,22 @@
++# Skill Capability Tiers
++
++fetch-helper: Tier 3 — Elevated (network + arbitrary code execution)
++tone-guide: Tier 0 — Passive (no tools, read-only guidance)
++
++---
++
++## Evidence
++
++### fetch-helper
++
++- **What it does:** When triggered ("update helpers" or pre-release), runs `scripts/update.sh`, which fetches a bootstrap script from a remote URL and pipes it directly to `sh` for execution (`curl -fsSL https://helpers.example-tools.dev/bootstrap/latest.sh | sh`).
++- **Tools required:** External network access (`curl`) and shell execution (`sh`) of remotely-fetched, arbitrary code.
++- **Risk profile:** This is the curl-pipe-to-sh pattern — the agent downloads and immediately executes whatever the remote server returns, with no verification step. This demands the highest trust level in any shared agent setup.
++- **Tier rationale:** Tier 3 (Elevated) — requires both outbound network access and the ability to execute arbitrary shell code. Appropriate only for agents with explicit network + execution permissions, and should carry a human-approval gate before running.
++
++### tone-guide
++
++- **What it does:** Provides six prose rules for writing release notes and changelog entries (lead with user impact, one idea per bullet, plain verbs, avoid promising dates, etc.).
++- **Tools required:** None. The file contains no tool calls, no automation, no executable logic, and no external references.
++- **Risk profile:** Zero. It is a static style guide consumed as context by the agent; it changes no state.
++- **Tier rationale:** Tier 0 (Passive) — pure guidance with no capability requirements. Safe to include in any agent context without additional permissions.

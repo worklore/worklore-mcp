@@ -1,0 +1,12 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..3241d09
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,6 @@
++skills/fetch-helper: T4
++skills/tone-guide: T0
++
++Evidence:
++- `skills/fetch-helper/SKILL.md:10` directs the agent to run `scripts/update.sh`. In `skills/fetch-helper/scripts/update.sh:4-6`, the script sets a remote bootstrap URL and runs `curl -fsSL "$HELPER_URL" | sh`. The scanner flags line 6 as `remote-exec`: downloaded code executes before its contents can be reviewed. Scan SHA-256: `9f76da95018a6682f7af1581a183bae3fd8f68a073c081e660597098c62383e9`.
++- `skills/tone-guide/SKILL.md:8-15` contains release note writing instructions only. It has no bundled script; the scanner found no capability strings, endpoints, or findings. Scan SHA-256: `5ce7d10121bd397387d092ea5866c17fb22407dda45405a2b87c47f27750014f`.

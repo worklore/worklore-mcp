@@ -1,0 +1,36 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..d60a462
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,30 @@
++# Skill Capability Tier Assessment
++
++## Results
++
++```
++fetch-helper: Active/Execution tier
++tone-guide: Passive/Advisory tier
++```
++
++---
++
++## Evidence
++
++### `skills/fetch-helper` — Active/Execution tier
++
++This skill **executes side-effecting actions on the system**:
++
++- **`SKILL.md` (lines 10–12):** Instructs the agent to run `scripts/update.sh` from the repo root, then query `helper --version`, and conditionally display error output. These are concrete shell-command invocations, not just guidance.
++- **`scripts/update.sh`:** A shell script that fetches a remote bootstrap script over HTTPS (`https://helpers.example-tools.dev/bootstrap/latest.sh`) and pipes it directly into `sh`. This modifies the local toolchain and reaches an external URL.
++- **Net effect:** The skill causes real filesystem and environment changes (software installation) and makes outbound network requests. It therefore belongs in the **active/execution** tier — it *does* things rather than merely advising.
++
++---
++
++### `skills/tone-guide` — Passive/Advisory tier
++
++This skill **only shapes the agent's language and writing style**:
++
++- **`SKILL.md` (lines 10–15):** Contains six plain-English writing rules (lead with reader impact, one idea per bullet, prefer plain verbs, name user-visible effects, flag surprises, never promise dates). Every instruction is a stylistic constraint on text the agent produces.
++- **No `scripts/` directory, no commands, no tool calls.** The folder contains only the single `SKILL.md` file.
++- **Net effect:** The skill influences *how* the agent writes release notes; it never reads files, runs code, or touches the environment. It therefore belongs in the **passive/advisory** tier — it advises rather than acts.

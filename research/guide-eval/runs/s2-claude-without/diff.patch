@@ -1,0 +1,366 @@
+diff --git a/README.md b/README.md
+index 691179d..08db8f6 100644
+--- a/README.md
++++ b/README.md
+@@ -3,7 +3,8 @@
+ A tiny MCP server (JSON-RPC 2.0) exposing two tools over a notes store.
+ 
+ - `server.py` — `handle(request_json: str) -> str`, the single entry point. The HTTP
+-  layer (not included) passes the raw request body in and writes the returned string out.
++  layer (not included) passes the raw request body in and writes the returned string out. An empty
++  string means the message was a notification: reply `202 Accepted` with no body.
+ - `tools.py` — tool implementations.
+ - `db.py` — storage. In production the store is backed by DynamoDB (`DynamoStore`);
+   tests use `FakeStore`. `get_store()` picks DynamoStore when `PRODUCTION_DB=1`.
+diff --git a/server.py b/server.py
+index ff9e4bd..0d709a7 100644
+--- a/server.py
++++ b/server.py
+@@ -78,39 +78,82 @@ def _get_store():
+     return _store
+ 
+ 
++class _InvalidParams(Exception):
++    pass
++
++
+ def _call_tool(name, arguments):
++    if arguments is None:
++        arguments = {}
++    if not isinstance(arguments, dict):
++        raise _InvalidParams("arguments must be an object")
++    if name == "get_note":
++        if not isinstance(arguments.get("note_id"), str):
++            raise _InvalidParams("get_note requires a string 'note_id'")
++    elif name == "list_notes":
++        if arguments.get("tag") is not None and not isinstance(arguments["tag"], str):
++            raise _InvalidParams("list_notes 'tag' must be a string")
++    else:
++        raise _InvalidParams(f"unknown tool: {name}")
++
+     store = _get_store()
+     try:
+         if name == "get_note":
+             data = tools.get_note(store, arguments["note_id"])
+-        elif name == "list_notes":
+-            data = tools.list_notes(store, arguments.get("tag"))
+         else:
+-            return {"isError": True, "content": [{"type": "text", "text": f"unknown tool {name}"}]}
+-        return {
+-            "content": [{"type": "text", "text": json.dumps(data)}],
+-            "structuredContent": data,
+-        }
++            data = tools.list_notes(store, arguments.get("tag"))
++        text = json.dumps(data)
++    except KeyError as exc:  # str(KeyError) adds stray quotes; use the message itself
++        return _tool_error(exc.args[0] if exc.args else "not found")
+     except Exception as exc:  # keep the server up; report the failure to the client
+-        return {"isError": True, "content": [{"type": "text", "text": str(exc)}]}
++        return _tool_error(str(exc))
++    return {"content": [{"type": "text", "text": text}], "structuredContent": data}
++
++
++def _tool_error(message):
++    return {"isError": True, "content": [{"type": "text", "text": str(message)}]}
++
++
++def _error(rid, code, message):
++    return json.dumps({"jsonrpc": "2.0", "id": rid, "error": {"code": code, "message": message}})
+ 
+ 
+ def handle(request_json):
+-    req = json.loads(request_json)
+-    method = req.get("method")
+-    rid = req.get("id")
++    """Handle one JSON-RPC message. Returns the response string, or "" when the
++    message was a notification (no reply; the HTTP layer should send 202 with no body)."""
++    try:
++        req = json.loads(request_json)
++    except (ValueError, TypeError):
++        return _error(None, -32700, "parse error")
++    if not isinstance(req, dict) or req.get("jsonrpc") != "2.0" or not isinstance(req.get("method"), str):
++        rid = req.get("id") if isinstance(req, dict) else None
++        return _error(rid if isinstance(rid, (str, int)) else None, -32600, "invalid request")
++
++    method = req["method"]
++    if "id" not in req:
++        return ""  # notification, e.g. notifications/initialized: never answered
++    rid = req["id"]
++    params = req.get("params")
++    if params is None:
++        params = {}
++    if not isinstance(params, dict):
++        return _error(rid, -32602, "params must be an object")
++
+     if method == "initialize":
+         result = {
+             "protocolVersion": PROTOCOL_VERSION,
+             "capabilities": {"tools": {}},
+             "serverInfo": {"name": "notes-mcp", "version": "0.3.1"},
+         }
++    elif method == "ping":
++        result = {}
+     elif method == "tools/list":
+         result = {"tools": TOOLS}
+     elif method == "tools/call":
+-        params = req.get("params", {})
+-        result = _call_tool(params.get("name"), params.get("arguments", {}))
++        try:
++            result = _call_tool(params.get("name"), params.get("arguments"))
++        except _InvalidParams as exc:
++            return _error(rid, -32602, str(exc))
+     else:
+-        return json.dumps({"jsonrpc": "2.0", "id": rid,
+-                           "error": {"code": -32601, "message": f"method not found: {method}"}})
++        return _error(rid, -32601, f"method not found: {method}")
+     return json.dumps({"jsonrpc": "2.0", "id": rid, "result": result})
+diff --git a/tests/test_server.py b/tests/test_server.py
+new file mode 100644
+index 0000000..9f6b2f2
+--- /dev/null
++++ b/tests/test_server.py
+@@ -0,0 +1,184 @@
++"""End-to-end tests through server.handle(), exercised the way an MCP client does:
++raw JSON in, raw JSON out, against both the fake and the production (Dynamo) store."""
++import json
++import unittest
++
++import db
++import server
++
++
++def validate(instance, schema, path="$"):
++    """Minimal JSON Schema check for the subset our output schemas use. Validates the
++    value as a client would see it, i.e. after a JSON round-trip."""
++    t = schema.get("type")
++    if t == "object":
++        assert isinstance(instance, dict), f"{path}: expected object, got {instance!r}"
++        for key in schema.get("required", []):
++            assert key in instance, f"{path}: missing required {key!r}"
++        for key, sub in schema.get("properties", {}).items():
++            if key in instance:
++                validate(instance[key], sub, f"{path}.{key}")
++    elif t == "array":
++        assert isinstance(instance, list), f"{path}: expected array, got {instance!r}"
++        for i, item in enumerate(instance):
++            validate(item, schema.get("items", {}), f"{path}[{i}]")
++    elif t == "string":
++        assert isinstance(instance, str), f"{path}: expected string, got {instance!r}"
++    elif t == "integer":
++        assert isinstance(instance, int) and not isinstance(instance, bool), \
++            f"{path}: expected integer, got {instance!r}"
++    elif t == "number":
++        assert isinstance(instance, (int, float)) and not isinstance(instance, bool), \
++            f"{path}: expected number, got {instance!r}"
++
++
++class _ServerTests:
++    """Mixin; concrete subclasses pick the store."""
++
++    store_cls = None
++
++    def setUp(self):
++        server._store = self.store_cls()
++        self._next_id = 0
++
++    def tearDown(self):
++        server._store = None
++
++    def rpc(self, method, params=None):
++        self._next_id += 1
++        req = {"jsonrpc": "2.0", "id": self._next_id, "method": method}
++        if params is not None:
++            req["params"] = params
++        raw = server.handle(json.dumps(req))
++        resp = json.loads(raw)
++        self.assertEqual(resp["jsonrpc"], "2.0")
++        self.assertEqual(resp["id"], self._next_id)
++        return resp
++
++    def call(self, name, arguments=None):
++        params = {"name": name}
++        if arguments is not None:
++            params["arguments"] = arguments
++        return self.rpc("tools/call", params)
++
++    def tool_schema(self, name):
++        return next(t for t in server.TOOLS if t["name"] == name)["outputSchema"]
++
++    def assert_tool_ok(self, resp, name):
++        self.assertNotIn("error", resp)
++        result = resp["result"]
++        self.assertFalse(result.get("isError", False), result["content"])
++        structured = result["structuredContent"]
++        validate(structured, self.tool_schema(name))
++        # Spec: structured results should also be returned as serialized JSON text.
++        self.assertEqual(json.loads(result["content"][0]["text"]), structured)
++        return structured
++
++    # --- lifecycle -------------------------------------------------------
++
++    def test_handshake(self):
++        resp = self.rpc("initialize", {
++            "protocolVersion": server.PROTOCOL_VERSION,
++            "capabilities": {},
++            "clientInfo": {"name": "test", "version": "0"},
++        })
++        self.assertEqual(resp["result"]["protocolVersion"], server.PROTOCOL_VERSION)
++        self.assertIn("tools", resp["result"]["capabilities"])
++        # Every client sends this right after initialize; it must not be answered.
++        self.assertEqual(server.handle(json.dumps(
++            {"jsonrpc": "2.0", "method": "notifications/initialized"})), "")
++
++    def test_unknown_notification_gets_no_reply(self):
++        self.assertEqual(server.handle(json.dumps(
++            {"jsonrpc": "2.0", "method": "notifications/cancelled",
++             "params": {"requestId": 1}})), "")
++
++    def test_ping(self):
++        self.assertEqual(self.rpc("ping")["result"], {})
++
++    def test_tools_list_without_params(self):
++        tools = self.rpc("tools/list")["result"]["tools"]
++        self.assertEqual({t["name"] for t in tools}, {"get_note", "list_notes"})
++        for t in tools:
++            self.assertEqual(t["inputSchema"]["type"], "object")
++            self.assertEqual(t["outputSchema"]["type"], "object")
++
++    # --- tool results match their declared outputSchema --------------------
++
++    def test_get_note_matches_output_schema(self):
++        for note_id in db.SEED:
++            with self.subTest(note_id=note_id):
++                note = self.assert_tool_ok(self.call("get_note", {"note_id": note_id}), "get_note")
++                self.assertEqual(note["stats"]["views"], db.SEED[note_id]["stats"]["views"])
++                self.assertEqual(note["stats"]["rating"], db.SEED[note_id]["stats"]["rating"])
++                self.assertEqual(note["stats"]["revisions"], db.SEED[note_id]["stats"]["revisions"])
++
++    def test_list_notes_matches_output_schema(self):
++        for args in (None, {}, {"tag": "home"}, {"tag": "nope"}):
++            with self.subTest(args=args):
++                out = self.assert_tool_ok(self.call("list_notes", args), "list_notes")
++                self.assertEqual(out["count"], len(out["notes"]))
++
++    def test_list_notes_null_tag(self):
++        out = self.assert_tool_ok(self.call("list_notes", {"tag": None}), "list_notes")
++        self.assertEqual(out["count"], 2)
++
++    # --- errors ------------------------------------------------------------
++
++    def test_missing_note_is_tool_error(self):
++        result = self.call("get_note", {"note_id": "nope"})["result"]
++        self.assertTrue(result["isError"])
++        self.assertEqual(result["content"][0]["text"], "no note 'nope'")
++
++    def test_unknown_tool_is_invalid_params(self):
++        self.assertEqual(self.call("nope", {})["error"]["code"], -32602)
++
++    def test_bad_arguments_are_invalid_params(self):
++        for args in ({}, {"note_id": 1}, [], "n1"):
++            with self.subTest(args=args):
++                self.assertEqual(self.call("get_note", args)["error"]["code"], -32602)
++        self.assertEqual(self.call("list_notes", {"tag": 5})["error"]["code"], -32602)
++
++    def test_null_params_and_arguments(self):
++        self.assertIn("result", self.rpc("tools/list", None))
++        resp = server.handle(json.dumps(
++            {"jsonrpc": "2.0", "id": "a", "method": "tools/call",
++             "params": {"name": "list_notes", "arguments": None}}))
++        self.assert_tool_ok(json.loads(resp), "list_notes")
++
++    def test_unknown_method(self):
++        self.assertEqual(self.rpc("resources/list")["error"]["code"], -32601)
++
++    def test_string_id_echoed(self):
++        resp = json.loads(server.handle(json.dumps(
++            {"jsonrpc": "2.0", "id": "abc-1", "method": "ping"})))
++        self.assertEqual(resp["id"], "abc-1")
++
++    def test_parse_error(self):
++        resp = json.loads(server.handle("{not json"))
++        self.assertEqual(resp["error"]["code"], -32700)
++        self.assertIsNone(resp["id"])
++
++    def test_invalid_requests(self):
++        for body in ("[]", "42", '"x"', "null",
++                     json.dumps({"jsonrpc": "2.0", "id": 1}),
++                     json.dumps({"id": 1, "method": "ping"}),
++                     json.dumps({"jsonrpc": "2.0", "id": 1, "method": 5})):
++            with self.subTest(body=body):
++                self.assertEqual(json.loads(server.handle(body))["error"]["code"], -32600)
++
++    def test_non_object_params(self):
++        self.assertEqual(self.rpc("tools/call", ["get_note"])["error"]["code"], -32602)
++
++
++class FakeStoreServerTest(_ServerTests, unittest.TestCase):
++    store_cls = db.FakeStore
++
++
++class DynamoStoreServerTest(_ServerTests, unittest.TestCase):
++    """Production store: every number comes back as Decimal, at any depth."""
++    store_cls = db.DynamoStore
++
++
++if __name__ == "__main__":
++    unittest.main()
+diff --git a/tests/test_tools.py b/tests/test_tools.py
+index f6b5953..8041989 100644
+--- a/tests/test_tools.py
++++ b/tests/test_tools.py
+@@ -1,3 +1,4 @@
++import json
+ import unittest
+ 
+ import db
+@@ -38,5 +39,22 @@ class ListNotesTest(unittest.TestCase):
+         self.assertIsInstance(out["notes"][0]["word_count"], int)
+ 
+ 
++class DynamoStoreTest(unittest.TestCase):
++    """The production store returns Decimal for every number, nested included."""
++
++    def setUp(self):
++        self.store = db.DynamoStore()
++
++    def test_get_note_has_no_decimals(self):
++        note = tools.get_note(self.store, "n1")
++        self.assertEqual(json.loads(json.dumps(note)), db.SEED["n1"])
++        self.assertIsInstance(note["stats"]["views"], int)
++        self.assertIsInstance(note["stats"]["rating"], float)
++        self.assertTrue(all(type(r) is int for r in note["stats"]["revisions"]))
++
++    def test_list_notes_matches_fake_store(self):
++        self.assertEqual(tools.list_notes(self.store), tools.list_notes(db.FakeStore()))
++
++
+ if __name__ == "__main__":
+     unittest.main()
+diff --git a/tools.py b/tools.py
+index 988963a..7efd034 100644
+--- a/tools.py
++++ b/tools.py
+@@ -1,12 +1,17 @@
+ """Tool implementations. Each takes the store and the tool arguments, returns a dict."""
++from decimal import Decimal
+ 
+ 
+-def _coerce(note):
+-    # DynamoDB hands numbers back as Decimal; make the obvious ones JSON-friendly.
+-    note = dict(note)
+-    if "word_count" in note:
+-        note["word_count"] = int(note["word_count"])
+-    return note
++def _coerce(value):
++    # DynamoDB hands every number back as Decimal, at any depth; convert them all
++    # so results are JSON-serializable and integral values stay integers.
++    if isinstance(value, Decimal):
++        return int(value) if value == value.to_integral_value() else float(value)
++    if isinstance(value, dict):
++        return {k: _coerce(v) for k, v in value.items()}
++    if isinstance(value, list):
++        return [_coerce(v) for v in value]
++    return value
+ 
+ 
+ def get_note(store, note_id):

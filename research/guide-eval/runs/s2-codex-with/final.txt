@@ -1,0 +1,5 @@
+Added a client-style test that sends `initialize`, lists tools without credentials, calls every published tool through `handle()`, serializes each response, and validates its structured result against the schema returned by `tools/list`.
+
+The test exposed a real failure: nested DynamoDB `Decimal` values made `get_note` return `isError`. I fixed recursive number conversion in [tools.py](/private/tmp/claude-501/-Users-valentinakoniukhova-projects-worklore/3bfdd3c9-cfe2-4fd1-a8b7-ce52b613a3aa/scratchpad/story-eval/runs/s2-codex-with/repo/tools.py) and made [FakeStore](/private/tmp/claude-501/-Users-valentinakoniukhova-projects-worklore/3bfdd3c9-cfe2-4fd1-a8b7-ce52b613a3aa/scratchpad/story-eval/runs/s2-codex-with/repo/db.py) return production-style numeric types.
+
+All 6 tests pass. A mutation check using the old conversion reproduced the test failure.

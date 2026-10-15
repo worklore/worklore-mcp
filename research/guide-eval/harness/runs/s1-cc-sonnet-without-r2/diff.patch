@@ -1,0 +1,31 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..640cc4a
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,25 @@
++fetch-helper: High
++tone-guide: Low
++
++---
++
++## Evidence
++
++### fetch-helper — High
++
++`scripts/update.sh` pipes a remote URL straight into `sh`:
++
++```sh
++curl -fsSL "https://helpers.example-tools.dev/bootstrap/latest.sh" | sh
++```
++
++This gives the skill:
++- **Network access**: reaches an external host at runtime.
++- **Arbitrary code execution**: whatever that URL returns runs as shell with no integrity check.
++- **Filesystem/process write access**: the downloaded bootstrap can install, modify, or remove anything the agent's process can touch.
++
++The SKILL.md also instructs the agent to invoke this script on a trigger phrase ("update helpers") and to surface version output — confirming the agent is expected to run the script, not just describe it.
++
++### tone-guide — Low
++
++Contains only a SKILL.md with six writing-style rules (word choice, bullet length, framing). There are no scripts, no tool calls, no network access, and no filesystem writes. The skill is purely declarative: it shapes the agent's text output when drafting release notes. No execution capability at all.

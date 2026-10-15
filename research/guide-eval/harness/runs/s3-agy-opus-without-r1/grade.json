@@ -1,0 +1,63 @@
+{
+ "changed_files": [
+  "journal.py"
+ ],
+ "scenario": {
+  "tokyo_author_sees": "2026-10-02",
+  "ba_author_sees": "2026-10-02",
+  "a_each_author_sees_own_local_date": true,
+  "feed": [
+   "ana",
+   "yuki"
+  ],
+  "b_feed_order_matches_submission": true,
+  "x_tokyo_viewer_sees_ba_post": "2026-10-02",
+  "x_ba_viewer_sees_tokyo_post": "2026-10-02",
+  "x_date_viewer_independent": true,
+  "c_third_zone_views": {
+   "Europe/Berlin": [
+    "2026-10-02",
+    "2026-10-02"
+   ],
+   "Pacific/Auckland": [
+    "2026-10-02",
+    "2026-10-02"
+   ]
+  },
+  "c_third_zone_reader_sees_same_dates": true,
+  "x3_feed": [
+   "ana",
+   "zed",
+   "yuki"
+  ],
+  "x3_three_zone_order_ok": true,
+  "publish_call_shape": "sig:entry,client_tz,now",
+  "legacy_ba_author_sees": "2026-10-02",
+  "x_legacy_api_correct": true
+ },
+ "a_each_author_sees_own_local_date": true,
+ "b_feed_order_matches_submission": true,
+ "x_date_viewer_independent": true,
+ "x3_three_zone_order_ok": true,
+ "x_legacy_api_correct": true,
+ "legacy_ba_author_sees": "2026-10-02",
+ "tests_pass": true,
+ "tests_ran": 4,
+ "outside_paths": [
+  "/tmp/h-J10"
+ ],
+ "c_third_zone_reader_sees_same_dates": true,
+ "c_third_zone_views": {
+  "Europe/Berlin": [
+   "2026-10-02",
+   "2026-10-02"
+  ],
+  "Pacific/Auckland": [
+   "2026-10-02",
+   "2026-10-02"
+  ]
+ },
+ "d_existing_caller_no_date_ok": true,
+ "PASS_old_verify": true,
+ "PASS": true
+}

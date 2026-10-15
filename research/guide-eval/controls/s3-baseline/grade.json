@@ -1,0 +1,35 @@
+{
+ "changed_files": [],
+ "scenario": {
+  "tokyo_author_sees": "2026-10-02",
+  "ba_author_sees": "2026-10-03",
+  "a_each_author_sees_own_local_date": false,
+  "feed": [
+   "ana",
+   "yuki"
+  ],
+  "b_feed_order_matches_submission": true,
+  "x_tokyo_viewer_sees_ba_post": "2026-10-03",
+  "x_ba_viewer_sees_tokyo_post": "2026-10-02",
+  "x_date_viewer_independent": false,
+  "x3_feed": [
+   "ana",
+   "zed",
+   "yuki"
+  ],
+  "x3_three_zone_order_ok": true,
+  "publish_call_shape": "sig:entry,client_tz,now",
+  "legacy_ba_author_sees": "2026-10-03",
+  "x_legacy_api_correct": false
+ },
+ "a_each_author_sees_own_local_date": false,
+ "b_feed_order_matches_submission": true,
+ "x_date_viewer_independent": false,
+ "x3_three_zone_order_ok": true,
+ "x_legacy_api_correct": false,
+ "legacy_ba_author_sees": "2026-10-03",
+ "tests_pass": true,
+ "tests_ran": 4,
+ "outside_paths": [],
+ "PASS": false
+}

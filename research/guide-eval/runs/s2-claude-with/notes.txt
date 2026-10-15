@@ -1,0 +1,1 @@
+Followed the guide closely: test_conformance.py client harness (initialize -> notifications/initialized -> tools/list -> tools/call), validates against the published schema, FakeStore now applies _to_dynamo (Decimal at any depth), recursive coerce fix. Also added notification/ping handling.

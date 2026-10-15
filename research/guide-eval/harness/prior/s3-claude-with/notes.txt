@@ -1,0 +1,1 @@
+Story design: date = author-local (prefers entry['date'] from device, falls back to client_tz, never UTC), received_at for ordering, no display conversion. Kept the old API working.

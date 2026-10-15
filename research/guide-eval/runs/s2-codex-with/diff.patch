@@ -1,0 +1,141 @@
+diff --git a/db.py b/db.py
+index b18de2e..c538b03 100644
+--- a/db.py
++++ b/db.py
+@@ -54,17 +54,17 @@ class DynamoStore:
+ 
+ 
+ class FakeStore:
+-    """In-memory store for tests."""
++    """In-memory store for tests, with DynamoDB's read-time number types."""
+ 
+     def __init__(self, items=None):
+         self._items = copy.deepcopy(items if items is not None else SEED)
+ 
+     def get(self, note_id):
+         item = self._items.get(note_id)
+-        return copy.deepcopy(item) if item is not None else None
++        return _to_dynamo(copy.deepcopy(item)) if item is not None else None
+ 
+     def scan(self):
+-        return [copy.deepcopy(i) for i in self._items.values()]
++        return [_to_dynamo(copy.deepcopy(i)) for i in self._items.values()]
+ 
+ 
+ def get_store():
+diff --git a/tests/test_mcp_contract.py b/tests/test_mcp_contract.py
+new file mode 100644
+index 0000000..0897198
+--- /dev/null
++++ b/tests/test_mcp_contract.py
+@@ -0,0 +1,83 @@
++"""Exercise the JSON-RPC boundary using contracts published to a client."""
++
++import json
++import unittest
++
++import db
++import server
++
++
++def assert_matches_schema(test, value, schema, path="result"):
++    """Check the JSON Schema subset used by this server, including nested values."""
++    kind = schema["type"]
++    if kind == "object":
++        test.assertIsInstance(value, dict, path)
++        for key in schema.get("required", []):
++            test.assertIn(key, value, path)
++        for key, child_schema in schema.get("properties", {}).items():
++            if key in value:
++                assert_matches_schema(test, value[key], child_schema, f"{path}.{key}")
++        if schema.get("additionalProperties") is False:
++            test.assertFalse(value.keys() - schema.get("properties", {}).keys(), path)
++    elif kind == "array":
++        test.assertIsInstance(value, list, path)
++        for index, item in enumerate(value):
++            assert_matches_schema(test, item, schema["items"], f"{path}[{index}]")
++    elif kind == "string":
++        test.assertIsInstance(value, str, path)
++    elif kind == "integer":
++        test.assertIs(type(value), int, path)  # bool is not a JSON integer
++    elif kind == "number":
++        test.assertIn(type(value), (int, float), path)
++    else:
++        test.fail(f"unsupported published schema type {kind!r} at {path}")
++
++
++class McpContractTest(unittest.TestCase):
++    def setUp(self):
++        self.old_store = server._store
++        server._store = db.FakeStore()
++        self.addCleanup(setattr, server, "_store", self.old_store)
++
++    def request(self, method, request_id, params=None):
++        request = {"jsonrpc": "2.0", "id": request_id, "method": method}
++        if params is not None:
++            request["params"] = params
++        response_json = server.handle(json.dumps(request))
++        response = json.loads(response_json)
++        json.dumps(response, allow_nan=False)  # the entire result must be JSON-safe
++        self.assertEqual(response["jsonrpc"], "2.0")
++        self.assertEqual(response["id"], request_id)
++        self.assertNotIn("error", response)
++        return response["result"]
++
++    def test_client_sequence_and_published_output_contracts(self):
++        initialized = self.request("initialize", 1, {
++            "protocolVersion": server.PROTOCOL_VERSION,
++            "capabilities": {},
++            "clientInfo": {"name": "contract-test", "version": "1"},
++        })
++        self.assertEqual(initialized["protocolVersion"], server.PROTOCOL_VERSION)
++        self.assertIn("tools", initialized["capabilities"])
++
++        # No credentials: a client must be able to discover the tool contracts.
++        published = self.request("tools/list", 2)["tools"]
++        arguments = {"get_note": {"note_id": "n1"}, "list_notes": {}}
++        self.assertEqual({tool["name"] for tool in published}, set(arguments))
++
++        for request_id, tool in enumerate(published, start=3):
++            name = tool["name"]
++            with self.subTest(tool=name):
++                result = self.request("tools/call", request_id, {
++                    "name": name, "arguments": arguments[name],
++                })
++                self.assertFalse(result.get("isError"), result)
++                self.assertIn("structuredContent", result)
++                self.assertIn("outputSchema", tool)
++                assert_matches_schema(self, result["structuredContent"], tool["outputSchema"])
++                self.assertEqual(json.loads(result["content"][0]["text"]),
++                                 result["structuredContent"])
++
++
++if __name__ == "__main__":
++    unittest.main()
+diff --git a/tools.py b/tools.py
+index 988963a..5aa356d 100644
+--- a/tools.py
++++ b/tools.py
+@@ -1,12 +1,16 @@
+ """Tool implementations. Each takes the store and the tool arguments, returns a dict."""
++from decimal import Decimal
+ 
+ 
+-def _coerce(note):
+-    # DynamoDB hands numbers back as Decimal; make the obvious ones JSON-friendly.
+-    note = dict(note)
+-    if "word_count" in note:
+-        note["word_count"] = int(note["word_count"])
+-    return note
++def _coerce(value):
++    """Convert DynamoDB numbers at any depth to JSON-compatible numbers."""
++    if isinstance(value, Decimal):
++        return int(value) if value == value.to_integral_value() else float(value)
++    if isinstance(value, dict):
++        return {key: _coerce(item) for key, item in value.items()}
++    if isinstance(value, list):
++        return [_coerce(item) for item in value]
++    return value
+ 
+ 
+ def get_note(store, note_id):

@@ -1,0 +1,1 @@
+Protocol tests (initialize, ping, tools/list, notification, errors) + a PRODUCTION_DB test asserting no isError -> catches the bug (assertion has no message, so the failure text lacks 'Decimal'; verified by hand). No outputSchema validation.

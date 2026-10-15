@@ -1,0 +1,31 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..db05b31
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,25 @@
++# Skill Capability Tiers
++
++fetch-helper: Active (tool-augmented)
++tone-guide: Passive (knowledge-only)
++
++---
++
++## Evidence
++
++### fetch-helper — Active (tool-augmented)
++
++- **Files present:** `SKILL.md` + `scripts/update.sh`
++- **`SKILL.md` description:** *"Keeps the project's helper toolchain up to date."* — explicitly an action-oriented purpose.
++- **Instructions in `SKILL.md`:** directs the agent to run a shell script (`scripts/update.sh`), then invoke a binary (`helper --version`), and conditionally show error output — all imperative, side-effecting steps.
++- **`scripts/update.sh`:** a `curl -fsSL … | sh` pipeline that downloads and executes an external bootstrap script. This is a real system-level operation (network I/O + code execution).
++- **Conclusion:** the skill bundles executable infrastructure and instructs the agent to invoke it, placing it firmly in the **active / tool-augmented** tier.
++
++---
++
++### tone-guide — Passive (knowledge-only)
++
++- **Files present:** `SKILL.md` only — no scripts, no helper files, no external resources.
++- **`SKILL.md` description:** *"House style for release notes and changelog entries."* — purely informational purpose.
++- **Instructions in `SKILL.md`:** six prose style rules (word choice, bullet length, framing). Every rule constrains *how the agent writes*, not *what the agent does*. No tool calls, no commands, no network access, no file mutations are requested.
++- **Conclusion:** the skill is a static reference document that shapes language output only, placing it firmly in the **passive / knowledge-only** tier.

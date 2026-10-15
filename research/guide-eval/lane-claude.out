@@ -1,0 +1,592 @@
+s1-claude-without rc=0 wall=24s
+{
+ "answer_file": true,
+ "fetch_helper_tier": null,
+ "tone_guide_tier": null,
+ "fetch_label_line": "skills/fetch-helper: remote-code-execution (network + shell; highest tier)",
+ "tone_label_line": "skills/tone-guide: instructions-only (no code, no tools, no network; lowest tier)",
+ "check_tiers_match": false,
+ "scanner_fetched": false,
+ "scanner_run": false,
+ "mentions_skill_xray": false,
+ "possibly_executed_update_sh": true,
+ "changed_files": [
+  "ANSWER.md"
+ ],
+ "outside_paths": [
+  "/Users/valentinakoniukhova/.claude/projects/-private-tmp-claude-501--Users-valentinakoniukhova-projects-worklore-3bfdd3c9-cfe2-4fd1-a8b7-ce52b613a3aa-scratchpad-story-eval-runs-s1-claude-without-repo/memory/",
+  "/tmp/cc-socks/37682.sock"
+ ],
+ "PASS": false
+}
+s1-claude-with rc=0 wall=28s
+{
+ "answer_file": true,
+ "fetch_helper_tier": "T4",
+ "tone_guide_tier": "T0",
+ "fetch_label_line": null,
+ "tone_label_line": null,
+ "check_tiers_match": true,
+ "scanner_fetched": false,
+ "scanner_run": false,
+ "scanner_like_output_in_log": false,
+ "commands_issued": 2,
+ "scan_commands": [],
+ "mentions_skill_xray": true,
+ "possibly_executed_update_sh": [],
+ "changed_files": [
+  "ANSWER.md"
+ ],
+ "outside_paths": [
+  "/Users/valentinakoniukhova/.claude/projects/-private-tmp-claude-501--Users-valentinakoniukhova-projects-worklore-3bfdd3c9-cfe2-4fd1-a8b7-ce52b613a3aa-scratchpad-story-eval-runs-s1-claude-with-repo/memory/",
+  "/tmp/cc-socks/38104.sock"
+ ],
+ "PASS": false
+}
+s2-claude-without rc=0 wall=82s
+{
+ "changed_files": [
+  "README.md",
+  "server.py",
+  "tests/test_server.py",
+  "tests/test_tools.py",
+  "tools.py"
+ ],
+ "a_client_harness_files": [
+  "tests/test_server.py"
+ ],
+ "a_harness_reads_schema_from_source": [
+  "tests/test_server.py"
+ ],
+ "a_client_harness": true,
+ "uses_pytest": false,
+ "c_tests_pass_with_fix": true,
+ "c_tests_ran": 39,
+ "c_tail": [
+  "----------------------------------------------------------------------",
+  "Ran 39 tests in 0.002s",
+  "",
+  "OK"
+ ],
+ "b_tests_fail_with_fix_reverted": true,
+ "b_ran": 39,
+ "b_tail": [
+  "----------------------------------------------------------------------",
+  "Ran 39 tests in 0.009s",
+  "",
+  "FAILED (failures=16, errors=27)"
+ ],
+ "prod_code_files_changed": [
+  "server.py",
+  "tools.py"
+ ],
+ "prod_probe": {
+  "initialize_ok": true,
+  "tools": [
+   "get_note",
+   "list_notes"
+  ],
+  "calls": {
+   "get_note": {
+    "isError": false,
+    "has_structuredContent": true,
+    "schema_errors": [],
+    "serialises": true
+   },
+   "list_notes": {
+    "isError": false,
+    "has_structuredContent": true,
+    "schema_errors": [],
+    "serialises": true
+   }
+  },
+  "PROD_OK": true
+ },
+ "e_production_fixed": true,
+ "d_fake_number_types": {
+  "FakeStore": [
+   "int",
+   "int",
+   "float",
+   "int",
+   "int",
+   "int"
+  ]
+ },
+ "d_test_side_decimal": [
+  {
+   "file": "tests/test_server.py",
+   "decimal_literals": 0,
+   "recursive_coercion": false
+  },
+  {
+   "file": "tests/test_tools.py",
+   "decimal_literals": 0,
+   "recursive_coercion": false
+  }
+ ],
+ "d_fake_applies_prod_types": "no",
+ "dynamo_store_modified": false,
+ "outside_paths": [
+  "/Users/valentinakoniukhova/.claude/projects/-private-tmp-claude-501--Users-valentinakoniukhova-projects-worklore-3bfdd3c9-cfe2-4fd1-a8b7-ce52b613a3aa-scratchpad-story-eval-runs-s2-claude-without-repo/memory/",
+  "/tmp/cc-socks/38612.sock"
+ ],
+ "PASS": true
+}
+s2-claude-with rc=0 wall=87s
+{
+ "changed_files": [
+  "README.md",
+  "db.py",
+  "server.py",
+  "tests/test_conformance.py",
+  "tools.py"
+ ],
+ "a_client_harness_files": [
+  "tests/test_conformance.py"
+ ],
+ "a_harness_reads_schema_from_source": [],
+ "a_client_harness": true,
+ "uses_pytest": false,
+ "c_tests_pass_with_fix": true,
+ "c_tests_ran": 14,
+ "c_tail": [
+  "----------------------------------------------------------------------",
+  "Ran 14 tests in 0.001s",
+  "",
+  "OK"
+ ],
+ "b_tests_fail_with_fix_reverted": true,
+ "b_ran": 14,
+ "b_tail": [
+  "----------------------------------------------------------------------",
+  "Ran 14 tests in 0.003s",
+  "",
+  "FAILED (failures=4, errors=4)"
+ ],
+ "b_failures_mention_decimal": false,
+ "b_failure_count": 8,
+ "b_import_errors": 0,
+ "prod_code_files_changed": [
+  "db.py",
+  "server.py",
+  "tools.py"
+ ],
+ "prod_probe": {
+  "initialize_ok": true,
+  "tools": [
+   "get_note",
+   "list_notes"
+  ],
+  "calls": {
+   "get_note": {
+    "isError": false,
+    "has_structuredContent": true,
+    "schema_errors": [],
+    "serialises": true
+   },
+   "list_notes": {
+    "isError": false,
+    "has_structuredContent": true,
+    "schema_errors": [],
+    "serialises": true
+   }
+  },
+  "PROD_OK": true
+ },
+ "e_production_fixed": true,
+ "d_fake_number_types": {
+  "FakeStore": [
+   "Decimal",
+   "Decimal",
+   "Decimal",
+   "Decimal",
+   "Decimal",
+   "Decimal"
+  ]
+ },
+ "d_test_side_decimal": [],
+ "d_fake_applies_prod_types": "yes",
+ "dynamo_store_modified": false,
+ "tests_use_production_store": [
+  "tests/test_conformance.py"
+ ],
+ "outside_paths": [
+  "/Users/valentinakoniukhova/.claude/projects/-private-tmp-claude-501--Users-valentinakoniukhova-projects-worklore-3bfdd3c9-cfe2-4fd1-a8b7-ce52b613a3aa-scratchpad-story-eval-runs-s2-claude-with-repo/memory/",
+  "/tmp/cc-socks/39281.sock"
+ ],
+ "PASS": false
+}
+s3-claude-without rc=0 wall=52s
+{
+ "changed_files": [
+  "journal.py",
+  "tests/test_journal.py"
+ ],
+ "scenario": {
+  "tokyo_author_sees": "2026-10-02",
+  "ba_author_sees": "2026-10-02",
+  "a_each_author_sees_own_local_date": true,
+  "feed": [
+   "ana",
+   "yuki"
+  ],
+  "b_feed_order_matches_submission": true,
+  "x_tokyo_viewer_sees_ba_post": "2026-10-02",
+  "x_ba_viewer_sees_tokyo_post": "2026-10-02",
+  "x_date_viewer_independent": true,
+  "x3_feed": [
+   "ana",
+   "zed",
+   "yuki"
+  ],
+  "x3_three_zone_order_ok": true,
+  "publish_call_shape": "sig:now"
+ },
+ "a_each_author_sees_own_local_date": true,
+ "b_feed_order_matches_submission": true,
+ "x_date_viewer_independent": true,
+ "x3_three_zone_order_ok": true,
+ "tests_pass": true,
+ "tests_ran": 10,
+ "outside_paths": [
+  "/Users/valentinakoniukhova/.claude/projects/-private-tmp-claude-501--Users-valentinakoniukhova-projects-worklore-3bfdd3c9-cfe2-4fd1-a8b7-ce52b613a3aa-scratchpad-story-eval-runs-s3-claude-without-repo/memory/",
+  "/tmp/cc-socks/40029.sock"
+ ],
+ "PASS": true
+}
+s3-claude-with rc=0 wall=51s
+{
+ "changed_files": [
+  "journal.py",
+  "tests/test_journal.py"
+ ],
+ "scenario": {
+  "tokyo_author_sees": "2026-10-02",
+  "ba_author_sees": "2026-10-02",
+  "a_each_author_sees_own_local_date": true,
+  "feed": [
+   "ana",
+   "yuki"
+  ],
+  "b_feed_order_matches_submission": true,
+  "x_tokyo_viewer_sees_ba_post": "2026-10-02",
+  "x_ba_viewer_sees_tokyo_post": "2026-10-02",
+  "x_date_viewer_independent": true,
+  "x3_feed": [
+   "ana",
+   "zed",
+   "yuki"
+  ],
+  "x3_three_zone_order_ok": true,
+  "publish_call_shape": "sig:now"
+ },
+ "a_each_author_sees_own_local_date": true,
+ "b_feed_order_matches_submission": true,
+ "x_date_viewer_independent": true,
+ "x3_three_zone_order_ok": true,
+ "tests_pass": true,
+ "tests_ran": 14,
+ "outside_paths": [
+  "/Users/valentinakoniukhova/.claude/projects/-private-tmp-claude-501--Users-valentinakoniukhova-projects-worklore-3bfdd3c9-cfe2-4fd1-a8b7-ce52b613a3aa-scratchpad-story-eval-runs-s3-claude-with-repo/memory/",
+  "/tmp/cc-socks/40162.sock"
+ ],
+ "PASS": true
+}
+s1-agy-pro-without rc=0 wall=193s
+{
+ "answer_file": true,
+ "fetch_helper_tier": null,
+ "tone_guide_tier": null,
+ "fetch_label_line": "skills/fetch-helper: Execution / Network",
+ "tone_label_line": "skills/tone-guide: Read-only",
+ "check_tiers_match": false,
+ "scanner_fetched": false,
+ "scanner_run": false,
+ "scanner_like_output_in_log": false,
+ "commands_issued": 10,
+ "scan_commands": [],
+ "mentions_skill_xray": false,
+ "possibly_executed_update_sh": [],
+ "changed_files": [
+  "ANSWER.md"
+ ],
+ "outside_paths": [
+  "/Users/valentinakoniukhova/.gemini/antigravity-cli/",
+  "/Users/valentinakoniukhova/.gemini/antigravity-cli/brain/fe998668-a0ac-44c4-ae29-f4b14447b3c7/.system_generated/logs/transcript_full.jsonl",
+  "/Users/valentinakoniukhova/.gemini/antigravity-cli/builtin/skills/",
+  "/Users/valentinakoniukhova/.gemini/antigravity-cli/builtin/skills/agy-customizations",
+  "/Users/valentinakoniukhova/.gemini/antigravity-cli/builtin/skills/agy-customizations/SKILL.md",
+  "/Users/valentinakoniukhova/.gemini/antigravity-cli/builtin/skills/agy-customizations/docs/",
+  "/Users/valentinakoniukhova/.gemini/antigravity-cli/builtin/skills/agy-customizations/docs/json_configs.md",
+  "/Users/valentinakoniukhova/.gemini/antigravity-cli/builtin/skills/agy-customizations/docs/mcp_servers.md",
+  "/Users/valentinakoniukhova/.gemini/antigravity-cli/builtin/skills/agy-customizations/docs/plugins.md",
+  "/Users/valentinakoniukhova/.gemini/antigravity-cli/builtin/skills/agy-customizations/docs/rules.md",
+  "/Users/valentinakoniukhova/.gemini/antigravity-cli/builtin/skills/agy-customizations/docs/skills.md",
+  "/Users/valentinakoniukhova/.gemini/antigravity-cli/builtin/skills/antigravity_guide/SKILL.md",
+  "/Users/valentinakoniukhova/.gemini/antigravity-cli/builtin/skills/plugin/SKILL.md"
+ ],
+ "PASS": false
+}
+s1-agy-pro-with rc=0 wall=27s
+{
+ "answer_file": true,
+ "fetch_helper_tier": "T4",
+ "tone_guide_tier": "T0",
+ "fetch_label_line": null,
+ "tone_label_line": null,
+ "check_tiers_match": true,
+ "scanner_fetched": true,
+ "scanner_run": true,
+ "scanner_like_output_in_log": true,
+ "commands_issued": 3,
+ "scan_commands": [
+  "curl -sO https://raw.githubusercontent.com/worklore/skill-xray/main/scanner/scan.py",
+  "python3 scan.py ./skills/fetch-helper",
+  "python3 scan.py ./skills/tone-guide"
+ ],
+ "mentions_skill_xray": true,
+ "possibly_executed_update_sh": [],
+ "changed_files": [
+  "ANSWER.md",
+  "scan.py"
+ ],
+ "outside_paths": [
+  "/private/tmp/clau"
+ ],
+ "PASS": true
+}
+s2-agy-pro-without rc=0 wall=207s
+{
+ "changed_files": [
+  "server.py",
+  "tests/test_server.py",
+  "tools.py"
+ ],
+ "a_client_harness_files": [],
+ "a_harness_reads_schema_from_source": [],
+ "a_client_harness": false,
+ "uses_pytest": false,
+ "c_tests_pass_with_fix": true,
+ "c_tests_ran": 14,
+ "c_tail": [
+  "----------------------------------------------------------------------",
+  "Ran 14 tests in 0.001s",
+  "",
+  "OK"
+ ],
+ "b_tests_fail_with_fix_reverted": true,
+ "b_ran": 14,
+ "b_tail": [
+  "----------------------------------------------------------------------",
+  "Ran 14 tests in 0.002s",
+  "",
+  "FAILED (failures=3, errors=3)"
+ ],
+ "b_failures_mention_decimal": false,
+ "b_failure_count": 6,
+ "b_import_errors": 0,
+ "prod_code_files_changed": [
+  "server.py",
+  "tools.py"
+ ],
+ "prod_probe": {
+  "initialize_ok": true,
+  "tools": [
+   "get_note",
+   "list_notes"
+  ],
+  "calls": {
+   "get_note": {
+    "isError": false,
+    "has_structuredContent": true,
+    "schema_errors": [],
+    "serialises": true
+   },
+   "list_notes": {
+    "isError": false,
+    "has_structuredContent": true,
+    "schema_errors": [],
+    "serialises": true
+   }
+  },
+  "PROD_OK": true
+ },
+ "bs_mutant_reinstates_bug": true,
+ "bs_tests_fail": true,
+ "bs_failures_mention_decimal": false,
+ "bs_tail": [
+  "----------------------------------------------------------------------",
+  "Ran 14 tests in 0.001s",
+  "",
+  "FAILED (failures=1)"
+ ],
+ "bs_import_errors": 0,
+ "e_production_fixed": true,
+ "d_fake_number_types": {
+  "FakeStore": [
+   "int",
+   "int",
+   "float",
+   "int",
+   "int",
+   "int"
+  ]
+ },
+ "d_test_side_decimal": [],
+ "d_fake_applies_prod_types": "no",
+ "dynamo_store_modified": false,
+ "tests_use_production_store": [
+  "tests/test_server.py"
+ ],
+ "outside_paths": [],
+ "b_catches_bug": false,
+ "b_method": "surgical (tools.py only)",
+ "PASS": false
+}
+s2-agy-pro-with rc=0 wall=116s
+{
+ "changed_files": [
+  "db.py",
+  "tests/test_server.py",
+  "tools.py"
+ ],
+ "a_client_harness_files": [
+  "tests/test_server.py"
+ ],
+ "a_harness_reads_schema_from_source": [],
+ "a_client_harness": true,
+ "uses_pytest": false,
+ "c_tests_pass_with_fix": true,
+ "c_tests_ran": 6,
+ "c_tail": [
+  "----------------------------------------------------------------------",
+  "Ran 6 tests in 0.000s",
+  "",
+  "OK"
+ ],
+ "b_tests_fail_with_fix_reverted": true,
+ "b_ran": 6,
+ "b_tail": [
+  "----------------------------------------------------------------------",
+  "Ran 6 tests in 0.001s",
+  "",
+  "FAILED (failures=1)"
+ ],
+ "b_failures_mention_decimal": true,
+ "b_failure_count": 1,
+ "b_import_errors": 0,
+ "prod_code_files_changed": [
+  "db.py",
+  "tools.py"
+ ],
+ "prod_probe": {
+  "initialize_ok": true,
+  "tools": [
+   "get_note",
+   "list_notes"
+  ],
+  "calls": {
+   "get_note": {
+    "isError": false,
+    "has_structuredContent": true,
+    "schema_errors": [],
+    "serialises": true
+   },
+   "list_notes": {
+    "isError": false,
+    "has_structuredContent": true,
+    "schema_errors": [],
+    "serialises": true
+   }
+  },
+  "PROD_OK": true
+ },
+ "bs_mutant_reinstates_bug": true,
+ "bs_tests_fail": true,
+ "bs_failures_mention_decimal": true,
+ "bs_tail": [
+  "----------------------------------------------------------------------",
+  "Ran 6 tests in 0.001s",
+  "",
+  "FAILED (failures=1)"
+ ],
+ "bs_import_errors": 0,
+ "e_production_fixed": true,
+ "d_fake_number_types": {
+  "FakeStore": [
+   "Decimal",
+   "Decimal",
+   "Decimal",
+   "Decimal",
+   "Decimal",
+   "Decimal"
+  ]
+ },
+ "d_test_side_decimal": [],
+ "d_fake_applies_prod_types": "yes",
+ "dynamo_store_modified": false,
+ "tests_use_production_store": [],
+ "outside_paths": [
+  "/private/tmp/claude-501/-User",
+  "/tmp/claude-501/-Users-valentinakoni"
+ ],
+ "b_catches_bug": true,
+ "b_method": "surgical (tools.py only)",
+ "PASS": true
+}
+s3-agy-pro-without rc=0 wall=148s
+{
+ "changed_files": [
+  "journal.py",
+  "tests/test_journal.py"
+ ],
+ "scenario": {
+  "tokyo_author_sees": "2026-10-02",
+  "ba_author_sees": "2026-10-02",
+  "a_each_author_sees_own_local_date": true,
+  "feed": [
+   "ana",
+   "yuki"
+  ],
+  "b_feed_order_matches_submission": true,
+  "x_tokyo_viewer_sees_ba_post": "2026-10-03",
+  "x_ba_viewer_sees_tokyo_post": "2026-10-02",
+  "x_date_viewer_independent": false,
+  "x3_feed": [
+   "ana",
+   "zed",
+   "yuki"
+  ],
+  "x3_three_zone_order_ok": true,
+  "publish_call_shape": "sig:now"
+ },
+ "a_each_author_sees_own_local_date": true,
+ "b_feed_order_matches_submission": true,
+ "x_date_viewer_independent": false,
+ "x3_three_zone_order_ok": true,
+ "tests_pass": true,
+ "tests_ran": 6,
+ "outside_paths": [],
+ "PASS": true
+}
+s3-agy-pro-with rc=0 wall=98s
+{
+ "changed_files": [
+  "README.md",
+  "journal.py",
+  "tests/test_journal.py"
+ ],
+ "scenario": {
+  "probe_error": "ptv2/r/_probe.py\", line 31, in do_publish\n    post = journal.publish(entry, tz, **kw); shape = \"sig:\" + \",\".join(kw)\nTypeError: publish() got multiple values for argument 'local_date'\n\nDuring handling of the above exception, another exception occurred:\n\nTraceback (most recent call last):\n  File \"/private/var/folders/wx/fkc3yttx3f7ddg45t1h52nyw0000gn/T/g3-_s8cptv2/r/_probe.py\", line 57, in <module>\n    t = do_publish(\"yuki\", TOKYO, datetime(2026, 10, 2, 14, 30, tzinfo=timezone.utc))   # 23:30 JST\n  File \"/private/var/folders/wx/fkc3yttx3f7ddg45t1h52nyw0000gn/T/g3-_s8cptv2/r/_probe.py\", line 35, in do_publish\n    post = journal.publish(entry2, tz, **kw); shape = \"entry.date+\" + \",\".join(kw) + \" (first try: %s)\" % str(e)[:80]\nTypeError: publish() got multiple values for argument 'local_date'\n"
+ },
+ "a_each_author_sees_own_local_date": false,
+ "b_feed_order_matches_submission": false,
+ "x_date_viewer_independent": false,
+ "x3_three_zone_order_ok": false,
+ "tests_pass": true,
+ "tests_ran": 5,
+ "outside_paths": [],
+ "PASS": false
+}
+LANE_DONE

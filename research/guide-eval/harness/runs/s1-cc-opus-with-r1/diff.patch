@@ -1,0 +1,28 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..c2d1a34
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,22 @@
++skills/fetch-helper: T4
++skills/tone-guide: T0
++
++## Evidence
++
++### skills/fetch-helper — T4 (Opaque)
++
++The scanner found a `remote-exec` finding at `scripts/update.sh:6`:
++
++```
++curl -fsSL "$HELPER_URL" | sh
++```
++
++This downloads code from `https://helpers.example-tools.dev/bootstrap/latest.sh` and pipes it directly into a shell. The content of that remote script can change at any time, so the skill's actual behavior cannot be statically reviewed — hence the highest capability tier, T4.
++
++Scan hash: `9f76da95018a6682f7af1581a183bae3fd8f68a073c081e660597098c62383e9`
++
++### skills/tone-guide — T0 (Inert)
++
++The scanner found zero findings. The folder contains a single `SKILL.md` with plain instructional text (writing-style rules for release notes). No commands, no file paths, no network access, no scripts — pure prose guidance.
++
++Scan hash: `5ce7d10121bd397387d092ea5866c17fb22407dda45405a2b87c47f27750014f`

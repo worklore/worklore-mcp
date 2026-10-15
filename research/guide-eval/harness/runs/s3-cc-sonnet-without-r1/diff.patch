@@ -1,0 +1,51 @@
+diff --git a/journal.py b/journal.py
+index b0453dc..7dab2e6 100644
+--- a/journal.py
++++ b/journal.py
+@@ -24,19 +24,14 @@ def publish(entry, client_tz, now=None):
+     post = dict(entry)
+     post["client_tz"] = client_tz
+     post["created_at"] = now.astimezone(timezone.utc).isoformat()
+-    # Dates are always generated on the server, in UTC, so they are consistent.
+-    post["date"] = now.astimezone(timezone.utc).date().isoformat()
++    post["date"] = now.astimezone(ZoneInfo(client_tz)).date().isoformat()
+     _POSTS.append(post)
+     return post
+ 
+ 
+ def display_date(post, viewer_tz):
+-    """Date shown on a post card, converted to the viewer's zone.
+-
+-    Anchored at noon UTC so the conversion can never flip the calendar day.
+-    """
+-    noon = datetime.fromisoformat(post["date"] + "T12:00:00+00:00")
+-    return noon.astimezone(ZoneInfo(viewer_tz)).date().isoformat()
++    """Date shown on a post card. Always the date from the author's time zone."""
++    return post["date"]
+ 
+ 
+ def feed():
+diff --git a/tests/test_journal.py b/tests/test_journal.py
+index febff36..28649c7 100644
+--- a/tests/test_journal.py
++++ b/tests/test_journal.py
+@@ -28,6 +28,19 @@ class JournalTest(unittest.TestCase):
+                             now=at("2026-03-10T09:00:00"))
+         self.assertEqual(journal.display_date(p, "Europe/Berlin"), "2026-03-10")
+ 
++    def test_publish_date_uses_author_tz(self):
++        # 1am Tokyo time on March 11th = 4pm UTC March 10th
++        p = journal.publish({"author": "hiro", "title": "t", "body": "b"}, "Asia/Tokyo",
++                            now=at("2026-03-10T16:00:00"))
++        self.assertEqual(p["date"], "2026-03-11")
++
++    def test_display_date_same_for_all_viewers(self):
++        # Author in Sydney, viewers in UTC and New York all see the author's date
++        p = journal.publish({"author": "ada", "title": "t", "body": "b"}, "Australia/Sydney",
++                            now=at("2026-03-10T13:00:00"))  # 11pm Sydney = March 10th Sydney
++        self.assertEqual(journal.display_date(p, "UTC"), p["date"])
++        self.assertEqual(journal.display_date(p, "America/New_York"), p["date"])
++
+     def test_feed_newest_first(self):
+         journal.publish({"author": "kim", "title": "old", "body": ""}, "UTC",
+                         now=at("2026-03-09T12:00:00"))

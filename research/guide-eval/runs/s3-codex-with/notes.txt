@@ -1,0 +1,1 @@
+Strict reading of the story: publish now REQUIRES entry['date'] from the device and raises ValueError otherwise -> breaks the documented API (the handler only passes client_tz). Passed only via the grader's fallback that supplies a client date.

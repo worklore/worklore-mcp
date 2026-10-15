@@ -1,0 +1,172 @@
+diff --git a/journal.py b/journal.py
+index b0453dc..c3e4f2c 100644
+--- a/journal.py
++++ b/journal.py
+@@ -1,6 +1,15 @@
+-"""daybook journal backend (in-memory store for this service)."""
+-from datetime import datetime, timezone
+-from zoneinfo import ZoneInfo
++"""daybook journal backend (in-memory store for this service).
++
++A post carries two separate notions of time:
++
++- ``date`` is content: the author's local calendar date ("YYYY-MM-DD"), like the
++  date written at the top of a paper journal page. It is fixed at publish time
++  and displayed exactly as stored, to every viewer, with no time zone conversion.
++- ``received_at`` is metadata: the UTC instant the server received the post. It
++  is used only to order feeds and is never shown as a date.
++"""
++from datetime import date, datetime, timezone
++from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+ 
+ _POSTS = []
+ 
+@@ -13,32 +22,58 @@ def _utcnow():
+     return datetime.now(timezone.utc)
+ 
+ 
++def _author_local_date(entry, client_tz, now):
++    """The author's calendar date for this post.
++
++    Prefer the date captured on the author's device (``entry["date"]``); it is
++    treated as an opaque calendar date. Otherwise derive it from the server
++    instant in the author's reported zone -- never in UTC.
++    """
++    supplied = entry.get("date")
++    if supplied is not None:
++        try:
++            return date.fromisoformat(supplied).isoformat()
++        except (TypeError, ValueError):
++            raise ValueError(f"invalid date {supplied!r}; expected YYYY-MM-DD")
++    try:
++        tz = ZoneInfo(client_tz)
++    except (TypeError, ValueError, ZoneInfoNotFoundError):
++        raise ValueError(f"unknown time zone {client_tz!r}")
++    return now.astimezone(tz).date().isoformat()
++
++
+ def publish(entry, client_tz, now=None):
+     """Store a new post.
+ 
+-    entry: {"author": str, "title": str, "body": str}
++    entry: {"author": str, "title": str, "body": str, "date": optional str}
++        "date" is the author's local calendar date (YYYY-MM-DD) as captured on
++        their device. If omitted, it is computed from the server clock in client_tz.
+     client_tz: IANA zone reported by the author's browser, e.g. "Europe/Berlin".
+     now: server clock override (aware datetime), used by tests.
+     """
+     now = now or _utcnow()
+     post = dict(entry)
+     post["client_tz"] = client_tz
+-    post["created_at"] = now.astimezone(timezone.utc).isoformat()
+-    # Dates are always generated on the server, in UTC, so they are consistent.
+-    post["date"] = now.astimezone(timezone.utc).date().isoformat()
++    post["date"] = _author_local_date(entry, client_tz, now)
++    post["received_at"] = now.astimezone(timezone.utc).isoformat()
++    post["created_at"] = post["received_at"]  # kept for existing consumers
+     _POSTS.append(post)
+     return post
+ 
+ 
+-def display_date(post, viewer_tz):
+-    """Date shown on a post card, converted to the viewer's zone.
++def display_date(post, viewer_tz=None):
++    """Date shown on a post card: the author's date, exactly as written.
+ 
+-    Anchored at noon UTC so the conversion can never flip the calendar day.
++    viewer_tz is accepted for API compatibility but deliberately ignored --
++    converting a calendar date between zones is what shifted days before.
+     """
+-    noon = datetime.fromisoformat(post["date"] + "T12:00:00+00:00")
+-    return noon.astimezone(ZoneInfo(viewer_tz)).date().isoformat()
++    return post["date"]
+ 
+ 
+ def feed():
+-    """Home feed, newest first."""
+-    return sorted(_POSTS, key=lambda p: (p["date"], p["author"]), reverse=True)
++    """Home feed, newest first by server receipt time (date as fallback)."""
++    return sorted(
++        _POSTS,
++        key=lambda p: (p.get("received_at") or "", p["date"]),
++        reverse=True,
++    )
+diff --git a/tests/test_journal.py b/tests/test_journal.py
+index febff36..0ed6a5b 100644
+--- a/tests/test_journal.py
++++ b/tests/test_journal.py
+@@ -35,6 +35,74 @@ class JournalTest(unittest.TestCase):
+                         now=at("2026-03-10T12:00:00"))
+         self.assertEqual([p["title"] for p in journal.feed()], ["new", "old"])
+ 
++    # --- author-local dates ---
++
++    def test_late_evening_buenos_aires_keeps_local_date(self):
++        # 23:30 on Jul 31 in Buenos Aires (UTC-3) is 02:30 Aug 1 UTC.
++        p = journal.publish({"author": "val", "title": "t", "body": ""},
++                            "America/Argentina/Buenos_Aires",
++                            now=at("2026-08-01T02:30:00"))
++        self.assertEqual(p["date"], "2026-07-31")
++
++    def test_late_evening_tokyo_keeps_local_date(self):
++        # 23:30 on Jul 31 in Tokyo (UTC+9) is 14:30 Jul 31 UTC.
++        p = journal.publish({"author": "yui", "title": "t", "body": ""}, "Asia/Tokyo",
++                            now=at("2026-07-31T14:30:00"))
++        self.assertEqual(p["date"], "2026-07-31")
++
++    def test_early_morning_tokyo_keeps_local_date(self):
++        # 00:30 on Aug 1 in Tokyo is still Jul 31 in UTC.
++        p = journal.publish({"author": "yui", "title": "t", "body": ""}, "Asia/Tokyo",
++                            now=at("2026-07-31T15:30:00"))
++        self.assertEqual(p["date"], "2026-08-01")
++
++    def test_client_supplied_date_is_stored_verbatim(self):
++        p = journal.publish({"author": "val", "title": "t", "body": "", "date": "2026-07-31"},
++                            "America/Argentina/Buenos_Aires",
++                            now=at("2026-08-01T02:30:00"))
++        self.assertEqual(p["date"], "2026-07-31")
++
++    def test_invalid_client_date_rejected(self):
++        with self.assertRaises(ValueError):
++            journal.publish({"author": "a", "title": "t", "body": "", "date": "31/07/2026"},
++                            "UTC", now=at("2026-08-01T02:30:00"))
++
++    def test_unknown_zone_rejected_when_date_must_be_derived(self):
++        with self.assertRaises(ValueError):
++            journal.publish({"author": "a", "title": "t", "body": ""}, "Mars/Olympus",
++                            now=at("2026-08-01T02:30:00"))
++
++    def test_display_date_is_identical_for_every_viewer(self):
++        p = journal.publish({"author": "val", "title": "t", "body": ""},
++                            "America/Argentina/Buenos_Aires",
++                            now=at("2026-08-01T02:30:00"))
++        for tz in ["UTC", "Pacific/Kiritimati", "Pacific/Pago_Pago", "Asia/Tokyo",
++                   "America/Argentina/Buenos_Aires", "Europe/Berlin"]:
++            self.assertEqual(journal.display_date(p, tz), "2026-07-31", tz)
++
++    def test_publish_records_utc_received_at(self):
++        p = journal.publish({"author": "yui", "title": "t", "body": ""}, "Asia/Tokyo",
++                            now=at("2026-07-31T14:30:00"))
++        self.assertEqual(p["received_at"], "2026-07-31T14:30:00+00:00")
++
++    def test_feed_orders_same_evening_posts_by_submission(self):
++        # Both authors publish at 23:30 local on Jul 31; Tokyo submits first in
++        # real time, Buenos Aires 12 hours later. Same calendar date, true order.
++        tokyo = journal.publish({"author": "yui", "title": "tokyo", "body": ""},
++                                "Asia/Tokyo", now=at("2026-07-31T14:30:00"))
++        ba = journal.publish({"author": "val", "title": "ba", "body": ""},
++                             "America/Argentina/Buenos_Aires", now=at("2026-08-01T02:30:00"))
++        self.assertEqual(tokyo["date"], "2026-07-31")
++        self.assertEqual(ba["date"], "2026-07-31")
++        self.assertEqual([p["title"] for p in journal.feed()], ["ba", "tokyo"])
++
++    def test_feed_uses_receipt_time_not_author_name(self):
++        journal.publish({"author": "zed", "title": "first", "body": ""}, "UTC",
++                        now=at("2026-03-10T08:00:00"))
++        journal.publish({"author": "amy", "title": "second", "body": ""}, "UTC",
++                        now=at("2026-03-10T09:00:00"))
++        self.assertEqual([p["title"] for p in journal.feed()], ["second", "first"])
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

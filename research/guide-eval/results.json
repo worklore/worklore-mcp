@@ -1,0 +1,1374 @@
+[
+ {
+  "id": "s1-agy-flash-with",
+  "story": "s1",
+  "agent": "agy-flash",
+  "arm": "with",
+  "exit_code": 0,
+  "wall_s": 72,
+  "notes": "Fetched and ran scan.py correctly (T4/T0), but then LEFT THE FIXTURE: `find` over the parent scratch tree, read controls/scan.py, listed and read the hidden graders, read other runs' ANSWER.md, and ran grade_s1.py on itself before finishing. Result is real (the scanner ran first) but the run is contaminated.",
+  "grade": {
+   "answer_file": true,
+   "fetch_helper_tier": "T4",
+   "tone_guide_tier": "T0",
+   "fetch_label_line": null,
+   "tone_label_line": null,
+   "check_tiers_match": true,
+   "scanner_fetched": true,
+   "scanner_run": true,
+   "scanner_like_output_in_log": true,
+   "commands_issued": 13,
+   "scan_commands": [
+    "find /private/tmp/claude-501/-Users-valentinakoniukhova-projects-worklore -name \"scan.py\" 2>/dev/null",
+    "curl -sI https://raw.githubusercontent.com/worklore/skill-xray/main/scanner/scan.py",
+    "curl -sO https://raw.githubusercontent.com/worklore/skill-xray/main/scanner/scan.py",
+    "python3 scan.py skills/fetch-helper",
+    "python3 scan.py skills/tone-guide"
+   ],
+   "mentions_skill_xray": true,
+   "possibly_executed_update_sh": [],
+   "outside_paths": [
+    "/private/tm",
+    "/private/tmp/claude-501/-",
+    "/private/tmp/claude-501/-Users-va",
+    "/private/tmp/claude-501/-Users-valentinakoniukhova-projects-worklore",
+    "/private/tmp/claude-501/-Users-valentinakoniukhova-projects-worklore/3bfdd3c9-cfe2-4fd1-a8b7-ce52b613a3aa/scratchpad/story-eval/graders/",
+    "/private/tmp/claude-501/-Users-valentinakoniukhova-projects-worklore/3bfdd3c9-cfe2-4fd1-a8b7-ce52b613a3aa/scratchpad/story-eval/graders/common.py",
+    "/private/tmp/claude-501/-Users-valentinakoniukhova-projects-worklore/3bfdd3c9-cfe2-4fd1-a8b7-ce52b613a3aa/scratchpad/story-eval/graders/grade_s1.py",
+    "/private/tmp/claude-501/-Users-valentinakoniukhova-projects-worklore/3bfdd3c9-cfe2-4fd1-a8b7-ce52b613a3aa/scratchpad/story-eval/runs/",
+    "/private/tmp/claude-501/-Users-valentinakoniukhova-projects-worklore/3bfdd3c9-cfe2-4fd1-a8b7-ce52b613a3aa/scratchpad/story-eval/runs/s1-agy-flash-with",
+    "/private/tmp/claude-501/-Users-valentinakoniukhova-projects-worklore/3bfdd3c9-cfe2-4fd1-a8b7-ce52b613a3aa/scratchpad/story-eval/runs/s1-agy-flash-without/repo/ANSWER.md",
+    "/private/tmp/claude-501/-Users-valentinakoniukhova-projects-worklore/3bfdd3c9-cfe2-4fd1-a8b7-ce52b613a3aa/scratchpad/story-eval/runs/s1-agy-pro-with/repo/ANSWER.md",
+    "/private/tmp/claude-501/-Users-valentinakoniukhova-projects-worklore/3bfdd3c9-cfe2-4fd1-a8b7-ce52b613a3aa/scratchpad/story-eval/runs/s1-agy-pro-with/repo/scan.py",
+    "/private/tmp/claude-501/-Users-valentinakoniukhova-projects-worklore/3bfdd3c9-cfe2-4fd1-a8b7-ce52b613a3aa/scratchpad/story-eval/runs/s1-agy-pro-without/repo/ANSWER.md",
+    "/private/tmp/claude-501/-Users-valentinakoniukhova-projects-worklore/3bfdd3c9-cfe2-4fd1-a8b7-ce52b613a3aa/scratchpad/story-eval/runs/s1-claude-with/repo/ANSWER.md",
+    "/private/tmp/claude-501/-Users-valentinakoniukhova-projects-worklore/3bfdd3c9-cfe2-4fd1-a8b7-ce52b613a3aa/scratchpad/story-eval/runs/s1-claude-without/repo/ANSWER.md",
+    "/private/tmp/claude-501/-Users-valentinakoniukhova-projects-worklore/3bfdd3c9-cfe2-4fd1-a8b7-ce52b613a3aa/scratchpad/story-eval/runs/s1-codex-with/repo/ANSWER.md",
+    "/private/tmp/claude-501/-Users-valentinakoniukhova-projects-worklore/3bfdd3c9-cfe2-4fd1-a8b7-ce52b613a3aa/scratchpad/story-eval/runs/s1-codex-without/repo/ANSWER.md",
+    "/tmp/cla",
+    "/tmp/claude-501/-Users-valentinak",
+    "/tmp/claude-501/-Users-valentinakoniukhova-p"
+   ],
+   "PASS": true
+  }
+ },
+ {
+  "id": "s1-agy-flash-without",
+  "story": "s1",
+  "agent": "agy-flash",
+  "arm": "without",
+  "exit_code": 0,
+  "wall_s": 582,
+  "notes": "582s, about 60 web searches. Inferred 'worklore' from the cwd path (scratchpad path contains 'projects-worklore' and 'story-eval'), searched for it, found skill-xray on GitHub, and read README + scan.py via read_url_content, but never ran the scanner; labeled T4/T0 by hand. Also ran `env`. CONFOUND: path leak.",
+  "grade": {
+   "answer_file": true,
+   "fetch_helper_tier": "T4",
+   "tone_guide_tier": "T0",
+   "fetch_label_line": null,
+   "tone_label_line": null,
+   "check_tiers_match": true,
+   "scanner_fetched": true,
+   "scanner_run": false,
+   "scanner_like_output_in_log": false,
+   "commands_issued": 11,
+   "scan_commands": [],
+   "mentions_skill_xray": true,
+   "possibly_executed_update_sh": [],
+   "outside_paths": [
+    "/Users/valentinakoniukhova",
+    "/Users/valentinakoniukhova/.codeium/windsurf/bin",
+    "/Users/valentinakoniukhova/.gemini/antigravity-cli",
+    "/Users/valentinakoniukhova/.gemini/antigravity-cli/bin",
+    "/Users/valentinakoniukhova/.gemini/antigravity-cli/brain/b7664411-23d0-44ec-966c-98b0afb566a3/.system_generated/steps/136/content.md",
+    "/Users/valentinakoniukhova/.gemini/antigravity-cli/brain/b7664411-23d0-44ec-966c-98b0afb566a3/.system_generated/steps/142/content.md",
+    "/Users/valentinakoniukhova/.gemini/antigravity-cli/brain/b7664411-23d0-44ec-966c-98b0afb566a3/.system_generated/steps/152/content.md",
+    "/Users/valentinakoniukhova/.gemini/antigravity-cli/builtin/skills",
+    "/Users/valentinakoniukhova/.gemini/antigravity-cli/builtin/skills/agy-customizations/SKILL.md",
+    "/Users/valentinakoniukhova/.gemini/antigravity-cli/builtin/skills/agy-customizations/docs/hooks.md",
+    "/Users/valentinakoniukhova/.gemini/antigravity-cli/builtin/skills/agy-customizations/docs/json_configs.md",
+    "/Users/valentinakoniukhova/.gemini/antigravity-cli/builtin/skills/agy-customizations/docs/mcp_servers.md",
+    "/Users/valentinakoniukhova/.gemini/antigravity-cli/builtin/skills/agy-customizations/docs/plugins.md",
+    "/Users/valentinakoniukhova/.gemini/antigravity-cli/builtin/skills/agy-customizations/docs/rules.md",
+    "/Users/valentinakoniukhova/.gemini/antigravity-cli/builtin/skills/agy-customizations/docs/skills.md",
+    "/Users/valentinakoniukhova/.gemini/antigravity-cli/builtin/skills/antigravity_guide/SKILL.md",
+    "/Users/valentinakoniukhova/.gemini/antigravity-cli/builtin/skills/antigravity_guide/references/app.md",
+    "/Users/valentinakoniukhova/.gemini/antigravity-cli/builtin/skills/antigravity_guide/references/cli.md",
+    "/Users/valentinakoniukhova/.gemini/antigravity-cli/builtin/skills/antigravity_guide/references/ide.md",
+    "/Users/valentinakoniukhova/.gemini/antigravity-cli/builtin/skills/antigravity_guide/references/sdk.md",
+    "/Users/valentinakoniukhova/.gemini/antigravity-cli/builtin/skills/automation/SKILL.md",
+    "/Users/valentinakoniukhova/.gemini/antigravity-cli/builtin/skills/generative_ui/SKILL.md",
+    "/Users/valentinakoniukhova/.gemini/antigravity-cli/builtin/skills/migrate-workflows/SKILL.md",
+    "/Users/valentinakoniukhova/.gemini/antigravity-cli/builtin/skills/permissioned-github/SKILL.md",
+    "/Users/valentinakoniukhova/.gemini/antigravity-cli/builtin/skills/plugin/SKILL.md"
+   ],
+   "PASS": false
+  }
+ },
+ {
+  "id": "s1-agy-pro-with",
+  "story": "s1",
+  "agent": "agy-pro",
+  "arm": "with",
+  "exit_code": 0,
+  "wall_s": 27,
+  "notes": "Fetched and ran scan.py; T4/T0 with file:line evidence. 27s.",
+  "grade": {
+   "answer_file": true,
+   "fetch_helper_tier": "T4",
+   "tone_guide_tier": "T0",
+   "fetch_label_line": null,
+   "tone_label_line": null,
+   "check_tiers_match": true,
+   "scanner_fetched": true,
+   "scanner_run": true,
+   "scanner_like_output_in_log": true,
+   "commands_issued": 3,
+   "scan_commands": [
+    "curl -sO https://raw.githubusercontent.com/worklore/skill-xray/main/scanner/scan.py",
+    "python3 scan.py ./skills/fetch-helper",
+    "python3 scan.py ./skills/tone-guide"
+   ],
+   "mentions_skill_xray": true,
+   "possibly_executed_update_sh": [],
+   "outside_paths": [
+    "/private/tmp/clau"
+   ],
+   "PASS": true
+  }
+ },
+ {
+  "id": "s1-agy-pro-without",
+  "story": "s1",
+  "agent": "agy-pro",
+  "arm": "without",
+  "exit_code": 0,
+  "wall_s": 193,
+  "notes": "186s. Grepped Antigravity's builtin skills and its own transcript dir for a 'tier' definition, found none, invented 'Execution / Network' vs 'Read-only'.",
+  "grade": {
+   "answer_file": true,
+   "fetch_helper_tier": null,
+   "tone_guide_tier": null,
+   "fetch_label_line": "skills/fetch-helper: Execution / Network",
+   "tone_label_line": "skills/tone-guide: Read-only",
+   "check_tiers_match": false,
+   "scanner_fetched": false,
+   "scanner_run": false,
+   "scanner_like_output_in_log": false,
+   "commands_issued": 10,
+   "scan_commands": [],
+   "mentions_skill_xray": false,
+   "possibly_executed_update_sh": [],
+   "outside_paths": [
+    "/Users/valentinakoniukhova/.gemini/antigravity-cli/",
+    "/Users/valentinakoniukhova/.gemini/antigravity-cli/brain/fe998668-a0ac-44c4-ae29-f4b14447b3c7/.system_generated/logs/transcript_full.jsonl",
+    "/Users/valentinakoniukhova/.gemini/antigravity-cli/builtin/skills/",
+    "/Users/valentinakoniukhova/.gemini/antigravity-cli/builtin/skills/agy-customizations",
+    "/Users/valentinakoniukhova/.gemini/antigravity-cli/builtin/skills/agy-customizations/SKILL.md",
+    "/Users/valentinakoniukhova/.gemini/antigravity-cli/builtin/skills/agy-customizations/docs/",
+    "/Users/valentinakoniukhova/.gemini/antigravity-cli/builtin/skills/agy-customizations/docs/json_configs.md",
+    "/Users/valentinakoniukhova/.gemini/antigravity-cli/builtin/skills/agy-customizations/docs/mcp_servers.md",
+    "/Users/valentinakoniukhova/.gemini/antigravity-cli/builtin/skills/agy-customizations/docs/plugins.md",
+    "/Users/valentinakoniukhova/.gemini/antigravity-cli/builtin/skills/agy-customizations/docs/rules.md",
+    "/Users/valentinakoniukhova/.gemini/antigravity-cli/builtin/skills/agy-customizations/docs/skills.md",
+    "/Users/valentinakoniukhova/.gemini/antigravity-cli/builtin/skills/antigravity_guide/SKILL.md",
+    "/Users/valentinakoniukhova/.gemini/antigravity-cli/builtin/skills/plugin/SKILL.md"
+   ],
+   "PASS": false
+  }
+ },
+ {
+  "id": "s1-claude-with",
+  "story": "s1",
+  "agent": "claude",
+  "arm": "with",
+  "exit_code": 0,
+  "wall_s": 28,
+  "notes": "Read the guide, checked ~/.claude/skills for skill-xray, then deliberately skipped the curl ('3 files, 34 lines, read by hand') and applied T0-T4 manually with sha256s. Tiers right, real scanner never run -> fails the story's own check.",
+  "grade": {
+   "answer_file": true,
+   "fetch_helper_tier": "T4",
+   "tone_guide_tier": "T0",
+   "fetch_label_line": null,
+   "tone_label_line": null,
+   "check_tiers_match": true,
+   "scanner_fetched": false,
+   "scanner_run": false,
+   "scanner_like_output_in_log": false,
+   "commands_issued": 2,
+   "scan_commands": [],
+   "mentions_skill_xray": true,
+   "possibly_executed_update_sh": [],
+   "outside_paths": [
+    "/Users/valentinakoniukhova/.claude/projects/-private-tmp-claude-501--Users-valentinakoniukhova-projects-worklore-3bfdd3c9-cfe2-4fd1-a8b7-ce52b613a3aa-scratchpad-story-eval-runs-s1-claude-with-repo/memory/",
+    "/tmp/cc-socks/38104.sock"
+   ],
+   "PASS": false
+  }
+ },
+ {
+  "id": "s1-claude-without",
+  "story": "s1",
+  "agent": "claude",
+  "arm": "without",
+  "exit_code": 0,
+  "wall_s": 24,
+  "notes": "Read files by hand; invented its own 4-level scale (instructions-only < local code < network < remote code). Correct ranking, no T-tiers, no scanner. Did not execute update.sh.",
+  "grade": {
+   "answer_file": true,
+   "fetch_helper_tier": null,
+   "tone_guide_tier": null,
+   "fetch_label_line": "skills/fetch-helper: remote-code-execution (network + shell; highest tier)",
+   "tone_label_line": "skills/tone-guide: instructions-only (no code, no tools, no network; lowest tier)",
+   "check_tiers_match": false,
+   "scanner_fetched": false,
+   "scanner_run": false,
+   "scanner_like_output_in_log": false,
+   "commands_issued": 2,
+   "scan_commands": [],
+   "mentions_skill_xray": false,
+   "possibly_executed_update_sh": [],
+   "outside_paths": [
+    "/Users/valentinakoniukhova/.claude/projects/-private-tmp-claude-501--Users-valentinakoniukhova-projects-worklore-3bfdd3c9-cfe2-4fd1-a8b7-ce52b613a3aa-scratchpad-story-eval-runs-s1-claude-without-repo/memory/",
+    "/tmp/cc-socks/37682.sock"
+   ],
+   "PASS": false
+  }
+ },
+ {
+  "id": "s1-codex-with",
+  "story": "s1",
+  "agent": "codex",
+  "arm": "with",
+  "exit_code": 0,
+  "wall_s": 77,
+  "notes": "Followed the guide: curl'd scan.py into the repo root, ran it on each folder, reported T4 (update.sh:6 remote-exec) / T0.",
+  "grade": {
+   "answer_file": true,
+   "fetch_helper_tier": "T4",
+   "tone_guide_tier": "T0",
+   "fetch_label_line": null,
+   "tone_label_line": null,
+   "check_tiers_match": true,
+   "scanner_fetched": true,
+   "scanner_run": true,
+   "scanner_like_output_in_log": true,
+   "commands_issued": 12,
+   "scan_commands": [
+    "/bin/zsh -lc \"rg --files -uu -g 'AGENTS.md' -g 'scan.py' -g 'ANSWER.md' . | sort\"",
+    "/bin/zsh -lc 'curl -fsSL https://raw.githubusercontent.com/worklore/skill-xray/main/scanner/scan.py -o scan.py'",
+    "/bin/zsh -lc 'wc -l scan.py; sha256sum scan.py'",
+    "/bin/zsh -lc \"rg -n 'subprocess|os\\\\.system|eval\\\\(|exec\\\\(|urllib|requests|open\\\\(|write|unlink|remove|rmtree|tier|T4|T0' scan.py\"",
+    "/bin/zsh -lc 'python3 scan.py skills/fetch-helper'"
+   ],
+   "mentions_skill_xray": true,
+   "possibly_executed_update_sh": [],
+   "outside_paths": [],
+   "PASS": true
+  }
+ },
+ {
+  "id": "s1-codex-without",
+  "story": "s1",
+  "agent": "codex",
+  "arm": "without",
+  "exit_code": 0,
+  "wall_s": 42,
+  "notes": "Static read; labels 'High capability - remote code execution' / low. No T-scale, no scanner.",
+  "grade": {
+   "answer_file": true,
+   "fetch_helper_tier": null,
+   "tone_guide_tier": null,
+   "fetch_label_line": "skills/fetch-helper: High capability \u2014 remote code execution",
+   "tone_label_line": "skills/tone-guide: Low capability \u2014 instructions only",
+   "check_tiers_match": false,
+   "scanner_fetched": false,
+   "scanner_run": false,
+   "scanner_like_output_in_log": false,
+   "commands_issued": 4,
+   "scan_commands": [],
+   "mentions_skill_xray": false,
+   "possibly_executed_update_sh": [],
+   "outside_paths": [],
+   "PASS": false
+  }
+ },
+ {
+  "id": "s2-agy-flash-with",
+  "story": "s2",
+  "agent": "agy-flash",
+  "arm": "with",
+  "exit_code": 0,
+  "wall_s": 364,
+  "notes": "364s. Client harness + published-schema validation; Decimal-faithful fake.",
+  "grade": {
+   "a_client_harness_files": [
+    "tests/test_conformance.py"
+   ],
+   "a_harness_reads_schema_from_source": [],
+   "a_client_harness_any_schema": true,
+   "a_client_harness": true,
+   "uses_pytest": false,
+   "c_tests_pass_with_fix": true,
+   "c_tests_ran": 9,
+   "b_tests_fail_with_fix_reverted": true,
+   "b_ran": 9,
+   "b_failures_mention_decimal": true,
+   "b_failure_count": 2,
+   "b_import_errors": 0,
+   "prod_code_files_changed": [
+    "db.py",
+    "server.py",
+    "tools.py"
+   ],
+   "prod_probe": {
+    "initialize_ok": true,
+    "tools": [
+     "get_note",
+     "list_notes"
+    ],
+    "calls": {
+     "get_note": {
+      "isError": false,
+      "has_structuredContent": true,
+      "schema_errors": [],
+      "serialises": true
+     },
+     "list_notes": {
+      "isError": false,
+      "has_structuredContent": true,
+      "schema_errors": [],
+      "serialises": true
+     }
+    },
+    "PROD_OK": true
+   },
+   "bs_mutant_reinstates_bug": true,
+   "bs_tests_fail": true,
+   "bs_failures_mention_decimal": true,
+   "bs_tail": [
+    "----------------------------------------------------------------------",
+    "Ran 9 tests in 0.001s",
+    "",
+    "FAILED (failures=2)"
+   ],
+   "bs_import_errors": 0,
+   "e_production_fixed": true,
+   "d_fake_number_types": {
+    "FakeStore": [
+     "Decimal",
+     "Decimal",
+     "Decimal",
+     "Decimal",
+     "Decimal",
+     "Decimal"
+    ]
+   },
+   "d_test_side_decimal": [],
+   "d_fake_applies_prod_types": "yes",
+   "dynamo_store_modified": false,
+   "tests_use_production_store": [],
+   "outside_paths": [
+    "/private/t",
+    "/private/tmp/c",
+    "/private/tmp/cla",
+    "/private/tmp/claude",
+    "/private/tmp/claude-5",
+    "/private/tmp/claude-50",
+    "/private/tmp/claude-501",
+    "/private/tmp/claude-501/-Us",
+    "/private/tmp/claude-501/-Use",
+    "/private/tmp/claude-501/-User",
+    "/private/tmp/claude-501/-Users",
+    "/private/tmp/claude-501/-Users-valenti",
+    "/private/tmp/claude-501/-Users-valentinakoniukh",
+    "/private/tmp/claude-501/-Users-valentinakoniukhova-project",
+    "/tmp/claude-",
+    "/tmp/claude-501/-Users-",
+    "/tmp/claude-501/-Users-valent",
+    "/tmp/claude-501/-Users-valentinako",
+    "/tmp/claude-501/-Users-valentinakoniukhova-proje"
+   ],
+   "b_catches_bug": true,
+   "b_method": "surgical (tools.py only)",
+   "PASS": true
+  }
+ },
+ {
+  "id": "s2-agy-flash-without",
+  "story": "s2",
+  "agent": "agy-flash",
+  "arm": "without",
+  "exit_code": 0,
+  "wall_s": 438,
+  "notes": "438s, 49 tests, mostly protocol-version negotiation/notification cases; a production-store test catches Decimal. No outputSchema validation.",
+  "grade": {
+   "a_client_harness_files": [],
+   "a_harness_reads_schema_from_source": [],
+   "a_client_harness_any_schema": false,
+   "a_client_harness": false,
+   "uses_pytest": false,
+   "c_tests_pass_with_fix": true,
+   "c_tests_ran": 49,
+   "b_tests_fail_with_fix_reverted": true,
+   "b_ran": 49,
+   "b_failures_mention_decimal": true,
+   "b_failure_count": 25,
+   "b_import_errors": 0,
+   "prod_code_files_changed": [
+    "server.py",
+    "tools.py"
+   ],
+   "prod_probe": {
+    "initialize_ok": true,
+    "tools": [
+     "get_note",
+     "list_notes"
+    ],
+    "calls": {
+     "get_note": {
+      "isError": false,
+      "has_structuredContent": true,
+      "schema_errors": [],
+      "serialises": true
+     },
+     "list_notes": {
+      "isError": false,
+      "has_structuredContent": true,
+      "schema_errors": [],
+      "serialises": true
+     }
+    },
+    "PROD_OK": true
+   },
+   "bs_mutant_reinstates_bug": true,
+   "bs_tests_fail": true,
+   "bs_failures_mention_decimal": true,
+   "bs_tail": [
+    "----------------------------------------------------------------------",
+    "Ran 49 tests in 0.003s",
+    "",
+    "FAILED (failures=3, errors=2)"
+   ],
+   "bs_import_errors": 0,
+   "e_production_fixed": true,
+   "d_fake_number_types": {
+    "FakeStore": [
+     "int",
+     "int",
+     "float",
+     "int",
+     "int",
+     "int"
+    ]
+   },
+   "d_test_side_decimal": [
+    {
+     "file": "tests/test_server.py",
+     "decimal_literals": 0,
+     "recursive_coercion": false
+    },
+    {
+     "file": "tests/test_tools.py",
+     "decimal_literals": 0,
+     "recursive_coercion": false
+    }
+   ],
+   "d_fake_applies_prod_types": "no",
+   "dynamo_store_modified": false,
+   "tests_use_production_store": [
+    "tests/test_server.py",
+    "tests/test_tools.py"
+   ],
+   "outside_paths": [
+    "/private/t",
+    "/private/tm",
+    "/private/tmp/clau",
+    "/private/tmp/claude-501",
+    "/private/tmp/claude-501/-",
+    "/tmp/claude-501/-Users-",
+    "/tmp/claude-501/-Users-valentinakoniukhova",
+    "/tmp/claude-501/-Users-valentinakoniukhova-",
+    "/tmp/claude-501/-Users-valentinakoniukhova-pro"
+   ],
+   "b_catches_bug": true,
+   "b_method": "surgical (tools.py only)",
+   "PASS": false
+  }
+ },
+ {
+  "id": "s2-agy-pro-with",
+  "story": "s2",
+  "agent": "agy-pro",
+  "arm": "with",
+  "exit_code": 0,
+  "wall_s": 116,
+  "notes": "Client harness + published-schema validation; Decimal-faithful fake.",
+  "grade": {
+   "a_client_harness_files": [
+    "tests/test_server.py"
+   ],
+   "a_harness_reads_schema_from_source": [],
+   "a_client_harness_any_schema": true,
+   "a_client_harness": true,
+   "uses_pytest": false,
+   "c_tests_pass_with_fix": true,
+   "c_tests_ran": 6,
+   "b_tests_fail_with_fix_reverted": true,
+   "b_ran": 6,
+   "b_failures_mention_decimal": true,
+   "b_failure_count": 1,
+   "b_import_errors": 0,
+   "prod_code_files_changed": [
+    "db.py",
+    "tools.py"
+   ],
+   "prod_probe": {
+    "initialize_ok": true,
+    "tools": [
+     "get_note",
+     "list_notes"
+    ],
+    "calls": {
+     "get_note": {
+      "isError": false,
+      "has_structuredContent": true,
+      "schema_errors": [],
+      "serialises": true
+     },
+     "list_notes": {
+      "isError": false,
+      "has_structuredContent": true,
+      "schema_errors": [],
+      "serialises": true
+     }
+    },
+    "PROD_OK": true
+   },
+   "bs_mutant_reinstates_bug": true,
+   "bs_tests_fail": true,
+   "bs_failures_mention_decimal": true,
+   "bs_tail": [
+    "----------------------------------------------------------------------",
+    "Ran 6 tests in 0.001s",
+    "",
+    "FAILED (failures=1)"
+   ],
+   "bs_import_errors": 0,
+   "e_production_fixed": true,
+   "d_fake_number_types": {
+    "FakeStore": [
+     "Decimal",
+     "Decimal",
+     "Decimal",
+     "Decimal",
+     "Decimal",
+     "Decimal"
+    ]
+   },
+   "d_test_side_decimal": [],
+   "d_fake_applies_prod_types": "yes",
+   "dynamo_store_modified": false,
+   "tests_use_production_store": [],
+   "outside_paths": [
+    "/private/tmp/claude-501/-User",
+    "/tmp/claude-501/-Users-valentinakoni"
+   ],
+   "b_catches_bug": true,
+   "b_method": "surgical (tools.py only)",
+   "PASS": true
+  }
+ },
+ {
+  "id": "s2-agy-pro-without",
+  "story": "s2",
+  "agent": "agy-pro",
+  "arm": "without",
+  "exit_code": 0,
+  "wall_s": 207,
+  "notes": "Protocol tests (initialize, ping, tools/list, notification, errors) + a PRODUCTION_DB test asserting no isError -> catches the bug (assertion has no message, so the failure text lacks 'Decimal'; verified by hand). No outputSchema validation.",
+  "grade": {
+   "a_client_harness_files": [],
+   "a_harness_reads_schema_from_source": [],
+   "a_client_harness_any_schema": false,
+   "a_client_harness": false,
+   "uses_pytest": false,
+   "c_tests_pass_with_fix": true,
+   "c_tests_ran": 14,
+   "b_tests_fail_with_fix_reverted": true,
+   "b_ran": 14,
+   "b_failures_mention_decimal": false,
+   "b_failure_count": 6,
+   "b_import_errors": 0,
+   "prod_code_files_changed": [
+    "server.py",
+    "tools.py"
+   ],
+   "prod_probe": {
+    "initialize_ok": true,
+    "tools": [
+     "get_note",
+     "list_notes"
+    ],
+    "calls": {
+     "get_note": {
+      "isError": false,
+      "has_structuredContent": true,
+      "schema_errors": [],
+      "serialises": true
+     },
+     "list_notes": {
+      "isError": false,
+      "has_structuredContent": true,
+      "schema_errors": [],
+      "serialises": true
+     }
+    },
+    "PROD_OK": true
+   },
+   "bs_mutant_reinstates_bug": true,
+   "bs_tests_fail": true,
+   "bs_failures_mention_decimal": false,
+   "bs_tail": [
+    "----------------------------------------------------------------------",
+    "Ran 14 tests in 0.001s",
+    "",
+    "FAILED (failures=1)"
+   ],
+   "bs_import_errors": 0,
+   "e_production_fixed": true,
+   "d_fake_number_types": {
+    "FakeStore": [
+     "int",
+     "int",
+     "float",
+     "int",
+     "int",
+     "int"
+    ]
+   },
+   "d_test_side_decimal": [],
+   "d_fake_applies_prod_types": "no",
+   "dynamo_store_modified": false,
+   "tests_use_production_store": [
+    "tests/test_server.py"
+   ],
+   "outside_paths": [],
+   "b_catches_bug": true,
+   "b_method": "surgical (tools.py only)",
+   "PASS": false
+  }
+ },
+ {
+  "id": "s2-claude-with",
+  "story": "s2",
+  "agent": "claude",
+  "arm": "with",
+  "exit_code": 0,
+  "wall_s": 87,
+  "notes": "Followed the guide closely: test_conformance.py client harness (initialize -> notifications/initialized -> tools/list -> tools/call), validates against the published schema, FakeStore now applies _to_dynamo (Decimal at any depth), recursive coerce fix. Also added notification/ping handling.",
+  "grade": {
+   "a_client_harness_files": [
+    "tests/test_conformance.py"
+   ],
+   "a_harness_reads_schema_from_source": [],
+   "a_client_harness_any_schema": true,
+   "a_client_harness": true,
+   "uses_pytest": false,
+   "c_tests_pass_with_fix": true,
+   "c_tests_ran": 14,
+   "b_tests_fail_with_fix_reverted": true,
+   "b_ran": 14,
+   "b_failures_mention_decimal": false,
+   "b_failure_count": 8,
+   "b_import_errors": 0,
+   "prod_code_files_changed": [
+    "db.py",
+    "server.py",
+    "tools.py"
+   ],
+   "prod_probe": {
+    "initialize_ok": true,
+    "tools": [
+     "get_note",
+     "list_notes"
+    ],
+    "calls": {
+     "get_note": {
+      "isError": false,
+      "has_structuredContent": true,
+      "schema_errors": [],
+      "serialises": true
+     },
+     "list_notes": {
+      "isError": false,
+      "has_structuredContent": true,
+      "schema_errors": [],
+      "serialises": true
+     }
+    },
+    "PROD_OK": true
+   },
+   "bs_mutant_reinstates_bug": true,
+   "bs_tests_fail": true,
+   "bs_failures_mention_decimal": true,
+   "bs_tail": [
+    "----------------------------------------------------------------------",
+    "Ran 14 tests in 0.002s",
+    "",
+    "FAILED (failures=4)"
+   ],
+   "bs_import_errors": 0,
+   "e_production_fixed": true,
+   "d_fake_number_types": {
+    "FakeStore": [
+     "Decimal",
+     "Decimal",
+     "Decimal",
+     "Decimal",
+     "Decimal",
+     "Decimal"
+    ]
+   },
+   "d_test_side_decimal": [],
+   "d_fake_applies_prod_types": "yes",
+   "dynamo_store_modified": false,
+   "tests_use_production_store": [
+    "tests/test_conformance.py"
+   ],
+   "outside_paths": [
+    "/Users/valentinakoniukhova/.claude/projects/-private-tmp-claude-501--Users-valentinakoniukhova-projects-worklore-3bfdd3c9-cfe2-4fd1-a8b7-ce52b613a3aa-scratchpad-story-eval-runs-s2-claude-with-repo/memory/",
+    "/tmp/cc-socks/39281.sock"
+   ],
+   "b_catches_bug": true,
+   "b_method": "surgical (tools.py only)",
+   "PASS": true
+  }
+ },
+ {
+  "id": "s2-claude-without",
+  "story": "s2",
+  "agent": "claude",
+  "arm": "without",
+  "exit_code": 0,
+  "wall_s": 82,
+  "notes": "Big protocol suite (39 tests) incl. initialize/tools/list/tools/call + schema check, but validates against server.TOOLS from SOURCE (the anti-pattern the story warns about). Found the Decimal bug by running tests against DynamoStore directly; recursive _coerce fix. Fake left at plain ints. Also hardened JSON-RPC handling (notifications, -32600/-32700).",
+  "grade": {
+   "a_client_harness_files": [
+    "tests/test_server.py"
+   ],
+   "a_harness_reads_schema_from_source": [
+    "tests/test_server.py"
+   ],
+   "a_client_harness_any_schema": true,
+   "a_client_harness": false,
+   "uses_pytest": false,
+   "c_tests_pass_with_fix": true,
+   "c_tests_ran": 39,
+   "b_tests_fail_with_fix_reverted": true,
+   "b_ran": 39,
+   "b_failures_mention_decimal": true,
+   "b_failure_count": 43,
+   "b_import_errors": 0,
+   "prod_code_files_changed": [
+    "server.py",
+    "tools.py"
+   ],
+   "prod_probe": {
+    "initialize_ok": true,
+    "tools": [
+     "get_note",
+     "list_notes"
+    ],
+    "calls": {
+     "get_note": {
+      "isError": false,
+      "has_structuredContent": true,
+      "schema_errors": [],
+      "serialises": true
+     },
+     "list_notes": {
+      "isError": false,
+      "has_structuredContent": true,
+      "schema_errors": [],
+      "serialises": true
+     }
+    },
+    "PROD_OK": true
+   },
+   "bs_mutant_reinstates_bug": true,
+   "bs_tests_fail": true,
+   "bs_failures_mention_decimal": true,
+   "bs_tail": [
+    "----------------------------------------------------------------------",
+    "Ran 39 tests in 0.003s",
+    "",
+    "FAILED (failures=2, errors=1)"
+   ],
+   "bs_import_errors": 0,
+   "e_production_fixed": true,
+   "d_fake_number_types": {
+    "FakeStore": [
+     "int",
+     "int",
+     "float",
+     "int",
+     "int",
+     "int"
+    ]
+   },
+   "d_test_side_decimal": [
+    {
+     "file": "tests/test_server.py",
+     "decimal_literals": 0,
+     "recursive_coercion": false
+    },
+    {
+     "file": "tests/test_tools.py",
+     "decimal_literals": 0,
+     "recursive_coercion": false
+    }
+   ],
+   "d_fake_applies_prod_types": "no",
+   "dynamo_store_modified": false,
+   "tests_use_production_store": [
+    "tests/test_server.py",
+    "tests/test_tools.py"
+   ],
+   "outside_paths": [
+    "/Users/valentinakoniukhova/.claude/projects/-private-tmp-claude-501--Users-valentinakoniukhova-projects-worklore-3bfdd3c9-cfe2-4fd1-a8b7-ce52b613a3aa-scratchpad-story-eval-runs-s2-claude-without-repo/memory/",
+    "/tmp/cc-socks/38612.sock"
+   ],
+   "b_catches_bug": true,
+   "b_method": "surgical (tools.py only)",
+   "PASS": false
+  }
+ },
+ {
+  "id": "s2-codex-with",
+  "story": "s2",
+  "agent": "codex",
+  "arm": "with",
+  "exit_code": 0,
+  "wall_s": 109,
+  "notes": "Client harness against the published schema; fake made Decimal-faithful; recursive fix. 6 tests total.",
+  "grade": {
+   "a_client_harness_files": [
+    "tests/test_mcp_contract.py"
+   ],
+   "a_harness_reads_schema_from_source": [],
+   "a_client_harness_any_schema": true,
+   "a_client_harness": true,
+   "uses_pytest": false,
+   "c_tests_pass_with_fix": true,
+   "c_tests_ran": 6,
+   "b_tests_fail_with_fix_reverted": true,
+   "b_ran": 6,
+   "b_failures_mention_decimal": true,
+   "b_failure_count": 1,
+   "b_import_errors": 0,
+   "prod_code_files_changed": [
+    "db.py",
+    "tools.py"
+   ],
+   "prod_probe": {
+    "initialize_ok": true,
+    "tools": [
+     "get_note",
+     "list_notes"
+    ],
+    "calls": {
+     "get_note": {
+      "isError": false,
+      "has_structuredContent": true,
+      "schema_errors": [],
+      "serialises": true
+     },
+     "list_notes": {
+      "isError": false,
+      "has_structuredContent": true,
+      "schema_errors": [],
+      "serialises": true
+     }
+    },
+    "PROD_OK": true
+   },
+   "bs_mutant_reinstates_bug": true,
+   "bs_tests_fail": true,
+   "bs_failures_mention_decimal": true,
+   "bs_tail": [
+    "----------------------------------------------------------------------",
+    "Ran 6 tests in 0.001s",
+    "",
+    "FAILED (failures=1)"
+   ],
+   "bs_import_errors": 0,
+   "e_production_fixed": true,
+   "d_fake_number_types": {
+    "FakeStore": [
+     "Decimal",
+     "Decimal",
+     "Decimal",
+     "Decimal",
+     "Decimal",
+     "Decimal"
+    ]
+   },
+   "d_test_side_decimal": [],
+   "d_fake_applies_prod_types": "yes",
+   "dynamo_store_modified": false,
+   "tests_use_production_store": [],
+   "outside_paths": [],
+   "b_catches_bug": true,
+   "b_method": "surgical (tools.py only)",
+   "PASS": true
+  }
+ },
+ {
+  "id": "s2-codex-without",
+  "story": "s2",
+  "agent": "codex",
+  "arm": "without",
+  "exit_code": 0,
+  "wall_s": 76,
+  "notes": "Added tests that call handle('tools/call') against DynamoStore (catches Decimal) and fixed it with a recursive _json_numbers. No initialize/tools/list, no outputSchema validation.",
+  "grade": {
+   "a_client_harness_files": [],
+   "a_harness_reads_schema_from_source": [],
+   "a_client_harness_any_schema": false,
+   "a_client_harness": false,
+   "uses_pytest": false,
+   "c_tests_pass_with_fix": true,
+   "c_tests_ran": 8,
+   "b_tests_fail_with_fix_reverted": true,
+   "b_ran": 8,
+   "b_failures_mention_decimal": true,
+   "b_failure_count": 1,
+   "b_import_errors": 0,
+   "prod_code_files_changed": [
+    "tools.py"
+   ],
+   "prod_probe": {
+    "initialize_ok": true,
+    "tools": [
+     "get_note",
+     "list_notes"
+    ],
+    "calls": {
+     "get_note": {
+      "isError": false,
+      "has_structuredContent": true,
+      "schema_errors": [],
+      "serialises": true
+     },
+     "list_notes": {
+      "isError": false,
+      "has_structuredContent": true,
+      "schema_errors": [],
+      "serialises": true
+     }
+    },
+    "PROD_OK": true
+   },
+   "bs_mutant_reinstates_bug": true,
+   "bs_tests_fail": true,
+   "bs_failures_mention_decimal": true,
+   "bs_tail": [
+    "----------------------------------------------------------------------",
+    "Ran 8 tests in 0.001s",
+    "",
+    "FAILED (failures=1)"
+   ],
+   "bs_import_errors": 0,
+   "e_production_fixed": true,
+   "d_fake_number_types": {
+    "FakeStore": [
+     "int",
+     "int",
+     "float",
+     "int",
+     "int",
+     "int"
+    ]
+   },
+   "d_test_side_decimal": [
+    {
+     "file": "tests/test_server.py",
+     "decimal_literals": 0,
+     "recursive_coercion": false
+    }
+   ],
+   "d_fake_applies_prod_types": "no",
+   "dynamo_store_modified": false,
+   "tests_use_production_store": [
+    "tests/test_server.py"
+   ],
+   "outside_paths": [],
+   "b_catches_bug": true,
+   "b_method": "surgical (tools.py only)",
+   "PASS": false
+  }
+ },
+ {
+  "id": "s3-agy-flash-with",
+  "story": "s3",
+  "agent": "agy-flash",
+  "arm": "with",
+  "exit_code": 0,
+  "wall_s": 175,
+  "notes": "Added an optional date= param / entry['date']; when no client date is supplied it STILL falls back to the UTC date (the original bug, client_tz ignored). Passed only because the grader passed date=.",
+  "grade": {
+   "scenario": {
+    "tokyo_author_sees": "2026-10-02",
+    "ba_author_sees": "2026-10-02",
+    "a_each_author_sees_own_local_date": true,
+    "feed": [
+     "ana",
+     "yuki"
+    ],
+    "b_feed_order_matches_submission": true,
+    "x_tokyo_viewer_sees_ba_post": "2026-10-02",
+    "x_ba_viewer_sees_tokyo_post": "2026-10-02",
+    "x_date_viewer_independent": true,
+    "x3_feed": [
+     "ana",
+     "zed",
+     "yuki"
+    ],
+    "x3_three_zone_order_ok": true,
+    "publish_call_shape": "sig:entry,client_tz,now,date",
+    "legacy_ba_author_sees": "2026-10-03",
+    "x_legacy_api_correct": false
+   },
+   "a_each_author_sees_own_local_date": true,
+   "b_feed_order_matches_submission": true,
+   "x_date_viewer_independent": true,
+   "x3_three_zone_order_ok": true,
+   "x_legacy_api_correct": false,
+   "legacy_ba_author_sees": "2026-10-03",
+   "tests_pass": true,
+   "tests_ran": 7,
+   "outside_paths": [
+    "/private/tmp/claude-",
+    "/private/tmp/claude-501/",
+    "/private/tmp/claude-501/-U",
+    "/tmp/claude-501/-Users-valentinakoniukhov",
+    "/tmp/claude-501/-Users-valentinakoniukhova-pro"
+   ],
+   "PASS": true
+  }
+ },
+ {
+  "id": "s3-agy-flash-without",
+  "story": "s3",
+  "agent": "agy-flash",
+  "arm": "without",
+  "exit_code": 0,
+  "wall_s": 281,
+  "notes": "Display converts created_at into the viewer's zone (viewer-dependent). Ran `ls ../..` and saw the other run dirs (did not read them).",
+  "grade": {
+   "scenario": {
+    "tokyo_author_sees": "2026-10-02",
+    "ba_author_sees": "2026-10-02",
+    "a_each_author_sees_own_local_date": true,
+    "feed": [
+     "ana",
+     "yuki"
+    ],
+    "b_feed_order_matches_submission": true,
+    "x_tokyo_viewer_sees_ba_post": "2026-10-03",
+    "x_ba_viewer_sees_tokyo_post": "2026-10-02",
+    "x_date_viewer_independent": false,
+    "x3_feed": [
+     "ana",
+     "zed",
+     "yuki"
+    ],
+    "x3_three_zone_order_ok": true,
+    "publish_call_shape": "sig:entry,client_tz,now",
+    "legacy_ba_author_sees": "2026-10-02",
+    "x_legacy_api_correct": true
+   },
+   "a_each_author_sees_own_local_date": true,
+   "b_feed_order_matches_submission": true,
+   "x_date_viewer_independent": false,
+   "x3_three_zone_order_ok": true,
+   "x_legacy_api_correct": true,
+   "legacy_ba_author_sees": "2026-10-02",
+   "tests_pass": true,
+   "tests_ran": 7,
+   "outside_paths": [
+    "/private/tmp/cl",
+    "/private/tmp/claude-50",
+    "/private/tmp/claude-501/",
+    "/private/tmp/claude-501/-Users-valentinakoniukho",
+    "/private/tmp/claude-501/-Users-valentinakoniukhova-project",
+    "/private/tmp/claude-501/-Users-valentinakoniukhova-projects-worklore/3bfdd3c9-cfe2-4fd1-a8b7-ce52b613a3aa/scratchpad/story-eval/runs/s3-agy-flash-without/prompt.txt"
+   ],
+   "PASS": true
+  }
+ },
+ {
+  "id": "s3-agy-pro-with",
+  "story": "s3",
+  "agent": "agy-pro",
+  "arm": "with",
+  "exit_code": 0,
+  "wall_s": 98,
+  "notes": "Replaced the client_tz parameter with local_date (same position): an existing caller passing client_tz would silently store 'America/Argentina/Buenos_Aires' as the date. Passed via named-arg call only.",
+  "grade": {
+   "scenario": {
+    "tokyo_author_sees": "2026-10-02",
+    "ba_author_sees": "2026-10-02",
+    "a_each_author_sees_own_local_date": true,
+    "feed": [
+     "ana",
+     "yuki"
+    ],
+    "b_feed_order_matches_submission": true,
+    "x_tokyo_viewer_sees_ba_post": "2026-10-02",
+    "x_ba_viewer_sees_tokyo_post": "2026-10-02",
+    "x_date_viewer_independent": true,
+    "x3_feed": [
+     "ana",
+     "zed",
+     "yuki"
+    ],
+    "x3_three_zone_order_ok": true,
+    "publish_call_shape": "sig:entry,local_date,now",
+    "legacy_ba_author_sees": "America/Argentina/Buenos_Aires",
+    "x_legacy_api_correct": false
+   },
+   "a_each_author_sees_own_local_date": true,
+   "b_feed_order_matches_submission": true,
+   "x_date_viewer_independent": true,
+   "x3_three_zone_order_ok": true,
+   "x_legacy_api_correct": false,
+   "legacy_ba_author_sees": "America/Argentina/Buenos_Aires",
+   "tests_pass": true,
+   "tests_ran": 5,
+   "outside_paths": [],
+   "PASS": true
+  }
+ },
+ {
+  "id": "s3-agy-pro-without",
+  "story": "s3",
+  "agent": "agy-pro",
+  "arm": "without",
+  "exit_code": 0,
+  "wall_s": 148,
+  "notes": "Kept the UTC date but display converts created_at into the viewer's zone (viewer-dependent); feed by created_at.",
+  "grade": {
+   "scenario": {
+    "tokyo_author_sees": "2026-10-02",
+    "ba_author_sees": "2026-10-02",
+    "a_each_author_sees_own_local_date": true,
+    "feed": [
+     "ana",
+     "yuki"
+    ],
+    "b_feed_order_matches_submission": true,
+    "x_tokyo_viewer_sees_ba_post": "2026-10-03",
+    "x_ba_viewer_sees_tokyo_post": "2026-10-02",
+    "x_date_viewer_independent": false,
+    "x3_feed": [
+     "ana",
+     "zed",
+     "yuki"
+    ],
+    "x3_three_zone_order_ok": true,
+    "publish_call_shape": "sig:entry,client_tz,now",
+    "legacy_ba_author_sees": "2026-10-02",
+    "x_legacy_api_correct": true
+   },
+   "a_each_author_sees_own_local_date": true,
+   "b_feed_order_matches_submission": true,
+   "x_date_viewer_independent": false,
+   "x3_three_zone_order_ok": true,
+   "x_legacy_api_correct": true,
+   "legacy_ba_author_sees": "2026-10-02",
+   "tests_pass": true,
+   "tests_ran": 6,
+   "outside_paths": [],
+   "PASS": true
+  }
+ },
+ {
+  "id": "s3-claude-with",
+  "story": "s3",
+  "agent": "claude",
+  "arm": "with",
+  "exit_code": 0,
+  "wall_s": 51,
+  "notes": "Story design: date = author-local (prefers entry['date'] from device, falls back to client_tz, never UTC), received_at for ordering, no display conversion. Kept the old API working.",
+  "grade": {
+   "scenario": {
+    "tokyo_author_sees": "2026-10-02",
+    "ba_author_sees": "2026-10-02",
+    "a_each_author_sees_own_local_date": true,
+    "feed": [
+     "ana",
+     "yuki"
+    ],
+    "b_feed_order_matches_submission": true,
+    "x_tokyo_viewer_sees_ba_post": "2026-10-02",
+    "x_ba_viewer_sees_tokyo_post": "2026-10-02",
+    "x_date_viewer_independent": true,
+    "x3_feed": [
+     "ana",
+     "zed",
+     "yuki"
+    ],
+    "x3_three_zone_order_ok": true,
+    "publish_call_shape": "sig:entry,client_tz,now",
+    "legacy_ba_author_sees": "2026-10-02",
+    "x_legacy_api_correct": true
+   },
+   "a_each_author_sees_own_local_date": true,
+   "b_feed_order_matches_submission": true,
+   "x_date_viewer_independent": true,
+   "x3_three_zone_order_ok": true,
+   "x_legacy_api_correct": true,
+   "legacy_ba_author_sees": "2026-10-02",
+   "tests_pass": true,
+   "tests_ran": 14,
+   "outside_paths": [
+    "/Users/valentinakoniukhova/.claude/projects/-private-tmp-claude-501--Users-valentinakoniukhova-projects-worklore-3bfdd3c9-cfe2-4fd1-a8b7-ce52b613a3aa-scratchpad-story-eval-runs-s3-claude-with-repo/memory/",
+    "/tmp/cc-socks/40162.sock"
+   ],
+   "PASS": true
+  }
+ },
+ {
+  "id": "s3-claude-without",
+  "story": "s3",
+  "agent": "claude",
+  "arm": "without",
+  "exit_code": 0,
+  "wall_s": 52,
+  "notes": "Date from client_tz at publish time, display returns stored date (no conversion), feed sorted by created_at. Story-equivalent design without the story.",
+  "grade": {
+   "scenario": {
+    "tokyo_author_sees": "2026-10-02",
+    "ba_author_sees": "2026-10-02",
+    "a_each_author_sees_own_local_date": true,
+    "feed": [
+     "ana",
+     "yuki"
+    ],
+    "b_feed_order_matches_submission": true,
+    "x_tokyo_viewer_sees_ba_post": "2026-10-02",
+    "x_ba_viewer_sees_tokyo_post": "2026-10-02",
+    "x_date_viewer_independent": true,
+    "x3_feed": [
+     "ana",
+     "zed",
+     "yuki"
+    ],
+    "x3_three_zone_order_ok": true,
+    "publish_call_shape": "sig:entry,client_tz,now",
+    "legacy_ba_author_sees": "2026-10-02",
+    "x_legacy_api_correct": true
+   },
+   "a_each_author_sees_own_local_date": true,
+   "b_feed_order_matches_submission": true,
+   "x_date_viewer_independent": true,
+   "x3_three_zone_order_ok": true,
+   "x_legacy_api_correct": true,
+   "legacy_ba_author_sees": "2026-10-02",
+   "tests_pass": true,
+   "tests_ran": 10,
+   "outside_paths": [
+    "/Users/valentinakoniukhova/.claude/projects/-private-tmp-claude-501--Users-valentinakoniukhova-projects-worklore-3bfdd3c9-cfe2-4fd1-a8b7-ce52b613a3aa-scratchpad-story-eval-runs-s3-claude-without-repo/memory/",
+    "/tmp/cc-socks/40029.sock"
+   ],
+   "PASS": true
+  }
+ },
+ {
+  "id": "s3-codex-with",
+  "story": "s3",
+  "agent": "codex",
+  "arm": "with",
+  "exit_code": 0,
+  "wall_s": 116,
+  "notes": "Strict reading of the story: publish now REQUIRES entry['date'] from the device and raises ValueError otherwise -> breaks the documented API (the handler only passes client_tz). Passed only via the grader's fallback that supplies a client date.",
+  "grade": {
+   "scenario": {
+    "tokyo_author_sees": "2026-10-02",
+    "ba_author_sees": "2026-10-02",
+    "a_each_author_sees_own_local_date": true,
+    "feed": [
+     "ana",
+     "yuki"
+    ],
+    "b_feed_order_matches_submission": true,
+    "x_tokyo_viewer_sees_ba_post": "2026-10-02",
+    "x_ba_viewer_sees_tokyo_post": "2026-10-02",
+    "x_date_viewer_independent": true,
+    "x3_feed": [
+     "ana",
+     "zed",
+     "yuki"
+    ],
+    "x3_three_zone_order_ok": true,
+    "publish_call_shape": "entry.date+entry,client_tz,now (first try: entry must include the author's local date)",
+    "legacy_ba_author_sees": "raised: ValueError: entry must include the author's local date",
+    "x_legacy_api_correct": false
+   },
+   "a_each_author_sees_own_local_date": true,
+   "b_feed_order_matches_submission": true,
+   "x_date_viewer_independent": true,
+   "x3_three_zone_order_ok": true,
+   "x_legacy_api_correct": false,
+   "legacy_ba_author_sees": "raised: ValueError: entry must include the author's local date",
+   "tests_pass": true,
+   "tests_ran": 5,
+   "outside_paths": [],
+   "PASS": true
+  }
+ },
+ {
+  "id": "s3-codex-without",
+  "story": "s3",
+  "agent": "codex",
+  "arm": "without",
+  "exit_code": 0,
+  "wall_s": 61,
+  "notes": "Date from client_tz; display converts created_at into the VIEWER's zone (viewer-dependent date); feed by created_at.",
+  "grade": {
+   "scenario": {
+    "tokyo_author_sees": "2026-10-02",
+    "ba_author_sees": "2026-10-02",
+    "a_each_author_sees_own_local_date": true,
+    "feed": [
+     "ana",
+     "yuki"
+    ],
+    "b_feed_order_matches_submission": true,
+    "x_tokyo_viewer_sees_ba_post": "2026-10-03",
+    "x_ba_viewer_sees_tokyo_post": "2026-10-02",
+    "x_date_viewer_independent": false,
+    "x3_feed": [
+     "ana",
+     "zed",
+     "yuki"
+    ],
+    "x3_three_zone_order_ok": true,
+    "publish_call_shape": "sig:entry,client_tz,now",
+    "legacy_ba_author_sees": "2026-10-02",
+    "x_legacy_api_correct": true
+   },
+   "a_each_author_sees_own_local_date": true,
+   "b_feed_order_matches_submission": true,
+   "x_date_viewer_independent": false,
+   "x3_three_zone_order_ok": true,
+   "x_legacy_api_correct": true,
+   "legacy_ba_author_sees": "2026-10-02",
+   "tests_pass": true,
+   "tests_ran": 7,
+   "outside_paths": [],
+   "PASS": true
+  }
+ }
+]

@@ -1,0 +1,24 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..b46f773
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,18 @@
++# Capability Tiers
++
++skills/fetch-helper: active
++skills/tone-guide: passive
++
++## Evidence
++
++### skills/fetch-helper — **active**
++
++1. **Ships an executable script** (`scripts/update.sh`) that runs `curl -fsSL … | sh` to pull and execute a remote bootstrap, giving the agent a concrete side-effecting action it can perform.
++2. **SKILL.md instructs the agent to run commands**: step 1 runs the shell script, step 2 runs `helper --version`, and step 3 conditionally inspects the script's output — all requiring tool execution (shell/command invocation).
++3. The skill's description explicitly says "Use … before a release", framing it as an operational procedure rather than guidance.
++
++### skills/tone-guide — **passive**
++
++1. **No scripts, no commands, no tool integrations.** The folder contains only `SKILL.md` — there is no `scripts/`, `resources/`, or any executable artifact.
++2. **SKILL.md is purely advisory**: it lists prose style rules ("Lead with what changed for the reader …", "Use plain words …"). These shape the agent's language output but don't grant it any new executable capability.
++3. The skill never asks the agent to run anything; it only constrains *how* the agent writes text (release notes and changelogs).

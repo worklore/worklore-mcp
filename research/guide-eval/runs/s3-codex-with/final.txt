@@ -1,0 +1,3 @@
+Fixed the journal date handling. `publish()` now requires the author’s local `date` in the entry and stamps a separate UTC `received_at`. Post cards display the supplied date unchanged for every viewer, while the feed sorts by receipt time and falls back to `date` for older posts.
+
+The README documents the new input contract. `python3 -m unittest discover -s tests` passes (5 tests), including the Tokyo and Buenos Aires date boundary case.

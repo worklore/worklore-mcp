@@ -1,0 +1,110 @@
+diff --git a/journal.py b/journal.py
+index b0453dc..be7a442 100644
+--- a/journal.py
++++ b/journal.py
+@@ -16,29 +16,25 @@ def _utcnow():
+ def publish(entry, client_tz, now=None):
+     """Store a new post.
+ 
+-    entry: {"author": str, "title": str, "body": str}
++    entry: {"author": str, "title": str, "body": str, optional "date": str}
+     client_tz: IANA zone reported by the author's browser, e.g. "Europe/Berlin".
+     now: server clock override (aware datetime), used by tests.
+     """
+     now = now or _utcnow()
+     post = dict(entry)
+     post["client_tz"] = client_tz
+-    post["created_at"] = now.astimezone(timezone.utc).isoformat()
+-    # Dates are always generated on the server, in UTC, so they are consistent.
+-    post["date"] = now.astimezone(timezone.utc).date().isoformat()
++    post["received_at"] = now.astimezone(timezone.utc).isoformat()
++    if "date" not in post:
++        post["date"] = now.astimezone(ZoneInfo(client_tz)).date().isoformat()
+     _POSTS.append(post)
+     return post
+ 
+ 
+ def display_date(post, viewer_tz):
+-    """Date shown on a post card, converted to the viewer's zone.
+-
+-    Anchored at noon UTC so the conversion can never flip the calendar day.
+-    """
+-    noon = datetime.fromisoformat(post["date"] + "T12:00:00+00:00")
+-    return noon.astimezone(ZoneInfo(viewer_tz)).date().isoformat()
++    """Date shown on a post card — always the author's local date, never converted."""
++    return post["date"]
+ 
+ 
+ def feed():
+     """Home feed, newest first."""
+-    return sorted(_POSTS, key=lambda p: (p["date"], p["author"]), reverse=True)
++    return sorted(_POSTS, key=lambda p: (p["received_at"], p["date"]), reverse=True)
+diff --git a/tests/test_journal.py b/tests/test_journal.py
+index febff36..275c026 100644
+--- a/tests/test_journal.py
++++ b/tests/test_journal.py
+@@ -18,11 +18,46 @@ class JournalTest(unittest.TestCase):
+         self.assertEqual(p["title"], "t")
+         self.assertEqual(p["date"], "2026-03-10")
+ 
++    def test_publish_uses_author_local_date(self):
++        # 23:30 in Buenos Aires (UTC-3) = 02:30 next day UTC
++        p = journal.publish({"author": "ana", "title": "t", "body": "b"},
++                            "America/Argentina/Buenos_Aires",
++                            now=at("2026-08-01T02:30:00"))
++        self.assertEqual(p["date"], "2026-07-31")
++
++    def test_publish_tokyo_late_night(self):
++        # 23:30 in Tokyo (UTC+9) = 14:30 same day UTC
++        p = journal.publish({"author": "yuki", "title": "t", "body": "b"},
++                            "Asia/Tokyo",
++                            now=at("2026-07-31T14:30:00"))
++        self.assertEqual(p["date"], "2026-07-31")
++
++    def test_publish_accepts_client_date(self):
++        p = journal.publish({"author": "kim", "title": "t", "body": "b",
++                             "date": "2026-05-20"}, "UTC",
++                            now=at("2026-05-21T00:05:00"))
++        self.assertEqual(p["date"], "2026-05-20")
++
++    def test_publish_has_received_at(self):
++        p = journal.publish({"author": "kim", "title": "t", "body": "b"}, "UTC",
++                            now=at("2026-03-10T12:00:00"))
++        self.assertIn("received_at", p)
++
+     def test_display_date_utc_viewer(self):
+         p = journal.publish({"author": "kim", "title": "t", "body": "b"}, "UTC",
+                             now=at("2026-03-10T12:00:00"))
+         self.assertEqual(journal.display_date(p, "UTC"), "2026-03-10")
+ 
++    def test_display_date_no_conversion(self):
++        # Author in Buenos Aires posts at 23:30 local (2026-07-31)
++        # Viewer in Tokyo should still see 2026-07-31, not a converted date
++        p = journal.publish({"author": "ana", "title": "t", "body": "b"},
++                            "America/Argentina/Buenos_Aires",
++                            now=at("2026-08-01T02:30:00"))
++        self.assertEqual(journal.display_date(p, "Asia/Tokyo"), "2026-07-31")
++        self.assertEqual(journal.display_date(p, "UTC"), "2026-07-31")
++        self.assertEqual(journal.display_date(p, "Europe/Berlin"), "2026-07-31")
++
+     def test_display_date_berlin_midday(self):
+         p = journal.publish({"author": "lena", "title": "t", "body": "b"}, "Europe/Berlin",
+                             now=at("2026-03-10T09:00:00"))
+@@ -35,6 +70,17 @@ class JournalTest(unittest.TestCase):
+                         now=at("2026-03-10T12:00:00"))
+         self.assertEqual([p["title"] for p in journal.feed()], ["new", "old"])
+ 
++    def test_feed_orders_by_received_at(self):
++        # Tokyo author posts first (14:30 UTC), then Buenos Aires (02:30 UTC next day)
++        journal.publish({"author": "yuki", "title": "tokyo", "body": ""},
++                        "Asia/Tokyo",
++                        now=at("2026-07-31T14:30:00"))
++        journal.publish({"author": "ana", "title": "bsas", "body": ""},
++                        "America/Argentina/Buenos_Aires",
++                        now=at("2026-08-01T02:30:00"))
++        titles = [p["title"] for p in journal.feed()]
++        self.assertEqual(titles, ["bsas", "tokyo"])
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

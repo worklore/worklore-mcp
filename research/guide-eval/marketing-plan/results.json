@@ -1,0 +1,880 @@
+{
+ "runs": {
+  "claude-without": {
+   "pid": "P1",
+   "agent": "claude",
+   "arm": "without",
+   "wall_s": 74,
+   "exit_code": 0,
+   "format_items": {
+    "title": false,
+    "assumption_item": false,
+    "assumption_sale": false,
+    "phases": true,
+    "nine_squares": false
+   },
+   "format_pass": false,
+   "grid_3x3_named": false,
+   "title_strict_csv": false,
+   "title_md": false,
+   "judges": {
+    "codex": {
+     "C1": 5,
+     "C2": 5,
+     "C3": 5,
+     "C4": 3,
+     "C5": 4,
+     "overall": 8
+    },
+    "gemini-pro": {
+     "C1": 5,
+     "C2": 5,
+     "C3": 5,
+     "C4": 5,
+     "C5": 5,
+     "overall": 9
+    },
+    "gemini-flash": {
+     "C1": 5,
+     "C2": 5,
+     "C3": 5,
+     "C4": 5,
+     "C5": 5,
+     "overall": 10
+    },
+    "claude-sonnet": {
+     "C1": 5,
+     "C2": 5,
+     "C3": 4,
+     "C4": 4,
+     "C5": 5,
+     "overall": 9
+    }
+   },
+   "mean": {
+    "C1": 5,
+    "C2": 5,
+    "C3": 4.75,
+    "C4": 4.25,
+    "C5": 4.75,
+    "overall": 9
+   },
+   "why": {
+    "codex": {
+     "C1": "Uses the actual prices, six seats, Palermo fair, local audience, WhatsApp bookings and Wednesday schedule.",
+     "C2": "Bookings, taster follow-ups, renewals and referral rewards all lead toward recurring monthly students.",
+     "C3": "Instructions are clear, with practical examples and explanations of unfamiliar features.",
+     "C4": "The routine is concrete, but multiple discounts, referral mugs and make-up classes introduce unbudgeted costs and capacity demands.",
+     "C5": "The class focus holds throughout, but make-up promises lack spare-seat limits and the November-or-March launch rule is unnecessarily restrictive.",
+     "overall": "Highly tailored and immediately actionable, especially for capturing fair contacts and following up with tasters. Check incentive costs and available make-up seats before adopting those offers."
+    },
+    "gemini-pro": {
+     "C1": "Uses the client's exact prices, neighborhoods, and class structures perfectly.",
+     "C2": "Explicitly defines the sale as class bookings and ignores mug tourists.",
+     "C3": "Written in clear, conversational English without marketing buzzwords.",
+     "C4": "Breaks down exactly how to spend the 5 hours and ARS 70,000 using only familiar tools.",
+     "C5": "All nine parts work together logically toward the six-month class goal.",
+     "overall": "Highly actionable and tailored; Lucía could start following this today with zero confusion."
+    },
+    "gemini-flash": {
+     "C1": "Incorporates all specific studio details including exact prices, neighborhood locations, wheel limits, and schedule constraints.",
+     "C2": "Clearly defines class enrollment as the true sale and aligns every step from taster credit to retention toward that goal.",
+     "C3": "Uses simple, jargon-free conversational language throughout that any craftsperson can immediately grasp.",
+     "C4": "Fits comfortably within the 5 hours per week and ARS 70,000 budget using only her familiar tools.",
+     "C5": "Maintains perfect internal harmony across the nine stages, smoothly linking fair lead capture to long-term class retention.",
+     "overall": "This is an exceptionally practical, realistic, and tailored roadmap that Lucía can execute immediately without feeling overwhelmed. It directly solves her core conversion leaks while strictly respecting her time and budget limits."
+    },
+    "claude-sonnet": {
+     "C1": "Uses prices, the Saturday/Wednesday groups, Lacroze, the fair, Reels, Linktree, WhatsApp and the tourist vs. local split.",
+     "C2": "Sale is class booking and staying, and tasters, credit, passes and referrals all aim at it; tourists get mugs only.",
+     "C3": "Mostly plain, with in-place explanations like broadcast limits, though 'labels' and 'boosting' are lightly explained.",
+     "C4": "Includes a budget and time breakdown with free tools, though the 3-month pass and Wednesday logistics add some load.",
+     "C5": "Same audience, offer and goal run through all nine parts with no contradictions.",
+     "overall": "Very specific, consistent plan with concrete steps, time and money breakdown, and clear assumptions. Ready to execute almost as-is."
+    }
+   },
+   "overall_excl_same_vendor_judges": 9
+  },
+  "codex-with": {
+   "pid": "P2",
+   "agent": "codex",
+   "arm": "with",
+   "wall_s": 123,
+   "exit_code": 0,
+   "format_items": {
+    "title": false,
+    "assumption_item": false,
+    "assumption_sale": false,
+    "phases": true,
+    "nine_squares": false
+   },
+   "format_pass": false,
+   "grid_3x3_named": false,
+   "title_strict_csv": false,
+   "title_md": true,
+   "judges": {
+    "codex": {
+     "C1": 5,
+     "C2": 5,
+     "C3": 5,
+     "C4": 5,
+     "C5": 5,
+     "overall": 9
+    },
+    "gemini-pro": {
+     "C1": 4,
+     "C2": 5,
+     "C3": 5,
+     "C4": 4,
+     "C5": 4,
+     "overall": 7
+    },
+    "gemini-flash": {
+     "C1": 4,
+     "C2": 5,
+     "C3": 5,
+     "C4": 5,
+     "C5": 5,
+     "overall": 8
+    },
+    "claude-sonnet": {
+     "C1": 3,
+     "C2": 4,
+     "C3": 4,
+     "C4": 4,
+     "C5": 4,
+     "overall": 6
+    }
+   },
+   "mean": {
+    "C1": 4,
+    "C2": 4.75,
+    "C3": 4.75,
+    "C4": 4.5,
+    "C5": 4.5,
+    "overall": 7.5
+   },
+   "why": {
+    "codex": {
+     "C1": "Uses the real prices, neighborhood audience, six-seat target, fair inquiries and proposed Wednesday group.",
+     "C2": "Defines paid monthly bookings as the sale and carries that through follow-ups, retention, referrals and measurement.",
+     "C3": "Uses short, understandable instructions without unexplained marketing jargon.",
+     "C4": "Prioritizes simple existing tools, limits follow-ups and delays advertising until the booking process works.",
+     "C5": "The same local audience and monthly-class goal connect all nine parts without conflicting promises.",
+     "overall": "A strong plan Lucía could start using today without much setup or financial risk. A weekly time allocation and clearer handling of schedule conflicts would strengthen it."
+    },
+    "gemini-pro": {
+     "C1": "Uses key facts like the Chacarita location and prices, but lacks the deeper texture of other plans.",
+     "C2": "Correctly defines the sale as a monthly class booking and sticks to it.",
+     "C3": "Very plain and straightforward language throughout.",
+     "C4": "Respects the limits and tools, but the time breakdown is a bit brief.",
+     "C5": "Consistent in its approach, though somewhat less detailed in execution.",
+     "overall": "A solid, simple plan, but a bit sparse on the step-by-step details."
+    },
+    "gemini-flash": {
+     "C1": "Includes key facts like class prices, locations, and attendance goals, though the descriptions remain somewhat brief.",
+     "C2": "Correctly identifies a paid monthly booking as the sale and treats tasters as a direct entry bridge.",
+     "C3": "Written in straightforward, accessible words with no marketing jargon.",
+     "C4": "Easily actionable within 5 hours and ARS 70,000 using only her existing basic tools.",
+     "C5": "All nine sections follow a tight, logical progression focused on filling and maintaining class seats.",
+     "overall": "A concise, clean plan that gives Lucía an easy high-level overview of her marketing workflow. While fully actionable, it could provide slightly more concrete guidance on scripts and materials."
+    },
+    "claude-sonnet": {
+     "C1": "Uses prices, groups, fair and Maps but is fairly compressed and generic in places.",
+     "C2": "Sale is defined as a paid monthly booking and parts follow it, though lifetime value is thin.",
+     "C3": "Plain language, though dense paragraphs in cells.",
+     "C4": "Fits 5 hours and ARS 70,000 with existing tools, but the steps are less concrete than a schedule.",
+     "C5": "Consistent throughout, though the budget line is vague.",
+     "overall": "Correct and consistent but terse, with few concrete numbers, offers or schedules. Useful as a skeleton rather than a plan."
+    }
+   },
+   "overall_excl_same_vendor_judges": 7
+  },
+  "agy-pro-without": {
+   "pid": "P3",
+   "agent": "agy-pro",
+   "arm": "without",
+   "wall_s": 63,
+   "exit_code": 0,
+   "format_items": {
+    "title": false,
+    "assumption_item": false,
+    "assumption_sale": false,
+    "phases": false,
+    "nine_squares": true
+   },
+   "format_pass": false,
+   "grid_3x3_named": true,
+   "title_strict_csv": false,
+   "title_md": false,
+   "judges": {
+    "codex": {
+     "C1": 4,
+     "C2": 4,
+     "C3": 3,
+     "C4": 3,
+     "C5": 3,
+     "overall": 7
+    },
+    "gemini-pro": {
+     "C1": 4,
+     "C2": 4,
+     "C3": 3,
+     "C4": 3,
+     "C5": 4,
+     "overall": 6
+    },
+    "gemini-flash": {
+     "C1": 3,
+     "C2": 4,
+     "C3": 4,
+     "C4": 4,
+     "C5": 3,
+     "overall": 6
+    },
+    "claude-sonnet": {
+     "C1": 3,
+     "C2": 4,
+     "C3": 4,
+     "C4": 4,
+     "C5": 4,
+     "overall": 6
+    }
+   },
+   "mean": {
+    "C1": 3.5,
+    "C2": 4,
+    "C3": 3.5,
+    "C4": 3.5,
+    "C5": 3.5,
+    "overall": 6.25
+   },
+   "why": {
+    "codex": {
+     "C1": "Uses the studio, audience, fair, Instagram handle and Wednesday hours, but omits class prices and explicit seat targets.",
+     "C2": "Conversion and retention focus on monthly classes, but referrals reward taster attendance rather than monthly enrollment.",
+     "C3": "Terms such as lead nurturing, differentiator and lifetime value remain less accessible despite the phase explanations.",
+     "C4": "Most actions are simple, but the entire budget goes to advertising and the free-mug incentive has no cost allowance.",
+     "C5": "The class direction is coherent, but free clay adds little when clay is included and the retention diagnosis contradicts the reported schedule problem.",
+     "overall": "Useful for fixing lost fair contacts and missing taster follow-ups. Its retention explanation is unproven, and the incentives need revision."
+    },
+    "gemini-pro": {
+     "C1": "Includes good specifics like the yerba green glaze and Chacarita, but misses detailed financial mapping.",
+     "C2": "Focuses heavily on classes, though the definition of the sale is slightly less explicit.",
+     "C3": "Relies heavily on marketing terminology like lead nurturing and customer lifetime value.",
+     "C4": "Provides a weekly checklist but lacks a clear breakdown of how the 5 hours are spent.",
+     "C5": "The phases align well with the overall goal of filling the class seats.",
+     "overall": "Useful ideas, but the jargon and lack of strict time mapping make it harder for a non-marketer to execute."
+    },
+    "gemini-flash": {
+     "C1": "Mentions key studio facts and neighborhoods but omits specific class prices and relies on some generic suggestions.",
+     "C2": "Understands that classes are the true revenue driver, though it mistakenly offers free clay as a referral perk when clay is already included.",
+     "C3": "The writing is plain and easy to read, with minimal technical marketing terms.",
+     "C4": "The tasks are doable within her time and budget limits, supported by a realistic weekly checklist.",
+     "C5": "Mostly consistent, but proposing a free bag of clay contradicts the studio's all-inclusive class model.",
+     "overall": "A decent starting guide that correctly emphasizes classes, but it lacks key financial figures and contains an incentive that contradicts her existing offer. It would require minor corrections before Lucía could use it."
+    },
+    "claude-sonnet": {
+     "C1": "Uses some real facts like the Wednesday group and yerba green, but advice is partly generic.",
+     "C2": "Focuses on classes and taster conversion, but lists tourists and mugs as a tertiary target.",
+     "C3": "Clear, friendly language with a few terms like 'Lead' and 'Tertiary'.",
+     "C4": "Simple actions and a checklist fit the limits, though the budget is only a single boost.",
+     "C5": "Mostly consistent, though the free-mug bonus conflicts slightly with protecting kiln space.",
+     "overall": "Solid, readable and aimed at the right goal, with useful follow-up scripts. Lacks time and budget detail and some specifics."
+    }
+   },
+   "overall_excl_same_vendor_judges": 6.5
+  },
+  "agy-flash-without": {
+   "pid": "P4",
+   "agent": "agy-flash",
+   "arm": "without",
+   "wall_s": 210,
+   "exit_code": 0,
+   "format_items": {
+    "title": false,
+    "assumption_item": false,
+    "assumption_sale": false,
+    "phases": true,
+    "nine_squares": true
+   },
+   "format_pass": false,
+   "grid_3x3_named": true,
+   "title_strict_csv": false,
+   "title_md": false,
+   "judges": {
+    "codex": {
+     "C1": 5,
+     "C2": 5,
+     "C3": 3,
+     "C4": 2,
+     "C5": 2,
+     "overall": 6
+    },
+    "gemini-pro": {
+     "C1": 5,
+     "C2": 5,
+     "C3": 3,
+     "C4": 5,
+     "C5": 5,
+     "overall": 8
+    },
+    "gemini-flash": {
+     "C1": 5,
+     "C2": 5,
+     "C3": 5,
+     "C4": 5,
+     "C5": 5,
+     "overall": 10
+    },
+    "claude-sonnet": {
+     "C1": 5,
+     "C2": 5,
+     "C3": 3,
+     "C4": 2,
+     "C5": 3,
+     "overall": 6
+    }
+   },
+   "mean": {
+    "C1": 5,
+    "C2": 5,
+    "C3": 3.5,
+    "C4": 3.5,
+    "C5": 3.75,
+    "overall": 7.5
+   },
+   "why": {
+    "codex": {
+     "C1": "Extensively uses the actual prices, capacity, fair costs, Instagram handle, local neighborhoods and class schedules.",
+     "C2": "Monthly enrollment and renewal remain central to conversion, student value and referral rewards.",
+     "C3": "Spanish scripts help, but the lengthy document contains unnecessary terms such as USP, leads and motor viral orgánico.",
+     "C4": "Rapid replies, individual photo service, packaging, café outreach and flexible make-ups exceed the narrowly allocated routine.",
+     "C5": "Wednesday is alternately presented as available and pending, extra discounts appear late, and full groups cannot guarantee cross-group make-ups.",
+     "overall": "Contains useful scripts and a strong class focus, but overpromises delivery and workload. Claims about sharing rates, search rankings and why students leave are unsupported."
+    },
+    "gemini-pro": {
+     "C1": "Incredibly specific, even calculating potential revenue and mentioning local cafes.",
+     "C2": "Explicitly separates the mug window shoppers from the class buyers as the true sale.",
+     "C3": "Contains several marketing buzzwords like elevator pitch, USP, and Meta Ads.",
+     "C4": "Provides a brilliant, day-by-day 5-hour schedule and exact budget allocation.",
+     "C5": "The strategy is deeply cohesive and logically flows from start to finish.",
+     "overall": "An excellent, highly detailed plan in Spanish, though slightly bogged down by marketing jargon."
+    },
+    "gemini-flash": {
+     "C1": "Thoroughly integrates every studio detail, from exact prices and local transit to kiln limits and neighbor demographics.",
+     "C2": "Unwaveringly treats recurring class attendance as the core sale and aligns every single tactic to it.",
+     "C3": "Written in natural, accessible Spanish with zero confusing jargon and plenty of ready-to-use scripts.",
+     "C4": "Provides a realistic day-by-day 5-hour schedule and an exact ARS 70,000 budget allocation using her current tools.",
+     "C5": "Exhibits complete consistency across all nine boxes, operational assumptions, and practical templates.",
+     "overall": "An outstanding plan written in Lucía's own language with turn-key templates and a stress-free schedule. It delivers immediate value on day one without asking her to learn new platforms."
+    },
+    "claude-sonnet": {
+     "C1": "Extremely specific, with prices, deposits, fair numbers, Lacroze and scripts in Spanish and English.",
+     "C2": "Classes and the taster-to-monthly path are the sale throughout, and mugs are secondary.",
+     "C3": "Plain Spanish but long, with terms like USP, Meta Ads, 'nurture' and an Executive Summary.",
+     "C4": "The plan is very long and includes extras like a photo service, wrapping and café postcards, and a 3-month curriculum; the time schedule also doesn't total correctly.",
+     "C5": "Mostly coherent but with contradictions: the taster discount is 5,000, then 20,000, and the fair costs are miscounted.",
+     "overall": "Rich and very specific, but far beyond a one-page plan and heavy for a non-marketer with 5 hours. Some invented numbers and internal inconsistencies reduce usability."
+    }
+   },
+   "overall_excl_same_vendor_judges": 6
+  },
+  "agy-pro-with": {
+   "pid": "P5",
+   "agent": "agy-pro",
+   "arm": "with",
+   "wall_s": 71,
+   "exit_code": 0,
+   "format_items": {
+    "title": true,
+    "assumption_item": true,
+    "assumption_sale": true,
+    "phases": true,
+    "nine_squares": true
+   },
+   "format_pass": true,
+   "grid_3x3_named": true,
+   "title_strict_csv": true,
+   "title_md": true,
+   "judges": {
+    "codex": {
+     "C1": 4,
+     "C2": 5,
+     "C3": 4,
+     "C4": 4,
+     "C5": 4,
+     "overall": 7
+    },
+    "gemini-pro": {
+     "C1": 3,
+     "C2": 5,
+     "C3": 4,
+     "C4": 2,
+     "C5": 4,
+     "overall": 5
+    },
+    "gemini-flash": {
+     "C1": 2,
+     "C2": 4,
+     "C3": 4,
+     "C4": 3,
+     "C5": 4,
+     "overall": 4
+    },
+    "claude-sonnet": {
+     "C1": 2,
+     "C2": 4,
+     "C3": 5,
+     "C4": 3,
+     "C5": 4,
+     "overall": 4
+    }
+   },
+   "mean": {
+    "C1": 2.75,
+    "C2": 4.5,
+    "C3": 4.25,
+    "C4": 3,
+    "C5": 4,
+    "overall": 5
+   },
+   "why": {
+    "codex": {
+     "C1": "Uses the local audience, Palermo fair, six-person classes and Wednesday option, but leaves out prices, schedules and numeric goals.",
+     "C2": "Explicitly defines the sale as monthly enrollment and continued attendance, with conversion and referrals supporting it.",
+     "C3": "The body is straightforward, although headings such as nurture leads and lifetime value are unexplained.",
+     "C4": "The small set of actions is feasible with familiar tools, but lacks timing, spending limits and a clear waitlist method.",
+     "C5": "The audience and class goal remain aligned, but Wednesday is treated as an available retention option without a launch condition.",
+     "overall": "A sensible, manageable outline with the correct business priority. Lucía would still need concrete booking steps, a Wednesday launch threshold and a way to measure progress."
+    },
+    "gemini-pro": {
+     "C1": "Uses some basic facts from the brief but feels quite generic compared to the others.",
+     "C2": "Explicitly defines the sale at the top and builds around it.",
+     "C3": "Mostly plain language, though the structure feels a bit like a template.",
+     "C4": "Fails to provide any concrete mapping for the 5-hour limit or the budget.",
+     "C5": "The strategy is consistent, just very high-level.",
+     "overall": "Too generic and completely ignores the critical time and budget constraints."
+    },
+    "gemini-flash": {
+     "C1": "Mentions the basic business premise but omits all specific pricing, revenue targets, and studio operational numbers.",
+     "C2": "Correctly identifies a multi-month class booking as the sale, though it explores the mechanics only superficially.",
+     "C3": "Uses plain, approachable language without complex terminology.",
+     "C4": "Offers broad advice without concrete schedules, budgets, or specific next steps to ensure feasibility within her limits.",
+     "C5": "The general strategy is cohesive across the three phases, but lacks the depth needed to test true consistency.",
+     "overall": "While it grasps the basic direction, this plan is too high-level and bare-bones to be immediately useful to Lucía. She would still have to figure out the actual numbers, schedules, and step-by-step implementation herself."
+    },
+    "claude-sonnet": {
+     "C1": "Mentions the fair, Reels and Wednesday slot but no prices or concrete details.",
+     "C2": "The sale is defined correctly, though not carried through with concrete mechanisms.",
+     "C3": "Very plain and short.",
+     "C4": "Easy to do, but offers no time or budget plan or specific steps.",
+     "C5": "Consistent but shallow.",
+     "overall": "Correct direction but too thin and generic to act on. Little that Lucía could start on without further work."
+    }
+   },
+   "overall_excl_same_vendor_judges": 5.5
+  },
+  "codex-without": {
+   "pid": "P6",
+   "agent": "codex",
+   "arm": "without",
+   "wall_s": 121,
+   "exit_code": 0,
+   "format_items": {
+    "title": false,
+    "assumption_item": false,
+    "assumption_sale": false,
+    "phases": false,
+    "nine_squares": false
+   },
+   "format_pass": false,
+   "grid_3x3_named": false,
+   "title_strict_csv": false,
+   "title_md": false,
+   "judges": {
+    "codex": {
+     "C1": 5,
+     "C2": 5,
+     "C3": 5,
+     "C4": 5,
+     "C5": 5,
+     "overall": 9
+    },
+    "gemini-pro": {
+     "C1": 4,
+     "C2": 5,
+     "C3": 4,
+     "C4": 4,
+     "C5": 4,
+     "overall": 6
+    },
+    "gemini-flash": {
+     "C1": 5,
+     "C2": 5,
+     "C3": 4,
+     "C4": 5,
+     "C5": 5,
+     "overall": 8
+    },
+    "claude-sonnet": {
+     "C1": 4,
+     "C2": 5,
+     "C3": 4,
+     "C4": 5,
+     "C5": 5,
+     "overall": 7
+    }
+   },
+   "mean": {
+    "C1": 4.5,
+    "C2": 5,
+    "C3": 4.25,
+    "C4": 4.75,
+    "C5": 4.75,
+    "overall": 7.5
+   },
+   "why": {
+    "codex": {
+     "C1": "Uses the exact class prices, six-seat capacity, Wednesday hours, local audience and tourist-versus-student distinction.",
+     "C2": "Paid monthly seats, taster conversion and renewals drive the offer, follow-ups, referrals and scorecard.",
+     "C3": "Compact instructions use everyday language and explain the actions directly.",
+     "C4": "Allocates five weekly hours, uses familiar tools and keeps advertising conditional within the stated budget.",
+     "C5": "Audience, offer, payment threshold and retention actions consistently support filling and keeping class seats.",
+     "overall": "A practical plan with clear priorities, realistic spending and useful measurement. More detail on the first-month experience and schedule conflicts would improve retention support."
+    },
+    "gemini-pro": {
+     "C1": "Integrates the prices and neighborhood well, but feels more like a spreadsheet than a tailored strategy.",
+     "C2": "Clearly prioritizes the monthly seats and defines the taster as an entry point.",
+     "C3": "Free of jargon, though the dense tabular format makes it a bit hard to read.",
+     "C4": "Accounts for the time and money limits clearly within the text.",
+     "C5": "All parts align with the goal, though the execution feels rigid.",
+     "overall": "A functional and accurate plan, but its dense format makes it uninspiring and slightly hard to digest."
+    },
+    "gemini-flash": {
+     "C1": "Packs almost all the real figures, pricing, locations, and specific class constraints into a dense grid.",
+     "C2": "Firmly focuses the sale on four-Saturday course bookings and conversion from the taster.",
+     "C3": "Clear and accessible language, though sentences are heavily compressed to fit the grid format.",
+     "C4": "Directly maps out the 5 hours per week and ARS 70,000 budget with concrete weekly routines.",
+     "C5": "Maintains rigorous internal alignment across the customer, offer, channels, and scorecard.",
+     "overall": "A sharp, highly disciplined one-page summary that covers all operational realities and constraints. Its condensed layout makes it slightly dense to read, but the strategic substance is very solid."
+    },
+    "claude-sonnet": {
+     "C1": "Uses real details such as the prices, Saturday/Wednesday, fair QR and the 50% renewal baseline.",
+     "C2": "Class bookings and renewal are the goal, and tourists are only mug buyers.",
+     "C3": "Plain, but dense cells and terms like 'scorecard'.",
+     "C4": "Includes an hours split and a budget with ads only if needed.",
+     "C5": "Goal, customer, offer and routines are aligned.",
+     "overall": "Compact, doable and well-aimed, with a sensible time and money plan. Light on specific offers or scripts."
+    }
+   },
+   "overall_excl_same_vendor_judges": 7
+  },
+  "claude-with": {
+   "pid": "P7",
+   "agent": "claude",
+   "arm": "with",
+   "wall_s": 134,
+   "exit_code": 0,
+   "format_items": {
+    "title": true,
+    "assumption_item": true,
+    "assumption_sale": true,
+    "phases": true,
+    "nine_squares": true
+   },
+   "format_pass": true,
+   "grid_3x3_named": true,
+   "title_strict_csv": true,
+   "title_md": true,
+   "judges": {
+    "codex": {
+     "C1": 5,
+     "C2": 5,
+     "C3": 5,
+     "C4": 3,
+     "C5": 3,
+     "overall": 8
+    },
+    "gemini-pro": {
+     "C1": 5,
+     "C2": 5,
+     "C3": 5,
+     "C4": 5,
+     "C5": 5,
+     "overall": 10
+    },
+    "gemini-flash": {
+     "C1": 5,
+     "C2": 5,
+     "C3": 5,
+     "C4": 5,
+     "C5": 5,
+     "overall": 9
+    },
+    "claude-sonnet": {
+     "C1": 5,
+     "C2": 5,
+     "C3": 5,
+     "C4": 4,
+     "C5": 4,
+     "overall": 9
+    }
+   },
+   "mean": {
+    "C1": 5,
+    "C2": 5,
+    "C3": 5,
+    "C4": 4.25,
+    "C5": 4.25,
+    "overall": 9
+   },
+   "why": {
+    "codex": {
+     "C1": "Uses nearly every relevant business fact, including prices, Saturday hours, Wednesday demand, bilingual audiences and fair contact losses.",
+     "C2": "Defines success as a class booking that becomes sustained attendance and aligns conversion, retention and referrals with it.",
+     "C3": "Explains marketing headings in place and supplies understandable messages and instructions.",
+     "C4": "The time plan leaves little room for routine replies, while bilingual content, stacked incentives and make-ups add workload and uncertain costs.",
+     "C5": "The seven-day taster credit conflicts with relying on later-fired pieces for follow-up, and make-ups lack capacity limits.",
+     "overall": "Detailed and usable, with especially strong explanations and contact-capture steps. Simplify the incentives, follow up before the credit expires and restrict make-ups to available seats."
+    },
+    "gemini-pro": {
+     "C1": "Deeply personalized, using exact prices, neighborhood details, and even Mother's Day as a hook.",
+     "C2": "Perfectly defines the sale and ensures every step drives toward retention.",
+     "C3": "Explicitly translates every marketing concept into plain words for the client.",
+     "C4": "Maps out the time and budget perfectly, strictly avoiding new or complicated tools.",
+     "C5": "Flawlessly consistent from the first touchpoint at the fair to the 3-month retention strategy.",
+     "overall": "An exceptional, empathetic plan that perfectly understands both the business and the owner's limitations."
+    },
+    "gemini-flash": {
+     "C1": "Deeply grounded in Lucía's real numbers, studio quirks, local geography, and seasonal calendar.",
+     "C2": "Explicitly defines the sale as a recurring class booking and structures every phase around maximizing student retention.",
+     "C3": "Masterfully translates marketing concepts into warm, intuitive, everyday language.",
+     "C4": "Meticulously respects the 5-hour weekly cap and ARS 70,000 budget with practical, phased implementation.",
+     "C5": "Flawlessly connected across all nine boxes with explicit assumptions that reinforce internal coherence.",
+     "overall": "A brilliant, empathetic, and exceptionally practical plan that speaks directly to a craftsperson's realities. It provides clear guidance for the first 30 days, marred only slightly by references to an external file import."
+    },
+    "claude-sonnet": {
+     "C1": "Deeply specific, with prices, Día de la Madre, kiln-based follow-up, January slump and Lacroze.",
+     "C2": "Defines the sale explicitly as a booked class that sticks, and every square serves it.",
+     "C3": "Each square has an 'in plain words' explanation, and jargon like lead is defined.",
+     "C4": "Gives a time table, budget, and a first-30-days list, though it is a lot of tasks.",
+     "C5": "Consistent, with minor oddities like the 'one-page' length and the stray CSV import note.",
+     "overall": "Plain, specific and actionable, with a first-30-days list, timely seasonal hooks and flagged assumptions. Slightly long but the most usable for a non-marketer."
+    }
+   },
+   "overall_excl_same_vendor_judges": 9
+  },
+  "agy-flash-with": {
+   "pid": "P8",
+   "agent": "agy-flash",
+   "arm": "with",
+   "wall_s": 94,
+   "exit_code": 0,
+   "format_items": {
+    "title": true,
+    "assumption_item": true,
+    "assumption_sale": true,
+    "phases": true,
+    "nine_squares": true
+   },
+   "format_pass": true,
+   "grid_3x3_named": true,
+   "title_strict_csv": false,
+   "title_md": true,
+   "judges": {
+    "codex": {
+     "C1": 5,
+     "C2": 5,
+     "C3": 2,
+     "C4": 2,
+     "C5": 3,
+     "overall": 6
+    },
+    "gemini-pro": {
+     "C1": 5,
+     "C2": 5,
+     "C3": 2,
+     "C4": 4,
+     "C5": 4,
+     "overall": 6
+    },
+    "gemini-flash": {
+     "C1": 4,
+     "C2": 5,
+     "C3": 2,
+     "C4": 3,
+     "C5": 5,
+     "overall": 6
+    },
+    "claude-sonnet": {
+     "C1": 4,
+     "C2": 4,
+     "C3": 3,
+     "C4": 3,
+     "C5": 3,
+     "overall": 5
+    }
+   },
+   "mean": {
+    "C1": 4.5,
+    "C2": 4.75,
+    "C3": 2.25,
+    "C4": 3,
+    "C5": 3.75,
+    "overall": 5.75
+   },
+   "why": {
+    "codex": {
+     "C1": "Includes real prices, current occupancy, six wheels, the yerba mugs, Palermo fair, Instagram handle and both group schedules.",
+     "C2": "Monthly paid enrollment and retention anchor the conversion path, renewal process and referral incentive.",
+     "C3": "Repeated jargon such as cohorts, unit economics, triage and top of funnel undermines the plain-English explanations.",
+     "C4": "The five-hour schedule omits several recurring tasks, and the remaining printing budget must cover elaborate packaging and vouchers.",
+     "C5": "The main class strategy aligns, but tourist gift targeting, discounts on unlisted tools and an unspecified Wednesday launch weaken continuity.",
+     "overall": "Has useful booking and renewal ideas but needs substantial simplification. Guaranteed beginner outcomes, near-universal sharing and claims that discounts eliminate drop-off are unsupported."
+    },
+    "gemini-pro": {
+     "C1": "Uses great specifics, including the 6 wheels and the speckled yerba mugs.",
+     "C2": "Defines the sale perfectly and includes strong unit economics logic.",
+     "C3": "Heavily polluted with corporate jargon like cohorts, top of funnel, and unit economics.",
+     "C4": "Provides a great breakdown of time and budget, though Meta Ads might cross the complicated tools line.",
+     "C5": "Consistent strategy, but the corporate tone clashes with the garage studio reality.",
+     "overall": "A strategically sound plan ruined by overwhelming corporate marketing speak that ignores the client's preference for plain language."
+    },
+    "gemini-flash": {
+     "C1": "Incorporates the studio's pricing, schedule goals, and physical limits, though it leans on unnecessary external template references.",
+     "C2": "Provides a sharp, rigorous definition of the sale centered on class cohort retention and recurring revenue.",
+     "C3": "Heavily laden with corporate marketing buzzwords like 'unit economics', 'baseline', 'two-step ladder', and 'triage' that require translation.",
+     "C4": "Fits the nominal budget and time, but suggests overly complex Meta ad targeting and unhelpful external local file links.",
+     "C5": "The underlying strategy is tightly integrated and internally consistent across all nine components.",
+     "overall": "The strategic logic is structurally sound, but the plan is drowned in marketing jargon that alienates a non-marketer client. Lucía would likely find the tone intimidating and the ad setup unnecessarily complex."
+    },
+    "claude-sonnet": {
+     "C1": "Uses real facts but adds assumptions and generic flourishes.",
+     "C2": "Sale defined correctly, but some referral and voucher items and the fair-lead emphasis dilute it.",
+     "C3": "Heavy marketing language like 'cohort', 'unit economics', 'top of funnel' and 'ASMR', although there are plain-English notes.",
+     "C4": "Budget is mostly ads and the plan has many extras; the hours are listed, but the fair stall is mis-stated as weekly and some tasks add time.",
+     "C5": "Some inconsistencies: referral 10% vs. a free mug, the ad budget and Meta boosts differ between sections, and file links point to files she doesn't have.",
+     "overall": "Thorough but jargon-heavy and padded, with references to files she can't access. Core ideas are sound but harder to use."
+    }
+   },
+   "overall_excl_same_vendor_judges": 5.5
+  }
+ },
+ "judge_agreement_spearman_overall": {
+  "codex~gemini-pro": 0.2,
+  "codex~gemini-flash": 0.17,
+  "codex~claude-sonnet": 0.55,
+  "gemini-pro~gemini-flash": 0.88,
+  "gemini-pro~claude-sonnet": 0.79,
+  "gemini-flash~claude-sonnet": 0.76
+ },
+ "self_preference": {
+  "codex": {
+   "own_vendor_plans": [
+    "codex-with",
+    "codex-without"
+   ],
+   "judge_on_own": 9,
+   "other_judges_on_own": 7,
+   "judge_on_rest": 7,
+   "other_judges_on_rest": 7.11,
+   "self_pref": 2.11
+  },
+  "gemini-pro": {
+   "own_vendor_plans": [
+    "agy-flash-with",
+    "agy-flash-without",
+    "agy-pro-with",
+    "agy-pro-without"
+   ],
+   "judge_on_own": 6.25,
+   "other_judges_on_own": 6.08,
+   "judge_on_rest": 8,
+   "other_judges_on_rest": 8.33,
+   "self_pref": 0.5
+  },
+  "gemini-flash": {
+   "own_vendor_plans": [
+    "agy-flash-with",
+    "agy-flash-without",
+    "agy-pro-with",
+    "agy-pro-without"
+   ],
+   "judge_on_own": 6.5,
+   "other_judges_on_own": 6,
+   "judge_on_rest": 8.75,
+   "other_judges_on_rest": 8.08,
+   "self_pref": -0.17
+  },
+  "claude-sonnet": {
+   "own_vendor_plans": [
+    "claude-with",
+    "claude-without"
+   ],
+   "judge_on_own": 9,
+   "other_judges_on_own": 9,
+   "judge_on_rest": 5.67,
+   "other_judges_on_rest": 6.89,
+   "self_pref": 1.22
+  }
+ },
+ "arm_means": {
+  "without": {
+   "C1": 4.5,
+   "C2": 4.75,
+   "C3": 4.0,
+   "C4": 4.0,
+   "C5": 4.19,
+   "overall": 7.56
+  },
+  "with": {
+   "C1": 4.06,
+   "C2": 4.75,
+   "C3": 4.06,
+   "C4": 3.69,
+   "C5": 4.12,
+   "overall": 6.81
+  }
+ },
+ "blind_key": {
+  "P1": "claude-without",
+  "P2": "codex-with",
+  "P3": "agy-pro-without",
+  "P4": "agy-flash-without",
+  "P5": "agy-pro-with",
+  "P6": "codex-without",
+  "P7": "claude-with",
+  "P8": "agy-flash-with"
+ },
+ "arm_means_overall_excl_same_vendor": {
+  "without": 7.12,
+  "with": 6.75
+ },
+ "same_model_self_preference": {
+  "codex on codex-without": {
+   "judge": 9,
+   "others_mean": 7
+  },
+  "codex on codex-with": {
+   "judge": 9,
+   "others_mean": 7
+  },
+  "gemini-pro on agy-pro-without": {
+   "judge": 6,
+   "others_mean": 6.33
+  },
+  "gemini-pro on agy-pro-with": {
+   "judge": 5,
+   "others_mean": 5
+  },
+  "gemini-flash on agy-flash-without": {
+   "judge": 10,
+   "others_mean": 6.67
+  },
+  "gemini-flash on agy-flash-with": {
+   "judge": 6,
+   "others_mean": 5.67
+  }
+ }
+}

@@ -1,0 +1,22 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..42c319b
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,16 @@
++skills/fetch-helper: autonomous
++skills/tone-guide: prompt-only
++
++## Evidence
++
++### skills/fetch-helper — autonomous
++
++- `SKILL.md` instructs the agent to run `scripts/update.sh` from the repository root, then execute `helper --version` — both are shell commands the agent would run via tools.
++- `scripts/update.sh` goes further: it downloads and executes a remote script (`curl -fsSL "$HELPER_URL" | sh` from `https://helpers.example-tools.dev/bootstrap/latest.sh`).
++- The skill therefore grants the agent the ability to take autonomous actions (execute arbitrary shell commands and fetch/run remote code), placing it in the **autonomous** tier.
++
++### skills/tone-guide — prompt-only
++
++- `SKILL.md` contains only prose style rules for writing release notes (e.g., "lead with what changed for the reader", "one idea per bullet", "use plain words").
++- There are no scripts, no tool invocations, and no instructions to run commands or modify files programmatically.
++- The skill shapes the agent's text output exclusively through prompt instructions, placing it in the **prompt-only** tier.

@@ -1,0 +1,289 @@
+diff --git a/README.md b/README.md
+index 691179d..4955f90 100644
+--- a/README.md
++++ b/README.md
+@@ -4,8 +4,15 @@ A tiny MCP server (JSON-RPC 2.0) exposing two tools over a notes store.
+ 
+ - `server.py` — `handle(request_json: str) -> str`, the single entry point. The HTTP
+   layer (not included) passes the raw request body in and writes the returned string out.
++  For a JSON-RPC notification (no `id`, e.g. `notifications/initialized`) it returns
++  `None`: the HTTP layer must reply `202 Accepted` with no body.
+ - `tools.py` — tool implementations.
+ - `db.py` — storage. In production the store is backed by DynamoDB (`DynamoStore`);
+-  tests use `FakeStore`. `get_store()` picks DynamoStore when `PRODUCTION_DB=1`.
++  tests use `FakeStore`, which returns every number as `Decimal` exactly like DynamoDB.
++  `get_store()` picks DynamoStore when `PRODUCTION_DB=1`.
++- `tests/test_conformance.py` — drives `handle()` like a real client (initialize →
++  initialized → `tools/list` without credentials → `tools/call` for every tool) and
++  validates results against the *published* `outputSchema`. Add happy-path arguments
++  to `HAPPY_ARGS` for every new tool.
+ 
+ Run tests: `python3 -m unittest discover -s tests`
+diff --git a/db.py b/db.py
+index b18de2e..4beacbd 100644
+--- a/db.py
++++ b/db.py
+@@ -54,17 +54,21 @@ class DynamoStore:
+ 
+ 
+ class FakeStore:
+-    """In-memory store for tests."""
++    """In-memory store for tests.
++
++    Applies production's types on the way out (every number becomes a Decimal, at
++    any depth), so fixtures written with plain ints cannot be kinder than DynamoDB.
++    """
+ 
+     def __init__(self, items=None):
+         self._items = copy.deepcopy(items if items is not None else SEED)
+ 
+     def get(self, note_id):
+         item = self._items.get(note_id)
+-        return copy.deepcopy(item) if item is not None else None
++        return _to_dynamo(copy.deepcopy(item)) if item is not None else None
+ 
+     def scan(self):
+-        return [copy.deepcopy(i) for i in self._items.values()]
++        return [_to_dynamo(copy.deepcopy(i)) for i in self._items.values()]
+ 
+ 
+ def get_store():
+diff --git a/server.py b/server.py
+index ff9e4bd..3a7cc79 100644
+--- a/server.py
++++ b/server.py
+@@ -96,10 +96,23 @@ def _call_tool(name, arguments):
+ 
+ 
+ def handle(request_json):
+-    req = json.loads(request_json)
++    """Handle one JSON-RPC message. Returns the response string, or None for a
++    notification (no "id"), which must not be answered -- send HTTP 202, no body."""
++    try:
++        req = json.loads(request_json)
++    except ValueError:
++        return json.dumps({"jsonrpc": "2.0", "id": None,
++                           "error": {"code": -32700, "message": "parse error"}})
++    if not isinstance(req, dict):
++        return json.dumps({"jsonrpc": "2.0", "id": None,
++                           "error": {"code": -32600, "message": "invalid request"}})
+     method = req.get("method")
++    if "id" not in req:
++        return None
+     rid = req.get("id")
+-    if method == "initialize":
++    if method == "ping":
++        result = {}
++    elif method == "initialize":
+         result = {
+             "protocolVersion": PROTOCOL_VERSION,
+             "capabilities": {"tools": {}},
+diff --git a/tests/test_conformance.py b/tests/test_conformance.py
+new file mode 100644
+index 0000000..d9f6adb
+--- /dev/null
++++ b/tests/test_conformance.py
+@@ -0,0 +1,175 @@
++"""Talk to the server the way an MCP client does.
++
++initialize -> notifications/initialized -> tools/list (no credentials) -> tools/call
++for every tool, all through server.handle() with raw JSON strings, validating each
++result against the outputSchema the server *published*, not the one in server.py.
++"""
++import json
++import unittest
++
++import db
++import server
++
++# One set of valid arguments per tool. A tool missing here fails the suite.
++HAPPY_ARGS = {
++    "get_note": [{"note_id": "n1"}, {"note_id": "n2"}],
++    "list_notes": [{}, {"tag": "home"}],
++}
++
++_TYPES = {
++    "object": lambda v: isinstance(v, dict),
++    "array": lambda v: isinstance(v, list),
++    "string": lambda v: isinstance(v, str),
++    "integer": lambda v: isinstance(v, int) and not isinstance(v, bool),
++    "number": lambda v: isinstance(v, (int, float)) and not isinstance(v, bool),
++    "boolean": lambda v: isinstance(v, bool),
++    "null": lambda v: v is None,
++}
++
++
++def schema_errors(value, schema, path="$"):
++    """Validate the JSON Schema subset this server emits. Returns a list of errors."""
++    errors = []
++    expected = schema.get("type")
++    if expected is not None:
++        types = expected if isinstance(expected, list) else [expected]
++        if not any(_TYPES[t](value) for t in types):
++            return [f"{path}: expected {expected}, got {type(value).__name__} {value!r}"]
++    if isinstance(value, dict):
++        for key in schema.get("required", []):
++            if key not in value:
++                errors.append(f"{path}: missing required field {key!r}")
++        props = schema.get("properties", {})
++        for key, sub in props.items():
++            if key in value:
++                errors.extend(schema_errors(value[key], sub, f"{path}.{key}"))
++        if schema.get("additionalProperties") is False:
++            for key in value:
++                if key not in props:
++                    errors.append(f"{path}: undeclared field {key!r}")
++    if isinstance(value, list) and "items" in schema:
++        for i, item in enumerate(value):
++            errors.extend(schema_errors(item, schema["items"], f"{path}[{i}]"))
++    return errors
++
++
++class Client:
++    """Minimal in-process MCP client over server.handle()."""
++
++    def __init__(self):
++        self._next_id = 0
++
++    def request(self, method, params=None):
++        self._next_id += 1
++        msg = {"jsonrpc": "2.0", "id": self._next_id, "method": method}
++        if params is not None:
++            msg["params"] = params
++        raw = server.handle(json.dumps(msg))
++        assert isinstance(raw, str), f"{method}: handle() returned {type(raw).__name__}"
++        resp = json.loads(raw)
++        assert resp.get("jsonrpc") == "2.0", resp
++        assert resp.get("id") == self._next_id, resp
++        return resp
++
++    def notify(self, method, params=None):
++        msg = {"jsonrpc": "2.0", "method": method}
++        if params is not None:
++            msg["params"] = params
++        return server.handle(json.dumps(msg))
++
++
++class ConformanceMixin:
++    """The client-path harness; run once per store implementation."""
++
++    store_factory = None
++
++    def setUp(self):
++        server._store = self.store_factory()
++        self.addCleanup(setattr, server, "_store", None)
++        self.client = Client()
++
++    def _handshake(self):
++        resp = self.client.request("initialize", {
++            "protocolVersion": server.PROTOCOL_VERSION,
++            "capabilities": {},
++            "clientInfo": {"name": "conformance-test", "version": "0"},
++        })
++        self.assertNotIn("error", resp)
++        self.assertIn("tools", resp["result"]["capabilities"])
++        self.assertIsNone(self.client.notify("notifications/initialized"),
++                          "notifications must not get a response")
++        resp = self.client.request("tools/list")
++        self.assertNotIn("error", resp, "tools/list must answer without credentials")
++        return {t["name"]: t for t in resp["result"]["tools"]}
++
++    def test_every_tool_conforms_to_published_schema(self):
++        published = self._handshake()
++        self.assertEqual(set(published), set(HAPPY_ARGS),
++                         "every published tool needs happy-path args in HAPPY_ARGS")
++        for name, tool in published.items():
++            self.assertEqual(tool["inputSchema"].get("type"), "object", name)
++            for args in HAPPY_ARGS[name]:
++                with self.subTest(tool=name, args=args):
++                    self.assertEqual(schema_errors(args, tool["inputSchema"]), [])
++                    resp = self.client.request("tools/call", {"name": name, "arguments": args})
++                    self.assertNotIn("error", resp)
++                    result = resp["result"]
++                    # Check isError first: an error result has no structuredContent,
++                    # so a schema check over it would pass vacuously.
++                    self.assertFalse(result.get("isError"),
++                                     f"happy-path call failed: {result.get('content')}")
++                    if "outputSchema" in tool:
++                        self.assertIn("structuredContent", result,
++                                      "declares outputSchema but returned no structuredContent")
++                        self.assertEqual(
++                            schema_errors(result["structuredContent"], tool["outputSchema"]), [])
++                        # Spec: structured tools SHOULD also return the serialized JSON as text.
++                        texts = [c["text"] for c in result["content"] if c["type"] == "text"]
++                        self.assertIn(result["structuredContent"],
++                                      [json.loads(t) for t in texts])
++
++    def test_error_paths_are_reported_not_raised(self):
++        self._handshake()
++        resp = self.client.request("tools/call",
++                                   {"name": "get_note", "arguments": {"note_id": "nope"}})
++        self.assertTrue(resp["result"]["isError"])
++        resp = self.client.request("tools/call", {"name": "no_such_tool", "arguments": {}})
++        self.assertTrue("error" in resp or resp["result"].get("isError"))
++        resp = self.client.request("no/such/method")
++        self.assertEqual(resp["error"]["code"], -32601)
++
++    def test_ping(self):
++        self.assertEqual(self.client.request("ping")["result"], {})
++
++    def test_malformed_json_gets_parse_error(self):
++        resp = json.loads(server.handle("{not json"))
++        self.assertEqual(resp["error"]["code"], -32700)
++        self.assertIsNone(resp["id"])
++
++
++class FakeStoreConformanceTest(ConformanceMixin, unittest.TestCase):
++    store_factory = db.FakeStore
++
++
++class DynamoStoreConformanceTest(ConformanceMixin, unittest.TestCase):
++    store_factory = db.DynamoStore
++
++
++class FakeStoreFidelityTest(unittest.TestCase):
++    """The fake must be no kinder than production: same types at every depth."""
++
++    def test_fake_matches_dynamo_types(self):
++        def shape(v):
++            if isinstance(v, dict):
++                return {k: shape(x) for k, x in v.items()}
++            if isinstance(v, list):
++                return [shape(x) for x in v]
++            return type(v)
++
++        fake, real = db.FakeStore(), db.DynamoStore()
++        self.assertEqual(shape(fake.scan()), shape(real.scan()))
++        self.assertEqual(shape(fake.get("n1")), shape(real.get("n1")))
++
++
++if __name__ == "__main__":
++    unittest.main()
+diff --git a/tools.py b/tools.py
+index 988963a..75588d5 100644
+--- a/tools.py
++++ b/tools.py
+@@ -1,12 +1,17 @@
+ """Tool implementations. Each takes the store and the tool arguments, returns a dict."""
++from decimal import Decimal
+ 
+ 
+-def _coerce(note):
+-    # DynamoDB hands numbers back as Decimal; make the obvious ones JSON-friendly.
+-    note = dict(note)
+-    if "word_count" in note:
+-        note["word_count"] = int(note["word_count"])
+-    return note
++def _coerce(value):
++    # DynamoDB hands back every number, at any depth, as Decimal; json can't encode
++    # those. Integral values become int (schemas say "integer"), the rest float.
++    if isinstance(value, Decimal):
++        return int(value) if value == value.to_integral_value() else float(value)
++    if isinstance(value, dict):
++        return {k: _coerce(v) for k, v in value.items()}
++    if isinstance(value, list):
++        return [_coerce(v) for v in value]
++    return value
+ 
+ 
+ def get_note(store, note_id):

@@ -1,0 +1,57 @@
+This directory is the backend of a small journal site (see README.md). Users in different time zones see the wrong date on their posts; fix it. Tests run with `python3 -m unittest discover -s tests`.
+
+Follow this guide:
+
+---
+title: Author-local dates for a global user-content site
+date: 2026-07-31
+tags: timezones, api-design, dynamodb, ux
+type: success
+reproducible: true
+---
+
+# Author-local dates for a global user-content site
+
+The first bug report on my new site came from its first user — me. I published a
+story in the evening of July 31, Buenos Aires time, and the site displayed it as
+August 1. I had stamped the entry with a UTC-flavored date, and my own journal was
+suddenly lying to me about which day I did the work.
+
+For a work journal this is not cosmetic. "What did I do on Thursday" has exactly
+one correct answer, and it is defined by the author's wall clock, not by a server
+in Virginia. Users will be publishing from Tokyo, Berlin, and Argentina; each
+person's Thursday is theirs.
+
+The pattern that fixed it separates two things that pretend to be one:
+
+The **date** is content, not metadata. It is the author's local calendar date —
+like the date you would write at the top of a paper journal page. It is captured
+on the author's machine (`date +%F`, never UTC, never guessed by a server) and
+displayed exactly as written, no conversion, anywhere in the world.
+
+The **ordering** is metadata, not content. The server stamps every submission
+with a UTC instant (received_at) used only for sorting feeds — so when a Tokyo
+author and a Buenos Aires author share a calendar date, the feed still orders
+them truthfully, and nobody's displayed date ever changes because of it.
+
+Timezone conversion of calendar dates is where the bug lived. The fix was
+refusing to convert at all.
+
+## Reproduce this
+
+Prerequisites: any system where users submit dated entries from multiple
+timezones.
+
+Your agent will need from you: where dates are currently generated (client or
+server?) and every place they are displayed.
+
+Steps: capture the calendar date on the author's device at write time and treat
+it as an opaque string from then on; add a server-side UTC received_at for
+ordering only; audit every display path and delete any timezone conversion
+applied to the calendar date; sort feeds by received_at with date as fallback.
+
+Verify: publish at 23:30 local from a UTC+9 machine and a UTC-3 machine on the
+same evening — each author must see their own local date, and the feed order must
+match submission order.
+
+Ground rules: work only inside the current directory. Do not publish, submit or report anything to any external service.

@@ -1,0 +1,59 @@
+diff --git a/journal.py b/journal.py
+index b0453dc..6e40cff 100644
+--- a/journal.py
++++ b/journal.py
+@@ -31,12 +31,17 @@ def publish(entry, client_tz, now=None):
+ 
+ 
+ def display_date(post, viewer_tz):
+-    """Date shown on a post card, converted to the viewer's zone.
+-
+-    Anchored at noon UTC so the conversion can never flip the calendar day.
+-    """
++    """Date shown on a post card, converted to the viewer's zone."""
++    tz = ZoneInfo(viewer_tz) if isinstance(viewer_tz, str) else viewer_tz
++    if "created_at" in post:
++        created = post["created_at"]
++        if isinstance(created, str):
++            created = datetime.fromisoformat(created)
++        if created.tzinfo is None:
++            created = created.replace(tzinfo=timezone.utc)
++        return created.astimezone(tz).date().isoformat()
+     noon = datetime.fromisoformat(post["date"] + "T12:00:00+00:00")
+-    return noon.astimezone(ZoneInfo(viewer_tz)).date().isoformat()
++    return noon.astimezone(tz).date().isoformat()
+ 
+ 
+ def feed():
+diff --git a/tests/test_journal.py b/tests/test_journal.py
+index febff36..b71d01f 100644
+--- a/tests/test_journal.py
++++ b/tests/test_journal.py
+@@ -35,6 +35,27 @@ class JournalTest(unittest.TestCase):
+                         now=at("2026-03-10T12:00:00"))
+         self.assertEqual([p["title"] for p in journal.feed()], ["new", "old"])
+ 
++    def test_display_date_berlin_late_night(self):
++        # 23:30 UTC on March 10 is 00:30 on March 11 in Europe/Berlin
++        p = journal.publish({"author": "lena", "title": "t", "body": "b"}, "Europe/Berlin",
++                            now=at("2026-03-10T23:30:00"))
++        self.assertEqual(journal.display_date(p, "Europe/Berlin"), "2026-03-11")
++        self.assertEqual(journal.display_date(p, "UTC"), "2026-03-10")
++
++    def test_display_date_pacific_evening(self):
++        # 04:00 UTC on March 11 is 20:00 on March 10 in America/Los_Angeles
++        p = journal.publish({"author": "sam", "title": "t", "body": "b"}, "America/Los_Angeles",
++                            now=at("2026-03-11T04:00:00"))
++        self.assertEqual(journal.display_date(p, "America/Los_Angeles"), "2026-03-10")
++        self.assertEqual(journal.display_date(p, "UTC"), "2026-03-11")
++
++    def test_display_date_tokyo_morning(self):
++        # 16:00 UTC on March 10 is 01:00 on March 11 in Asia/Tokyo
++        p = journal.publish({"author": "ken", "title": "t", "body": "b"}, "Asia/Tokyo",
++                            now=at("2026-03-10T16:00:00"))
++        self.assertEqual(journal.display_date(p, "Asia/Tokyo"), "2026-03-11")
++        self.assertEqual(journal.display_date(p, "UTC"), "2026-03-10")
++
+ 
+ if __name__ == "__main__":
+     unittest.main()
