@@ -1,0 +1,3 @@
+Updated [scripts/deploy.sh](/tmp/h-z4GmpN/scripts/deploy.sh) to set five-minute cache headers for HTML, JavaScript, and CSS, and one-year headers for `assets/`. Each upload sets an explicit content type and refreshes headers on unchanged files.
+
+Documented the change and which parts of the colleague’s note applied in [ANSWER.md](/tmp/h-z4GmpN/ANSWER.md). `bash -n` and `git diff --check` passed. No deployment was run.

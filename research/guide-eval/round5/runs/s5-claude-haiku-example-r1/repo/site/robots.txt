@@ -1,0 +1,11 @@
+User-agent: *
+# Public read endpoints the note pages render from. Googlebot renders pages too,
+# so blocking these turns every note into a "NOT FOUND" screen (soft 404).
+Allow: /v1/notes
+# Everything else under the API stays out: POST-only paths, per-user and auth routes.
+Disallow: /v1/
+# Longer than "Allow: /v1/notes", so this still wins for the POST-only reactions path.
+Disallow: /v1/notes/*/reactions
+Disallow: /admin/
+
+Sitemap: https://fieldnotes.example/sitemap.xml

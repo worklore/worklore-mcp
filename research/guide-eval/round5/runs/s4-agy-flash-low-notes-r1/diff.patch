@@ -1,0 +1,39 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..a176752
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,13 @@
++# Solution: Add Cache-Control Headers to Deploy
++
++## Summary of Changes
++
++To prevent browsers from holding onto outdated files such as `booking.js` while maintaining aggressive caching for static media assets, we updated [`scripts/deploy.sh`](file:///tmp/h-w62xxc/scripts/deploy.sh).
++
++### Implementation Details
++Following the documented pattern in [`notes/a-cache-header-tweak-served-my-whole-site-as-octet-stream.md`](file:///tmp/h-w62xxc/notes/a-cache-header-tweak-served-my-whole-site-as-octet-stream.md):
++- When replacing S3 metadata (`--metadata-directive REPLACE`), S3 wipes existing metadata unless explicitly passed. To prevent objects from being served as `binary/octet-stream`, both `--content-type` and `--cache-control` are specified together per file type.
++- Added a loop after `aws s3 sync`:
++  - **Short cache duration (300 seconds / 5 minutes)**: Applied to HTML, JS, and CSS files (`.html`, `.js`, `.css`) with `public, max-age=300`.
++  - **Long cache duration (86400 seconds / 1 day)**: Applied to assets (`.png`, `.svg`) with `public, max-age=86400`.
++- Profile (`--profile "$PROFILE"`) is passed to all AWS CLI calls.
+diff --git a/scripts/deploy.sh b/scripts/deploy.sh
+index 6550d32..ddd2eb7 100755
+--- a/scripts/deploy.sh
++++ b/scripts/deploy.sh
+@@ -9,6 +9,15 @@ PROFILE="studio"
+ 
+ aws s3 sync src/ "s3://$BUCKET/" --delete --profile "$PROFILE"
+ 
++for pair in "html:text/html:300" "js:application/javascript:300" \
++            "css:text/css:300" "png:image/png:86400" "svg:image/svg+xml:86400"; do
++  ext="${pair%%:*}"; rest="${pair#*:}"; ct="${rest%%:*}"; ttl="${rest#*:}"
++  aws s3 cp "s3://$BUCKET/" "s3://$BUCKET/" --recursive \
++    --exclude "*" --include "*.${ext}" \
++    --content-type "$ct" --cache-control "public, max-age=${ttl}" \
++    --metadata-directive REPLACE --only-show-errors --profile "$PROFILE"
++done
++
+ aws cloudfront create-invalidation --distribution-id "$DISTRIBUTION_ID" \
+   --paths "/*" --profile "$PROFILE" > /dev/null
+ 

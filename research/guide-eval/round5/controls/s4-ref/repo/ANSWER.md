@@ -1,0 +1,1 @@
+Cache-Control is now set per file extension with the content type stated in the same command, because `--metadata-directive REPLACE` drops the Content-Type otherwise (everything becomes binary/octet-stream). HTML/JS/CSS 300 s, images a day.

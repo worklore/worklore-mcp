@@ -1,0 +1,51 @@
+# Soft 404 on Note Pages: Cause and Fix
+
+## Cause
+
+Every page on `fieldnotes.example` is served from a single static HTML shell (`site/index.html`) with HTTP `200`, and rendered client-side by `site/app.js`:
+
+- On a note page (`/n/<slug>`), `site/app.js` fetches `/v1/notes/<slug>`.
+- On the home page (`/`), `site/app.js` fetches `/v1/notes?limit=50`.
+- If the `fetch()` call fails or throws an error, the `catch` block in `site/app.js` renders:
+  ```html
+  <section class="notfound"><h1>NOT FOUND</h1><p>No note lives at this address.</p><p><a href="/">Back to all notes</a></p></section>
+  ```
+
+On **2026-09-07**, `Disallow: /v1/` was added to `site/robots.txt` to stop crawlers from sending `GET` requests to POST-only API paths and logging 404/405 errors (`api/routes.md`).
+
+While regular browsers ignore `robots.txt` and load the notes normally, **Googlebot obeys `robots.txt` for subresource requests made during JavaScript rendering**:
+
+1. Googlebot fetches `/n/drip-line-pressure` and receives `site/index.html` with `HTTP 200`.
+2. During rendering, `site/app.js` calls `fetch("/v1/notes/drip-line-pressure")`.
+3. Googlebot blocks that request because `/v1/notes/drip-line-pressure` matches `Disallow: /v1/` in `site/robots.txt`.
+4. The blocked `fetch()` throws in `site/app.js`, which renders `"NOT FOUND — No note lives at this address."` inside an `HTTP 200` page (confirmed in `search-console/url-inspection-drip-line-pressure.txt`).
+5. Google classifies the rendered "NOT FOUND" screen served with `HTTP 200` as a **Soft 404** and refuses to index the page. Notes last crawled before `2026-09-07` (such as `/n/first-frost-dates` and `/n/mulch-depth-trial`) remained indexed until re-crawled, while notes crawled after `2026-09-07` were marked `Soft 404` (`search-console/pages-2026-10-16.csv`).
+
+---
+
+## Fix
+
+Updated `site/robots.txt` to allow the public read endpoints under `/v1/notes` while keeping `/v1/` (per-user and auth endpoints like `/v1/me`, `/v1/me/drafts`, `/v1/auth/token`) and the POST-only sub-route `/v1/notes/{slug}/reactions` disallowed using Google's longest-match precedence rule:
+
+```robots.txt
+User-agent: *
+Allow: /v1/notes
+Disallow: /v1/notes/*/reactions
+Disallow: /v1/
+Disallow: /admin/
+
+Sitemap: https://fieldnotes.example/sitemap.xml
+```
+
+### Rule Evaluation (Google Longest-Match Precedence)
+
+| Path | Matching Rules | Winning Rule (Longest Match) | Result |
+|---|---|---|---|
+| `/v1/notes` | `Disallow: /v1/` (4), `Allow: /v1/notes` (9) | `Allow: /v1/notes` | **Allowed** |
+| `/v1/notes?limit=50` | `Disallow: /v1/` (4), `Allow: /v1/notes` (9) | `Allow: /v1/notes` | **Allowed** |
+| `/v1/notes/drip-line-pressure` | `Disallow: /v1/` (4), `Allow: /v1/notes` (9) | `Allow: /v1/notes` | **Allowed** |
+| `/v1/notes/drip-line-pressure/reactions` | `Disallow: /v1/` (4), `Allow: /v1/notes` (9), `Disallow: /v1/notes/*/reactions` (21) | `Disallow: /v1/notes/*/reactions` | **Disallowed** |
+| `/v1/me` | `Disallow: /v1/` (4) | `Disallow: /v1/` | **Disallowed** |
+| `/v1/me/drafts` | `Disallow: /v1/` (4) | `Disallow: /v1/` | **Disallowed** |
+| `/v1/auth/token` | `Disallow: /v1/` (4) | `Disallow: /v1/` | **Disallowed** |
+| `/admin/` | `Disallow: /admin/` (7) | `Disallow: /admin/` | **Disallowed** |

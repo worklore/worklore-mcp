@@ -1,0 +1,3 @@
+Search Console’s Soft 404 comes from what Google renders, not the note URL’s HTTP status. The URL returns 200, but `robots.txt` blocks the `/v1/notes/<slug>` data request, so the app displays “NOT FOUND.”
+
+I updated [robots.txt](/tmp/h-SBj2Qz/site/robots.txt) to allow public note data while keeping private API paths blocked. I documented the evidence, fix, and which parts of the colleague’s note apply in [ANSWER.md](/tmp/h-SBj2Qz/ANSWER.md). Local rule checks passed. Nothing was deployed, so the live Search Console result remains unverified.

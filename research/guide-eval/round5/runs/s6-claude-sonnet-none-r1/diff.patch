@@ -1,0 +1,78 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..972683f
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,72 @@
++# notes-mcp: things real MCP clients will trip over
++
++Checked by running `python3 server.py` and sending raw JSON-RPC with curl (no server changes). Most important first. The server held only in-memory state, and I did not modify files other than this one.
++
++## 1. Auth failures are bare HTTP 401s (highest impact)
++- `add_note` without a token, and `resources/*` without a token, return `401 {"error":"sign in required"}` / `{"error":"unauthorized"}`.
++  - There is **no `WWW-Authenticate` header**.
++  - There is no OAuth protected-resource metadata. `GET /.well-known/oauth-protected-resource` returns 405 `use POST`.
++  - The body is not JSON-RPC.
++- Clients treat a 401 as "start the OAuth flow", find no metadata, and report a generic auth or connection failure. Some mark the whole server as failed or needs-auth, so the open read tools become unusable too.
++- A tool-level 401 is wrong in a different way. The spec reserves HTTP 401 for transport authorization. A missing sign-in for one tool should be a normal result with `isError: true` and a clear message, or a JSON-RPC error.
++- The tool description says "Needs a signed-in session", but the only auth method is a static Bearer dev token. Nothing tells a client how to obtain it.
++- **`resources/list` is 401 for anonymous callers**, yet `initialize` advertises the `resources` capability. Clients such as Claude Code, Codex and Gemini call `resources/list` and `resources/templates/list` right after connecting. An anonymous client therefore gets a 401 during setup, even though README says "Reads are open".
++  - Either allow these methods anonymously, or don't advertise `resources`.
++- Related: `resources/read` ignores the requested `uri`. `notes://nope` returns the guide content instead of an error.
++
++## 2. Tool errors are protocol errors, not tool results
++- `get_note` with an unknown id returns JSON-RPC error `-32602 "note not found"`. Bad arguments also come back as `-32602`, and an unknown tool as `-32601`.
++- Errors that the model could act on should be `result: {isError: true, content: [...]}`. Many clients hide or flatten JSON-RPC errors, so the model never sees the message and can't retry with corrected input.
++- `-32601` for an unknown tool should be `-32602`.
++- Error text leaks Python internals, e.g. `invalid literal for int() with base 10: 'x'` for `limit:"x"`.
++
++## 3. `inputSchema` is declared but never enforced
++Constraints that the schema promises, and the server ignores:
++- `get_note.id` has `pattern ^n-[0-9]+$`. `id: 5` and `id: "zzz"` are accepted and fall through to "not found". `id: []` or an array of arguments is also not rejected cleanly.
++- `search_notes.limit` has `minimum: 1`. `limit:-1` is accepted and silently slices from the end (it returned 4 of 5 hits). `limit: 0` returns nothing. `limit` above 50 is accepted. A string `limit` gives the int() error above.
++- `search_notes.query` is required, but `{}` and `""` return every note.
++- `add_note` with a missing `body` crashes (see #4). Empty `title` (`minLength: 1`) is accepted, and `add_note` accepts non-string values.
++- `search_notes.total` is the length after truncation by `limit`, not the real match count. That is misleading for paging.
++
++## 4. Crashes and dropped connections
++Unhandled exceptions kill the request with no HTTP response (curl gets an empty reply). A client sees a hang or reset, not an error:
++- `add_note` (authenticated) with a missing `title` or `body`: `KeyError`.
++- A JSON body of `null`, `"x"` or `42`: `AttributeError`.
++- Running `add_note` against an empty note set would also crash (`max()` of an empty sequence), and the id generation isn't thread-safe under `ThreadingHTTPServer`.
++- A JSON-RPC batch `[]` returns `[]`. The spec calls for an error. Batch handling also skips logging, and a batch ignores the auth/status of its items.
++
++## 5. `outputSchema` / `structuredContent` mismatches
++- `search_notes` declares `outputSchema: {"type":"object"}`, which is so loose it is useless. The real shape is `{hits:[…], total}`. Declare it, since strict clients validate it.
++- `get_note` and `add_note` have strict schemas, and the returned data matches them for existing notes. Fragile points:
++  - A note stored without `tags` or with an empty tag string breaks the `minLength: 1` constraint.
++  - `add_note` accepts any title, so a title that fails the schema can later fail `get_note` validation.
++  - SDK clients (the Python and TypeScript SDKs) validate `structuredContent` against `outputSchema` and throw on a mismatch.
++- Error results (`isError: true`) must not be validated against `outputSchema`. This server has none today, but fix #2 and keep that in mind.
++- The `text` content is a JSON dump of the structured data. That is fine, but the search snippet cuts words and can start mid-word (`"re at 61C…"`).
++
++## 6. Protocol and transport details
++- `notifications/*` other than `initialized` (e.g. `notifications/cancelled`, `notifications/roots/list_changed`) get a `200` with a `-32601` error and `id: null`. Notifications must get `202` with no body. Clients, notably ones sending `notifications/cancelled`, may log errors or break.
++- `GET /mcp` returns `405` with a JSON body but no `Allow` header. Clients that try to open the optional SSE stream (`Accept: text/event-stream`) tolerate 405, but add `Allow: POST, DELETE`.
++- Sessions:
++  - `Mcp-Session-Id` is issued at `initialize` but never stored or validated. A bogus id is echoed back as valid, an unknown or expired session never gets 404, and `DELETE` always returns 204.
++  - A stateless server is fine, but then it shouldn't pretend to issue sessions.
++  - The id is not issued on the non-initialize reply path for batches, which echo whatever came in.
++- `MCP-Protocol-Version` header is not validated. `1999-01-01` is accepted. `initialize` always answers `2025-06-18` regardless of what the client requested, which is allowed, but clients on older versions (e.g. 2024-11-05) will reject the answer.
++- `Content-Type` and `Accept` are not checked. The server always replies `application/json`, which is fine because JSON responses are allowed.
++- `Origin` is not validated. A request from `http://evil.example` succeeds. The server binds to 127.0.0.1, but without an Origin check a web page can still reach it by DNS rebinding. The spec requires Origin validation for local servers.
++- No CORS and no `OPTIONS`: it replies `501` with an HTML page, so browser-based clients (such as the MCP Inspector in the browser) can't connect.
++- `/mcp/` works but `/` is 404 (fine). Responses are HTTP/1.0 with `Connection: close`, so there is no keep-alive. That is OK for small use, but slower for chatty clients.
++- `initialize` does not check the `params`. A missing `protocolVersion` or `clientInfo` is silently accepted.
++- Per-method `tools/list` has no `title`, no pagination (fine for 3 tools), and `listChanged: false` is declared consistently.
++
++## 7. Smaller things
++- README's token (`dev-token-123`) is the default when `NOTES_TOKEN` is unset. If this is exposed beyond localhost, the default token is a public secret. The comparison is not constant-time, and `who` is only `dev` or `anon`.
++- `add_note` writes only to memory, so notes are lost on restart, and the tool says nothing about that. `readOnlyHint`/`destructiveHint` annotations are fine. Add `idempotentHint: false` and `openWorldHint: false` for completeness.
++- Logging: `ok` for a 401 or JSON-RPC error is logged as false, but batches and crashes are not logged at all. The log has no request id or session id.
++- Search is substring-only and case-insensitive, and `snippet` offsets are computed on the lowercased text. That is fine for ASCII, but can drift for characters whose lowercase form has a different length.
++
++## Suggested fix order
++1. Make anonymous `resources/*` work (or drop the capability), and stop returning HTTP 401 for tool-level auth. If you want real auth, return 401 with `WWW-Authenticate` and OAuth metadata.
++2. Turn tool failures into `isError: true` results with human-readable text.
++3. Validate arguments against the declared schemas and wrap `do_POST` in a try/except that returns a JSON-RPC `-32603`.
++4. Return 202 for every notification, and validate `Origin`, `MCP-Protocol-Version` and the session id.

@@ -1,0 +1,36 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..82671bf
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,30 @@
++# MCP checkup: notes-mcp 0.3.1 (http://127.0.0.1:54614/mcp)
++
++Verdict: **has the problem.** Two FAILs (C2, C10) and two WARNs (C6, resources).
++
++I ran the checks anonymously. I did not use the dev token that appears in `server.py`, and I never printed it. `server.py` and every other file are unchanged (`git status` is clean). I started the server with `python3 server.py` for the run and stopped it afterwards. I called only `get_note` and `search_notes`, which are marked `readOnlyHint: true`. I did not call `add_note` or any other writing tool.
++
++| Check | Result | Evidence |
++|---|---|---|
++| C1 tools list without a token | **PASS** | `initialize` and `tools/list` returned 200 with 3 tools: `search_notes`, `get_note`, `add_note`. `server/discover` returned 200 with a `-32601` error (acceptable). |
++| C2 refusal is a result, not a protocol error | **FAIL** | `get_note {"id":"n-999"}` returned HTTP 200 with `error:{code:-32602,"note not found: n-999"}`. `get_note {}` returned `-32602 "missing required argument: id"`. A client SDK throws on these, so the model never reads the message. An unknown tool name returning `-32601` is fine. Fix: [My live MCP test asserted the bug](https://worklore.dev/s/2026-10-02-my-live-mcp-test-asserted-the-bug-a-real-client-threw-where-). |
++| C3 session survives an error | **PASS** | In the same `Mcp-Session-Id`, `get_note {"id":"n-1"}` right after the refusals returned a normal result. |
++| C4 outputSchema honoured | **PASS** (weak) | `get_note` returned `structuredContent` that validates (id pattern, title, body, integer words, tags). `search_notes` returned `structuredContent` that validates, but its schema is only `{"type":"object"}` (see C10). `add_note` is not read-only, so it was not called and its schema is NOT CHECKED. |
++| C5 serialisation | **PASS** | All bodies parsed as JSON. The `content` text and `structuredContent` agree. The numbers are integers, as the schema says. No encoder errors. |
++| C6 version moves with the surface | **WARN** (counts as FAIL) | There is no surface lock or fingerprint in the repo (files: README.md, notes.json, server.py). I did not query the registry because no registry name was given, so the registry comparison is NOT CHECKED. `initialize` advertises `resources`, but anonymous `resources/list` and `resources/templates/list` return HTTP 401 `{"error":"unauthorized"}` instead of a JSON-RPC response, so the advertised surface is not visible. `prompts/list` returns `-32601`. Fix: [My MCP listing said read-only. My server could write.](https://worklore.dev/s/2026-09-30-my-mcp-listing-said-read-only-my-server-could-write) and [Getting into the MCP Registry](https://worklore.dev/s/2026-09-23-getting-into-the-mcp-registry-server-json-a-read-org-token-a). |
++| C7 calls logged | **PASS** (with a gap) | `do_POST` writes one JSON line per call to stderr (method, tool, ok, ms, who), errors included. I confirmed this in the log for every call I made. Gap: a JSON-RPC batch (a list body) returns before `log()`, so batched calls are not logged. Fix: [Your MCP server is one URL](https://worklore.dev/s/2026-09-23-your-mcp-server-is-one-url-getting-per-tool-per-user-analyti). |
++| C8 tool names | **PASS** | 3 tools. All names match `^[a-zA-Z0-9_-]{1,64}$`. |
++| C9 version negotiation | **PASS** | `protocolVersion:"banana"` got `2025-06-18`, not an echo. |
++| C10 outputSchema can reject a wrong answer | **FAIL** | I checked the schemas by hand against a corrupted result (no JSON Schema validator was run). `search_notes` has `outputSchema: {"type":"object"}`, so `{}` or anything else that is an object is accepted. `get_note` rejects the corrupted result (id `pattern`, `minimum`). `add_note` rejects it (id `pattern`). Fix: [My MCP server's output schemas accepted wrong answers](https://worklore.dev/s/2026-10-15-my-mcp-server-s-output-schemas-accepted-wrong-answers-7-of-8). |
++
++## What I could not check
++- The registry comparison for C6: it needs the registry name and version.
++- The `add_note` outputSchema (C4): it writes, so I did not call it. It needs a human-named safe way to test it.
++- The behaviour with a signed-in session. I did not use the token.
++
++## Which parts of the colleague's note applied
++- The ten-check structure and the read-only ground rules applied, and I followed them.
++- The warning that skipped checks do not mean "you're fine" did not trigger. C2–C5 could run anonymously because the read tools are open.
++- The note's resources/401 finding applied here: it is the same pattern as in the note's own live-server run.
++- I did not record anything with worklore. I only reported here, and I did not call or submit anything to an external service.
++- The `verify.mjs` fingerprint check and `mcp-drill` were not applicable or not run: there is no registry entry and no network step was authorised.

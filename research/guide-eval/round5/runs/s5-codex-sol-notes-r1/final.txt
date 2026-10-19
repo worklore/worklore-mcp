@@ -1,0 +1,3 @@
+Google could fetch the note page’s HTTP 200 shell, but `robots.txt` blocked the `/v1/notes/...` request that fills it with content. The app then rendered “NOT FOUND,” which Search Console classified as a soft 404.
+
+I updated [robots.txt](/tmp/h-9q0NWk/site/robots.txt) to allow the public note endpoints while keeping private API routes and reactions blocked. The cause and fix are in [ANSWER.md](/tmp/h-9q0NWk/ANSWER.md). Local rule checks passed. No deployment or external submission was made; Search Console will need a recrawl after the change is deployed separately.

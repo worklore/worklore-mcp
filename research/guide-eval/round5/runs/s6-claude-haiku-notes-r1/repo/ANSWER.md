@@ -1,0 +1,64 @@
+# notes-mcp checkup
+
+**Verdict: has the problem.** Four checks fail (C2, C5, C7, C10) and C6 is a WARN, which counts as a fail. The two most serious problems came up outside the ten checks: the server answers `resources/list` with a 401 while advertising resources, and it drops the connection when a client sends a `null` or wrongly typed argument. Nine extra findings are listed below.
+
+## What I ran
+
+- Server: `python3 server.py` from this folder, on `http://127.0.0.1:56157/mcp`, started by me and stopped afterwards. No server code was changed.
+- Only read-only calls: `initialize`, `notifications/initialized`, `ping`, `tools/list`, `resources/list`, `server/discover`, and `tools/call` on `search_notes` and `get_note`.
+- `add_note` was **not called**. It is a write tool, so I only read its schema.
+- No token was used for C1–C5 (anonymous). `resources/list` was also checked once with `Authorization: Bearer dev-token-123` from the README, to see the signed-in behaviour.
+- Nothing was sent to a registry or any other external service, and nothing was recorded anywhere.
+
+## The ten checks
+
+| Check | Result | Evidence | Fix (story from the checkup doc) |
+|---|---|---|---|
+| **C1** tool list without a token | **PASS** | `initialize` → 200 with a result. `tools/list` → 200, **3 tools** (`search_notes`, `get_note`, `add_note`). `server/discover` → 200 with `-32601 method not found`, which the checkup accepts. | — |
+| **C2** refusal as a result, not a protocol error | **FAIL** | `get_note` with `id: "n-999"` → HTTP 200, `{"error": {"code": -32602, "message": "note not found: n-999"}}`. Missing `id` → same `-32602`. Both should be `result` with `isError: true`. | [My live MCP test asserted the bug](https://worklore.dev/s/2026-10-02-my-live-mcp-test-asserted-the-bug-a-real-client-threw-where-) |
+| **C3** session survives an error | **PASS** | Same `Mcp-Session-Id`, right after the two errors: `get_note` `n-1` → normal `result`, `isError: false`. Server still answers afterwards. | (same as C2) |
+| **C4** published outputSchema is honoured | **PASS** | `get_note` `n-4`: `isError: false`, `structuredContent` present and matching the schema (`id`, `title`, `body`, `words`, `tags`). `search_notes` `frost`: `structuredContent` `{hits, total}`, valid. (The `search_notes` schema is so loose that this pass means little. See C10.) | [My tests passed because they agreed with me](https://worklore.dev/s/2026-09-28-my-tests-passed-because-they-agreed-with-me) |
+| **C5** results survive serialisation | **FAIL** | Every successful body parsed and `content` text matched `structuredContent`. But two calls with wrong-typed arguments return **an empty body** (see "Extra findings", item 2). An empty body does not parse as JSON. The cause is an unhandled exception, not a Decimal. | [My tests passed because they agreed with me](https://worklore.dev/s/2026-09-28-my-tests-passed-because-they-agreed-with-me) |
+| **C6** version moves with the surface | **WARN → counts as FAIL** | No surface lock in the repo (only one commit, `base`, and no file holding a hash). `serverInfo.version` is `0.3.1`, hard-coded in two places. The surface lists are static, so nothing there changes by itself. **Registry comparison NOT CHECKED:** it needs an external request, which is outside this folder. | [My MCP listing said read-only. My server could write.](https://worklore.dev/s/2026-09-30-my-mcp-listing-said-read-only-my-server-could-write) and [Getting into the MCP Registry](https://worklore.dev/s/2026-09-23-getting-into-the-mcp-registry-server-json-a-read-org-token-a) |
+| **C7** calls are logged | **FAIL** | One JSON line per call on stderr: `method`, `tool`, `ok`, `ms`, `who`. That is good. But the crashed calls leave **no line**. `search_notes` was called twice and has 1 log line. `get_note` was called 6 times and has 5 lines. The missing ones are the two crashing calls. Batches and parse errors are also unlogged. | [Your MCP server is one URL — getting per-tool, per-user analytics anyway](https://worklore.dev/s/2026-09-23-your-mcp-server-is-one-url-getting-per-tool-per-user-analyti) |
+| **C8** tool count and names | **PASS** | 3 tools. All names match `^[a-zA-Z0-9_-]{1,64}$`. | — |
+| **C9** honest version negotiation | **PASS** | `protocolVersion: "banana"` → the server answers `"2025-06-18"`, which it does implement. It does not echo `banana`. It also ignores what the client asks for, which is acceptable. | — |
+| **C10** outputSchema rejects wrong answers | **FAIL** | `search_notes` declares `"outputSchema": {"type": "object"}` with no properties. A corrupted result is `{}`, which that schema accepts. `get_note`: the corrupted result has `id: "mcp-drill-corruption"`, rejected by `pattern`. **PASS.** `add_note`: corrupted `id` rejected by `pattern`. **PASS**, not called. I validated by hand (no `jsonschema` installed here, and I did not install anything). | [My MCP server's output schemas accepted wrong answers](https://worklore.dev/s/2026-10-15-my-mcp-server-s-output-schemas-accepted-wrong-answers-7-of-8) |
+
+## Extra findings (outside the ten checks)
+
+1. **Resources are advertised, then refused (high).** `initialize` returns `"resources": {...}`. Anonymous `resources/list` returns **HTTP 401** `{"error": "unauthorized"}` with no `WWW-Authenticate` header. Signed in, it returns 200 with the guide. This is the same pattern the checkup doc describes. A client that treats 401 as "needs auth" can mark the whole server as needing auth, even though `tools/list` works. Either drop the resources capability, or answer `resources/list` and `resources/read` without a token.
+
+2. **Crash on `null` or a wrong type (high).** A client that sends `null` for an optional argument is common. Verified:
+   - `search_notes` with `{"query": "soil", "limit": null}` → **no HTTP response at all** (curl got an empty reply). The log shows `TypeError: int() argument must be ... not 'NoneType'` (server.py:104).
+   - `get_note` with `{"id": []}` → same, no response. The traceback is `TypeError: cannot use 'list' as a dict key` (server.py:117).
+   - The server stays up and the next call works, so the damage is limited to that call. But the client gets no error and the model cannot correct itself. Any non-`ValueError` exception has this effect. The `add_note` path reads `args["title"]` directly, so a missing field there also crashes, but that call only runs when signed in, so I did not test it.
+
+3. **Notifications get a response (medium).** `notifications/cancelled` returns `{"id": null, "error": {"code": -32601, ...}}`. A notification must not get any reply. Clients may log or fail on it. Unknown notifications should return 202 with no body, as `notifications/initialized` already does.
+
+4. **Origin is not checked (medium).** The request with `Origin: http://evil.example` was accepted and returned the tool list. Streamable HTTP servers must validate `Origin` to block DNS rebinding. The bind to `127.0.0.1` lowers the risk but does not remove it, and it is lost as soon as the server is exposed through a tunnel.
+
+5. **Hard-coded fallback token (medium, security).** If `NOTES_TOKEN` is unset, the token is `dev-token-123`, which the README also prints. Anyone who reaches the port can call `add_note`. The comparison is plain `==`. Fine on localhost, dangerous behind any tunnel. (Not tested with a write, by rule.)
+
+6. **Argument limits are not enforced (low).** `search_notes` declares `query` as required, but a missing `query` defaults to `""` and matches every note, with no error. `limit` declares `maximum: 50`, but the code only slices `hits[:limit]`, so 1000 gives back everything. Both go against the schema the server publishes.
+
+7. **Anonymous `add_note` gives a bare 401 (low).** A `tools/call` for `add_note` without a token returns HTTP 401 with `{"error": "sign in required"}`, which is not a JSON-RPC error and has no `WWW-Authenticate` header. Clients that expect OAuth discovery will not know what to do with it. (Read from source only, not called.)
+
+8. **Snippet offsets are off (low).** `search_notes` finds the match position in `title + " " + body`, then slices `body` with that position. Every snippet is shifted right by `len(title) + 1`, so long titles can push the match out of the window. Read from source, not measured.
+
+9. **Minor:** the version `0.3.1` is repeated in `initialize` and in the `Server` header, so it can drift. Responses are HTTP/1.0 with no keep-alive, so each call opens a new connection. Neither breaks a client.
+
+## What I could not check
+
+- **C6 registry comparison:** needs a request to the MCP Registry. That is outside this folder, so I did not run it. Same for `verify.mjs`.
+- **`add_note` behaviour with a valid token:** a write, not called.
+- **`mcp-drill` and the `jsonschema` validator:** not installed here. C10 was done by hand.
+
+## Suggested order to fix
+
+1. Crash on wrong-typed or `null` args (extra 2). It is the easiest way for a real client to lose a call without knowing why. Coerce or reject bad types inside `call_tool` and return `isError: true`.
+2. Turn the refusals into `isError` results (C2, and C3 keeps working).
+3. Fix the resources 401 (extra 1), either by dropping the capability or answering without a token.
+4. Give `search_notes` a real `outputSchema` (C10).
+5. Log crashed and rejected calls as well (C7).
+6. Pin the version with a lock file (C6), and add the `Origin` check and the notification fix.

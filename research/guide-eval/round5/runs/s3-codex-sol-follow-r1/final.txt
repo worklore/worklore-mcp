@@ -1,0 +1,5 @@
+The job ran six times. Each run failed because Claude reported “Not logged in”; then the zsh wrapper assigned to its read-only `status` variable and stopped before sending the failure notification. The evidence and causes are in [ANSWER.md](/tmp/h-HS7PwY/ANSWER.md).
+
+I set `USER` in the [plist](/tmp/h-HS7PwY/Library/LaunchAgents/com.vk.nightly-review.plist), fixed the exit-code handling in the [wrapper](/tmp/h-HS7PwY/bin/nightly-review.zsh), and added checks for an empty review and notification HTTP errors.
+
+Syntax and plist checks passed. Local tests with stubbed commands confirmed success and failure notifications, including a forced Claude failure. This snapshot was not deployed, so live Claude login and Telegram delivery remain unverified.

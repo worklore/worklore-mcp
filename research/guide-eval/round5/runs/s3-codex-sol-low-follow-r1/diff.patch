@@ -1,0 +1,67 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..c831094
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,12 @@
++# Why the nightly job was silent
++
++The job **did run**. The captured `launchctl print` shows `runs = 6` and `last exit code = 1`; its 02:30 calendar trigger matches the plist. The stderr log records the same pair of errors six times:
++
++1. `claude` exited immediately with `Not logged in · Please run /login`. The plist supplied `PATH` but no `USER`, which the headless CLI needs to locate the login in the keychain. The plist now sets `USER=vk`.
++2. The wrapper then assigned `status=$?`. `status` is read-only in zsh, so the shell stopped before reaching its failure notification. The wrapper now saves the exit code in `rc` and sends a failure message before exiting.
++
++The prompt is now piped to `claude -p` through stdin, avoiding reliance on a multiline prompt argument in the scheduled environment. The script logs each run's duration and treats empty agent output as a failure, so a zero exit code alone cannot report a completed review.
++
++Local verification used a stub `claude` and notifier, with no network calls: a successful review sent a success message and exited 0; an agent exit of 7 sent a failure message and exited 7; empty output sent a failure message and exited 1. Each run printed a duration. The plist parsed and the zsh script passed syntax checking.
++
++This snapshot is not the installed agent, so it has not been reloaded or kicked off. After copying the fixes to the real home directory, reload the plist and run `launchctl kickstart -k gui/$UID/com.vk.nightly-review`. Check its new exit code, stderr, duration, fresh review file, and Telegram success message. Force an agent failure once and confirm the failure message arrives too.
+diff --git a/Library/LaunchAgents/com.vk.nightly-review.plist b/Library/LaunchAgents/com.vk.nightly-review.plist
+index c347363..f371054 100644
+--- a/Library/LaunchAgents/com.vk.nightly-review.plist
++++ b/Library/LaunchAgents/com.vk.nightly-review.plist
+@@ -22,6 +22,8 @@
+   <string>/Users/vk/Library/Logs/nightly-review.err</string>
+   <key>EnvironmentVariables</key>
+   <dict>
++    <key>USER</key>
++    <string>vk</string>
+     <key>PATH</key>
+     <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+   </dict>
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..67f007b 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -1,6 +1,8 @@
+ #!/bin/zsh
+ # Nightly review of yesterday's commits, summary to Telegram.
+ set -u
++STARTED_AT=$(date +%s)
++trap 'print -r -- "nightly review duration: $(( $(date +%s) - STARTED_AT ))s"' EXIT
+ 
+ REPO="$HOME/projects/shop"
+ OUT="$HOME/Library/Logs/nightly-review-$(date +%F).md"
+@@ -15,12 +17,17 @@ Do not modify any file."
+ 
+ cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
+ 
+-claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
++print -r -- "$PROMPT" | claude -p --output-format text > "$OUT"
++rc=$?
+ 
+-if [ $status -ne 0 ]; then
+-  "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
+-  exit $status
++if (( rc != 0 )); then
++  "$NOTIFY" "nightly review FAILED (exit $rc), see $OUT" || print -u2 -- "Failure notification failed"
++  exit $rc
++fi
++
++if [[ ! -s "$OUT" ]]; then
++  "$NOTIFY" "nightly review FAILED (empty output), see $OUT" || print -u2 -- "Failure notification failed"
++  exit 1
+ fi
+ 
+ "$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"

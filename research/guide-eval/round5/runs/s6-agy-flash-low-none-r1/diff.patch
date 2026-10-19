@@ -1,0 +1,99 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..1a37b00
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,93 @@
++# Notes MCP Server Audit & Compliance Issues
++
++This document details the issues found in `server.py` that will cause real MCP clients (such as Claude Code, Codex, Gemini, Claude Desktop, and the MCP Inspector / official SDK clients) to fail or behave unexpectedly.
++
++---
++
++## 1. Transport & HTTP Spec Compliance (Streamable HTTP / SSE)
++
++### 1.1 Unsupported HTTP `GET` Endpoint (Missing SSE Stream)
++* **Spec Requirement**: The MCP Streamable HTTP transport specification requires clients to be able to establish a Server-Sent Events (SSE) stream via `GET` on the MCP endpoint (or an associated SSE endpoint), and/or support `Accept: text/event-stream`.
++* **Current Behavior**: `do_GET` immediately rejects all requests with HTTP `405 Method Not Allowed` (`{"error": "use POST"}`).
++* **Impact**: Clients attempting to open an SSE channel or initiate standard Streamable HTTP transports will fail immediately upon connection.
++
++### 1.2 Missing MCP Protocol Version Header Negotiation
++* **Spec Requirement**: In Streamable HTTP / HTTP transport, requests should negotiate protocol compatibility using the `MCP-Protocol-Version` HTTP header (or query parameter), and the server should include `MCP-Protocol-Version` in response headers.
++* **Current Behavior**: The server neither inspects nor emits the `MCP-Protocol-Version` HTTP header.
++
++### 1.3 `Mcp-Session-Id` Generation and Tracking
++* **Spec Requirement / Best Practice**: When session tracking is used, session IDs must be maintained, mapped to session state, and validated. If an unknown/expired session ID is passed, the server should return HTTP 404 (session not found).
++* **Current Behavior**: The server generates a random UUID on `initialize`, but stores no session state and performs no validation on subsequent requests. Even on invalid sessions or requests with unrecognized headers, it processes requests statelessly.
++
++---
++
++## 2. JSON-RPC 2.0 & Error Handling
++
++### 2.1 Returning HTTP 401 for Application / Tool Errors
++* **Spec Requirement**: In JSON-RPC 2.0, transport-level errors (HTTP 4xx/5xx) represent failure to communicate at the HTTP layer. Once an HTTP connection is established and a valid JSON-RPC request is delivered, RPC-level errors must return HTTP 200 with a JSON-RPC error response object (`{"jsonrpc": "2.0", "id": id, "error": {"code": ..., "message": ...}}`). For tools, authentication/authorization failures during tool execution should be returned inside the tool result (`isError: true` with explanatory content) or as a JSON-RPC error. Furthermore, raw JSON objects like `{"error": "sign in required"}` or `{"error": "unauthorized"}` are NOT valid JSON-RPC responses.
++* **Current Behavior**:
++  * Unauthenticated `add_note` tool call returns HTTP `401` with raw body `{"error": "sign in required"}`.
++  * Unauthenticated `resources/list`, `resources/read`, and `resources/templates/list` return HTTP `401` with raw body `{"error": "unauthorized"}`.
++* **Impact**: Standard MCP client JSON-RPC parsers fail immediately with unhandled HTTP status exceptions or JSON-RPC format parsing errors.
++
++### 2.2 Using JSON-RPC Protocol Errors (-32602) for Normal Business / Runtime Tool Failures
++* **Spec Requirement**: According to the MCP specification:
++  > "If a tool execution fails, the tool should return a `CallToolResult` with `isError: true` and the error message in `content`."
++  JSON-RPC errors (`-32602 Invalid params`) are reserved for protocol-level invalid parameters, not business logic execution failures (such as a missing note).
++* **Current Behavior**: When `get_note` does not find a note, it raises `ValueError("note not found: n-999")`, which the server catches and returns as a JSON-RPC protocol error:
++  `{"jsonrpc": "2.0", "id": 5, "error": {"code": -32602, "message": "note not found: n-999"}}`.
++* **Impact**: MCP clients treat JSON-RPC errors as fatal communication / protocol errors rather than surfacing the error message to the model so that the model can adjust or self-correct.
++
++### 2.3 Invalid Batch Response Handling
++* **Spec Requirement**: JSON-RPC 2.0 specifies that if a batch contains only notifications (no calls requiring a response), the server must return nothing (empty response / 204 No Content), not an empty JSON array `[]`. Furthermore, HTTP status codes inside batches cannot be individual HTTP codes.
++* **Current Behavior**: In `do_POST`, batch requests always return HTTP 200 with whatever elements produced responses, and notifications within a batch can cause an empty array `[]` to be returned.
++
++---
++
++## 3. Protocol Version & Schema Incompatibilities
++
++### 3.1 Non-Standard Protocol Version String
++* **Spec Requirement**: Standard MCP protocol versions follow the `YYYY-MM-DD` specification releases, primarily:
++  * `"2024-11-05"` (Current official standard)
++  * Drafts: `"2024-10-07"`
++* **Current Behavior**: Line 19 sets `PROTOCOL = "2025-06-18"`.
++* **Impact**: Strict MCP clients reject unrecognized protocol versions during the `initialize` handshake, failing connection before any tools can be listed.
++
++### 3.2 Tool Annotations Schema Non-Compliance
++* **Spec Requirement**: In the MCP specification:
++  * In the Tool definition object, schema extensions or annotations must conform to the MCP Tool definition schema. In MCP:
++    * `readOnlyHint` and `destructiveHint` are proposed in experimental draft extensions, but in standard MCP schemas, unknown annotation keys or schema placements can cause Pydantic / TypeScript validator failures.
++* **Current Behavior**: Tools define `"annotations": {"readOnlyHint": True, ...}`.
++
++---
++
++## 4. Input & Output Schema Discrepancies
++
++### 4.1 Missing `properties` in `search_notes` outputSchema
++* **Spec Requirement**: In JSON Schema, an object schema (`"type": "object"`) that represents output should either define `properties` or allow validation. While `"type": "object"` is valid JSON Schema, clients validating structured content against schemas may flag empty schemas or require stricter typing.
++
++### 4.2 Non-Standard `structuredContent` Field in `CallToolResult`
++* **Spec Requirement**: The standard MCP specification defines `CallToolResult` as:
++  ```json
++  {
++    "content": [
++      {
++        "type": "text",
++        "text": "..."
++      }
++    ],
++    "isError": false
++  }
++  ```
++  Standard MCP tool results do not define a top-level `structuredContent` field. Output data is expected to be serialized within the `content` list items (e.g., as text or resource items).
++* **Current Behavior**: `tool_result` inserts `"structuredContent": structured` at the top level of the tool result. Strict client validators reject unexpected top-level fields on `CallToolResult`.
++
++---
++
++## 5. Summary of Recommended Fixes
++
++1. **Fix Authentication Responses**: Do not return raw HTTP 401 JSON objects. Return valid JSON-RPC error objects or return `CallToolResult` with `isError: true` and appropriate authentication guidance in `content[0].text`.
++2. **Align Protocol Version**: Support and negotiate standard versions (e.g. `"2024-11-05"`).
++3. **Handle Tool Errors Gracefully**: Return missing note errors as `CallToolResult` with `isError: true` instead of protocol-level `-32602` RPC errors.
++4. **Support GET / SSE or Standard HTTP Transport**: Handle `GET` requests (for SSE streams or health checks) rather than returning a 405 error.
++5. **Ensure Standard Result Payload**: Standardize `CallToolResult` to avoid extra non-standard fields like `structuredContent` unless negotiated via experimental client capabilities.

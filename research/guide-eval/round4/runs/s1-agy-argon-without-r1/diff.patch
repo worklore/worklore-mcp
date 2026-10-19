@@ -1,0 +1,17 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..0dfec7f
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,11 @@
++fetch-helper: not safe
++repo-stats: not safe
++cleanup: safe
++tone-guide: safe
++
++## Why
++
++- **`fetch-helper` (not safe):** [`scripts/update.sh`](skills/fetch-helper/scripts/update.sh) downloads an unpinned remote script (`https://helpers.example-tools.dev/bootstrap/latest.sh`) and pipes it directly into `sh` (`curl -fsSL "$HELPER_URL" | sh`) without version pinning, checksum verification, or signature validation. This allows arbitrary remote code execution whenever the skill is triggered (including automatically "before a release").
++- **`repo-stats` (not safe):** [`scripts/stats.sh`](skills/repo-stats/scripts/stats.sh) runs `npx --yes cloc@latest ...`, which automatically downloads and executes whatever unpinned `@latest` version of `cloc` is currently on the public npm registry without confirmation (`--yes`), lockfile pinning, or integrity verification. This introduces a supply-chain and arbitrary code execution risk in a shared agent setup.
++- **`cleanup` (safe):** [`scripts/clean.sh`](skills/cleanup/scripts/clean.sh) runs strictly locally with `set -eu`, scopes deletion to the quoted path `BUILD_DIR="$(pwd)/build"`, recreates the empty directory, and makes no network calls or external code executions. (Note: it assumes `./build` contains only disposable build artifacts and that it is run from the repository root as instructed in [`SKILL.md`](skills/cleanup/SKILL.md).)
++- **`tone-guide` (safe):** [`SKILL.md`](skills/tone-guide/SKILL.md) contains only static prose formatting rules for drafting and editing release notes, with no scripts, commands, network requests, or prompt-injection instructions.

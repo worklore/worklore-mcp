@@ -1,0 +1,3 @@
+Updated [scripts/deploy.sh](/tmp/h-WUIxi0/scripts/deploy.sh) to set a 5-minute `Cache-Control` lifetime for HTML, JavaScript, and other root files, and 30 days for `assets/`. The deploy re-uploads existing objects so they receive the new headers.
+
+Documented the change in [ANSWER.md](/tmp/h-WUIxi0/ANSWER.md). Shell syntax and diff checks passed. No deploy was run.

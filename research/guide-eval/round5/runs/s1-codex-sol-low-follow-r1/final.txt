@@ -1,0 +1,3 @@
+Updated [gen.py](/tmp/h-EtNemr/gen.py) to emit `%lthr` HR corridors with `start`/`end`, so Intervals can export the planned bounds instead of zone-mapped targets. It now also generates the top-level workout description needed for the steps to appear in Intervals’ web UI.
+
+I recorded the changes and reasoning in [ANSWER.md](/tmp/h-EtNemr/ANSWER.md). Local generator checks passed. I did not push an event or sync a watch, so the Garmin result remains unverified.

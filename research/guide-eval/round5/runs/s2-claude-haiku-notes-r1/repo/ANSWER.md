@@ -1,0 +1,30 @@
+# Ticket #4471: session replays missing for the new UI
+
+## Why
+
+Replay on mobile is built from screenshots of the widget tree. `posthog_flutter`
+takes those screenshots through `PostHogWidget` (see `posthog_widget.dart` in the
+package). Without a `PostHogWidget` above the app, the SDK still sends events,
+so screens, taps, `loan_amount_changed` and `application_submitted` arrive, but
+there are no frames and the Replay tab stays empty. No error is logged.
+
+`lib/legacy_app.dart` wraps its `MaterialApp` in `PostHogWidget`. `lib/new_app.dart`
+returns a bare `MaterialApp.router`, so only the old UI (the A/B group) records.
+Config (`sessionReplay = true`, 100% sampling) is the same for both groups, which
+is why the settings looked correct.
+
+## Fix
+
+`lib/new_app.dart`: wrapped `MaterialApp.router` in `PostHogWidget`, with a comment
+saying why it must stay. The router, theme and observers are unchanged.
+
+## Verify
+
+- Not run here: this environment has the Flutter SDK, but I did not build or
+  run the app. Run `flutter analyze` and a device build before release.
+- After a release on a new-UI build, move through 3–4 screens, background the
+  app, and check that a session appears in PostHog Replay with screenshots.
+- `notes/posthog-session-replay-not-working-in-flutter.md` describes this exact
+  failure and the wrapper requirement.
+
+Nothing was deployed or reported to PostHog or any other service.

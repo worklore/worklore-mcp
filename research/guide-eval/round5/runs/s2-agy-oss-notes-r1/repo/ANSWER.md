@@ -1,0 +1,41 @@
+# Answer
+
+## Why the session replay is empty for the new UI
+
+The **new UI** (`NewApp`) renders the app directly with `MaterialApp.router`. In the **old UI** (`LegacyApp`) the widget tree is wrapped in `PostHogWidget` (see `lib/legacy_app.dart`). `PostHogWidget` is the component that starts the **session‑replay** capture provided by the `posthog_flutter` SDK. Because the new UI never had this wrapper, the SDK never received the lifecycle events needed to record the screen transitions, taps and other user actions, so the Replay tab shows no recordings.
+
+## Fix
+
+Wrap the `MaterialApp.router` inside the new UI with `PostHogWidget`, just like the legacy version does. The change is made in `lib/new_app.dart`:
+
+```diff
+@@
+   @override
+   Widget build(BuildContext context) {
+-    return MaterialApp.router(
+-      title: 'Loanly',
+-      theme: ThemeData(
+-        colorSchemeSeed: Colors.indigo,
+-        useMaterial3: true,
+-      ),
+-      routerConfig: _router,
+-    );
++    return PostHogWidget(
++      child: MaterialApp.router(
++        title: 'Loanly',
++        theme: ThemeData(
++          colorSchemeSeed: Colors.indigo,
++          useMaterial3: true,
++        ),
++        routerConfig: _router,
++      ),
++    );
+   }
+ }
+```
+
+No other code changes are required because `posthog_flutter` is already imported in the file (`import 'package:posthog_flutter/posthog_flutter.dart';`). After rebuilding the app, sessions from users on the new UI are recorded and will appear in the **Replay** tab of PostHog.
+
+---
+
+*The change is already applied in the repository.*

@@ -1,0 +1,61 @@
+# Soft 404 on Note Pages — Cause, Fix, and Colleague Note Assessment
+
+## Cause
+
+Note pages (`/n/<slug>`) and the homepage (`/`) are served as a single static HTML shell (`site/index.html`) with HTTP `200`, and `site/app.js` populates the page client-side by fetching from the same-domain API:
+- `GET /v1/notes/<slug>` on note pages (`/n/<slug>`)
+- `GET /v1/notes?limit=50` on the homepage (`/`)
+
+On `2026-09-07`, `Disallow: /v1/` was added to `site/robots.txt` to stop crawlers from sending `GET` requests to POST-only API paths and logging 404/405 errors (`api/routes.md`).
+
+Because Googlebot obeys `robots.txt` during JavaScript rendering, it is blocked from fetching `/v1/notes/<slug>` and `/v1/notes?limit=50`. When `fetch(...)` fails in `site/app.js`, the `catch` block replaces `<main id="app">` with:
+
+```html
+<section class="notfound"><h1>NOT FOUND</h1><p>No note lives at this address.</p><p><a href="/">Back to all notes</a></p></section>
+```
+
+Google receives an HTTP `200` response whose rendered content says `"NOT FOUND No note lives at this address."` (as shown in `search-console/url-inspection-drip-line-pressure.txt`), which Google classifies as a **Soft 404**. Pages last crawled before `2026-09-07` (such as `/n/first-frost-dates` on `2026-08-29` and `/n/mulch-depth-trial` on `2026-08-31`) remained indexed, while pages crawled in October failed with Soft 404.
+
+---
+
+## Fix
+
+Updated `site/robots.txt` using Google's longest-matching-path rule so that public read endpoints needed for rendering are allowed while per-user, auth, POST-only sub-routes, and admin paths remain blocked:
+
+```robots
+User-agent: *
+Allow: /v1/notes
+Disallow: /v1/notes/*/reactions
+Disallow: /v1/
+Disallow: /admin/
+
+Sitemap: https://fieldnotes.example/sitemap.xml
+```
+
+### How Google evaluates each API route under these rules (longest match wins):
+| Route | Matching Rules | Winning Rule (Length) | Result |
+|---|---|---|---|
+| `GET /v1/notes?limit=50` | `Disallow: /v1/` (4), `Allow: /v1/notes` (9) | `Allow: /v1/notes` (9) | **Allowed** |
+| `GET /v1/notes/{slug}` | `Disallow: /v1/` (4), `Allow: /v1/notes` (9) | `Allow: /v1/notes` (9) | **Allowed** |
+| `POST /v1/notes/{slug}/reactions` | `Disallow: /v1/` (4), `Allow: /v1/notes` (9), `Disallow: /v1/notes/*/reactions` (21) | `Disallow: /v1/notes/*/reactions` (21) | **Disallowed** |
+| `GET /v1/me` | `Disallow: /v1/` (4) | `Disallow: /v1/` (4) | **Disallowed** |
+| `GET /v1/me/drafts` | `Disallow: /v1/` (4) | `Disallow: /v1/` (4) | **Disallowed** |
+| `POST /v1/auth/token` | `Disallow: /v1/` (4) | `Disallow: /v1/` (4) | **Disallowed** |
+| `/admin/*` | `Disallow: /admin/` (7) | `Disallow: /admin/` (7) | **Disallowed** |
+
+*(Note: `POST /v1/notes` and `PUT /v1/notes/{slug}` share the exact path with the public `GET` routes; `robots.txt` matches by path rather than HTTP method, and unauthenticated `POST`/`PUT` requests already return `401` per `api/routes.md`.)*
+
+---
+
+## Which Parts of the Colleague's Note Applied (and Which Did Not)
+
+### Applied
+- **Root cause mechanism**: The site renders client-side via `fetch()` against a same-domain `/v1/...` API (`site/app.js`), and adding `Disallow: /v1/` to `site/robots.txt` on September 7 blocked Googlebot from fetching the JSON data during rendering.
+- **Error-handling fallback causing Soft 404 (Steps 1 & 2)**: When the blocked API fetch throws in `site/app.js`, the page still returns HTTP `200` (`site/index.html`) but renders `"NOT FOUND — No note lives at this address"`, causing Google to flag the page as a Soft 404 (`search-console/url-inspection-drip-line-pressure.txt`, `search-console/pages-2026-10-16.csv`).
+- **Timeline / indexing drop**: Pages crawled in late August before the September 7 `robots.txt` change stayed indexed (`25` down to `21`), while pages crawled after September 7 became Soft 404s (`NOTES.md`, `search-console/pages-2026-10-16.csv`).
+- **`robots.txt` longest-match fix (Steps 3 & 4)**: Keeping `Disallow: /v1/` while adding `Allow: /v1/notes` (the equivalent of the colleague's `Allow: /v1/stories`) and blocking the deeper POST/per-user sub-resource with `Disallow: /v1/notes/*/reactions` (the equivalent of `Disallow: /v1/stories/*/reproduced`), while keeping `/v1/me`, `/v1/me/drafts`, `/v1/auth/token`, and `/admin/` blocked.
+
+### Ignored / Did Not Apply
+- **Colleague's specific paths (`stories` vs `notes`)**: Adapted `/v1/stories` and `/v1/stories/*/reproduced` to this site's actual routes in `api/routes.md` (`/v1/notes` and `/v1/notes/*/reactions`).
+- **Pre-rendering static HTML links into the homepage and note pages (first theory & Step 6)**: There is no static build generator or note dataset in this repository — `site/index.html` is a single static shell served for all `/n/*` routes via CloudFront rewrite (`README.md`). Furthermore, once `Allow: /v1/notes` is in place, the homepage's `fetch("/v1/notes?limit=50")` also succeeds during Googlebot rendering and renders `<a href="/n/${n.slug}">` links, alongside `site/sitemap.xml`.
+- **Deploying, querying live URLs, or interacting with Google Search Console (Steps 1 live fetch, 5, 7, Verify, and Search Console API checks)**: Not applicable in this local repository and prohibited by the ground rules (no external network deployment, live curling, or Search Console submissions).

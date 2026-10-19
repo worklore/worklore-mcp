@@ -1,0 +1,63 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..d6b56df
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,18 @@
++# Why Session Replay Was Empty on the New UI
++
++## Root Cause
++
++In Flutter (`posthog_flutter`), mobile session replay is built from screenshots of the widget tree captured by `PostHogWidget`. If the active `MaterialApp` / `MaterialApp.router` is not wrapped in `PostHogWidget`, the SDK still records analytics events, taps, and screen views (via `PosthogObserver`) without logging any error or warning, but it captures no frames—resulting in empty/missing session replays in PostHog.
++
++The app ships two root shells selected in `lib/main.dart` via the `NEW_UI` compile-time flag:
++
++- **Old UI (`LegacyApp` in `lib/legacy_app.dart`)**: Wrapped its `MaterialApp` in `PostHogWidget`, so session replays recorded normally for the `NEW_UI=false` A/B group.
++- **New UI (`NewApp` in `lib/new_app.dart`)**: Configured `PosthogObserver()` on its `GoRouter` and shared `Analytics.init()` (`config.sessionReplay = true` in `lib/analytics.dart`), but returned `MaterialApp.router` directly **without** a `PostHogWidget` wrapper.
++
++## Fix
++
++1. Wrapped `MaterialApp.router` with `PostHogWidget` in `NewApp.build` (`lib/new_app.dart`).
++2. Added comments on the `PostHogWidget` wrappers in `lib/new_app.dart` and `lib/legacy_app.dart` explaining that `PostHogWidget` is required for session replay so it is not inadvertently removed later.
++3. Verified the remaining session replay requirements:
++   - `config.sessionReplay = true` and `config.sessionReplayConfig.maskAllTexts = true` are set before `Posthog().setup(config)` in `lib/analytics.dart`.
++   - `PosthogObserver()` remains registered in `GoRouter.observers` (`lib/new_app.dart`) and `MaterialApp.navigatorObservers` (`lib/legacy_app.dart`).
+diff --git a/lib/legacy_app.dart b/lib/legacy_app.dart
+index 7b3cad7..2c1ee29 100644
+--- a/lib/legacy_app.dart
++++ b/lib/legacy_app.dart
+@@ -10,6 +10,7 @@ class LegacyApp extends StatelessWidget {
+ 
+   @override
+   Widget build(BuildContext context) {
++    // Required for PostHog session replay (captures widget tree screenshots); do not remove.
+     return PostHogWidget(
+       child: MaterialApp(
+         title: 'Loanly',
+diff --git a/lib/new_app.dart b/lib/new_app.dart
+index 92e4ff9..2af9aab 100644
+--- a/lib/new_app.dart
++++ b/lib/new_app.dart
+@@ -21,13 +21,16 @@ class NewApp extends StatelessWidget {
+ 
+   @override
+   Widget build(BuildContext context) {
+-    return MaterialApp.router(
+-      title: 'Loanly',
+-      theme: ThemeData(
+-        colorSchemeSeed: Colors.indigo,
+-        useMaterial3: true,
++    // Required for PostHog session replay (captures widget tree screenshots); do not remove.
++    return PostHogWidget(
++      child: MaterialApp.router(
++        title: 'Loanly',
++        theme: ThemeData(
++          colorSchemeSeed: Colors.indigo,
++          useMaterial3: true,
++        ),
++        routerConfig: _router,
+       ),
+-      routerConfig: _router,
+     );
+   }
+ }

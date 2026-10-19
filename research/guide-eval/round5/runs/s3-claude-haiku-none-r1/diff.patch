@@ -1,0 +1,80 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..52492d6
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,54 @@
++# Why `com.vk.nightly-review` has never reported anything
++
++Two separate problems. The first hides the second, which is the real failure.
++
++## Cause 1 (fixed): `status` is a read-only variable in zsh
++
++`bin/nightly-review.zsh` line 19 was:
++
++```zsh
++status=$?
++```
++
++In zsh, `status` is a built-in special parameter (an alias for `$?`) and cannot be assigned to. The assignment fails with:
++
++```
++/Users/vk/bin/nightly-review.zsh:19: read-only variable: status
++```
++
++This is a fatal error in a non-interactive shell, so the script exits with status 1 right there. Everything after line 19 is skipped, including both the failure notice and the success notice. Nothing ever reaches Telegram, and no failure is reported.
++
++This matches the captured state: `last exit code = 1`, and `nightly-review.err` contains the "read-only variable: status" line once per run. I reproduced it with zsh 5.9: the assignment aborts the script with exit 1 before the next line runs.
++
++**Fix:** renamed the variable to `rc` (`rc=$?`, and both uses in the `if` block). I tested the fixed script with a stub `claude` and a stub notifier in a scratch `HOME`:
++- when `claude` fails, it sends `nightly review FAILED (exit 1), see …` and exits 1;
++- when `claude` succeeds, it sends `nightly review done: …` and exits 0.
++
++## Cause 2 (not fixed here): `claude -p` is not logged in under launchd
++
++`nightly-review.err` shows, on every run:
++
++```
++Not logged in · Please run /login
++```
++
++So the headless `claude -p` call fails, which is the real reason the job cannot produce a summary. The job itself runs (launchd finds `/opt/homebrew/bin/claude` through the plist's PATH), but the agent has no credentials in that context.
++
++This cannot be fixed from the snapshot, because it depends on your login state. Options:
++- Make sure the same user's login credentials are available to launchd's `gui/501` session. Running `claude` and `/login` interactively as `vk` is the usual first step, then re-run the job by hand with `launchctl kickstart gui/501/com.vk.nightly-review` to check.
++- Or provide an API key to the job by adding `ANTHROPIC_API_KEY` under `EnvironmentVariables` in the plist. This stores a secret in a plist, so only do it if you're comfortable with that.
++
++Once Cause 1 is fixed, you will get a `nightly review FAILED (exit 1)` Telegram message each night until Cause 2 is resolved. That is the intended behavior.
++
++## Things I could not verify
++
++- **Telegram token lookup under launchd.** `notify.sh` reads the token with `security find-generic-password -s tg-bot -w`. That works in a normal login session, but I can't check it in the launchd context from the snapshot. The notifier runs with `set -eu`, so if the lookup fails it exits silently. Check by running `launchctl kickstart` after fixing Cause 2, or by running the notifier under `env -i HOME=$HOME PATH=/usr/bin:/bin /bin/zsh -c '~/bin/notify.sh test'`.
++- **Whether `~/bin/nightly-review.zsh` on disk matches the snapshot.** I only changed the snapshot in this folder.
++
++## Applying the fix
++
++Copy the fixed script over the live one. The plist did not change, so no `launchctl` reload is needed; launchd reads the script fresh on each run:
++
++```sh
++cp bin/nightly-review.zsh ~/bin/nightly-review.zsh
++```
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..bf005f5 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -16,11 +16,11 @@ Do not modify any file."
+ cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
+ 
+ claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
++rc=$?
+ 
+-if [ $status -ne 0 ]; then
+-  "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
+-  exit $status
++if [ $rc -ne 0 ]; then
++  "$NOTIFY" "nightly review FAILED (exit $rc), see $OUT"
++  exit $rc
+ fi
+ 
+ "$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"

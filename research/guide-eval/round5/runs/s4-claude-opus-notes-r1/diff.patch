@@ -1,0 +1,75 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..ad979a7
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,33 @@
++# Cache-Control on deploy
++
++## What changed
++Only `scripts/deploy.sh` changed. It now uploads with `Cache-Control` set on every object:
++
++| Path | Cache-Control |
++|---|---|
++| `*.html`, `booking.js`, `styles.css` (everything outside `assets/`) | `public, max-age=300` (5 min) |
++| `assets/*` | `public, max-age=2592000` (30 days) |
++
++How it works:
++- Three `aws s3 cp --recursive` uploads, run in this order: assets, then JS/CSS, then HTML. HTML goes last so a new page never points at a file that isn't uploaded yet.
++- I used `cp` instead of `sync` because `sync` skips files that haven't changed, and the objects already in the bucket would never get the header. `cp` re-uploads everything on every deploy, which is cheap for a site this small.
++- After the uploads, `aws s3 sync --delete` still runs, but only to remove deleted files. Everything is already uploaded by then, so it doesn't upload anything.
++- The CloudFront invalidation is unchanged. It clears the edge copies that were cached without headers.
++
++## Content-Type is safe
++`notes/a-cache-header-tweak-…` describes an outage: an in-bucket copy with `--metadata-directive REPLACE` wiped Content-Type and the site was served as `binary/octet-stream`. This script doesn't do that. It uploads from local files, so the CLI sets Content-Type from each file's extension, the same way the old `sync` did. I left a comment in the script warning not to switch to the REPLACE method.
++
++## Notes / choices you may want to revisit
++- **CSS** wasn't mentioned in the request. It isn't in `assets/` and its name stays the same between deploys, so I gave it the short policy like JS.
++- **assets/ files have plain names** (`logo.png`, `mark.svg`, no content hash). With a long max-age, a changed logo under the same name can stay stale for up to 30 days. That's why I used 30 days and not the usual 1 year + `immutable`. If you change an asset, rename it. The values are in `SHORT_CACHE` / `LONG_CACHE` at the top of the script.
++- Visitors who already have the old `booking.js` cached with no header may keep it until their browser's own heuristic expiry runs out. The fix applies from their next fetch onward.
++
++## Not done
++- Nothing was deployed or run against AWS. I only checked the script's syntax (`bash -n`).
++- After the next real deploy, check the headers, not just the 200 status:
++  ```
++  curl -sI https://<site>/ | grep -iE 'content-type|cache-control'
++  curl -sI https://<site>/booking.js | grep -iE 'content-type|cache-control'
++  curl -sI https://<site>/assets/logo.png | grep -iE 'content-type|cache-control'
++  ```
++  Expect `text/html`, a JavaScript type, and `image/png`, each with the matching max-age.
+diff --git a/scripts/deploy.sh b/scripts/deploy.sh
+index 6550d32..23a36b1 100755
+--- a/scripts/deploy.sh
++++ b/scripts/deploy.sh
+@@ -7,6 +7,31 @@ BUCKET="ruta-ceramica-site-7f3a"
+ DISTRIBUTION_ID="E2QX9ZK1DEMO01"
+ PROFILE="studio"
+ 
++# HTML, JS and CSS keep their names across deploys, so browsers must recheck
++# them soon. assets/ (images) rarely change and can be cached for a long time.
++SHORT_CACHE="public, max-age=300"
++LONG_CACHE="public, max-age=2592000"
++
++# Upload with `cp` (not `sync`) so every object gets its header on every
++# deploy, even files whose content did not change. These are uploads from
++# local files, so the CLI still sets Content-Type from the extension; never
++# switch this to an in-bucket copy with --metadata-directive REPLACE, which
++# wipes Content-Type (see notes/a-cache-header-tweak-...).
++# Order: assets first, then code, HTML last, so new pages never reference
++# files that are not up yet.
++aws s3 cp src/assets/ "s3://$BUCKET/assets/" --recursive \
++  --cache-control "$LONG_CACHE" --only-show-errors --profile "$PROFILE"
++
++aws s3 cp src/ "s3://$BUCKET/" --recursive \
++  --exclude "assets/*" --exclude "*.html" \
++  --cache-control "$SHORT_CACHE" --only-show-errors --profile "$PROFILE"
++
++aws s3 cp src/ "s3://$BUCKET/" --recursive \
++  --exclude "*" --include "*.html" \
++  --cache-control "$SHORT_CACHE" --only-show-errors --profile "$PROFILE"
++
++# Remove objects that no longer exist locally. Everything is already uploaded,
++# so this only deletes.
+ aws s3 sync src/ "s3://$BUCKET/" --delete --profile "$PROFILE"
+ 
+ aws cloudfront create-invalidation --distribution-id "$DISTRIBUTION_ID" \

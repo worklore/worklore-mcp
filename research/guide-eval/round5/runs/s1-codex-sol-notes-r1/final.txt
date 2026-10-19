@@ -1,0 +1,3 @@
+Updated [gen.py](/tmp/h-YPeDCy/gen.py) to emit HR corridors with `start` and `end`. The previous `value` field made the watch display its own zone bands instead of the planned ranges.
+
+Documented the cause and fix in [ANSWER.md](/tmp/h-YPeDCy/ANSWER.md). A local check confirmed all four generated HR steps, including those inside the repeat block, use the new fields. Watch sync remains unverified.

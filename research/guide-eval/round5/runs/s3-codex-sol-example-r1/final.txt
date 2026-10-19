@@ -1,0 +1,3 @@
+The job ran six times. Each run failed with `Not logged in`, then `status=$?` stopped the zsh script before it could send a failure notification.
+
+I fixed the launchd environment, the failure path, and notification error reporting. The causes, which parts of your colleague’s note applied, and the verification limits are in [ANSWER.md](/tmp/h-5890J9/ANSWER.md). Local mocked success and failure checks passed. These changes are only in the snapshot; the plist still needs to be loaded and checked on the real Mac.

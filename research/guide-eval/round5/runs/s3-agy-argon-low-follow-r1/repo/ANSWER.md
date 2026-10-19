@@ -1,0 +1,35 @@
+# Why `com.vk.nightly-review` Was Completely Silent
+
+## Evidence That the Job Did Run
+Inspection of `launchctl-print.txt` (`launchctl print gui/501/com.vk.nightly-review`) and `Library/Logs/nightly-review.err` proves that `launchd` was firing on schedule every night:
+- `runs = 6` and `last exit code = 1` in `launchctl-print.txt`.
+- Six identical pairs of error lines in `Library/Logs/nightly-review.err`:
+  ```text
+  Not logged in · Please run /login
+  /Users/vk/bin/nightly-review.zsh:19: read-only variable: status
+  ```
+
+## Root Causes
+
+### 1. Missing `USER` in `EnvironmentVariables` (Why the agent failed)
+In `Library/LaunchAgents/com.vk.nightly-review.plist`, `EnvironmentVariables` only defined `PATH`. As seen in `launchctl-print.txt`, `USER` is not set in the `launchd` environment. Without `USER` set, the headless `claude` CLI cannot locate its authentication credentials in the macOS Keychain and immediately exits with code `1` and prints:
+`Not logged in · Please run /login`.
+
+### 2. Assigning to Read-Only `status` in `zsh` (Why the failure reporter died)
+In `bin/nightly-review.zsh` (line 19), right after invoking `claude`, the script tried to capture the exit code with:
+```zsh
+status=$?
+```
+In `zsh`, `status` is a read-only built-in special variable (an alias for `$?`). Attempting to assign to `status` causes `zsh` to abort execution immediately with:
+`/Users/vk/bin/nightly-review.zsh:19: read-only variable: status`
+Because this fatal error occurred between the failed `claude` invocation and the `if [ $status -ne 0 ]` notification block, `bin/notify.sh` was never reached.
+
+### 3. Passing Multi-Line Prompt as an Argument with Open `stdin` (Latent headless CLI trap)
+In `bin/nightly-review.zsh` (line 18), `claude -p "$PROMPT"` was invoked with a multi-line prompt argument and without piping input via `stdin` or closing `stdin` (`< /dev/null`). Under `launchd`, headless CLI calls should either receive their prompt via `stdin` (`print -r -- "$PROMPT" | claude -p ...`) or explicitly close `stdin` (`< /dev/null`) so the process does not hang waiting on standard input or misparse multi-line arguments.
+
+## Fixes Applied
+1. **`Library/LaunchAgents/com.vk.nightly-review.plist`**: Added `<key>USER</key><string>vk</string>` under `EnvironmentVariables` so `claude` can access the user's Keychain credentials.
+2. **`bin/nightly-review.zsh`**:
+   - Replaced the read-only `status=$?` assignment with `rc=$?` so `zsh` does not abort before running `notify.sh`.
+   - Piped the prompt into `claude` via standard input (`print -r -- "$PROMPT" | claude -p --output-format text > "$OUT"`).
+   - Added run duration logging (`duration=$(( $(date +%s) - start_ts ))`) and checked that the output file is non-empty (`[ ! -s "$OUT" ]`) before reporting success.

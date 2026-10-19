@@ -1,0 +1,8 @@
+User-agent: *
+# Googlebot renders pages in a browser-like crawler and must be able to fetch the
+# public read API, otherwise note pages render as "NOT FOUND" (soft 404).
+Allow: /v1/notes
+Disallow: /v1/
+Disallow: /admin/
+
+Sitemap: https://fieldnotes.example/sitemap.xml

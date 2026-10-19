@@ -1,0 +1,3 @@
+Updated [deploy.sh](/tmp/h-xxSSoA/scripts/deploy.sh) to give HTML, JS, and CSS a five-minute cache and `assets/` a one-day cache. It refreshes headers even on unchanged files and invalidates CloudFront after uploading. [ANSWER.md](/tmp/h-xxSSoA/ANSWER.md) records the changes and which parts of the colleague’s note applied.
+
+Shell checks and a mocked AWS run passed. Nothing was deployed.

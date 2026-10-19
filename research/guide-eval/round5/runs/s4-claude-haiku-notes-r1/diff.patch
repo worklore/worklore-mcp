@@ -1,0 +1,100 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..841574b
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,35 @@
++# Cache-Control on deploy
++
++## What changed
++
++`scripts/deploy.sh` now sets `Content-Type` and `Cache-Control` on every object it uploads.
++
++- **HTML, JS, CSS** (`index.html`, `clases.html`, `booking.js`, `styles.css`): `public, max-age=300` (5 minutes).
++- **`assets/`** (`logo.png`, `mark.svg`): `public, max-age=86400` (1 day).
++
++The steps, in order:
++
++1. Check that every file in `src/` has a known extension. If one does not (for example `favicon.ico`), the script stops before touching the bucket.
++2. `aws s3 sync src/ … --delete`, as before. This removes deleted files and uploads changed ones.
++3. Re-upload each file with `aws s3 cp`, passing `--content-type` and `--cache-control` explicitly.
++4. Invalidate CloudFront, as before.
++
++## Choices I made
++
++- **Re-upload from disk, not S3 self-copy.** The notes file describes the octet-stream outage caused by `aws s3 cp --recursive --metadata-directive REPLACE` without `--content-type`. The script never uses that form. Each file is uploaded from the local copy with its type given explicitly.
++- **`styles.css` is treated as short-lived.** You asked for short for HTML and JS and long for `assets/`. CSS is code that sits at the root, not under `assets/`, so it gets the short policy. Move it if you want it long.
++- **Long is one day, not a year with `immutable`.** The asset filenames are not content-hashed. A year-long cache would leave an updated `logo.png` stuck on old visitors' browsers. Add hashed names before raising the TTL.
++- **`charset=utf-8` added to text types.** The HTML and JS contain non-ASCII text (`ñ`, `á`, `Cerámica`), so the charset is stated explicitly.
++
++## What I verified
++
++- `bash -n scripts/deploy.sh` passes.
++- I ran the script with a stub `aws` on `PATH` that only prints its arguments. Each file got the expected type and cache value, with each value passed as a single argument.
++- A `favicon.ico` added to `src/` made the script exit with status 1 before any upload.
++- I did not run the real script. Nothing was deployed, uploaded, or sent to AWS. The stub and the temporary `favicon.ico` were removed afterwards.
++
++## What still has to happen
++
++- **Run `./scripts/deploy.sh` once, yourself.** Existing objects in the bucket have no `Cache-Control` yet. The header pass in step 3 is what fixes them, even for files that have not changed.
++- **After that deploy, check the headers.** Run `curl -sI https://<your-site>/booking.js` and confirm `cache-control: public, max-age=300` and `content-type: application/javascript; charset=utf-8`. Do the same for `/` (expect `text/html`) and for `/assets/logo.png` (expect the one-day cache). A 200 status alone does not prove the headers are right.
++- **README is out of date.** Its "Known problem" paragraph still describes the missing header. I left it alone because you did not ask for it. It can be updated once the fix is confirmed live.
+diff --git a/scripts/deploy.sh b/scripts/deploy.sh
+index 6550d32..f201106 100755
+--- a/scripts/deploy.sh
++++ b/scripts/deploy.sh
+@@ -1,5 +1,11 @@
+ #!/usr/bin/env bash
+ # Upload src/ to the bucket and invalidate CloudFront.
++#
++# Cache policy: HTML, JS and CSS are short-lived so returning visitors pick up
++# a new booking.js within minutes. Anything under assets/ is cached a day.
++# Headers are set by re-uploading each file from disk with an explicit
++# content type. Never copy objects in S3 with --metadata-directive REPLACE
++# (it drops Content-Type, and browsers then refuse to run the files).
+ set -euo pipefail
+ cd "$(dirname "$0")/.."
+ 
+@@ -7,8 +13,42 @@ BUCKET="ruta-ceramica-site-7f3a"
+ DISTRIBUTION_ID="E2QX9ZK1DEMO01"
+ PROFILE="studio"
+ 
++SHORT_CACHE="public, max-age=300"
++LONG_CACHE="public, max-age=86400"
++
++content_type_for() {
++  case "$1" in
++    *.html) echo "text/html; charset=utf-8" ;;
++    *.js)   echo "application/javascript; charset=utf-8" ;;
++    *.css)  echo "text/css; charset=utf-8" ;;
++    *.png)  echo "image/png" ;;
++    *.svg)  echo "image/svg+xml" ;;
++    *) return 1 ;;
++  esac
++}
++
++# Check every file has a known type before touching the bucket.
++while IFS= read -r -d '' file; do
++  content_type_for "$file" > /dev/null || {
++    echo "no content type for $file; add it to content_type_for" >&2
++    exit 1
++  }
++done < <(find src -type f -print0)
++
+ aws s3 sync src/ "s3://$BUCKET/" --delete --profile "$PROFILE"
+ 
++while IFS= read -r -d '' file; do
++  key="${file#src/}"
++  case "$key" in
++    assets/*) cache="$LONG_CACHE" ;;
++    *)        cache="$SHORT_CACHE" ;;
++  esac
++  aws s3 cp "$file" "s3://$BUCKET/$key" \
++    --content-type "$(content_type_for "$file")" \
++    --cache-control "$cache" \
++    --profile "$PROFILE" --only-show-errors
++done < <(find src -type f -print0)
++
+ aws cloudfront create-invalidation --distribution-id "$DISTRIBUTION_ID" \
+   --paths "/*" --profile "$PROFILE" > /dev/null
+ 

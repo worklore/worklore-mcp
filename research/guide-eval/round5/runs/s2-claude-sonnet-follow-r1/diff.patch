@@ -1,0 +1,54 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..4e1cbe5
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,19 @@
++# Ticket #4471: why new-UI users have no replays
++
++**Cause:** `NewApp` (`lib/new_app.dart`) returned a bare `MaterialApp.router`. On mobile,
++posthog_flutter builds replays from screenshots of the widget tree, and `PostHogWidget`
++is what takes them. `LegacyApp` wraps its `MaterialApp` in it; the redesign didn't.
++Without the wrapper the SDK still sends events (screens, taps, custom events), but has
++no frames, so no replay appears, and there's no error or warning. That matches the ticket.
++
++**Ruled out:** Project settings (recording on, 100% sampling, min duration 0), SDK
++version (same build), and the config in `lib/analytics.dart` (`sessionReplay = true`,
++set before setup, shared by both shells). `PosthogObserver` is already on the GoRouter.
++
++**Fix:** wrapped `MaterialApp.router` in `PostHogWidget` in `lib/new_app.dart`, with a
++comment saying why. These are the only two root app widgets in `lib/`.
++
++**Not verified:** I didn't run the app (no Flutter run or device here). To check: run
++the new UI on a device, visit 3–4 screens, background the app, and confirm the session
++plays back screens in PostHog. Sessions from before the release can't be recovered.
++Any future third shell (flavor, white-label) needs the same wrapper.
+diff --git a/lib/new_app.dart b/lib/new_app.dart
+index 92e4ff9..878d3f2 100644
+--- a/lib/new_app.dart
++++ b/lib/new_app.dart
+@@ -21,13 +21,18 @@ class NewApp extends StatelessWidget {
+ 
+   @override
+   Widget build(BuildContext context) {
+-    return MaterialApp.router(
+-      title: 'Loanly',
+-      theme: ThemeData(
+-        colorSchemeSeed: Colors.indigo,
+-        useMaterial3: true,
++    // PostHogWidget must wrap the app: it takes the screenshots that mobile
++    // session replay is built from. Without it, events still arrive but no
++    // replay is recorded, and there is no error or warning.
++    return PostHogWidget(
++      child: MaterialApp.router(
++        title: 'Loanly',
++        theme: ThemeData(
++          colorSchemeSeed: Colors.indigo,
++          useMaterial3: true,
++        ),
++        routerConfig: _router,
+       ),
+-      routerConfig: _router,
+     );
+   }
+ }

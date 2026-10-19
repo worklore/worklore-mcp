@@ -1,0 +1,11 @@
+diff --git a/site/robots.txt b/site/robots.txt
+index c8746c7..91aedf3 100644
+--- a/site/robots.txt
++++ b/site/robots.txt
+@@ -1,5 +1,6 @@
+ User-agent: *
+ Disallow: /v1/
++Allow: /v1/notes
+ Disallow: /admin/
+ 
+ Sitemap: https://fieldnotes.example/sitemap.xml

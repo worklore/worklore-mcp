@@ -1,0 +1,5 @@
+The job ran six times. Each run hit a `claude` login error, then the wrapper stopped at `status=$?` because `status` is read-only in zsh. That stopped it before it could send a failure notification.
+
+I added `USER=vk` to the plist, replaced `status` with `rc`, and added checks for empty output and notification HTTP errors. [ANSWER.md](/tmp/h-kDF7m2/ANSWER.md) documents the evidence and which parts of your colleague’s note applied.
+
+Syntax and plist checks passed. Local mock runs confirmed success and failure notifications; live launchd execution and Telegram delivery remain untested.

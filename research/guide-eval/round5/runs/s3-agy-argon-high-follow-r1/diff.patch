@@ -1,0 +1,90 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..a98d7e2
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,38 @@
++# Why the Nightly Review Job Was Silent — Root Causes & Fixes
++
++## Evidence from Logs & `launchctl print`
++
++1. **The job was firing on schedule:** `launchctl-print.txt` (`launchctl print gui/501/com.vk.nightly-review`) shows `runs = 6` and `last exit code = 1`.
++2. **Both failures were recorded in `Library/Logs/nightly-review.err`:** Every one of the 6 runs produced two lines in `stderr`:
++   ```text
++   Not logged in · Please run /login
++   /Users/vk/bin/nightly-review.zsh:19: read-only variable: status
++   ```
++
++---
++
++## Root Causes
++
++### 1. Missing `USER` in `EnvironmentVariables` caused `claude -p` to fail Keychain lookup
++In `Library/LaunchAgents/com.vk.nightly-review.plist`, `EnvironmentVariables` only defined `PATH` (confirmed by `launchctl-print.txt`, where `environment` contained only `PATH` and `XPC_SERVICE_NAME`). When launched by `launchd` without `USER` (`vk`) set in the environment, the headless `claude` CLI cannot locate its login credentials in the macOS Keychain and immediately exits with code `1` (`Not logged in · Please run /login`).
++
++Additionally, `bin/nightly-review.zsh` (line 18) passed the multi-line `$PROMPT` as a command-line argument (`claude -p "$PROMPT"`) without piping it over stdin or closing stdin (`< /dev/null`), which can cause headless CLI invocations under `launchd` to fail argument parsing or hang waiting on stdin.
++
++### 2. Assigning `status=$?` in `zsh` killed the script before `notify.sh` could run
++On line 19 of `bin/nightly-review.zsh`, right between the `claude` command and the failure-notification `if` block, the script executed:
++```zsh
++status=$?
++```
++In `zsh`, `status` is a built-in **read-only** variable (equivalent to `$?`). Assigning to `status` is a fatal shell error (`/Users/vk/bin/nightly-review.zsh:19: read-only variable: status`), which terminated the script on line 19 before it could reach lines 21–24 (`"$NOTIFY" "nightly review FAILED ..."`). As a result, `claude` failed first, and `zsh` killed the failure reporter immediately afterward.
++
++---
++
++## Fixes Applied
++
++1. **`Library/LaunchAgents/com.vk.nightly-review.plist`**
++   - Added `<key>USER</key><string>vk</string>` under `EnvironmentVariables` so `claude` can access its Keychain credentials under `launchd`.
++2. **`bin/nightly-review.zsh`**
++   - Replaced `status=$?` with `rc=$?` (and `$status` with `$rc`) so `zsh` does not abort after `claude` exits.
++   - Piped the prompt to `claude -p` via stdin (`print -r -- "$PROMPT" | claude -p --output-format text > "$OUT"`).
++   - Placed the failure notification (`"$NOTIFY" ...`) immediately at the top of the failure path (`if [ $rc -ne 0 ]`).
++   - Added run duration tracking (`SECONDS=0` / `duration=$SECONDS`), logged each run's outcome and duration, and verified that `$OUT` is non-empty (`if [ ! -s "$OUT" ]`) so an empty output file is also caught and reported as a failure.
+diff --git a/Library/LaunchAgents/com.vk.nightly-review.plist b/Library/LaunchAgents/com.vk.nightly-review.plist
+index c347363..d49eacf 100644
+--- a/Library/LaunchAgents/com.vk.nightly-review.plist
++++ b/Library/LaunchAgents/com.vk.nightly-review.plist
+@@ -24,6 +24,8 @@
+   <dict>
+     <key>PATH</key>
+     <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
++    <key>USER</key>
++    <string>vk</string>
+   </dict>
+ </dict>
+ </plist>
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..3b5e38c 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -15,12 +15,22 @@ Do not modify any file."
+ 
+ cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
+ 
+-claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
++SECONDS=0
++print -r -- "$PROMPT" | claude -p --output-format text > "$OUT"
++rc=$?
++duration=$SECONDS
+ 
+-if [ $status -ne 0 ]; then
+-  "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
+-  exit $status
++if [ $rc -ne 0 ]; then
++  "$NOTIFY" "nightly review FAILED (exit $rc, ${duration}s), see $OUT"
++  print -r -- "$(date +%FT%T%z) nightly-review FAILED: exit=$rc duration=${duration}s out=$OUT" >&2
++  exit $rc
+ fi
+ 
+-"$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"
++if [ ! -s "$OUT" ]; then
++  "$NOTIFY" "nightly review FAILED (empty output after ${duration}s), see $OUT"
++  print -r -- "$(date +%FT%T%z) nightly-review FAILED: empty output duration=${duration}s out=$OUT" >&2
++  exit 1
++fi
++
++print -r -- "$(date +%FT%T%z) nightly-review OK: duration=${duration}s out=$OUT"
++"$NOTIFY" "nightly review done (${duration}s): $(head -c 300 "$OUT")"

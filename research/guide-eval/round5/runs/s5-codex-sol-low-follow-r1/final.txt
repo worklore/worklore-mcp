@@ -1,0 +1,3 @@
+The note pages return HTTP 200, but Google’s rendered view shows “NOT FOUND.” The app needs `/v1/notes/...` to render each note, and robots.txt blocked that fetch. Google therefore saw an empty note page and classified it as a Soft 404.
+
+I updated [robots.txt](/tmp/h-XQdc9K/site/robots.txt) to allow public note data while keeping reactions, private API routes, and admin paths blocked. I documented the evidence and fix in [ANSWER.md](/tmp/h-XQdc9K/ANSWER.md). Local checks passed for the allowed and blocked paths. No deployment or external submission was made.

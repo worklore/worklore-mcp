@@ -1,0 +1,60 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..5ecfc99
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,30 @@
++# Ticket #4471: no session replays for the new UI
++
++## Why
++
++Session replay on mobile is driven by the `PostHogWidget` wrapper. `posthog_flutter`
++captures screenshots from the subtree under that widget and sends them to the native
++SDK. Its docs say the app must be wrapped in `PostHogWidget` when
++`PostHogConfig.sessionReplay` is on (`lib/src/posthog_widget.dart` in
++posthog_flutter 5.55.0; the 5.36.3 copy has the same doc comment).
++
++- `lib/legacy_app.dart` wraps `MaterialApp` in `PostHogWidget`. Replays work for the A/B group.
++- `lib/new_app.dart` returned `MaterialApp.router` with no wrapper. Replay was enabled
++  (`lib/analytics.dart`: `sessionReplay = true`) but there was no widget tree to capture.
++
++Events still arrive for the new UI because the SDK is set up in `main.dart` and
++`PosthogObserver` is attached to the GoRouter, so screen events and custom events
++(`loan_amount_changed`, `application_submitted`) are unaffected. That matches the ticket.
++
++## Fix
++
++`lib/new_app.dart`: wrap `MaterialApp.router` in `PostHogWidget`, the same as `LegacyApp`.
++No other changes. The `posthog_flutter` import was already present.
++
++## Not verified
++
++- I did not run the app or check a recording in PostHog. `flutter analyze` could not run
++  because the package config is not resolved in this checkout. I ran `dart format` on the
++  file, which parses it.
++- The `phc_REPLACE_ME_IN_CI` project key in `lib/analytics.dart` is a CI placeholder and was left unchanged.
++- Confirm on a new-UI device build after the change that a recording appears in the Replay tab.
+diff --git a/lib/new_app.dart b/lib/new_app.dart
+index 92e4ff9..12dc70c 100644
+--- a/lib/new_app.dart
++++ b/lib/new_app.dart
+@@ -21,13 +21,13 @@ class NewApp extends StatelessWidget {
+ 
+   @override
+   Widget build(BuildContext context) {
+-    return MaterialApp.router(
+-      title: 'Loanly',
+-      theme: ThemeData(
+-        colorSchemeSeed: Colors.indigo,
+-        useMaterial3: true,
++    // PostHogWidget must wrap the app for session replay screenshots (as in LegacyApp).
++    return PostHogWidget(
++      child: MaterialApp.router(
++        title: 'Loanly',
++        theme: ThemeData(colorSchemeSeed: Colors.indigo, useMaterial3: true),
++        routerConfig: _router,
+       ),
+-      routerConfig: _router,
+     );
+   }
+ }

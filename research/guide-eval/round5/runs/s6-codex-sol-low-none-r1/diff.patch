@@ -1,0 +1,29 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..d314996
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,23 @@
++# MCP client compatibility review
++
++Reviewed `server.py` and exercised a separate local instance on port 50106. The server was not changed.
++
++## Findings
++
++1. **Requests can close the connection without an MCP response (high).** `tools/call` does not validate arguments against its advertised `inputSchema`. An authenticated `add_note` call with empty `arguments` raises `KeyError` at line 126; the client sees `RemoteDisconnected`. A batch containing a non-object also crashes at line 208. Validate JSON-RPC envelopes and tool arguments, and turn invalid input into a JSON-RPC error or tool error instead of letting exceptions escape the HTTP handler. (`server.py:101-128, 205-216`)
++
++2. **The advertised session is not a session (high).** `initialize` issues `Mcp-Session-Id`, but subsequent requests accept any caller-supplied value and echo it back. A `ping` with `Mcp-Session-Id: made-up` returned 200 and the same header. `DELETE` returns 204 for any path or session and does not invalidate anything. Clients that retain, resume, or terminate sessions cannot rely on the server's session state. Either implement and validate session IDs, including termination, or do not issue one. (`server.py:180-190, 203-217`)
++
++3. **JSON-RPC notifications receive responses (high).** A `ping` without `id` returned HTTP 200 with `{"id":null,"result":{}}`. Apart from the special `notifications/initialized` case, notification methods and unknown notifications pass through normal request handling. A client may interpret these as unsolicited responses. Notifications should produce no JSON-RPC response; for Streamable HTTP, return an empty accepted response. (`server.py:131-168, 212-217`)
++
++4. **Protocol negotiation is ignored (medium).** `initialize` always replies with `2025-06-18`, regardless of the client's `protocolVersion`; a local request offering `2025-03-26` received `2025-06-18`. A client and server need to agree on a supported version or report that they cannot. The `MCP-Protocol-Version` header is also ignored on later requests. (`server.py:135-141, 192-217`)
++
++5. **Resource discovery and reads are inconsistent (medium).** The server advertises the `resources` capability to anonymous clients, but `resources/list` and `resources/read` return a plain HTTP 401 body. Even after authentication, `resources/read` ignores the requested URI: `notes://missing` returned the `notes://guide` content. Clients cannot trust discovery or URI-specific reads. Check the requested URI and return an MCP error for unknown resources; make the authentication requirement discoverable to clients. (`server.py:135-155`)
++
++6. **Tool metadata and result semantics can mislead clients (medium).** `search_notes` labels `total` as the number of returned hits after applying `limit`, so clients cannot tell when more matches exist. Its snippet index is calculated in `title + " " + body` but sliced from `body`, giving incorrect excerpts when the match is in the title or near its start. Invalid tool input can also leak Python conversion errors as JSON-RPC `-32602`, while missing or unknown notes are reported as protocol errors rather than tool-level failures (`isError: true`). (`server.py:101-121, 162-167`)
++
++7. **Authentication lacks the standard challenge path (medium).** A protected request returns `401 {"error":"unauthorized"}` (or `{"error":"sign in required"}`) without `WWW-Authenticate` or authorization metadata. Generic remote MCP clients will not learn how to obtain or supply a token from that response; the hard-coded development bearer token must be configured out of band. (`server.py:148-166, 201-202`)
++
++## Local checks
++
++Used `POST /mcp` with JSON-RPC requests and common MCP headers. Confirmed successful `initialize`; the invalid-session echo; an unsolicited response to an id-less `ping`; connection closure for malformed batch and missing `add_note` arguments; an unrelated resource returned for `notes://missing`; and `DELETE` success for a made-up session. No external service was contacted.

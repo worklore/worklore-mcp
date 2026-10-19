@@ -1,0 +1,3 @@
+I wrote the checkup to [ANSWER.md](/tmp/h-Bejh2J/ANSWER.md). It reports **4 FAIL and 6 PASS**. The failures are tool refusals returned as protocol errors, mismatched search result formats, no surface lock, and an output schema that accepts an empty object. It also records that anonymous clients receive HTTP 401 when listing advertised resources.
+
+Only the two read-only tools were called. I stopped the test server afterward; `server.py` and the other existing files were unchanged.

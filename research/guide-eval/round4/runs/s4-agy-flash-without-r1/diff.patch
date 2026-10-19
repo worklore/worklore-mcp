@@ -1,0 +1,208 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..9f6419c
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,202 @@
++# Database Normalization Analysis: What in the Schema Isn't in 3NF
++
++## Executive Summary
++
++In relational database theory (Codd 1970/1971, Kent 1983), a relation is in **Third Normal Form (3NF)** if:
++1. It is in **Second Normal Form (2NF)** (and thus in **1NF**).
++2. For every non-trivial functional dependency $X \to A$, either:
++   - $X$ is a **superkey**, or
++   - $A$ is a **prime attribute** (a constituent of some candidate key).
++   *(Informally: every non-key attribute must represent a direct fact about the key, the whole key, and nothing but the key).*
++
++An audit of the Supabase backend schema (`supabase/migrations/`) and edge function server code (`supabase/functions/`) reveals that while migration `20261010040000_normal_forms.sql` partially normalized the schema, it deliberately adopted a **"mixed approach, not textbook 3NF"**. Furthermore, several migrations applied **after** `20261010040000_normal_forms.sql` (notably `20261014010000_github_board_results.sql` and `20261015010000_ask_code_model_calls.sql`) introduced new transitive dependencies, redundant denormalized attributes, and unnormalized entities.
++
++Below is the complete, categorized breakdown of everything in the schema that is not in 3NF.
++
++---
++
++## 1. Copied `project_id` on Child Tables (Transitive & Partial Key Dependencies)
++
++In textbook 3NF, a foreign key that references a parent entity should only link to that parent. In this schema, `project_id` is redundantly copied onto multiple child tables despite the child already possessing a foreign key to a parent entity that itself belongs to a single project.
++
++Migration `20261010040000_normal_forms.sql` explicitly acknowledged this deviation under `-- 3NF: project_id copies`:
++> *"the project_id copies on child tables stay (RLS policies and the hot indexes filter on them), but composite foreign keys now make a copy that disagrees with its parent impossible."*
++
++While composite foreign keys (e.g., `(person_id, project_id) REFERENCES people(id, project_id)`) guarantee referential integrity and eliminate drift, **they do not eliminate the functional dependencies that violate 3NF (and 2NF)**:
++
++| Table | Candidate Key(s) | Determinant / Dependency | Why It Violates 3NF / 2NF |
++| :--- | :--- | :--- | :--- |
++| **`idea_items`** | `(idea_id, item_id)` | `idea_id -> project_id`<br>`item_id -> project_id` | **2NF Violation**: `project_id` is a non-prime attribute dependent on `idea_id` alone (and `item_id` alone), which are proper subsets of the composite primary key. *(Note: `20261010040000_normal_forms.sql` dropped `person_id` for this exact 2NF reason, but retained `project_id`).* |
++| **`document_chunks`** | `id`,<br>`(document_id, ord)` | `document_id -> project_id` | **2NF & 3NF Violation**: For key `(document_id, ord)`, `project_id` depends on the proper subset `document_id` (2NF violation). For key `id`, `id -> document_id -> project_id` is a transitive dependency (3NF violation). |
++| **`identities`** | `id`,<br>`(project_id, platform, handle)` | `person_id -> project_id` | **3NF Violation**: `person_id` is not a superkey, yet `person_id -> project_id`. Transitive dependency: `id -> person_id -> project_id`. |
++| **`items`** | `id`,<br>`(project_id, platform, external_id)` | `person_id -> project_id`<br>`account_id -> project_id, platform` | **3NF Violation**: Every item has `person_id`, which determines `project_id`. When `account_id` is non-null, `account_id` also determines `project_id` and `platform`. Transitive dependency from candidate key `id`. |
++| **`touches`** | `id` | `person_id -> project_id`<br>`item_id -> person_id, project_id` | **3NF Violation**: `touches.person_id -> project_id`. Furthermore, when `item_id` is present, `item_id` determines both `person_id` and `project_id` (enforced via `touches_item_fkey`), making both transitively dependent on `item_id`. |
++| **`project_memory`** | `id` | `theme_id -> project_id` *(when `theme_id IS NOT NULL`)* | **3NF Violation**: `theme_id` references `themes(id)`. When set, `theme_id -> project_id`. Transitive dependency from `id`. |
++| **`documents`** | `id`,<br>`(project_id, url)` | `theme_id -> project_id` *(when `theme_id IS NOT NULL`)* | **3NF Violation**: When `theme_id` is set, `theme_id -> project_id`. Transitive dependency from candidate key `id`. |
++| **`code_questions`** | `id` | `item_id -> project_id` *(when `item_id IS NOT NULL`)* | **3NF Violation**: Introduced in `20261015010000_ask_code_model_calls.sql`. `items.project_id` is fixed, so `item_id -> project_id`. Transitive dependency. |
++| **`model_calls`** | `id` | `item_id -> project_id`<br>`run_id -> project_id, item_id, founder_id` | **3NF Violation**: Introduced in `20261015010000_ask_code_model_calls.sql`. `model_calls` lacks composite FKs altogether. When `item_id` is set, `item_id -> project_id`. When `run_id` (a `code_questions.id`) is set, `run_id` determines `project_id`, `item_id`, and `founder_id`. |
++
++---
++
++## 2. Denormalized Aggregates and Cached Metrics (Maintained by Triggers)
++
++In 3NF, a relation must contain only facts about the entity identified by the key, rather than calculated aggregate values derived from tuples in related tables:
++
++1. **`people.first_touch_at` and `people.last_touch_at`**
++   - **Source:** Migration `20261010040000_normal_forms.sql` (`-- derived: people.first/last_touch_at`).
++   - **Functional Dependency:** Function of $\min(\text{touches.occurred\_at})$ and $\max(\text{touches.occurred\_at})$ for a given `person_id`.
++   - **Implementation:** Maintained by trigger `touches_person_span` on table `touches`.
++   - **Violation:** Transitive derivation from the set of related records in `touches`.
++
++2. **`ideas.asked_by`**
++   - **Source:** Migration `20261008230200_backend_v1.sql` and `20261010040000_normal_forms.sql`.
++   - **Functional Dependency:** Function of $\text{COUNT}(\text{DISTINCT } i.\text{person\_id})$ across `idea_items` joined with `items`.
++   - **Implementation:** Maintained by triggers `ideas_recount` (on `idea_items`) and `items_person_recount` (on `items`).
++   - **Violation:** A cached count derived from child records. Migration notes acknowledge: `asked_by stays a cached count: recount when an item changes hands`.
++
++---
++
++## 3. Embedded External Entities (Transitive Dependencies)
++
++Several tables embed attributes that describe an external entity rather than the record itself. These attributes are functionally dependent on non-superkey determinants:
++
++### A. GitHub Project Board in `projects` (`20261014010000_github_board_results.sql`)
++- **Columns added to `projects`:**
++  - `github_board_owner`
++  - `github_board_number`
++  - `github_board_id` (GraphQL node ID)
++  - `github_board_title` (Cached board title)
++- **Functional Dependencies:**
++  $$\{\text{github\_board\_owner}, \text{github\_board\_number}\} \longleftrightarrow \text{github\_board\_id}$$
++  $$\text{github\_board\_id} \longrightarrow \text{github\_board\_title}$$
++- **Violation:**
++  - Neither `(github_board_owner, github_board_number)` nor `github_board_id` is a candidate key of `projects` (they are nullable and not constrained unique).
++  - `projects.id -> github_board_id -> github_board_title` is a classic **transitive dependency**.
++  - The migration comment confirms the denormalization: `"-- id is its GraphQL node id; title is GitHub's, cached for display."`
++  - In 3NF, the GitHub Board should be modeled as a separate relation `github_boards(id, owner, number, title, ...)`, and `projects` should only store a foreign key `github_board_id`.
++
++### B. GitHub Issue Lifecycle State in `ideas` (`20261010030000_github_app.sql` & `20261014010000_github_board_results.sql`)
++- **Columns on `ideas`:**
++  - `github_issue_repo`, `github_issue_number`
++  - `github_issue_state`, `github_issue_state_reason`, `github_issue_closed_at`, `github_board_status`, `github_checked_at`
++  - `result_note`, `result_note_url`
++- **Functional Dependencies:**
++  $$\{\text{github\_issue\_repo}, \text{github\_issue\_number}\} \longrightarrow \{\text{github\_issue\_state}, \text{github\_issue\_state\_reason}, \text{github\_issue\_closed\_at}, \text{github\_board\_status}\}$$
++  $$\text{result\_note\_url} \longrightarrow \text{result\_note}$$
++- **Violation:**
++  - `(github_issue_repo, github_issue_number)` identifies a GitHub Issue (an external entity), not an Idea. Multiple ideas could reference the same issue, yet the issue's lifecycle status is stored directly in `ideas`.
++  - `result_note` is a snapshot of the comment at `result_note_url`.
++  - *(Note: `20261010040000_normal_forms.sql` line 13 justified keeping `ideas.github_issue_url` because it could hold a pre-filled "new issue" template before creation, but the later migration added full issue lifecycle state).*
++
++### C. GitHub Installation Account Details in `github_installations` (`20261010030000_github_app.sql`)
++- **Columns:** `installation_id` (PK), `account_id`, `account_login`, `account_type`.
++- **Functional Dependency:** $\text{account\_id} \longrightarrow \{\text{account\_login}, \text{account\_type}\}$.
++- **Violation:** The GitHub Account is a distinct entity from the Installation. `account_login` and `account_type` depend on `account_id`, not strictly on the installation.
++
++---
++
++## 4. Redundant Columns Duplicate with JSONB Fields (Regressions on 3NF)
++
++Migration `20261010040000_normal_forms.sql` resolved redundant token counts on `drafts` by converting `tokens_in` and `tokens_out` into generated columns from `drafts.tokens`. However, subsequent migrations re-introduced non-generated, redundant columns:
++
++1. **`model_calls` (`20261015010000_ask_code_model_calls.sql`)**
++   - **Columns:** `tokens_in`, `tokens_out`, `cost_usd`, and `usage jsonb`.
++   - **Functional Dependency:**
++     $$\text{usage} \longrightarrow \{\text{tokens\_in}, \text{tokens\_out}, \text{cost\_usd}\}$$
++   - **Violation:** As shown in `supabase/functions/_shared/server/usage.ts`:
++     - `tokens_in = usage.input + usage.cache_read + usage.cache_write`
++     - `tokens_out = usage.output`
++     - `cost_usd = usage.cost_usd`
++     Unlike `drafts`, in `model_calls` these are regular stored columns populated independently by application code, violating 3NF.
++
++2. **`code_questions` (`20261015010000_ask_code_model_calls.sql`)**
++   - **Columns:** `cost_usd numeric(12, 6)` and `usage jsonb`.
++   - **Violation:** `cost_usd` is stored both as a standalone column and inside `usage` (`{..., cost_usd, ...}`).
++
++3. **`voice_samples` (`20261010010000_sources_voice_knowledge.sql`)**
++   - **Columns:** `quality real` and `scores jsonb`.
++   - **Violation:** `scores` stores `{meaningful, quality, decider, model}`. `quality` is extracted and stored redundantly as a standalone column for filtering/sorting.
++
++4. **`themes.position` vs `project_memory` (`kind = 'position'`)**
++   - **Violation:** Redundant domain representation. The team's stance on a theme can be recorded in `themes.position` and/or in `project_memory` with `theme_id` and `kind = 'position'`.
++   - Explicitly noted in `20261010040000_normal_forms.sql` line 19: `"-- themes.position vs project_memory kind 'position': both unused so far."`
++
++---
++
++## 5. Intra-Row Dependencies via Stored Generated Columns
++
++PostgreSQL's `GENERATED ALWAYS AS (...) STORED` columns ensure physical data consistency, but in strict mathematical relational theory, physical persistence of an attribute functionally determined by non-key attributes is a non-3NF dependency:
++
++| Table | Column | Stored Expression | Determinant (Non-Key) |
++| :--- | :--- | :--- | :--- |
++| **`items`** | `triage_route`<br>`triage_kind`<br>`triage_action`<br>`triage_confidence`<br>`triage_summary` | `(triage->>'route')`<br>`(triage->>'kind')`<br>`(triage->>'suggested_action')`<br>`((triage->>'confidence')::real)`<br>`(triage->>'summary')` | `triage` (JSONB) |
++| **`drafts`** | `tokens_in`<br>`tokens_out` | Derived sum of input + cache tokens<br>`(tokens->>'output')::int` | `tokens` (JSONB) |
++| **`documents`** | `is_public` | `(label = 'quotable')` | `label` |
++| **`projects`** | `url_key` | `hb_url_key(url)` | `url` |
++
++In pure 3NF, these should either be computed at query time (views or virtual generated columns) or stored without the source JSON/attribute redundancy.
++
++---
++
++## 6. Non-Atomic Attributes (1NF Violations Precluding 3NF)
++
++A relation cannot be in 3NF if it does not satisfy First Normal Form (1NF). The schema contains several non-atomic structures:
++
++### A. Composite Strings
++- **`source_syncs.source`**: Encodes connector platform, sub-type, and identifier in a colon-delimited string (e.g. `'devto:writing:<handle>'`, `'devto:articles:<handle>'`, `'github:owner/repo'`, `'landing'`).
++  - Acknowledged in `20261010040000_normal_forms.sql` line 15: `"-- source_syncs.source ('devto:writing:<handle>', 'github:<repo>'): an opaque key the app shows and parses; the database only compares it"`.
++- **`voice_samples.external_id`**: Composite strings encoding target types and IDs (e.g. `'draft:<uuid>'`, `'<repo>:<path>#<n>'`).
++
++### B. PostgreSQL Multi-Valued Arrays (`text[]`)
++While `plans.allowed_models` was extracted to a separate table `plan_models` in `20261010040000_normal_forms.sql` under `-- 1NF: plans.allowed_models`, multiple array columns remain:
++- `founders.languages` (`text[]`)
++- `projects.languages` (`text[]`)
++- `projects.topics` (`text[]`)
++- `projects.competitors` (`text[]`)
++- `projects.audience` (`text[]`)
++- `drafts.checks` (`text[]`)
++
++### C. Relations Embedded in JSONB
++Tables that store arrays of structured entity objects inside JSONB columns represent unnormalized relations in disguise:
++- `projects.links`: `[{title, url}]`
++- `items.thread`: `[{author, text, posted_at}]`
++- `items.my_post`: `{url, title, text}`
++- `github_installations.repos`: `[{full_name, private, default_branch, open_issues, ...}]`
++- `code_questions.sources`: `[{path, start_line, end_line, note, url}]`
++- `ideas.result_links`: `[{title, url, kind}]`
++- `drafts.meta`: `{resolved: [{check_id, question, action, answer, ...}]}`
++
++---
++
++## Complete Table-by-Table 3NF Audit Matrix
++
++| Table Name | In 3NF? | Primary / Key Non-3NF Issues |
++| :--- | :---: | :--- |
++| `founders` | **No** (1NF) | `languages` array. |
++| `projects` | **No** | Transitive dependency on GitHub Board (`github_board_id -> github_board_title`); stored generated `url_key`; array columns (`topics`, `competitors`, `languages`, `audience`); embedded JSON relations (`links`). |
++| `project_members` | **Yes** | Composite key `(project_id, founder_id)`; all attributes fully dependent on the key. |
++| `project_invites` | **Yes** | Key `id` and candidate key `(project_id, email)`; all attributes depend on candidate keys. |
++| `accounts` | **Yes** | Candidate keys `id` and `(project_id, platform, handle)`. |
++| `themes` | **Borderline** | `position` column duplicates `project_memory(kind='position')`. |
++| `people` | **No** | Denormalized aggregate timestamps `first_touch_at` and `last_touch_at` derived from `touches`. |
++| `identities` | **No** | Copied `project_id` transitively dependent on `person_id`. |
++| `items` | **No** | Copied `project_id` transitively dependent on `person_id`; `account_id -> project_id, platform`; 5 stored generated columns from `triage`; JSON embedded thread snapshots. |
++| `item_themes` | **Yes** | Pure junction table with attribute `auto`. |
++| `drafts` | **No** | Stored generated columns `tokens_in`, `tokens_out` from `tokens`; `checks` array. |
++| `touches` | **No** | Copied `project_id` (via `person_id`); when `item_id` is set, `item_id -> person_id, project_id`. |
++| `project_memory` | **No** | Copied `project_id` transitively dependent on `theme_id` (when not null); duplicate position representation. |
++| `documents` | **No** | Copied `project_id` transitively dependent on `theme_id` (when not null); stored generated `is_public` from `label`. |
++| `waitlist` | **Yes** | Candidate keys `id` and `email`. |
++| `document_chunks` | **No** | **2NF violation:** `(document_id, ord)` is candidate key, but `document_id -> project_id`. Transitive dependency for key `id`. |
++| `ideas` | **No** | Denormalized count `asked_by`; embedded GitHub Issue entity lifecycle attributes (`state`, `closed_at`, `board_status`). |
++| `idea_items` | **No** | **2NF violation:** Key `(idea_id, item_id)` has partial key dependencies `idea_id -> project_id` and `item_id -> project_id`. |
++| `usage_counters` | **Yes** | Key `(day, key)` determines `n`. |
++| `plans` | **Yes** | Fully normalized (model list extracted to `plan_models`). |
++| `plan_models` | **Yes** | Key `(plan_id, model)` determines `ord`. |
++| `voice_samples` | **No** | `quality` is redundant with `scores->>'quality'`; non-atomic `external_id`. |
++| `source_syncs` | **No** (1NF) | `source` is a composite string (`devto:writing:<handle>`, `github:<repo>`). |
++| `github_installations`| **No** | Transitive dependency `account_id -> (account_login, account_type)`; embedded `repos` JSON array. |
++| `github_installation_projects` | **Yes** | Pure junction table. |
++| `github_install_states` | **Yes** | Candidate keys `id` and `token_sha256`. |
++| `model_calls` | **No** | Non-generated columns `tokens_in`, `tokens_out`, and `cost_usd` are redundant with `usage jsonb`; `item_id -> project_id`; `run_id -> project_id, item_id, founder_id`. |
++| `code_questions` | **No** | `cost_usd` is redundant with `usage jsonb`; `item_id -> project_id`; embedded `sources` JSON array. |

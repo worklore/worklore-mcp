@@ -1,0 +1,3 @@
+The new UI was missing `PostHogWidget`. Its `PosthogObserver` tracked screens, and events still arrived, but the widget integration needed for session replay was absent.
+
+I wrapped the new app shell in `PostHogWidget` in [new_app.dart](/tmp/h-L0p23p/lib/new_app.dart) and recorded the cause and fix in [ANSWER.md](/tmp/h-L0p23p/ANSWER.md). Formatting and `git diff --check` pass. Replay still needs confirmation on an iOS or Android run with a valid PostHog key.

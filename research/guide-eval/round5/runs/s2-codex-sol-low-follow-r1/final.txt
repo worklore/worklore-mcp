@@ -1,0 +1,3 @@
+The new UI’s `MaterialApp.router` was missing `PostHogWidget`, so PostHog received events but had no screen frames for replay. I added the wrapper in [new_app.dart](/tmp/h-EvfOAy/lib/new_app.dart) and documented the cause and fix in [ANSWER.md](/tmp/h-EvfOAy/ANSWER.md).
+
+`flutter analyze` passed. I could not verify a replay in PostHog from this checkout because it has no mobile project files and uses a placeholder project key.

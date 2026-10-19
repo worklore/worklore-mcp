@@ -1,0 +1,162 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..0020971
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,98 @@
++# Why the nightly review never reported anything
++
++Two bugs, stacked. Together they made the job fail and then made the failure
++invisible.
++
++## Evidence
++
++`launchctl-print.txt` (captured 2026-10-18 09:10): `runs = 6`, `last exit code = 1`,
++`state = waiting`. The job fired on schedule every night since it was loaded on
++2026-10-12. It was not a launchd scheduling problem.
++
++`Library/Logs/nightly-review.err` has six runs, each with the same two lines:
++
++```
++Not logged in · Please run /login
++/Users/vk/bin/nightly-review.zsh:19: read-only variable: status
++```
++
++`nightly-review.out` is empty, so nothing ever reached stdout.
++
++## Cause 1: `claude` could not find the login
++
++The plist sets only `PATH` in `EnvironmentVariables`. Without `USER`, the CLI cannot
++find the login in the keychain and exits with "Not logged in". The job fails at
++the agent call, before any work is done.
++
++Fix: add `USER` (`vk`) to the plist's `EnvironmentVariables`.
++
++## Cause 2: zsh's read-only `status` killed the failure reporter
++
++`bin/nightly-review.zsh` ran `status=$?` on line 19. In zsh, `status` is a
++read-only built-in, so the assignment aborts the script. That line sat between
++the agent call and the Telegram failure message, so the script died before
++`notify.sh` ran. Nothing was sent. The exit code (1) was the only trace.
++
++Fix: use `rc=$?`, and call the failure notifier first on every failure path.
++
++## Changes
++
++- `Library/LaunchAgents/com.vk.nightly-review.plist`: added
++  `USER` = `vk` under `EnvironmentVariables`.
++- `bin/nightly-review.zsh`:
++  - `status` renamed to `rc`, so the script no longer dies on the assignment.
++  - A `fail` helper sends the Telegram failure message before it exits.
++  - The prompt goes to `claude -p` on stdin (`print -r -- "$PROMPT" | claude -p ...`)
++    rather than as a multi-line argument.
++  - Each run logs its start, exit code and duration (`duration=Ns`).
++  - Exit 0 with an empty output file is treated as a failure.
++  - The success message includes the run duration.
++
++Note: the snapshot shows no "Input must be provided" error, so the prompt-argument
++problem was not observed here. The stdin change is hardening, not the fix for
++this failure.
++
++## What I verified (locally, with stubs)
++
++I did not run launchd, real `claude` or Telegram. I ran the scripts under
++`env -i` with a launchd-like environment (no `USER`, minimal `PATH`, stdin closed),
++using a stub `claude` and a stub notifier that writes to a file.
++
++| Scenario | Original script | New script |
++|---|---|---|
++| `USER` unset (the real plist), claude fails | dies at line 19, **no message** | "claude exit 1" message sent, exit 1 |
++| `USER` set, claude fails (exit 3) | dies at line 19, **no message** | "claude exit 3" message sent, exit 1 |
++| Success | not run | "done (Ns)" message, exit 0, prompt received on stdin |
++| Exit 0, empty output | not run | "empty output" message, exit 1 |
++| Repo missing | not run | "repo missing" message, exit 1 |
++
++`zsh -n` passes on the script and `plutil -lint` passes on the plist.
++
++## Not verified here (needs your machine)
++
++- The real `claude` login under launchd with `USER` set.
++- The real Telegram send.
++- A real run timing (the stub returns in 0 s).
++
++## How to check on your machine
++
++```sh
++cp bin/nightly-review.zsh ~/bin/
++cp Library/LaunchAgents/com.vk.nightly-review.plist ~/Library/LaunchAgents/
++launchctl bootout gui/$UID/com.vk.nightly-review 2>/dev/null
++launchctl bootstrap gui/$UID ~/Library/LaunchAgents/com.vk.nightly-review.plist
++launchctl kickstart -k gui/$UID/com.vk.nightly-review
++launchctl print gui/$UID/com.vk.nightly-review | grep -E 'runs|last exit'
++tail -5 ~/Library/Logs/nightly-review.out ~/Library/Logs/nightly-review.err
++```
++
++Then check:
++
++1. `last exit code = 0`, and `nightly-review-<today>.md` exists and is fresh.
++2. The log's `duration=` is a plausible number of seconds for a real review (not ~0 s).
++3. You received the "done" message on Telegram.
++4. Failure test: `mv ~/projects/shop ~/projects/shop.away`, kickstart again, expect a
++   "repo missing" message on Telegram and `last exit code = 1`. Then move the repo back.
++
++Residual risk: if Telegram itself is unreachable, the notifier fails silently. The
++only trace is the job's exit code in `launchctl print`, so keep checking `runs`.
+diff --git a/Library/LaunchAgents/com.vk.nightly-review.plist b/Library/LaunchAgents/com.vk.nightly-review.plist
+index c347363..d49eacf 100644
+--- a/Library/LaunchAgents/com.vk.nightly-review.plist
++++ b/Library/LaunchAgents/com.vk.nightly-review.plist
+@@ -24,6 +24,8 @@
+   <dict>
+     <key>PATH</key>
+     <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
++    <key>USER</key>
++    <string>vk</string>
+   </dict>
+ </dict>
+ </plist>
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..5bb5be8 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -13,14 +13,33 @@ For each commit: one line on what it changes and whether anything looks risky
+ End with a three-line summary I can read on my phone.
+ Do not modify any file."
+ 
+-cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
++# Failure reporter. Called first on every failure path, so nothing can
++# run before it and kill it. Never assign to `status` in zsh (read-only).
++fail() {
++  print -r -- "$(date '+%F %T') FAILED: $1"
++  "$NOTIFY" "nightly review FAILED: $1"
++  exit 1
++}
+ 
+-claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
++start=$SECONDS
++print -r -- "$(date '+%F %T') start since=$SINCE"
+ 
+-if [ $status -ne 0 ]; then
+-  "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
+-  exit $status
++cd "$REPO" || fail "repo missing at $REPO"
++
++# Prompt goes via stdin, not as an argument: no multi-line argv parsing
++# under launchd, and stdin is never left open for the CLI to wait on.
++print -r -- "$PROMPT" | claude -p --output-format text > "$OUT"
++rc=$?
++elapsed=$(( SECONDS - start ))
++print -r -- "$(date '+%F %T') claude exit=$rc duration=${elapsed}s out=$OUT"
++
++if (( rc != 0 )); then
++  fail "claude exit $rc after ${elapsed}s, see $OUT"
++fi
++
++# Exit 0 with nothing written is still a failure.
++if [[ ! -s "$OUT" ]]; then
++  fail "empty output after ${elapsed}s, see $OUT"
+ fi
+ 
+-"$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"
++"$NOTIFY" "nightly review done (${elapsed}s): $(head -c 300 "$OUT")"

@@ -1,0 +1,115 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..454f771
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,74 @@
++# Cache-Control on deploy
++
++## What I changed
++
++`scripts/deploy.sh` now sets `Cache-Control` on every object it uploads:
++
++- `src/` except `assets/` (html, css, js): `public, max-age=300` (5 minutes)
++- `src/assets/` (logo, icons): `public, max-age=31536000` (one year)
++
++The script re-uploads everything on each deploy, then removes objects whose
++local files were deleted, then invalidates CloudFront as before.
++
++Why re-upload everything: `aws s3 sync` only uploads files that changed, and a
++header change alone does not count as a change. Without the re-upload, objects
++already in the bucket would keep no header, and the bug would stay for any file
++that has not changed since the last deploy.
++
++Why the uploads read from `src/` and not from S3: the copy-in-place approach
++from the colleague's note (`aws s3 cp s3://b/ s3://b/ --metadata-directive REPLACE`)
++replaces all metadata, including Content-Type. The script never copies S3
++objects onto themselves, so Content-Type is not touched. The AWS CLI sets it
++from each local file's extension at upload time, together with the cache header.
++
++I dry-ran the script with `aws` stubbed out (a shell function, no files written).
++It produced the three `aws s3` calls and the invalidation above, in order. I did
++not run it against S3 or CloudFront, so the live headers are still unchecked.
++
++## Colleague's note: what applied
++
++- **Applied:** short cache for HTML and JS, long cache for `assets/`, as you asked.
++- **Applied:** the header policy lives in the deploy script, not in shell history.
++- **Applied:** CloudFront invalidation after upload (the script already had it).
++- **Applied:** verify with `curl -I` and read back `content-type`, not just the 200 status.
++- **Applied in spirit:** the note says the old headers are also cached at the edge,
++  so the invalidation stays after the uploads.
++- **Not applicable:** the copy-onto-self `cp --metadata-directive REPLACE` loop and
++  the `binary/octet-stream` breakage. This script does not use it. The lesson
++  still holds: a flag that "only changes X" can rewrite more than X.
++- **Not applicable:** the per-extension Content-Type table. The CLI guesses the
++  type from the extension. If that guess is wrong on your machine, pass
++  `--content-type` explicitly per file type. I did not, because the verification
++  step below would show a wrong type.
++
++## Choices I made that you may want to change
++
++- **CSS** (`styles.css`) is in the short-cache group. You did not say where it
++  belongs. It is not under `assets/` and it changes like code, so it gets the short policy.
++- **One-year cache on `assets/` without renaming** means a changed `logo.png` will
++  not reach returning visitors for up to a year. If you edit an asset in place,
++  rename it (for example `logo.v2.png`). Otherwise use a shorter `max-age`.
++- **Full re-upload every deploy.** Fine for a site this size. It costs a few
++  requests per deploy.
++- **README** still says the problem is open ("Known problem" section). I did not
++  change it. Update it once the deploy is confirmed.
++
++## Not done
++
++- Nothing was deployed, published, or sent to any external service, as instructed.
++- No live check of headers. After your next deploy, run:
++
++```bash
++curl -sI https://YOUR-SITE/ | grep -i -E 'content-type|cache-control'
++curl -sI https://YOUR-SITE/booking.js | grep -i -E 'content-type|cache-control'
++curl -sI https://YOUR-SITE/assets/logo.png | grep -i -E 'content-type|cache-control'
++```
++
++Expected:
++
++- `/` → `content-type: text/html`, `cache-control: public, max-age=300`
++- `/booking.js` → `content-type` is `application/javascript` or `text/javascript`
++  (not `binary/octet-stream`), `cache-control: public, max-age=300`
++- `/assets/logo.png` → `content-type: image/png`, `cache-control: public, max-age=31536000`
++
++Then load the site in a browser that has not seen it before.
+diff --git a/scripts/deploy.sh b/scripts/deploy.sh
+index 6550d32..d802fa8 100755
+--- a/scripts/deploy.sh
++++ b/scripts/deploy.sh
+@@ -1,12 +1,30 @@
+ #!/usr/bin/env bash
+ # Upload src/ to the bucket and invalidate CloudFront.
++#
++# Cache policy is set on upload, from the local file:
++#   - assets/ (logo, icons): long-lived, one year
++#   - everything else (html, css, js): short, five minutes
++#
++# Every file is re-uploaded on each deploy, so none is left with a stale or
++# missing Cache-Control header. Content-Type is guessed from the extension by
++# the AWS CLI when it reads the local file.
+ set -euo pipefail
+ cd "$(dirname "$0")/.."
+ 
+ BUCKET="ruta-ceramica-site-7f3a"
+ DISTRIBUTION_ID="E2QX9ZK1DEMO01"
+ PROFILE="studio"
++SHORT_CACHE="public, max-age=300"
++LONG_CACHE="public, max-age=31536000"
+ 
++aws s3 cp src/ "s3://$BUCKET/" --recursive --exclude "assets/*" \
++  --cache-control "$SHORT_CACHE" --profile "$PROFILE"
++
++aws s3 cp src/assets/ "s3://$BUCKET/assets/" --recursive \
++  --cache-control "$LONG_CACHE" --profile "$PROFILE"
++
++# Remove objects whose local files were deleted. Files just uploaded above are
++# identical, so sync does not re-upload them and their headers stay as set.
+ aws s3 sync src/ "s3://$BUCKET/" --delete --profile "$PROFILE"
+ 
+ aws cloudfront create-invalidation --distribution-id "$DISTRIBUTION_ID" \

@@ -1,0 +1,10 @@
+User-agent: *
+# Public read endpoints the pages fetch while rendering (Googlebot obeys
+# robots.txt when it renders JS, so these must stay crawlable).
+Allow: /v1/notes
+# Write/per-user endpoints stay blocked; longer rules beat the Allow above.
+Disallow: /v1/notes/*/reactions
+Disallow: /v1/
+Disallow: /admin/
+
+Sitemap: https://fieldnotes.example/sitemap.xml

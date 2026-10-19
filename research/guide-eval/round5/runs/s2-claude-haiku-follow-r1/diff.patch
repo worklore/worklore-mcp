@@ -1,0 +1,89 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..068f33b
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,42 @@
++# Ticket #4471: no session replays on the new UI
++
++## Why
++
++Replay on mobile is built from screenshots of the widget tree. The SDK takes
++those screenshots inside `PostHogWidget`: its state owns the
++`ScreenshotCapturer` and the `NativeCommunicator` that sends frames to the
++native side (`posthog_flutter` 5.55.0, `lib/src/posthog_widget.dart`).
++
++- `LegacyApp` (`lib/legacy_app.dart`) wraps its `MaterialApp` in
++  `PostHogWidget`. Its sessions record. This is the A/B group the ticket says
++  works.
++- `NewApp` (`lib/new_app.dart`) returned a bare `MaterialApp.router` with no
++  wrapper. Events, screen tracking (`PosthogObserver` on the GoRouter) and taps
++  all still go out, so the Events tab looks healthy. There are simply no frames
++  to record, so the Replay tab stays empty for these users.
++
++Nothing in the PostHog project settings or `config.sessionReplay = true` is
++involved. Both shells share `Analytics.init()` and the same SDK version. The
++only difference between the two groups is the wrapper.
++
++## Fix
++
++`lib/new_app.dart`: wrapped `MaterialApp.router` in `PostHogWidget`, the same
++way `LegacyApp` does. Added a comment in both shells saying the wrapper is
++needed for replay, so it is not removed later.
++
++## Verification
++
++- `flutter analyze`: no issues (run against the changed code).
++- Not done: a run on a device or emulator, and checking a real session in
++  PostHog. Nothing was deployed or submitted anywhere. To confirm, run
++  `flutter run --dart-define=NEW_UI=true` on a device, move through a few
++  screens, background the app, and check that a new session appears in
++  Session replay with screenshots.
++
++## Checklist for other shells
++
++Each production root widget (`MaterialApp`, `MaterialApp.router`,
++`CupertinoApp`) must sit inside a `PostHogWidget`. Right now that is both
++`LegacyApp` and `NewApp`. `grep -rn "MaterialApp\|PostHogWidget" lib/` shows
++them.
+diff --git a/lib/legacy_app.dart b/lib/legacy_app.dart
+index 7b3cad7..f87fb4e 100644
+--- a/lib/legacy_app.dart
++++ b/lib/legacy_app.dart
+@@ -10,6 +10,8 @@ class LegacyApp extends StatelessWidget {
+ 
+   @override
+   Widget build(BuildContext context) {
++    // PostHogWidget must wrap the app: session replay captures screenshots
++    // from it. Without it, events arrive but replays stay empty.
+     return PostHogWidget(
+       child: MaterialApp(
+         title: 'Loanly',
+diff --git a/lib/new_app.dart b/lib/new_app.dart
+index 92e4ff9..2cbc13d 100644
+--- a/lib/new_app.dart
++++ b/lib/new_app.dart
+@@ -21,13 +21,17 @@ class NewApp extends StatelessWidget {
+ 
+   @override
+   Widget build(BuildContext context) {
+-    return MaterialApp.router(
+-      title: 'Loanly',
+-      theme: ThemeData(
+-        colorSchemeSeed: Colors.indigo,
+-        useMaterial3: true,
++    // PostHogWidget must wrap the app: session replay captures screenshots
++    // from it. Without it, events arrive but replays stay empty.
++    return PostHogWidget(
++      child: MaterialApp.router(
++        title: 'Loanly',
++        theme: ThemeData(
++          colorSchemeSeed: Colors.indigo,
++          useMaterial3: true,
++        ),
++        routerConfig: _router,
+       ),
+-      routerConfig: _router,
+     );
+   }
+ }

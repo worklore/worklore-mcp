@@ -1,0 +1,3 @@
+The new UI was missing `PostHogWidget` around its `MaterialApp.router`. PostHog still received events, but Flutter replay had no frames to record. The old UI already had the wrapper.
+
+I added it to [new_app.dart](/tmp/h-a3NkyR/lib/new_app.dart:24) and documented the cause and fix in [ANSWER.md](/tmp/h-a3NkyR/ANSWER.md). `git diff --check` passes. I could not run a meaningful Flutter analysis or verify a replay: this checkout has no resolved package configuration, and replay needs a device running the changed build.

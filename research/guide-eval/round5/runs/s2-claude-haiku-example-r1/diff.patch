@@ -1,0 +1,94 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..ffe5f5f
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,62 @@
++# Ticket #4471: why new-UI users have no session replays
++
++## Cause
++
++Replay is built from screenshots taken by `PostHogWidget`. The legacy shell
++(`lib/legacy_app.dart`) wraps its `MaterialApp` in `PostHogWidget`. The new
++shell (`lib/new_app.dart`) builds `MaterialApp.router` without it. So the new
++UI sends events (screens, taps, `loan_amount_changed`, `application_submitted`)
++but no frames, and the Replay tab only has sessions from the old UI.
++
++Evidence:
++- `posthog_flutter` 5.55.0 source (`lib/src/posthog_widget.dart`): the widget's
++  state creates the `ScreenshotCapturer` and `NativeCommunicator` that feed
++  replay. Nothing else in the package produces replay frames on mobile.
++- Ticket: project settings are fine (recording on, sampling 100%, minimum
++  duration 0) and both groups use the same SDK version and build. The only
++  code difference between the groups is the wrapper.
++- `main.dart` calls `Analytics.init()` (which calls `Posthog().setup`) before
++  `runApp`, so the widget finds a config and starts capturing. Setup order is
++  not the cause.
++
++## Fix
++
++`lib/new_app.dart`: wrapped `MaterialApp.router` in `PostHogWidget` and added a
++comment saying why it must stay. `dart format` also reflowed the `theme:`
++block onto one line.
++
++No other files changed.
++
++## Which parts of the colleague's note applied
++
++Applied:
++- The core diagnosis: a `MaterialApp` without `PostHogWidget` records events
++  but no replay, with no error. This is the bug here.
++- The "check each `MaterialApp`" step: there are two shells, and only one had
++  the wrapper. This is the same mistake the note describes.
++- Step 1 and 2 of the checklist: `posthog_flutter: ^5.36.0` is in
++  `pubspec.yaml` (>= 5.14.0), and `sessionReplay = true` is set in
++  `lib/analytics.dart`.
++- Step 4: `PosthogObserver()` is in both shells (`navigatorObservers` in
++  legacy, `GoRouter.observers` in new), so screen splitting is already in
++  place.
++
++Not applicable, or already satisfied:
++- Step 3, `startSessionRecording()` behind a flag: not used here. Recording is
++  turned on by `config.sessionReplay = true` before setup, which is the
++  documented path.
++- Step 5, `maskAllTexts`: already set to `true` in `analytics.dart`.
++- Web / posthog-js notes: this is a mobile build, not relevant.
++- Sampling, retention, and project-setting checks: the ticket already rules
++  these out.
++
++## Not verified
++
++- I did not run the app on a device or emulator, so the fix is not confirmed
++  end to end. Verify with the steps in the colleague's note: run
++  `flutter run --dart-define=NEW_UI=true` on a device, go through 3-4 screens,
++  background the app, and check that the session appears in the Replay tab
++  with screenshots.
++- `flutter analyze lib/new_app.dart` passes with no issues.
++- Nothing was committed or deployed. The change needs a new release to reach
++  users.
+diff --git a/lib/new_app.dart b/lib/new_app.dart
+index 92e4ff9..114e4a2 100644
+--- a/lib/new_app.dart
++++ b/lib/new_app.dart
+@@ -21,13 +21,15 @@ class NewApp extends StatelessWidget {
+ 
+   @override
+   Widget build(BuildContext context) {
+-    return MaterialApp.router(
+-      title: 'Loanly',
+-      theme: ThemeData(
+-        colorSchemeSeed: Colors.indigo,
+-        useMaterial3: true,
++    // PostHogWidget must wrap the app: on mobile, session replay is built from
++    // screenshots taken here. Without it, events still arrive but no recording
++    // is produced, and nothing logs an error. Keep it when editing this shell.
++    return PostHogWidget(
++      child: MaterialApp.router(
++        title: 'Loanly',
++        theme: ThemeData(colorSchemeSeed: Colors.indigo, useMaterial3: true),
++        routerConfig: _router,
+       ),
+-      routerConfig: _router,
+     );
+   }
+ }

@@ -1,0 +1,5 @@
+The job has been running at 02:30. It produced no summaries because `claude` reported that it was not logged in. It sent no failure notes because the script then tried to assign to zsh’s read-only `status` variable and stopped before calling the notifier.
+
+I fixed the script in [nightly-review.zsh](/tmp/h-HM5ScR/bin/nightly-review.zsh) and documented the causes in [ANSWER.md](/tmp/h-HM5ScR/ANSWER.md). Local stub tests passed for both success and failure notifications; the plist also passed validation. No external service was contacted.
+
+The snapshot has no Claude credentials. To get review summaries from the real job, authenticate Claude for the `vk` account and copy the fixed script into that account’s `bin` directory.

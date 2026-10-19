@@ -1,0 +1,62 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..fca0165
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,30 @@
++# Why Session Replay Is Empty on the New UI
++
++## Root Cause
++
++In `posthog_flutter`, enabling `config.sessionReplay = true` in `PostHogConfig` (`lib/analytics.dart`) is necessary but not sufficient for Flutter session replay to record the screen. The root application widget must also be wrapped in `PostHogWidget`.
++
++`PostHogWidget` places a `RepaintBoundary` and screenshot/interaction capture layer around the Flutter widget tree so `posthog_flutter` can capture frames, apply text/image masking (`maskAllTexts` / `maskAllImages`), and forward replay snapshots to the native PostHog SDK.
++
++- **Old UI (`lib/legacy_app.dart`):** Wraps `MaterialApp` in `PostHogWidget`, so session replay snapshots are captured and uploaded normally.
++- **New UI (`lib/new_app.dart`):** Returned `MaterialApp.router(...)` directly without wrapping it in `PostHogWidget`. Because `Posthog().setup(config)` and `PosthogObserver()` were still configured, custom events (`loan_amount_changed`, `application_submitted`, etc.) and screen navigation events continued to arrive in PostHog, but no visual session replay frames were ever captured.
++
++## Fix
++
++Wrapped `MaterialApp.router` inside `PostHogWidget` in `lib/new_app.dart` (matching `lib/legacy_app.dart`):
++
++```dart
++@override
++Widget build(BuildContext context) {
++  return PostHogWidget(
++    child: MaterialApp.router(
++      title: 'Loanly',
++      theme: ThemeData(
++        colorSchemeSeed: Colors.indigo,
++        useMaterial3: true,
++      ),
++      routerConfig: _router,
++    ),
++  );
++}
++```
+diff --git a/lib/new_app.dart b/lib/new_app.dart
+index 92e4ff9..f97f7b6 100644
+--- a/lib/new_app.dart
++++ b/lib/new_app.dart
+@@ -21,13 +21,15 @@ class NewApp extends StatelessWidget {
+ 
+   @override
+   Widget build(BuildContext context) {
+-    return MaterialApp.router(
+-      title: 'Loanly',
+-      theme: ThemeData(
+-        colorSchemeSeed: Colors.indigo,
+-        useMaterial3: true,
++    return PostHogWidget(
++      child: MaterialApp.router(
++        title: 'Loanly',
++        theme: ThemeData(
++          colorSchemeSeed: Colors.indigo,
++          useMaterial3: true,
++        ),
++        routerConfig: _router,
+       ),
+-      routerConfig: _router,
+     );
+   }
+ }

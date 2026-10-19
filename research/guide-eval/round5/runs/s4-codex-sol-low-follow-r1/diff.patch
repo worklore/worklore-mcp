@@ -1,0 +1,43 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..4077204
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,7 @@
++# Cache headers in the deploy
++
++Updated `scripts/deploy.sh` to upload every file with an explicit `Content-Type` and `Cache-Control` header after the existing sync. HTML, JavaScript, and CSS use `public, max-age=300`; PNG and SVG files in `assets/` use `public, max-age=86400`. Unknown file types stop the deploy so they cannot silently go up without a policy.
++
++The explicit uploads also update unchanged objects that `s3 sync` would skip. Content types are supplied with the cache policy to avoid the `binary/octet-stream` problem described in the guide. CloudFront invalidation still runs after all uploads succeed.
++
++Verified locally with `bash -n scripts/deploy.sh` and a mocked AWS CLI that recorded the upload arguments. No deploy or external request was made. After a real deploy, check the response headers for `/`, `/booking.js`, and an asset with `curl -sI` to confirm both `Content-Type` and `Cache-Control` at the CDN.
+diff --git a/scripts/deploy.sh b/scripts/deploy.sh
+index 6550d32..5685b2d 100755
+--- a/scripts/deploy.sh
++++ b/scripts/deploy.sh
+@@ -9,6 +9,25 @@ PROFILE="studio"
+ 
+ aws s3 sync src/ "s3://$BUCKET/" --delete --profile "$PROFILE"
+ 
++# Upload every file again so unchanged objects also receive the new headers.
++# Keep Content-Type with Cache-Control: replacing metadata without a type can
++# make browsers download HTML and reject scripts as binary/octet-stream.
++while IFS= read -r -d '' file; do
++  key="${file#src/}"
++  case "$key" in
++    *.html) content_type="text/html"; max_age=300 ;;
++    *.js) content_type="application/javascript"; max_age=300 ;;
++    *.css) content_type="text/css"; max_age=300 ;;
++    assets/*.png) content_type="image/png"; max_age=86400 ;;
++    assets/*.svg) content_type="image/svg+xml"; max_age=86400 ;;
++    *) echo "No cache policy for $key" >&2; exit 1 ;;
++  esac
++  aws s3 cp "$file" "s3://$BUCKET/$key" \
++    --content-type "$content_type" \
++    --cache-control "public, max-age=$max_age" \
++    --profile "$PROFILE" --only-show-errors
++done < <(find src -type f -print0)
++
+ aws cloudfront create-invalidation --distribution-id "$DISTRIBUTION_ID" \
+   --paths "/*" --profile "$PROFILE" > /dev/null
+ 

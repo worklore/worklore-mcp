@@ -1,0 +1,32 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..91c7a24
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,26 @@
++# MCP client checkup: notes-mcp
++
++Tested `http://127.0.0.1:57246/mcp` locally on 2026-10-19, using anonymous requests and the server source. The server was started with `python3 server.py`. Only read-only tools were called; `add_note` was never called. No token was used.
++
++| Check | Result | Evidence | Relevant story for failures |
++| --- | --- | --- | --- |
++| C1 · Anonymous tool discovery | PASS | `initialize` HTTP 200, `tools/list` HTTP 200, three tools returned. Pre-initialize `server/discover` returned HTTP 200 with JSON-RPC `-32601`, an acceptable unsupported-method answer. | |
++| C2 · Tool refusals | **FAIL** | `get_note` with `{}` and with `{"id":"n-999999"}` each returned HTTP 200 containing JSON-RPC `error.code: -32602` (`missing required argument: id`; `note not found: n-999999`). Neither returned a tool `result` with `isError: true`, so clients may throw before the model sees the message. | [Live MCP test and client exception](https://worklore.dev/s/2026-10-02-my-live-mcp-test-asserted-the-bug-a-real-client-threw-where-) |
++| C3 · Session after refusal | PASS | With the same `Mcp-Session-Id`, `get_note({"id":"n-1"})` returned HTTP 200, `isError: false`, and a note after both refusals. | |
++| C4 · Published output schemas | PASS | Both tools marked `readOnlyHint: true` returned HTTP 200 with `structuredContent`: `get_note` has the required `id`, `title`, `body`, and nonnegative integer `words`; `search_notes` returns an object, as its published schema requires. `add_note` was not called because it writes. | |
++| C5 · Serialization and paired content | PASS | All tested tool bodies parsed as JSON. `get_note` text parses to its `structuredContent`; `search_notes` text lists the same hit as `structuredContent.hits`, whose `total` is 1. No encoder error or schema type mismatch was observed. | |
++| C6 · Version and surface lock | **FAIL (drift risk)** | `initialize` reports `notes-mcp` version `0.3.1`. README says the server is not in a registry, so there is no registry version to compare. The repository has no committed surface fingerprint or test locking that version to the advertised tools/resources. The resource list is fixed in source; the note records are exposed through tools, not a growing resource list. | [Listing drift](https://worklore.dev/s/2026-09-30-my-mcp-listing-said-read-only-my-server-could-write) |
++| C7 · Per-call logs | **FAIL** | Ordinary requests, including JSON-RPC errors, produced structured stderr lines with `method`, `tool`, `ok`, `ms`, and `who`. A read-only batch containing `ping` and `tools/list` returned two results but produced **no log lines**: `do_POST` returns from its batch branch before calling `log()` (`server.py:205-216`). Thus not every JSON-RPC call is recorded. | [Per-tool, per-user analytics](https://worklore.dev/s/2026-09-23-your-mcp-server-is-one-url-getting-per-tool-per-user-analyti) |
++| C8 · Tool names | PASS | Three names: `search_notes`, `get_note`, `add_note`. All match `^[a-zA-Z0-9_-]{1,64}$`. | |
++| C9 · Version negotiation | PASS | `initialize` with `protocolVersion: "banana"` returned HTTP 200 and the supported `2025-06-18`, not `banana`. | |
++| C10 · Schema rejects corrupt values | **FAIL** | `search_notes` publishes only `{"type":"object"}`; any object containing corrupted values still meets it. By inspection, `get_note` rejects a corrupted `id` (`^n-[0-9]+$`) and negative `words` (`minimum: 0`); `add_note` rejects a corrupted `id`. This is a static check of the published schemas; no schema validator was installed locally. | [Output schemas that accept wrong answers](https://worklore.dev/s/2026-10-15-my-mcp-server-s-output-schemas-accepted-wrong-answers-7-of-8) |
++
++**Overall: has the problem.**
++
++## Additional client-facing finding
++
++`initialize` advertises a `resources` capability, but anonymous `resources/list` and `resources/templates/list` both return HTTP 401 with `{"error":"unauthorized"}`. A client can discover tools anonymously yet cannot list the advertised resources. The source and README deliberately require authorization for resources, but do not explain why the public `notes://guide` must be hidden. This is the resource-discovery issue described in [the tool-list story](https://worklore.dev/s/2026-09-27-my-mcp-server-hid-its-own-tool-list-behind-a-login). With no token supplied, authenticated resource behavior was not checked. `prompts/list` returned HTTP 200 with `-32601`; the server does not advertise prompts.
++
++## Which parts of the colleague's note applied
++
++The Streamable HTTP request format, session header, anonymous discovery probe, read-only tool calls, refusal and recovery checks, output-schema and serialization checks, name check, version probe, and logging inspection all applied. The registry comparison and independent surface verifier did not apply because this server is not listed and publishes no fingerprint. The note's warning about growing resource lists did not apply: this server advertises one fixed guide. The optional authenticated checks could not be run without a supplied token; the write tool was deliberately excluded. No result was sent to worklore or any other external service.

@@ -1,0 +1,62 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..f5c01d2
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,56 @@
++# notes-mcp: what real MCP clients will trip over
++
++I ran `server.py` locally on 127.0.0.1:62767 and sent requests with curl. I did not change the server, and nothing left this machine. The server log showed tracebacks for the crashing requests. Client behaviour below is inferred from the wire responses and the MCP spec; I did not test it with Claude Code, Codex or Gemini.
++
++## Likely to break a client
++
++1. **Malformed input crashes the handler and drops the connection.** Clients get an empty reply, no JSON-RPC error. Confirmed tracebacks:
++   - Body is a bare JSON string (`"hello"`): `AttributeError: 'str' object has no attribute 'get'` at `server.py:212`.
++   - `tools/call` with `arguments` as a string: `AttributeError` at `server.py:103`.
++   - `get_note` with `id: ["n-1"]`: `TypeError: unhashable type: 'list'` at `server.py:117`. The `ValueError` handler does not catch it.
++   - `add_note` without `title`: `KeyError: 'title'` at `server.py:126`. Any input the schema requires but the code does not check hits this.
++
++   Fix direction: catch `Exception` in `handle` and return `-32602` (or `-32603`), and validate arguments against `inputSchema` before use.
++
++2. **Anonymous `resources/list` returns HTTP 401.** The server advertises the `resources` capability in `initialize`, so a client that lists resources on connect gets a 401 for the whole call. Whether that marks the server as failed depends on the client, which I could not test. The 401 body is `{"error": "unauthorized"}`, which is not a JSON-RPC response. Either drop the `resources` capability when anonymous or return a JSON-RPC error with the request id.
++
++3. **Anonymous `tools/call add_note` returns HTTP 401 with a non-JSON-RPC body.** The body is `{"error": "sign in required"}` with no `id`, so the client cannot match it to its request. There is also no `WWW-Authenticate` header, so an OAuth-capable client has no signal to start an auth flow. The same applies to a batch: `[{"error": "sign in required"}]`.
++
++4. **Notifications get replies.** `notifications/initialized` correctly returns 202 with no body. Any other notification gets a JSON-RPC error with `id: null`, which the spec forbids. I confirmed this with `notifications/cancelled` (`-32601 method not found`). A request with no `id` at all (`tools/list` without id) also gets a reply. Fix: if the message has no `id`, return 202 with no body and skip the reply.
++
++5. **Chunked request bodies are silently misread.** The handler reads `Content-Length` only. With `Transfer-Encoding: chunked`, it reads zero bytes, parses `{}`, and replies `method not found: None`. Clients that stream bodies will see a confusing error. Fix: reject chunked bodies with 411/400, or implement chunked reading.
++
++6. **Protocol version is not negotiated.** The server always answers `protocolVersion: "2025-06-18"`, even when the client asks for `2025-03-26`. The spec says the server should answer with a version it supports and the client decides whether to continue. A client that only speaks an older version will disconnect. Fix: echo the client's version if it is in a supported list, otherwise answer with the latest supported one.
++
++## Spec deviations (lower severity)
++
++7. **Tool errors are JSON-RPC errors, not tool results.** `get_note` not-found and `add_note` auth failures should return a result with `isError: true` so the model sees the message. Only protocol errors (unknown tool, bad params) belong in JSON-RPC `error`. Right now a "note not found" is a protocol error.
++
++8. **Schema bounds are not enforced.** `search_notes` declares `limit` with `minimum: 1, maximum: 50`, but the code accepts `limit: -1` and returns 4 hits (`hits[:-1]`). `limit: "3"` is accepted via `int()`. Validate the bounds, or the schema should not promise them.
++
++9. **Unknown methods that look like notifications.** `tools/list_changed` (the real notification is `notifications/tools/list_changed`) gets a `-32601` reply. Harmless, but it is another case of point 4.
++
++## Things that work
++
++- `initialize` returns a session id, `ping` works, `tools/list` returns three tools with schemas.
++- `tools/call` for `search_notes` and `get_note` works, with `structuredContent` matching each `outputSchema`.
++- Authenticated `add_note` (`Authorization: Bearer dev-token-123`) returns `{"id": "n-6"}` and the note is findable in memory.
++- `GET /mcp` returns 405, which the spec allows when the server does not offer an SSE stream.
++- `DELETE /mcp` returns 204, and `Mcp-Session-Id` is issued on `initialize`.
++
++## Other issues (not client-breaking, but worth knowing)
++
++- **Writes are lost on restart.** `add_note` mutates the in-memory `NOTES` dict only and never writes `notes.json`. The `n-N` ids are also computed from `max()` with no lock, so concurrent adds can collide under `ThreadingHTTPServer`.
++- **Default token is public.** `dev-token-123` appears in `server.py` and in `README.md`. Anyone who can reach the port can add notes. Set `NOTES_TOKEN` to a random value for anything beyond local development.
++- **Binds to 127.0.0.1 only.** The README calls this a "remote" server, but a remote client cannot reach it without a tunnel.
++- **Runs as HTTP/1.0** (the `BaseHTTPRequestHandler` default), so every request opens a new connection. This works but is slower than necessary.
++- **No `resources/read` URI check.** Any URI returns the guide. Harmless with the current single resource.
++
++## Suggested order
++
++1. Catch-all exception handling and argument validation (fixes point 1, the main crash source).
++2. Notification handling (point 4) and the anonymous resource/auth responses (points 2 and 3).
++3. Protocol version negotiation (point 6).
++4. Tool errors as `isError` results (point 7).
++
++I ran no tests against a real client, so I did not check whether points 2, 3 and 6 break a specific client in practice. Those need a run against Claude Code or another client to confirm.

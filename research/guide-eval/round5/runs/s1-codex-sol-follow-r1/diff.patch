@@ -1,0 +1,66 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..8b8d3c2
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,7 @@
++# Generator fix
++
++`gen.py` now writes HR corridors as `{"units": "%lthr", "start": low, "end": high}`. Intervals uses `start`/`end` for an Instant HR corridor; the previous `value`/`end` shape exported as a zone-mapped target, which explains the watch bands in `readback/watch-notes.md`. Percentages remain relative to the LTHR stored in Intervals, so the sample Float target should export as about 129–141 bpm from LTHR 172.
++
++The event also includes a top-level `description` in Intervals' workout text grammar. It lists each step, uses `m` for minutes, and places blank lines around repeat blocks so the web UI can parse and display the workout. Labels starting with digits or containing `Z` followed by a number are made safe for that grammar in the description; the structured step labels remain as supplied.
++
++Local verification: generated `plans/tempo-run.json` and checked that all four HR steps use `%lthr` with `start`/`end`, that the description contains the `3x` Tempo/Float block, and that the Python file compiles. No event was sent to Intervals or synced to a watch, so API parsing and Garmin display still require a real round trip to confirm.
+diff --git a/gen.py b/gen.py
+index be0b3bc..c84c3de 100755
+--- a/gen.py
++++ b/gen.py
+@@ -4,13 +4,39 @@
+ Usage: python3 gen.py plans/tempo-run.json > event.json
+ """
+ import json
++import re
+ import sys
+ 
+ 
+ def hr_target(step):
+     """HR corridor for a step, as a percentage of the athlete's LTHR."""
+     lo, hi = step["hr_pct"]
+-    return {"units": "%lthr", "value": lo, "end": hi}
++    return {"units": "%lthr", "start": lo, "end": hi}
++
++
++def description_step(step):
++    """Render a step in Intervals' workout text grammar."""
++    label = " ".join(step.get("label", "Step").split()) or "Step"
++    if label[0].isdigit():
++        label = "Step " + label
++    label = re.sub(r"\bZ(\d+)\b", r"Zone \1", label)
++    line = f"- {label} {step['minutes']}m"
++    if "hr_pct" in step:
++        lo, hi = step["hr_pct"]
++        line += f" {lo}-{hi}% LTHR"
++    return line
++
++
++def build_description(plan):
++    blocks = []
++    for block in plan["steps"]:
++        if "repeat" in block:
++            lines = [f"{block['repeat']}x"]
++            lines.extend(description_step(s) for s in block["steps"])
++            blocks.append("\n".join(lines))
++        else:
++            blocks.append(description_step(block))
++    return "\n\n".join(blocks)
+ 
+ 
+ def build_step(step):
+@@ -41,6 +67,7 @@ def build_event(plan):
+         "type": plan["sport"],
+         "name": plan["name"],
+         "start_date_local": plan["date"] + "T00:00:00",
++        "description": build_description(plan),
+         "workout_doc": build_doc(plan),
+     }
+ 

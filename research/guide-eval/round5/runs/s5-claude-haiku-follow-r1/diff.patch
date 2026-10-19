@@ -1,0 +1,199 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..cb9e39b
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,93 @@
++# Soft 404 on note pages that open fine
++
++## Cause
++
++The note pages are one HTML shell. `site/app.js` fills them in by fetching
++`/v1/notes/{slug}` and, if that fetch fails, it renders a "NOT FOUND — No note
++lives at this address." screen with HTTP 200.
++
++On 2026-09-07 `site/robots.txt` got `Disallow: /v1/`. Googlebot renders the page
++with the same JavaScript and obeys robots.txt for every fetch, so:
++
++1. Googlebot loads `/n/drip-line-pressure` (allowed).
++2. Its fetch of `/v1/notes/drip-line-pressure` is blocked.
++3. `app.js` shows the NOT FOUND screen, status 200.
++4. Google classifies that as a soft 404.
++
++The search-console export and the URL Inspection output agree:
++`Crawl: allowed (robots.txt)`, `Indexing: Page cannot be indexed: Soft 404`,
++rendered text "NOT FOUND  No note lives at this address." Your browser is not
++affected because it does not obey robots.txt.
++
++The same `/v1/` rule also explains the homepage: the list is also fetched from
++`/v1/notes?limit=50`, so Google's render of `/` was empty too.
++
++The homepage HTML also has zero `<a href="/n/...">` links (`grep -c` returns 0),
++so Google can only find notes through the sitemap. That is a separate weakness,
++not the cause of the soft 404s.
++
++## Fix
++
++`site/robots.txt` now allows the public read endpoint and re-blocks the parts
++that must stay out, using longer rules. Google picks the longest matching rule,
++so the specific block beats the broad allow:
++
++```
++User-agent: *
++Allow: /v1/notes
++Disallow: /v1/notes/*/reactions
++Disallow: /v1/
++Disallow: /admin/
++
++Sitemap: https://fieldnotes.example/sitemap.xml
++```
++
++- `/v1/notes`, `/v1/notes/{slug}` and `/v1/notes?limit=50` are allowed, so the
++  pages can render for Googlebot.
++- `/v1/notes/{slug}/reactions` (POST-only, per user) stays blocked by the longer
++  rule.
++- `/v1/me`, `/v1/me/drafts`, `/v1/auth/token` and `/admin/` stay blocked.
++
++## Verification
++
++`search-console/robots-check.mjs` applies Google's rules (longest match wins, Allow
++wins a tie, `*` and `$` supported). It is not `urllib.robotparser`, which uses
++first-match.
++
++```
++$ node search-console/robots-check.mjs
++PASS  allow  /n/drip-line-pressure  (no rule)
++PASS  allow  /  (no rule)
++PASS  allow  /skills  (no rule)
++PASS  allow  /v1/notes/drip-line-pressure  (allow /v1/notes)
++PASS  allow  /v1/notes/soil-ph-kit-review  (allow /v1/notes)
++PASS  allow  /v1/notes?limit=50  (allow /v1/notes)
++PASS  block  /v1/notes/drip-line-pressure/reactions  (disallow /v1/notes/*/reactions)
++PASS  block  /v1/me  (disallow /v1/)
++PASS  block  /v1/me/drafts  (disallow /v1/)
++PASS  block  /v1/auth/token  (disallow /v1/)
++PASS  block  /admin/  (disallow /admin/)
++PASS  block  /admin/users  (disallow /admin/)
++all 12 cases passed
++```
++
++Against the old `robots.txt` the same script fails 3 cases, including
++`/v1/notes?limit=50`, which is the homepage list.
++
++## Not done here
++
++- **Not deployed.** Nothing was uploaded to S3/CloudFront and nothing was
++  submitted to Search Console. Deploy `site/robots.txt`, then check the live file
++  with `curl -s https://fieldnotes.example/robots.txt`.
++- **Search Console:** after deploying, request a recrawl of the robots.txt report
++  and use URL Inspection → Test live URL on `/n/drip-line-pressure` to confirm it
++  is no longer a soft 404. Request indexing for the pages that matter (about 10
++  URLs/day).
++- **Optional, recommended:** have the build write real `<a href="/n/<slug>">`
++  links into the homepage HTML. The build script is not in this repo, so I did not
++  change it. Check afterwards with
++  `curl -s https://fieldnotes.example/ | grep -o 'href="/n/[^"]*"' | sort -u | wc -l`.
++- **Optional:** the NOT FOUND screen is served with HTTP 200 for every failure,
++  including network errors. Returning a real 404 for genuinely missing notes would
++  stop this class of problem from hiding real errors. That needs the server to
++  handle it; it is not a client-side change.
+diff --git a/search-console/robots-check.mjs b/search-console/robots-check.mjs
+new file mode 100644
+index 0000000..1d3975c
+--- /dev/null
++++ b/search-console/robots-check.mjs
+@@ -0,0 +1,78 @@
++// Checks site/robots.txt the way Google does: the longest matching rule wins,
++// and on a tie Allow wins. Supports * and a trailing $. Python's urllib.robotparser
++// applies first-match, so it is not used here.
++// Usage: node search-console/robots-check.mjs [robots.txt path]
++import { readFileSync } from "node:fs";
++import { fileURLToPath } from "node:url";
++import { dirname, join } from "node:path";
++
++const here = dirname(fileURLToPath(import.meta.url));
++const file = process.argv[2] ?? join(here, "..", "site", "robots.txt");
++
++function parse(text) {
++  const rules = [];
++  let applies = false;
++  for (const raw of text.split("\n")) {
++    const line = raw.replace(/#.*/, "").trim();
++    const m = line.match(/^([A-Za-z-]+):\s*(.*)$/);
++    if (!m) continue;
++    const [, key, value] = m;
++    if (key.toLowerCase() === "user-agent") applies = value === "*";
++    else if (applies && /^(allow|disallow)$/i.test(key) && value) {
++      rules.push({ type: key.toLowerCase(), pattern: value });
++    }
++  }
++  return rules;
++}
++
++function toRegex(pattern) {
++  const body = pattern
++    .replace(/\$$/, "")
++    .split("*")
++    .map(s => s.replace(/[.+?^${}()|[\]\\]/g, "\\$&"))
++    .join(".*");
++  return new RegExp("^" + body + (pattern.endsWith("$") ? "$" : ""));
++}
++
++function allowed(rules, path) {
++  let best = null;
++  for (const rule of rules) {
++    if (!toRegex(rule.pattern).test(path)) continue;
++    const len = rule.pattern.length;
++    if (!best || len > best.len || (len === best.len && rule.type === "allow")) {
++      best = { len, type: rule.type, pattern: rule.pattern };
++    }
++  }
++  return { ok: !best || best.type === "allow", by: best };
++}
++
++const rules = parse(readFileSync(file, "utf8"));
++
++// [path, expected] — expected true means Googlebot may fetch it.
++const cases = [
++  // Pages and the data they render from: must be allowed.
++  ["/n/drip-line-pressure", true],
++  ["/", true],
++  ["/skills", true],
++  ["/v1/notes/drip-line-pressure", true],
++  ["/v1/notes/soil-ph-kit-review", true],
++  ["/v1/notes?limit=50", true],
++  // Blocked: POST-only or per-user, and admin.
++  ["/v1/notes/drip-line-pressure/reactions", false],
++  ["/v1/me", false],
++  ["/v1/me/drafts", false],
++  ["/v1/auth/token", false],
++  ["/admin/", false],
++  ["/admin/users", false],
++];
++
++let failed = 0;
++for (const [path, expected] of cases) {
++  const { ok, by } = allowed(rules, path);
++  const pass = ok === expected;
++  if (!pass) failed++;
++  const why = by ? `${by.type} ${by.pattern}` : "no rule";
++  console.log(`${pass ? "PASS" : "FAIL"}  ${ok ? "allow" : "block"}  ${path}  (${why})`);
++}
++console.log(failed ? `${failed} case(s) failed` : `all ${cases.length} cases passed`);
++process.exit(failed ? 1 : 0);
+diff --git a/site/robots.txt b/site/robots.txt
+index c8746c7..dcc8294 100644
+--- a/site/robots.txt
++++ b/site/robots.txt
+@@ -1,4 +1,11 @@
+ User-agent: *
++# Public read endpoints the pages render from. Googlebot renders the page with
++# these fetches, so they must not be blocked.
++Allow: /v1/notes
++# POST-only per-note routes. Google's longest match keeps these blocked even
++# though /v1/notes is allowed above.
++Disallow: /v1/notes/*/reactions
++# Everything else under the API (auth, per-user, drafts, create/edit) stays out.
+ Disallow: /v1/
+ Disallow: /admin/
+ 

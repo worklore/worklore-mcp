@@ -1,0 +1,38 @@
+# Why the watch HR ranges were clamped, and the fix
+
+## Cause
+
+`gen.py` built every HR target as `{"units": "%lthr", "value": lo, "end": hi}`.
+Intervals exports a `value`/`end` target as a lap-HR (zone-mapped) target, so
+the watch maps the range onto its own auto-detected zones (LTHR 168 on this
+watch). That is why each corridor showed up as a watch zone band
+(118–137, 151–162, 137–151) instead of the planned bpm range.
+
+The `start`/`end` form is the one that exports as an instant-HR corridor, which
+the watch shows as the raw bpm Intervals computed. The readback in
+`readback/watch-notes.md` shows the same `value`/`end` shape being sent, so the
+symptom matches.
+
+## Change
+
+`gen.py`, `hr_target()`: the lower bound key is now `"start"` instead of
+`"value"`. `units` (`%lthr`) and the percentages are unchanged, so Intervals
+still converts them using the LTHR stored in Intervals (172), not the watch's.
+I added a docstring line explaining why the key matters so nobody reverts it.
+
+Regenerated output for `plans/tempo-run.json` now has, for each HR target,
+`"start"` and `"end"` with no `"value"`. For example, Warm-up:
+`{"units": "%lthr", "start": 68, "end": 75}`.
+
+## Not verified here
+
+- I did not push to Intervals or sync the watch. The ground rules for this task
+  forbid reporting to external services, and I have no credentials here anyway.
+  The fix rests on the `start`/`end` behaviour described in the guide. Confirm
+  it with one push and a watch check, as the guide's verify step describes.
+- The guide's step 2 also recommends setting a top-level `description` in
+  Intervals' text grammar so the web UI shows the step chart. `gen.py` does not
+  set `description`, and I did not add it. That is a separate change, and it
+  does not affect the watch HR ranges.
+- `readback/event-184233-as-sent.json` is a record of the old request. I left it
+  unchanged because it is evidence of what was sent.

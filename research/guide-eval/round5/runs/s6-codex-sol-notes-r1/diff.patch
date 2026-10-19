@@ -1,0 +1,32 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..11c0794
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,26 @@
++# MCP client checkup
++
++Checked locally on 2026-10-19 by starting `python3 server.py` on an unused loopback port. Requests used Streamable HTTP headers and a returned `Mcp-Session-Id`. Only read-only tools were called. The server and note data were not changed; no external service was contacted.
++
++| Check | Result | Evidence |
++| --- | --- | --- |
++| C1 — anonymous tool discovery | PASS | `initialize` and `tools/list` both returned HTTP 200 without authorization. Three tools appeared: `search_notes`, `get_note`, `add_note`. An anonymous `server/discover` probe returned HTTP 200 with JSON-RPC `-32601`, rather than 401. |
++| C2 — readable tool refusals | **FAIL** | `get_note` with `n-999999` and with no `id` each returned HTTP 200 with a top-level JSON-RPC `error` code `-32602`. A client SDK can throw before the model sees the explanation. These should be tool results with `isError: true`. See [server.py](/tmp/h-cxAO1K/server.py:161). |
++| C3 — session after refusal | PASS | Reusing the same session after those errors, `get_note({"id":"n-1"})` returned HTTP 200, a normal result, and `isError: false`. |
++| C4 — declared output schemas on valid calls | PASS | `search_notes({"query":"soil"})` and `get_note({"id":"n-1"})` returned HTTP 200 with `structuredContent` matching their advertised schemas. The search schema only requires an object, so this pass offers little assurance. `add_note` was not called because it writes. |
++| C5 — serialisation and result agreement | **FAIL** | Responses parsed as JSON, but `search_notes` returned `content[0].text` as a JSON **array** of hits and `structuredContent` as an **object** with `hits` and `total`. The two representations disagree in shape. `get_note`'s two representations agree. See [server.py](/tmp/h-cxAO1K/server.py:111). |
++| C6 — version and surface lock | **FAIL** | `initialize` reports version `0.3.1`. No committed surface fingerprint or test tying that version to the advertised lists exists in this folder. Registry comparison was not checked because this review was restricted to local work; the README also says the server is not listed. Current resources are a fixed list, so there is no growing-list drift here. |
++| C7 — per-call logging | **FAIL** | Ordinary requests produced structured stderr lines with method, tool, ok, latency, and caller. A local batch containing `ping` and `tools/list` returned two results but produced **zero** log lines for those calls. The batch branch returns before `log()`; parse errors also return before it. See [server.py](/tmp/h-cxAO1K/server.py:205). |
++| C8 — tool names | PASS | All three names match `^[a-zA-Z0-9_-]{1,64}$`. |
++| C9 — version negotiation | PASS | `initialize` with protocol version `banana` returned the implemented `2025-06-18`, not `banana`. |
++| C10 — output schema rejects corrupt values | **FAIL** | The advertised `search_notes` output schema is only `{"type":"object"}`; it accepts any object, including a corrupted result such as `{"hits":"mcp-drill-corruption","total":-999999999}`. The `get_note` and `add_note` schemas constrain at least their `id` pattern. No write tool was called. See [server.py](/tmp/h-cxAO1K/server.py:34). |
++
++**Result: has the problem.** C2, C5, C6, C7, and C10 failed. Registry/version comparison remains unverified under the local-only constraint.
++
++## Other client-visible issues
++
++- **Advertised resources are hidden from anonymous clients.** `initialize` advertises `resources`, but anonymous `resources/list` and `resources/templates/list` returned HTTP 401 with a plain `{"error":"unauthorized"}` body. A client may treat the advertised capability as broken. See [server.py](/tmp/h-cxAO1K/server.py:148).
++- **`resources/read` ignores the requested URI.** With local development authorization, `resources/read({"uri":"notes://missing"})` returned HTTP 200 and the `notes://guide` content. See [server.py](/tmp/h-cxAO1K/server.py:155).
++- **Session IDs are issued but not checked.** A `ping` carrying an arbitrary, never-issued `Mcp-Session-Id` returned HTTP 200 and echoed that ID. A client cannot rely on the ID to identify a real server session. See [server.py](/tmp/h-cxAO1K/server.py:203).
++
++These findings came from local source inspection and a handful of serial HTTP requests. The test process was stopped afterward. No output schema validator package was installed; C4 and C10 were checked directly against the simple schemas returned by `tools/list`.

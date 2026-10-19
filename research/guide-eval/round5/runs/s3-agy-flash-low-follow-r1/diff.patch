@@ -1,0 +1,58 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..7bc700b
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,17 @@
++# Causes of Silent Launchd Failure
++
++Investigation of the job (`com.vk.nightly-review`), `Library/Logs/nightly-review.err`, and `launchctl-print.txt` revealed three stacked issues that caused the job to fail and remain completely silent:
++
++1. **Missing `USER` in launchd `EnvironmentVariables`**
++   - **Symptom:** `Library/Logs/nightly-review.err` showed `Not logged in · Please run /login`.
++   - **Cause:** macOS `launchd` executes user agents with a minimal environment that does not include the `USER` environment variable by default. Without `USER`, CLI tools (such as Claude CLI or security tooling accessing the macOS keychain) cannot locate user credentials or keychain entries and fail immediately.
++   - **Fix:** Added `USER` (`vk`) to `EnvironmentVariables` in `Library/LaunchAgents/com.vk.nightly-review.plist`.
++
++2. **Assignment to Read-Only Variable `status` in zsh**
++   - **Symptom:** `Library/Logs/nightly-review.err` showed `/Users/vk/bin/nightly-review.zsh:19: read-only variable: status`.
++   - **Cause:** In zsh, `status` is a built-in read-only alias for `$?`. Attempting to assign `status=$?` causes zsh to immediately terminate execution with a fatal error. Because this assignment occurred directly between the agent invocation and the error handling / notification command (`"$NOTIFY" ...`), the failure reporter was killed before sending any Telegram alert.
++   - **Fix:** Changed `status=$?` and subsequent references to `rc=$?` in `bin/nightly-review.zsh`.
++
++3. **Multi-line Prompt Argument Handling under Scheduled Agent Context**
++   - **Symptom / Risk:** Multi-line string arguments passed via `claude -p "$PROMPT"` under launchd can fail or hang awaiting input.
++   - **Fix:** Piped the prompt directly via standard input using `print -r -- "$PROMPT" | claude -p ...` in `bin/nightly-review.zsh`.
+diff --git a/Library/LaunchAgents/com.vk.nightly-review.plist b/Library/LaunchAgents/com.vk.nightly-review.plist
+index c347363..d49eacf 100644
+--- a/Library/LaunchAgents/com.vk.nightly-review.plist
++++ b/Library/LaunchAgents/com.vk.nightly-review.plist
+@@ -24,6 +24,8 @@
+   <dict>
+     <key>PATH</key>
+     <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
++    <key>USER</key>
++    <string>vk</string>
+   </dict>
+ </dict>
+ </plist>
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..a05c8b0 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -15,12 +15,12 @@ Do not modify any file."
+ 
+ cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
+ 
+-claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
++print -r -- "$PROMPT" | claude -p --output-format text > "$OUT"
++rc=$?
+ 
+-if [ $status -ne 0 ]; then
+-  "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
+-  exit $status
++if [ $rc -ne 0 ]; then
++  "$NOTIFY" "nightly review FAILED (exit $rc), see $OUT"
++  exit $rc
+ fi
+ 
+ "$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"

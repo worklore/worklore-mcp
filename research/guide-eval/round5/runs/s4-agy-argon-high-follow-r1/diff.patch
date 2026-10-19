@@ -1,0 +1,70 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..f2473b8
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,44 @@
++# Cache-Control Deploy Fix
++
++## What Changed
++
++Updated `scripts/deploy.sh` to set explicit `Cache-Control` and `Content-Type` metadata on S3 objects in bucket `ruta-ceramica-site-7f3a` per file extension right after `aws s3 sync` and before the CloudFront invalidation (`E2QX9ZK1DEMO01`):
++
++```bash
++for pair in "html:text/html:300" "js:application/javascript:300" \
++            "css:text/css:300" "png:image/png:86400" "svg:image/svg+xml:86400"; do
++  ext="${pair%%:*}"; rest="${pair#*:}"; ct="${rest%%:*}"; ttl="${rest#*:}"
++  aws s3 cp "s3://$BUCKET/" "s3://$BUCKET/" --recursive \
++    --exclude "*" --include "*.${ext}" \
++    --content-type "$ct" --cache-control "public, max-age=${ttl}" \
++    --metadata-directive REPLACE --only-show-errors --profile "$PROFILE"
++done
++```
++
++### Header Policy Applied by Extension
++
++- **Short cache (`public, max-age=300` — 5 minutes)** for HTML, JS (`booking.js`), and CSS (`styles.css`) so browsers re-validate frequently and stop holding stale `booking.js` for days:
++  - `*.html` → `Content-Type: text/html`, `Cache-Control: public, max-age=300`
++  - `*.js` → `Content-Type: application/javascript`, `Cache-Control: public, max-age=300`
++  - `*.css` → `Content-Type: text/css`, `Cache-Control: public, max-age=300`
++- **Long cache (`public, max-age=86400` — 24 hours)** for static assets under `assets/` (`logo.png`, `mark.svg`):
++  - `*.png` → `Content-Type: image/png`, `Cache-Control: public, max-age=86400`
++  - `*.svg` → `Content-Type: image/svg+xml`, `Cache-Control: public, max-age=86400`
++
++## Why `--content-type` Is Paired with `--metadata-directive REPLACE`
++
++In S3, `Content-Type` is stored as object metadata. Running `aws s3 cp --recursive --metadata-directive REPLACE` with only `--cache-control` overwrites all existing metadata and resets `Content-Type` to `binary/octet-stream`. Although requests still return `200 OK`, browsers respect the declared type (especially with `X-Content-Type-Options: nosniff`) and download pages as files instead of rendering HTML or executing JS.
++
++By looping over each file extension in `scripts/deploy.sh` and passing both `--content-type` and `--cache-control` together with `--metadata-directive REPLACE`, cache headers and MIME types are always applied together. The CloudFront invalidation (`/*`) runs immediately afterwards so edge nodes evict any previously cached headers.
++
++## Verification
++
++After deploying, verify headers with `curl -sI` (since a `200 OK` status alone does not confirm the MIME type) and test in a clean browser session:
++
++```bash
++curl -sI https://your-site/ | grep -iE 'content-type|cache-control'
++# Expected: content-type: text/html and cache-control: public, max-age=300
++
++curl -sI https://your-site/booking.js | grep -iE 'content-type|cache-control'
++# Expected: content-type: application/javascript and cache-control: public, max-age=300
++```
+diff --git a/scripts/deploy.sh b/scripts/deploy.sh
+index 6550d32..ddd2eb7 100755
+--- a/scripts/deploy.sh
++++ b/scripts/deploy.sh
+@@ -9,6 +9,15 @@ PROFILE="studio"
+ 
+ aws s3 sync src/ "s3://$BUCKET/" --delete --profile "$PROFILE"
+ 
++for pair in "html:text/html:300" "js:application/javascript:300" \
++            "css:text/css:300" "png:image/png:86400" "svg:image/svg+xml:86400"; do
++  ext="${pair%%:*}"; rest="${pair#*:}"; ct="${rest%%:*}"; ttl="${rest#*:}"
++  aws s3 cp "s3://$BUCKET/" "s3://$BUCKET/" --recursive \
++    --exclude "*" --include "*.${ext}" \
++    --content-type "$ct" --cache-control "public, max-age=${ttl}" \
++    --metadata-directive REPLACE --only-show-errors --profile "$PROFILE"
++done
++
+ aws cloudfront create-invalidation --distribution-id "$DISTRIBUTION_ID" \
+   --paths "/*" --profile "$PROFILE" > /dev/null
+ 

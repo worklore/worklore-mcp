@@ -1,0 +1,1 @@
+Changed the HR target key from `value` to `start` in gen.py. Intervals exports a `{value, end}` HR target as a lap-HR, zone-mapped target, which the watch clamps to its own zones; `{start, end}` becomes an instant-HR corridor and the watch shows the planned bpm. Units stay %lthr.

@@ -1,0 +1,75 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..061527c
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,18 @@
++# Why the nightly job was silent
++
++The job **did run**. The captured `launchctl print` shows `runs = 6` and `last exit code = 1`. Its stderr log has six repetitions of the same two errors, while stdout is empty.
++
++1. `claude` exited with `Not logged in · Please run /login`. The launchd environment shown in the snapshot has no `USER`, although the login user is `vk`. The plist now supplies `USER=vk` so the headless CLI can locate that user's login credentials. This diagnosis is supported by the error and missing environment variable; the snapshot cannot prove that credentials are currently valid.
++2. Immediately after `claude` failed, the wrapper assigned to `status`, a read-only zsh parameter. That terminated the script before its failure notification. The wrapper now uses `rc` and sends the failure message before exiting with the original code.
++
++The wrapper also closes stdin when passing the prompt as an argument, treats empty agent output as a failure, and makes the notifier fail on an HTTP error. These guard against additional silent or false-success cases; the snapshot does not show that they caused the six recorded failures.
++
++## Colleague's note
++
++Applied: inspect `launchctl print` and stderr; avoid zsh's `status` variable; set `USER` for the headless CLI; close stdin when `claude -p` receives a prompt argument; check the real output rather than relying only on the exit code.
++
++Did not apply: the note's missing-prompt error is absent here. This script already passes its multiline prompt as one quoted argument, so there is no evidence that piping the prompt via stdin is needed. Its suggested run-duration logging and live `kickstart` checks cannot establish the cause from this offline snapshot.
++
++## Verification
++
++`zsh -n`, `bash -n`, and `plutil -lint` pass. With local mock commands, a failed agent run sent a failure notification and returned its exit code, an empty successful run sent a failure notification, and a run with output sent a success notification. No live launchd job or Telegram delivery was tested from this snapshot.
+diff --git a/Library/LaunchAgents/com.vk.nightly-review.plist b/Library/LaunchAgents/com.vk.nightly-review.plist
+index c347363..f371054 100644
+--- a/Library/LaunchAgents/com.vk.nightly-review.plist
++++ b/Library/LaunchAgents/com.vk.nightly-review.plist
+@@ -22,6 +22,8 @@
+   <string>/Users/vk/Library/Logs/nightly-review.err</string>
+   <key>EnvironmentVariables</key>
+   <dict>
++    <key>USER</key>
++    <string>vk</string>
+     <key>PATH</key>
+     <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+   </dict>
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..33d9c5a 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -15,12 +15,17 @@ Do not modify any file."
+ 
+ cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
+ 
+-claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
++claude -p "$PROMPT" --output-format text < /dev/null > "$OUT"
++rc=$?
+ 
+-if [ $status -ne 0 ]; then
+-  "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
+-  exit $status
++if [ "$rc" -ne 0 ]; then
++  "$NOTIFY" "nightly review FAILED (exit $rc), see $OUT"
++  exit "$rc"
++fi
++
++if [ ! -s "$OUT" ]; then
++  "$NOTIFY" "nightly review FAILED (empty output), see $OUT"
++  exit 1
+ fi
+ 
+ "$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"
+diff --git a/bin/notify.sh b/bin/notify.sh
+index 818e531..bc9115f 100755
+--- a/bin/notify.sh
++++ b/bin/notify.sh
+@@ -3,5 +3,5 @@
+ set -eu
+ : "${TG_BOT_TOKEN:=$(security find-generic-password -s tg-bot -w)}"
+ CHAT_ID=123456789
+-curl -sS -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
++curl -fsS -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
+   -d chat_id="$CHAT_ID" --data-urlencode text="$1" > /dev/null

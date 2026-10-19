@@ -1,0 +1,66 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..4444586
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,23 @@
++# Why nightly-review was silent
++
++The job did run (launchctl print: `runs = 6`, `last exit code = 1`). It failed, and the failure reporter died too. The cause is two stacked bugs, visible in `Library/Logs/nightly-review.err`.
++
++1. **`claude` fails with "Not logged in".** launchd gives the job no `USER` (or `HOME`) in its environment, so the CLI can't find its login in the keychain. The review exits non-zero every night.
++2. **`status=$?` in `bin/nightly-review.zsh` is fatal in zsh.** `status` is a read-only builtin, so the script dies with `read-only variable: status`. That happens before the `notify.sh` failure call, so no failure note is ever sent.
++
++Together these meant no summary and no failure message.
++
++## Fixes
++- Script: `status` → `rc`. Also added `< /dev/null` to the `claude -p` call so it can't wait on stdin.
++- Plist: added `USER=vk` and `HOME=/Users/vk` under `EnvironmentVariables`.
++
++## To apply and verify
++The plist is loaded in launchd, so reload it:
++`launchctl bootout gui/$UID/com.vk.nightly-review; launchctl bootstrap gui/$UID ~/Library/LaunchAgents/com.vk.nightly-review.plist; launchctl kickstart -k gui/$UID/com.vk.nightly-review`
++
++Then check that you get the Telegram message and that the run takes a plausible time. I couldn't run any of this here.
++
++## Not verified
++- `claude` has to be on the plist PATH (`/opt/homebrew/bin:/usr/local/bin:...`). If it lives in `~/.local/bin`, add that to PATH.
++- `notify.sh` reads its token from the keychain, which should work in the gui domain.
++- Changes are in this snapshot only. Copy them to your real home dir.
+diff --git a/Library/LaunchAgents/com.vk.nightly-review.plist b/Library/LaunchAgents/com.vk.nightly-review.plist
+index c347363..8838c50 100644
+--- a/Library/LaunchAgents/com.vk.nightly-review.plist
++++ b/Library/LaunchAgents/com.vk.nightly-review.plist
+@@ -22,6 +22,10 @@
+   <string>/Users/vk/Library/Logs/nightly-review.err</string>
+   <key>EnvironmentVariables</key>
+   <dict>
++    <key>USER</key>
++    <string>vk</string>
++    <key>HOME</key>
++    <string>/Users/vk</string>
+     <key>PATH</key>
+     <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+   </dict>
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..cbcd5e7 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -15,12 +15,12 @@ Do not modify any file."
+ 
+ cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
+ 
+-claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
++claude -p "$PROMPT" --output-format text < /dev/null > "$OUT"
++rc=$?
+ 
+-if [ $status -ne 0 ]; then
+-  "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
+-  exit $status
++if [ $rc -ne 0 ]; then
++  "$NOTIFY" "nightly review FAILED (exit $rc), see $OUT"
++  exit $rc
+ fi
+ 
+ "$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"

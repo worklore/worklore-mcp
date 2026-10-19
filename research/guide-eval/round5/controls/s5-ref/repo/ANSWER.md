@@ -1,0 +1,1 @@
+Cause: robots.txt blocks /v1/, and the pages are rendered by app.js from /v1/notes/{slug}. Googlebot obeys robots.txt when rendering, the fetch fails, app.js shows the NOT FOUND screen with HTTP 200, and Google files it as a Soft 404. Fix: Allow /v1/notes (longest rule wins), keep /v1/ and the per-user paths blocked. Then request a recrawl.

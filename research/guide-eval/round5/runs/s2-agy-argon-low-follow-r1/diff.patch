@@ -1,0 +1,58 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..d6b76dc
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,13 @@
++# Root Cause & Fix for Ticket #4471 (Empty Session Replays on New UI)
++
++## Why Session Replay Was Empty on the New UI
++
++On Flutter mobile, PostHog session replay works by capturing screenshots of the widget tree using `PostHogWidget`. Without `PostHogWidget` wrapping the root app widget (`MaterialApp` / `MaterialApp.router`), the `posthog_flutter` SDK still captures and sends lifecycle events, screen views (via `PosthogObserver`), and custom events, but it has no visual frames to record—resulting in empty/missing session replays without emitting any errors or warnings.
++
++- **Old UI (`lib/legacy_app.dart`)**: `LegacyApp` wrapped its `MaterialApp` inside `PostHogWidget`, so session replays worked as expected.
++- **New UI (`lib/new_app.dart`)**: When `NewApp` was introduced with `MaterialApp.router`, `PostHogWidget` was omitted around `MaterialApp.router`.
++
++## Fix Applied
++
++1. Wrapped `MaterialApp.router` in `lib/new_app.dart` with `PostHogWidget`.
++2. Added comments in both `lib/new_app.dart` and `lib/legacy_app.dart` explaining that `PostHogWidget` is required for PostHog session replay so it is not accidentally removed in future refactors.
+diff --git a/lib/legacy_app.dart b/lib/legacy_app.dart
+index 7b3cad7..36845cc 100644
+--- a/lib/legacy_app.dart
++++ b/lib/legacy_app.dart
+@@ -10,6 +10,7 @@ class LegacyApp extends StatelessWidget {
+ 
+   @override
+   Widget build(BuildContext context) {
++    // PostHogWidget is required for PostHog session replay to capture screenshots of the widget tree.
+     return PostHogWidget(
+       child: MaterialApp(
+         title: 'Loanly',
+diff --git a/lib/new_app.dart b/lib/new_app.dart
+index 92e4ff9..94a54f8 100644
+--- a/lib/new_app.dart
++++ b/lib/new_app.dart
+@@ -21,13 +21,16 @@ class NewApp extends StatelessWidget {
+ 
+   @override
+   Widget build(BuildContext context) {
+-    return MaterialApp.router(
+-      title: 'Loanly',
+-      theme: ThemeData(
+-        colorSchemeSeed: Colors.indigo,
+-        useMaterial3: true,
++    // PostHogWidget is required for PostHog session replay to capture screenshots of the widget tree.
++    return PostHogWidget(
++      child: MaterialApp.router(
++        title: 'Loanly',
++        theme: ThemeData(
++          colorSchemeSeed: Colors.indigo,
++          useMaterial3: true,
++        ),
++        routerConfig: _router,
+       ),
+-      routerConfig: _router,
+     );
+   }
+ }

@@ -1,0 +1,3 @@
+The new UI was missing `PostHogWidget` around `MaterialApp.router`. The old UI has that wrapper, which explains why its sessions have replays while the new UI’s events arrive without recordings.
+
+I added the wrapper in [new_app.dart](/tmp/h-LyxErX/lib/new_app.dart:24) and documented the cause, fix, and verification in [ANSWER.md](/tmp/h-LyxErX/ANSWER.md). Formatting and `git diff --check` passed. A device run is still needed to confirm that new UI sessions appear in PostHog with visible frames.

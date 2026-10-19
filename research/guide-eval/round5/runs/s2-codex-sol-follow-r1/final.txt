@@ -1,0 +1,3 @@
+The new UI’s `MaterialApp.router` was missing `PostHogWidget`. PostHog could receive its events and screen changes, but had no widget frames to record. The old UI already had the wrapper.
+
+I added it in [new_app.dart](/tmp/h-KVw7Kb/lib/new_app.dart:24) and documented the cause in [ANSWER.md](/tmp/h-KVw7Kb/ANSWER.md). Dart formatting and Flutter analysis passed. Replay itself still needs verification on an iOS or Android device or emulator with the configured PostHog project.

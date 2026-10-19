@@ -1,0 +1,67 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..b5d5008
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,27 @@
++# Why the nightly job never reported anything
++
++1. **`claude` is not logged in in the launchd context.** Every run in
++   `nightly-review.err` says `Not logged in · Please run /login`, so the review
++   itself fails every night (`last exit code = 1`, `runs = 6`). Interactive
++   login state is not available to the launchd job. This one I could not fix
++   from here: run `claude setup-token` and provide the token to the job
++   (e.g. `CLAUDE_CODE_OAUTH_TOKEN` in the plist's `EnvironmentVariables`, or
++   read it from the keychain in the script), then reload the agent.
++
++2. **The failure handler crashed, so no failure note was ever sent.** The
++   script did `status=$?`, but `status` is a read-only special variable in zsh
++   (`read-only variable: status`, err line 2 of each run). The script aborted
++   before reaching the `notify.sh` call. Fixed: renamed to `rc`.
++
++3. **The failure message pointed at an empty file and hid the real error.**
++   stderr went to launchd's log, while `$OUT` was empty. Now stderr is saved
++   to `nightly-review-DATE.err` and its first 200 bytes go into the note.
++
++4. **`notify.sh` could fail silently.** `curl -sS` exits 0 on Telegram HTTP
++   errors (bad token/chat) and output goes to /dev/null. Changed to
++   `--fail-with-body` so a rejected message produces a non-zero exit and an
++   error on stderr (visible in `nightly-review.err`).
++
++Note: the plist's PATH (`/opt/homebrew/bin:...`) is fine if `claude` lives
++there; if it is installed elsewhere (e.g. `~/.local/bin`), add that dir to the
++plist PATH too. After editing, reload with `launchctl bootout` / `bootstrap`.
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..bcccae7 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -15,12 +15,13 @@ Do not modify any file."
+ 
+ cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
+ 
+-claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
++ERR="${OUT%.md}.err"
++claude -p "$PROMPT" --output-format text > "$OUT" 2> "$ERR"
++rc=$?   # not "status": it is read-only in zsh
+ 
+-if [ $status -ne 0 ]; then
+-  "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
+-  exit $status
++if [ $rc -ne 0 ]; then
++  "$NOTIFY" "nightly review FAILED (exit $rc): $(head -c 200 "$ERR")"
++  exit $rc
+ fi
+ 
+ "$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"
+diff --git a/bin/notify.sh b/bin/notify.sh
+index 818e531..b0b56d1 100755
+--- a/bin/notify.sh
++++ b/bin/notify.sh
+@@ -3,5 +3,5 @@
+ set -eu
+ : "${TG_BOT_TOKEN:=$(security find-generic-password -s tg-bot -w)}"
+ CHAT_ID=123456789
+-curl -sS -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
++curl -sS --fail-with-body -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
+   -d chat_id="$CHAT_ID" --data-urlencode text="$1" > /dev/null

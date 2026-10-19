@@ -1,0 +1,41 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..cba7456
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,35 @@
++# Soft 404 on pages that load fine
++
++## Cause
++
++Googlebot renders the page with JavaScript and fetches the data it needs from the site’s internal API (e.g. `/v1/...`). The **robots.txt** file contained a rule:
++
++```
++Disallow: /v1/
++```
++
++Because this rule blocks the API path, Google is not allowed to retrieve the JSON that populates the page. When the fetch fails, the application displays its *“NOT FOUND — No story lives at this address”* screen with an HTTP 200 response. Google interprets that as a **soft 404** – a page that returns a successful status code but has no substantive content.
++
++## Fix
++
++Update **robots.txt** so that the public read endpoints needed for page rendering are **allowed**, while keeping the POST‑only and per‑user endpoints blocked with more specific rules. The longest‑match rule wins, and `Allow` beats a tie, so the file should look something like:
++
++```
++User-agent: *
++# Allow the read‑only API endpoints used by the pages
++Allow: /v1/stories
++
++# Keep the generic block for the rest of the API
++Disallow: /v1/
++
++# Block any per‑user or admin endpoints with longer paths
++Disallow: /v1/stories/*/reproduced
++Disallow: /v1/admin/
++```
++
++After deploying the updated `robots.txt`:
++1. Verify it’s live (`curl -s https://<site>/robots.txt`).
++2. In Search Console request a recrawl of the affected URLs.
++3. Use the URL Inspection tool – the pages should no longer be reported as *Soft 404* and will move to *Crawled – currently not indexed* and eventually to *Indexed*.
++
++By allowing the necessary API calls, Google can render the full content, eliminating the soft 404 classification.

@@ -1,0 +1,9 @@
+User-agent: *
+# Public read endpoints the pages render from (app.js fetches these)
+Allow: /v1/notes
+# POST-only, per-user; longer rule than Allow wins for these
+Disallow: /v1/notes/*/reactions
+Disallow: /v1/
+Disallow: /admin/
+
+Sitemap: https://fieldnotes.example/sitemap.xml

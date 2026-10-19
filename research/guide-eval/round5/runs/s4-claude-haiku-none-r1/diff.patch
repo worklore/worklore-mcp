@@ -1,0 +1,103 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..7e6e7ae
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,61 @@
++# Cache-Control on deploy
++
++## Problem
++
++`scripts/deploy.sh` uploaded `src/` with `aws s3 sync` and set no
++`Cache-Control` header. Browsers then apply their heuristic caching to
++`booking.js`, so returning visitors kept the old file for days even though
++CloudFront was invalidated on every deploy.
++
++## Change (`scripts/deploy.sh`)
++
++1. `aws s3 sync src/ ... --delete` is unchanged. It still uploads changed
++   files and removes deleted ones.
++2. New: `aws s3 cp src/ ... --recursive --exclude "assets/*"` with
++   `Cache-Control: public, max-age=300, must-revalidate`. This covers
++   `*.html`, `booking.js` and `styles.css` at the site root.
++3. New: `aws s3 cp src/assets/ ... --recursive` with
++   `Cache-Control: public, max-age=31536000`.
++4. CloudFront invalidation is unchanged.
++
++Step 2 is needed because `aws s3 sync` skips objects whose size and
++timestamp have not changed. Without it, objects already in the bucket would
++never receive the header. Re-copying everything once per deploy handles
++that. The site is small, so the extra upload is negligible.
++
++## Decisions to review
++
++- **`styles.css` gets the short cache.** The request said "short for HTML
++  and JS". The stylesheet sits at the root, not in `assets/`, so it follows
++  the short rule. Move it to `assets/` if it should be cached longer.
++- **`assets/` is cached for one year without fingerprinting.** Filenames
++  such as `logo.png` and `mark.svg` are not versioned. If one of them
++  changes, browsers keep the old copy for up to a year. The script comment
++  says to rename the file to change it.
++- **`must-revalidate` on the short cache.** A stale copy is never reused
++  after it expires.
++
++## Verification
++
++- `bash -n scripts/deploy.sh` passes.
++- The script was not run, because it deploys to S3 and invalidates
++  CloudFront, and the ground rules say not to deploy. The AWS CLI calls are
++  untested against the real bucket.
++
++To confirm after the first real deploy:
++
++```sh
++aws s3api head-object --bucket ruta-ceramica-site-7f3a --key booking.js \
++  --profile studio --query CacheControl
++aws s3api head-object --bucket ruta-ceramica-site-7f3a --key assets/logo.png \
++  --profile studio --query CacheControl
++```
++
++Expected output: `"public, max-age=300, must-revalidate"` and
++`"public, max-age=31536000"`.
++
++## Not done
++
++- No deploy, publish or external submission.
++- `README.md` still lists the stale-JS problem as open. Update it after the
++  change is confirmed in production.
+diff --git a/scripts/deploy.sh b/scripts/deploy.sh
+index 6550d32..92c27c6 100755
+--- a/scripts/deploy.sh
++++ b/scripts/deploy.sh
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env bash
+-# Upload src/ to the bucket and invalidate CloudFront.
++# Upload src/ to the bucket, set Cache-Control per file type, invalidate CloudFront.
+ set -euo pipefail
+ cd "$(dirname "$0")/.."
+ 
+@@ -7,8 +7,24 @@ BUCKET="ruta-ceramica-site-7f3a"
+ DISTRIBUTION_ID="E2QX9ZK1DEMO01"
+ PROFILE="studio"
+ 
++# HTML, JS and CSS change with every release, so browsers revalidate after 5 minutes.
++SHORT_CACHE="public, max-age=300, must-revalidate"
++# assets/ files are not fingerprinted, so these are cached for a year.
++# To change one, rename it (e.g. logo.v2.png) so the URL changes.
++LONG_CACHE="public, max-age=31536000"
++
++# 1. Sync adds, updates and deletes objects. It skips files whose size and
++#    timestamp are unchanged, so it cannot be relied on to set headers.
+ aws s3 sync src/ "s3://$BUCKET/" --delete --profile "$PROFILE"
+ 
++# 2. Re-copy everything so each object gets its Cache-Control header.
++#    Existing objects from before this change have none, so they need this too.
++aws s3 cp src/ "s3://$BUCKET/" --recursive --exclude "assets/*" \
++  --cache-control "$SHORT_CACHE" --profile "$PROFILE"
++
++aws s3 cp src/assets/ "s3://$BUCKET/assets/" --recursive \
++  --cache-control "$LONG_CACHE" --profile "$PROFILE"
++
+ aws cloudfront create-invalidation --distribution-id "$DISTRIBUTION_ID" \
+   --paths "/*" --profile "$PROFILE" > /dev/null
+ 

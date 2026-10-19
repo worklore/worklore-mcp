@@ -1,0 +1,30 @@
+# Cause and Fix for Soft 404 Issue
+
+## Why Search Console reports Soft 404
+
+1. **Client-Side Rendering Dependency**:
+   The frontend is a single-page client-rendered application where `/index.html` loads [app.js](file:///tmp/h-1PtLtQ/site/app.js). When viewing a note page (e.g. `/n/drip-line-pressure`), [app.js](file:///tmp/h-1PtLtQ/site/app.js) executes `fetch('/v1/notes/' + slug)` to retrieve the note's content from the API. If this fetch fails or is rejected, the script catches the error and renders the error fallback into the DOM:
+   `NOT FOUND  No note lives at this address.  Back to all notes`.
+
+2. **Robots.txt Blocking Googlebot from API Requests**:
+   On 2026-09-07, `Disallow: /v1/` was added to [robots.txt](file:///tmp/h-1PtLtQ/site/robots.txt). When Googlebot renders client-side JavaScript pages, it respects `robots.txt` rules for subresources. Because `/v1/` was disallowed, Googlebot was prevented from fetching `/v1/notes/{slug}` during page rendering.
+
+3. **Soft 404 Detection**:
+   Because the fetch to `/v1/notes/{slug}` failed during Googlebot's render pass, the catch block in [app.js](file:///tmp/h-1PtLtQ/site/app.js) ran and rendered the "NOT FOUND" message into the page while the server returned HTTP 200 (since CloudFront serves `index.html` with a 200 status code). Google Search Console detects pages that return HTTP 200 but display missing-page / not-found content as **Soft 404**. Notes crawled before September 7 remained indexed, whereas notes crawled after September 7 were flagged as Soft 404s.
+
+---
+
+## Fix
+
+In [site/robots.txt](file:///tmp/h-1PtLtQ/site/robots.txt), explicitly allow crawlers to access the public read endpoints under `/v1/notes` before disallowing the rest of `/v1/`:
+
+```robots.txt
+User-agent: *
+Allow: /v1/notes
+Disallow: /v1/
+Disallow: /admin/
+
+Sitemap: https://fieldnotes.example/sitemap.xml
+```
+
+This permits Googlebot to fetch `/v1/notes` and `/v1/notes/{slug}` during client rendering so that note content renders properly without triggering the fallback "NOT FOUND" state, while continuing to disallow non-public `/v1/` paths (such as `/v1/me`, `/v1/auth/token`, etc.).

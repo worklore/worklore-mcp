@@ -1,0 +1,23 @@
+# What Changed and Why
+
+## What Changed
+
+In `gen.py` (`hr_target`), changed the lower-bound key of the step HR target object from `"value"` to `"start"`:
+
+```python
+def hr_target(step):
+    """HR corridor for a step, as a percentage of the athlete's LTHR."""
+    lo, hi = step["hr_pct"]
+    return {"units": "%lthr", "start": lo, "end": hi}
+```
+
+## Why
+
+When Intervals.icu exports a structured workout (`workout_doc.steps`) to a Garmin FIT file, the key name used for the lower bound of the `hr` target controls the FIT target mode:
+
+- **`{"units": "%lthr", "value": lo, "end": hi}` (`value`/`end`)**: Exported as a **Lap-HR / zone-mapped** target. The Garmin watch maps the target onto its own local LTHR zones (here, auto-detected LTHR 168 with zones `118–137`, `137–151`, `151–162` bpm), clamping every step corridor to the watch's zone boundaries instead of the planned corridor.
+- **`{"units": "%lthr", "start": lo, "end": hi}` (`start`/`end`)**: Exported as an **Instant-HR corridor**. Intervals.icu resolves the `%lthr` percentages against the athlete's LTHR stored in Intervals (172 bpm) at FIT-export time and writes the exact computed bpm range into the workout step (`117–129`, `151–160`, `129–141`, and `112–124` bpm), bypassing the watch's local zones and any watch-side LTHR drift.
+
+Keeping `"units": "%lthr"` with `start`/`end` is also required because:
+- Sending `{"units": "bpm", "value": ..., "end": ...}` is misinterpreted during FIT export as a percentage, producing invalid high bpm values (e.g., `214–249` bpm).
+- Sending `{"start_bpm": ..., "end_bpm": ...}` is unrecognized by the Intervals schema and silently dropped, causing Garmin to display its fallback value (`101`).

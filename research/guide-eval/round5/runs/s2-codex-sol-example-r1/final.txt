@@ -1,0 +1,3 @@
+The new UI’s `MaterialApp.router` was missing `PostHogWidget`, which PostHog needs to capture Flutter replay frames. Events still arrived because PostHog initialization and route observation were already working.
+
+I wrapped the new app in [PostHogWidget](/tmp/h-DnjlPN/lib/new_app.dart:24) and documented the cause, the applicable parts of the colleague’s note, and the remaining device check in [ANSWER.md](/tmp/h-DnjlPN/ANSWER.md). `flutter analyze` passed. A playable replay still needs confirmation on an iOS or Android device; this checkout has no platform project.

@@ -1,0 +1,93 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..4ffde99
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,22 @@
++# HR targets clamped to watch zones
++
++## Cause
++`gen.py` sent a hand-built `workout_doc` (`hr: {units: "%lthr", value, end}`).
++In Intervals.icu `workout_doc` is the *parsed output* of the workout text in
++`description`; the API echoes it back (so `steps` looked populated), but it is
++not the authoritative input. The export to Garmin therefore didn't get a proper
++HR range target and the watch fell back to its own zone bands. The earlier
++`bpm` / `start_bpm` experiments were the same wrong-field problem.
++
++## Change
++`gen.py` now emits the workout in Intervals' workout text syntax in
++`description` (e.g. `- Tempo 8m 88-93% LTHR`, repeats as `3x` + steps) and no
++longer sends `workout_doc`. Intervals parses this itself and converts to bpm
++from its LTHR (172) at export. Plan files and `push.sh` are unchanged.
++
++## Not verified
++I could not push (no external calls allowed) or see the watch. Please push
++`python3 gen.py plans/tempo-run.json`, check that `workout_doc` read-back has
++the 68–75 / 88–93 % ranges, and that the watch shows ~151–160 for Tempo. If the
++watch still shows zones, check the Garmin export/sync setting in Intervals
++(HR target as range vs. zone) next.
+diff --git a/gen.py b/gen.py
+index be0b3bc..3f7001c 100755
+--- a/gen.py
++++ b/gen.py
+@@ -7,32 +7,33 @@ import json
+ import sys
+ 
+ 
+-def hr_target(step):
+-    """HR corridor for a step, as a percentage of the athlete's LTHR."""
+-    lo, hi = step["hr_pct"]
+-    return {"units": "%lthr", "value": lo, "end": hi}
++def fmt_minutes(minutes):
++    return f"{minutes}m"
+ 
+ 
+-def build_step(step):
+-    out = {"duration": step["minutes"] * 60}
+-    if "hr_pct" in step:
+-        out["hr"] = hr_target(step)
++def build_line(step):
++    """One workout-syntax line: '- <label> 10m 68-75% LTHR'."""
++    parts = ["-"]
+     if "label" in step:
+-        out["text"] = step["label"]
+-    return out
++        parts.append(step["label"])
++    parts.append(fmt_minutes(step["minutes"]))
++    if "hr_pct" in step:
++        lo, hi = step["hr_pct"]
++        parts.append(f"{lo}-{hi}% LTHR")
++    return " ".join(parts)
+ 
+ 
+-def build_doc(plan):
+-    steps = []
++def build_description(plan):
++    """Intervals.icu workout text; the server parses it into workout_doc."""
++    blocks = []
+     for block in plan["steps"]:
+         if "repeat" in block:
+-            steps.append({
+-                "reps": block["repeat"],
+-                "steps": [build_step(s) for s in block["steps"]],
+-            })
++            lines = [f"{block['repeat']}x"]
++            lines += [build_line(s) for s in block["steps"]]
+         else:
+-            steps.append(build_step(block))
+-    return {"steps": steps}
++            lines = [build_line(block)]
++        blocks.append("\n".join(lines))
++    return "\n\n".join(blocks)
+ 
+ 
+ def build_event(plan):
+@@ -41,7 +42,7 @@ def build_event(plan):
+         "type": plan["sport"],
+         "name": plan["name"],
+         "start_date_local": plan["date"] + "T00:00:00",
+-        "workout_doc": build_doc(plan),
++        "description": build_description(plan),
+     }
+ 
+ 

@@ -1,0 +1,60 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..3f0c6c2
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,16 @@
++# Cache-Control on deploy
++
++Changed `scripts/deploy.sh` (not run; nothing was deployed).
++
++- The single `aws s3 sync` is replaced by per-extension syncs that set `--cache-control` and an explicit `--content-type` together.
++- HTML, JS, CSS: `public, max-age=300` (5 minutes), so a new `booking.js` reaches browsers quickly.
++- `assets/` (png, svg): `public, max-age=2592000` (30 days).
++- Content types are explicit (`text/html`, `application/javascript`, `text/css`, `image/png`, `image/svg+xml`). This avoids the `binary/octet-stream` trap described in `notes/a-cache-header-tweak-served-my-whole-site-as-octet-stream.md`. I did not use `--metadata-directive REPLACE`.
++- The script fails early if `src/` contains a file type with no mapping.
++- `--delete` still works, applied per pass within each file type.
++- The CloudFront invalidation is unchanged.
++
++Notes:
++- Assets aren't fingerprinted, so a replaced `logo.png` can stay cached up to 30 days. Rename the file or shorten `LONG` if that matters.
++- Visitors who already cached the old `booking.js` with no header keep it until their browser revalidates. The new headers only apply after the next deploy.
++- After deploying, check with `curl -sI <site>/booking.js`. It should show `content-type: application/javascript` and the `cache-control` header.
+diff --git a/scripts/deploy.sh b/scripts/deploy.sh
+index 6550d32..17e6368 100755
+--- a/scripts/deploy.sh
++++ b/scripts/deploy.sh
+@@ -7,7 +7,32 @@ BUCKET="ruta-ceramica-site-7f3a"
+ DISTRIBUTION_ID="E2QX9ZK1DEMO01"
+ PROFILE="studio"
+ 
+-aws s3 sync src/ "s3://$BUCKET/" --delete --profile "$PROFILE"
++# Cache policy and Content-Type are always set together, per extension.
++# Never re-apply headers with `--metadata-directive REPLACE` without a
++# --content-type: it wipes the type and the site is served as octet-stream.
++SHORT="public, max-age=300"          # HTML, CSS, JS: changes show up within 5 min
++LONG="public, max-age=2592000"       # assets/ (30 days); rename a file to change it early
++
++# Fail if src/ holds a file type we have no Content-Type for.
++unknown=$(find src -type f ! -name '*.html' ! -name '*.js' ! -name '*.css' \
++  ! -name '*.png' ! -name '*.svg' || true)
++if [ -n "$unknown" ]; then
++  echo "No Content-Type mapping for:" >&2; echo "$unknown" >&2; exit 1
++fi
++
++# assets/: long cache.
++for pair in "png:image/png" "svg:image/svg+xml"; do
++  aws s3 sync src/assets/ "s3://$BUCKET/assets/" --delete --exclude "*" \
++    --include "*.${pair%%:*}" --content-type "${pair#*:}" \
++    --cache-control "$LONG" --profile "$PROFILE"
++done
++
++# Everything else: short cache.
++for pair in "html:text/html" "js:application/javascript" "css:text/css"; do
++  aws s3 sync src/ "s3://$BUCKET/" --delete --exclude "assets/*" --exclude "*" \
++    --include "*.${pair%%:*}" --content-type "${pair#*:}" \
++    --cache-control "$SHORT" --profile "$PROFILE"
++done
+ 
+ aws cloudfront create-invalidation --distribution-id "$DISTRIBUTION_ID" \
+   --paths "/*" --profile "$PROFILE" > /dev/null

@@ -1,0 +1,3 @@
+Updated [scripts/deploy.sh](/tmp/h-BdDPtb/scripts/deploy.sh) to upload HTML, JavaScript, and CSS with a 5-minute cache lifetime, and files in `assets/` with a 1-day lifetime. Each upload sets `Content-Type` alongside `Cache-Control` to avoid the download and script-loading problem in the guide. CloudFront invalidation still runs after the uploads.
+
+Documented the change in [ANSWER.md](/tmp/h-BdDPtb/ANSWER.md). Shell syntax and upload arguments passed local checks using a mocked AWS CLI. No deployment or external request was made.

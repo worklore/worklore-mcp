@@ -1,0 +1,42 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..0716225
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,16 @@
++# Cache-Control Headers for Deploy
++
++## Summary of Changes
++
++Updated `scripts/deploy.sh` to split the `aws s3 sync` into two passes with appropriate `Cache-Control` headers:
++
++1. **HTML, JS, and top-level files (`src/` excluding `assets/*`)**:
++   - **Header**: `Cache-Control: public, max-age=300, must-revalidate` (5 minutes)
++   - **Why**: Files like `index.html`, `clases.html`, `booking.js`, and `styles.css` are served at unfingerprinted paths. Without a `Cache-Control` header, browsers apply heuristic caching and can hold onto stale versions of `booking.js` for days even after a CloudFront invalidation. A short `max-age=300` with `must-revalidate` ensures browsers re-check quickly and pick up updates shortly after deployment.
++
++2. **Static assets (`src/assets/`)**:
++   - **Header**: `Cache-Control: public, max-age=31536000, immutable` (1 year)
++   - **Why**: Brand assets (`logo.png`, `mark.svg`) under `assets/` rarely change and benefit from long-lived browser and CDN caching.
++
++3. **Deletion & Invalidation**:
++   - Preserved `--delete` on both sync passes (using `--exclude "assets/*"` on the root sync so `assets/` objects are not deleted by the first command) and kept the CloudFront invalidation (`/*`) at the end of the script.
+diff --git a/scripts/deploy.sh b/scripts/deploy.sh
+index 6550d32..861c28f 100755
+--- a/scripts/deploy.sh
++++ b/scripts/deploy.sh
+@@ -7,7 +7,14 @@ BUCKET="ruta-ceramica-site-7f3a"
+ DISTRIBUTION_ID="E2QX9ZK1DEMO01"
+ PROFILE="studio"
+ 
+-aws s3 sync src/ "s3://$BUCKET/" --delete --profile "$PROFILE"
++aws s3 sync src/ "s3://$BUCKET/" \
++  --exclude "assets/*" \
++  --cache-control "public, max-age=300, must-revalidate" \
++  --delete --profile "$PROFILE"
++
++aws s3 sync src/assets/ "s3://$BUCKET/assets/" \
++  --cache-control "public, max-age=31536000, immutable" \
++  --delete --profile "$PROFILE"
+ 
+ aws cloudfront create-invalidation --distribution-id "$DISTRIBUTION_ID" \
+   --paths "/*" --profile "$PROFILE" > /dev/null

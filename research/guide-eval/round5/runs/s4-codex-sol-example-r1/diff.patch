@@ -1,0 +1,68 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..abfba55
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,7 @@
++# Deploy cache headers
++
++Updated `scripts/deploy.sh` to set `Cache-Control: public, max-age=300` on HTML, JavaScript, CSS, and other files outside `assets/`, and `public, max-age=86400` on `assets/`. The script keeps `sync --delete`, then copies every local file so unchanged objects also receive the new metadata. It supplies explicit content types for the site's HTML, JS, CSS, PNG, and SVG files, and invalidates CloudFront after uploads finish.
++
++The colleague's S3 and CDN case applies here: browser caches can retain an old `booking.js` after a CDN invalidation, and replacing S3 metadata without its content type can break pages. The extension-specific content types, short code cache, longer asset cache, and post-upload invalidation informed this change. The suggested S3-to-S3 `--metadata-directive REPLACE` repair does not apply: this deploy uploads local files, so it does not replace remote metadata in place. The live `curl -I` checks and fresh-browser check require a deployment and were not run.
++
++Verified locally with `bash -n`, `git diff --check`, and a mocked AWS CLI run. The mock confirmed a deletion sync, six uploads with the expected cache policies and content types, and invalidation last. No real AWS commands were sent.
+diff --git a/README.md b/README.md
+index f29659a..2a98897 100644
+--- a/README.md
++++ b/README.md
+@@ -8,7 +8,6 @@ Static site for a ceramics studio: plain HTML, one CSS file, one JS file
+ 
+ Deploy: `./scripts/deploy.sh` (needs AWS CLI configured with the studio profile).
+ 
+-Known problem: after a deploy, returning visitors keep running the old
+-`booking.js` for days. The CloudFront invalidation runs every time, but
+-browsers never ask again, because the objects are uploaded with no
+-`Cache-Control` header at all.
++The deploy sets a five-minute browser cache for HTML, JavaScript, CSS, and
++other root files, and a one-day cache for `assets/`. It refreshes object
++metadata even when file contents have not changed, then invalidates CloudFront.
+diff --git a/scripts/deploy.sh b/scripts/deploy.sh
+index 6550d32..a6f5f1c 100755
+--- a/scripts/deploy.sh
++++ b/scripts/deploy.sh
+@@ -7,7 +7,34 @@ BUCKET="ruta-ceramica-site-7f3a"
+ DISTRIBUTION_ID="E2QX9ZK1DEMO01"
+ PROFILE="studio"
+ 
+-aws s3 sync src/ "s3://$BUCKET/" --delete --profile "$PROFILE"
++# Sync removes files deleted from src/. Its cache policy also covers new file
++# types until the copies below apply the policy for their path.
++aws s3 sync src/ "s3://$BUCKET/" --delete \
++  --cache-control "public, max-age=300" --profile "$PROFILE"
++
++# Sync skips unchanged files, including objects uploaded before cache headers
++# were added. Copy every local file so each deploy refreshes its S3 metadata.
++# These are local-to-S3 copies: no metadata replacement or MIME loss.
++while IFS= read -r -d '' file; do
++  path="${file#src/}"
++  cache_control="public, max-age=300"
++  case "$path" in
++    assets/*) cache_control="public, max-age=86400" ;;
++  esac
++
++  content_type=()
++  case "$path" in
++    *.html) content_type=(--content-type "text/html") ;;
++    *.js)   content_type=(--content-type "application/javascript") ;;
++    *.css)  content_type=(--content-type "text/css") ;;
++    *.png)  content_type=(--content-type "image/png") ;;
++    *.svg)  content_type=(--content-type "image/svg+xml") ;;
++  esac
++
++  aws s3 cp "$file" "s3://$BUCKET/$path" \
++    --cache-control "$cache_control" "${content_type[@]}" \
++    --profile "$PROFILE" --only-show-errors
++done < <(find src -type f -print0)
+ 
+ aws cloudfront create-invalidation --distribution-id "$DISTRIBUTION_ID" \
+   --paths "/*" --profile "$PROFILE" > /dev/null

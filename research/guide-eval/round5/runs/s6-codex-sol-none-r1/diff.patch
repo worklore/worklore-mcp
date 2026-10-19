@@ -1,0 +1,35 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..a75154f
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,29 @@
++# MCP client compatibility review
++
++Reviewed `server.py` and exercised `http://127.0.0.1:54075/mcp` locally with JSON-RPC requests. The server was not edited. Findings below are ordered by likely client impact.
++
++## Findings
++
++1. **High — Advertised resources fail for an ordinary client.** `initialize` advertises the `resources` capability (lines 135–140), but `resources/list`, `resources/templates/list`, and `resources/read` all return HTTP 401 without the development token (lines 148–155). A client that discovers and then lists the advertised resources will fail. The 401 has no `WWW-Authenticate` header, and there is no protected-resource metadata or authorization flow for a remote client to obtain a token. Either make the guide public, or provide standard MCP HTTP authorization and a way for clients to acquire credentials. [MCP authorization specification](https://modelcontextprotocol.io/specification/2025-06-18/basic/authorization)
++
++2. **High — The HTTP session ID is issued but never enforced or terminated.** `initialize` returns a new `Mcp-Session-Id` (lines 213–214), while subsequent requests accept no ID or any invented ID and echo it back (lines 203, 217). `DELETE /mcp` returns 204 for any ID but does not invalidate anything (lines 189–190). Local probes confirmed an invented ID could call `tools/list` and be "deleted". A client is required to send an issued ID on later requests and treats a 404 for an expired ID as a signal to reinitialize; this server cannot provide that behavior. Implement session validation and deletion, or operate without issuing a session ID and return 405 for unsupported DELETE. [MCP Streamable HTTP sessions](https://modelcontextprotocol.io/specification/2025-06-18/basic/transports#session-management)
++
++3. **High — Malformed tool calls can drop the HTTP connection.** The published `inputSchema` is not checked against arguments (lines 29–70, 157–164). `add_note` with `{"title":"x"}` and the token raises an uncaught `KeyError` at line 126; `get_note` with array arguments raises an uncaught `AttributeError` at line 114. Both produced a disconnected socket without an HTTP or JSON-RPC response. Other invalid inputs silently succeed: `search_notes` with no query returns every note, `limit: 0` is accepted, and a numeric query is converted to text (lines 103–104). Validate the argument object and each tool's schema before execution, and turn unexpected exceptions into a response. [MCP tool schemas and error handling](https://modelcontextprotocol.io/specification/2025-06-18/server/tools)
++
++4. **High — `Origin` is not validated.** The handler never checks `Origin` (lines 192–217). A local POST with `Origin: https://evil.example` returned a successful `ping`. Streamable HTTP servers must validate this header to prevent browser DNS rebinding from reaching a local MCP endpoint. Binding to `127.0.0.1` (line 224) does not remove that requirement. [MCP transport security](https://modelcontextprotocol.io/specification/2025-06-18/basic/transports#security-warning)
++
++5. **Medium — Protocol version and initialization state are ignored after the handshake.** The server always responds with `2025-06-18` and never checks `MCP-Protocol-Version` (lines 19, 131–147, 192–217). A local `ping` with `MCP-Protocol-Version: not-a-version` returned 200, though an invalid or unsupported version requires HTTP 400. `tools/list` also works before `initialize`, and `initialize` does not validate the client's required parameters. A stricter client or intermediary can encounter inconsistent lifecycle behavior. [MCP transport version header](https://modelcontextprotocol.io/specification/2025-06-18/basic/transports#protocol-version-header), [lifecycle](https://modelcontextprotocol.io/specification/2025-06-18/basic/lifecycle)
++
++6. **Medium — `resources/read` ignores the requested URI.** For any authenticated `resources/read`, line 155 returns `notes://guide`. A probe asking for `notes://missing` received the guide as a successful result. A client can cache or display the wrong resource under the requested URI. Read `params.uri` and report an unknown resource when it does not match. [MCP resources](https://modelcontextprotocol.io/specification/2025-06-18/server/resources)
++
++7. **Medium — Notifications and responses are handled as requests.** Only `notifications/initialized` gets the required empty HTTP 202 (lines 142–143). An unknown notification got HTTP 200 with a JSON-RPC error and `id: null`; a client JSON-RPC response got a `method not found` error. Streamable HTTP requires accepted notifications and responses to receive 202 with no body, or an HTTP error if rejected. [MCP Streamable HTTP POST rules](https://modelcontextprotocol.io/specification/2025-06-18/basic/transports#sending-messages-to-the-server)
++
++8. **Medium — Batch and invalid JSON-RPC envelopes are mishandled.** The 2025-06-18 HTTP transport expects one JSON-RPC message per POST, but lines 205–211 accept an array and return an array of responses, even for `[]`. A scalar JSON body and a request without an `id` caused, respectively, a dropped connection and a 200 response with `id: null`. Validate the envelope and return a protocol error instead of crashing or treating a notification as a request. [MCP Streamable HTTP POST rules](https://modelcontextprotocol.io/specification/2025-06-18/basic/transports#sending-messages-to-the-server)
++
++9. **Low — Expected tool failures appear as protocol failures.** Looking up a missing note raises `ValueError`, converted to JSON-RPC `-32602` (lines 117–119, 161–164). A valid-shaped request for an absent note is a tool execution failure; returning a tool result with `isError: true` places the explanation where the model can read and recover from it. Keep JSON-RPC invalid-parameter errors for malformed arguments. [MCP tool error handling](https://modelcontextprotocol.io/specification/2025-06-18/server/tools#error-handling)
++
++10. **Low — Writes are volatile and can collide under concurrent clients.** `add_note` mutates only the shared in-memory `NOTES` dictionary and derives its next ID using `max(...) + 1` without synchronization (lines 122–127). Added notes disappear on restart, and simultaneous calls can choose the same ID. If clients rely on `add_note` for durable notes, persist writes and allocate IDs atomically. This is a data behavior issue rather than an MCP wire-format issue.
++
++## What worked
++
++A normal `initialize` returned a JSON response with protocol version, server information, and capabilities; `notifications/initialized` returned empty HTTP 202; `GET /mcp` returned HTTP 405, which is allowed when no SSE stream is offered; and valid `tools/list` and read-tool calls returned usable results. The server listens only on `127.0.0.1`, so a client on another machine cannot connect directly despite the README describing it as a remote server. [MCP Streamable HTTP transport](https://modelcontextprotocol.io/specification/2025-06-18/basic/transports)

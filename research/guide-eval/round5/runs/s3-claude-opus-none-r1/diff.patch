@@ -1,0 +1,114 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..87ce875
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,64 @@
++# Why the nightly review never reported anything
++
++The job *does* run: `launchctl print` shows `runs = 6` (one per night since
++it was loaded on 2026-10-12) and `last exit code = 1`. Each run left the same
++two lines in `Library/Logs/nightly-review.err`:
++
++    Not logged in · Please run /login
++    /Users/vk/bin/nightly-review.zsh:19: read-only variable: status
++
++Two separate bugs combine to give "nothing at all":
++
++## 1. The failure path crashes before it can notify (why you got no failure note)
++
++`nightly-review.zsh` runs under zsh and does `status=$?`. In zsh, `status` is
++a read-only special parameter (an alias for `$?`). Assigning to it is a fatal
++error in a non-interactive script: zsh prints `read-only variable: status`
++and exits with code 1 right there, on line 19. The `if` that calls
++`notify.sh` with "nightly review FAILED" is never reached. (This would also
++have hidden any *success*: every run dies on that line regardless of how
++`claude` exited.)
++
++Reproduce: `zsh -c 'false; status=$?; echo after'` → error, no `after`.
++
++**Fix:** rename the variable to `rc`.
++
++## 2. `claude` is not authenticated in the launchd environment (why there was a failure)
++
++`claude -p` exits with `Not logged in · Please run /login`. launchd does not
++start your login shell, so nothing from `~/.zshrc` / `~/.zprofile` is in the
++job's environment (the plist only sets `PATH`) — e.g. an `ANTHROPIC_API_KEY`
++or token you export there isn't visible, and the interactive login's
++credentials aren't reachable by the headless 02:30 process.
++
++**Fix (needs you, once):** create a long-lived token for unattended use and
++give it to the job via a private env file that the script now sources:
++
++    claude setup-token                      # prints a token
++    mkdir -p ~/.config/nightly-review
++    printf 'export CLAUDE_CODE_OAUTH_TOKEN=%s\n' '<token>' > ~/.config/nightly-review/env
++    chmod 600 ~/.config/nightly-review/env
++
++(Or put `ANTHROPIC_API_KEY=...` there if you use an API key.) It's a good idea
++to also add `export TG_BOT_TOKEN=...` there, so `notify.sh` doesn't depend on
++the keychain being reachable from launchd at 02:30.
++
++Then test without waiting for the night:
++
++    launchctl kickstart -k gui/$UID/com.vk.nightly-review
++    tail ~/Library/Logs/nightly-review.err
++
++## Changes made to `bin/nightly-review.zsh`
++
++- `status` → `rc` (cause 1).
++- Sources `~/.config/nightly-review/env` if present (cause 2).
++- Passes `--allowedTools` for read-only tools (`Read`, `Grep`, `Glob`,
++  `git log/show/diff`): in `-p` mode Claude can't ask for permission, so
++  without this it couldn't run `git log` once logged in.
++- Captures `claude`'s stderr to `$OUT.err` and includes it in the failure
++  message, so a failure note says *why* (e.g. "Not logged in").
++- Sends the last 3 lines (the phone summary the prompt asks for at the end)
++  instead of the first 300 bytes.
++
++No changes needed to the plist or `notify.sh`; nothing was loaded, run, or
++sent anywhere.
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..eb80c08 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -6,6 +6,14 @@ REPO="$HOME/projects/shop"
+ OUT="$HOME/Library/Logs/nightly-review-$(date +%F).md"
+ NOTIFY="$HOME/bin/notify.sh"
+ 
++# launchd does not run your login shell, so nothing from ~/.zshrc/.zprofile
++# (ANTHROPIC_API_KEY, CLAUDE_CODE_OAUTH_TOKEN, ...) is visible here.
++# Put the credentials the job needs in this file (chmod 600), e.g.
++#   export CLAUDE_CODE_OAUTH_TOKEN=...   # from `claude setup-token`
++#   export TG_BOT_TOKEN=...
++ENV_FILE="$HOME/.config/nightly-review/env"
++[ -r "$ENV_FILE" ] && source "$ENV_FILE"
++
+ SINCE=$(date -v-1d +%F)
+ PROMPT="Review the commits in this repository since $SINCE.
+ For each commit: one line on what it changes and whether anything looks risky
+@@ -15,12 +23,18 @@ Do not modify any file."
+ 
+ cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
+ 
+-claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
++# Headless mode can't prompt for permissions, so pre-approve read-only tools.
++# Capture stderr too, so a failure note can say what went wrong.
++claude -p "$PROMPT" --output-format text \
++  --allowedTools "Read" "Grep" "Glob" "Bash(git log:*)" "Bash(git show:*)" "Bash(git diff:*)" \
++  > "$OUT" 2> "$OUT.err"
++# NB: `status` is a read-only special parameter in zsh (alias of $?); use rc.
++rc=$?
+ 
+-if [ $status -ne 0 ]; then
+-  "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
+-  exit $status
++if [ $rc -ne 0 ]; then
++  "$NOTIFY" "nightly review FAILED (exit $rc): $(head -c 300 "$OUT.err") — see $OUT.err"
++  exit $rc
+ fi
+ 
+-"$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"
++# The phone summary is at the end of the output, so send the tail.
++"$NOTIFY" "nightly review done: $(tail -n 3 "$OUT")"

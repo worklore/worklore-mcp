@@ -1,0 +1,3 @@
+Updated [gen.py](/tmp/h-zJTTTH/gen.py) to emit `%lthr` HR corridors with `start`/`end`, which selects the Instant HR corridor described in your guide. It also generates the top-level Intervals `description` so the steps and repeat block can render in the web UI. The changes and reasoning are in [ANSWER.md](/tmp/h-zJTTTH/ANSWER.md).
+
+The sample workout passed local assertions and Python compilation. I did not send an event or sync a watch, so the API and Garmin result remains unverified.

@@ -1,0 +1,45 @@
+# MCP Server Checkup Report
+
+This checkup evaluates the remote MCP server in this repository against common failure modes that real MCP clients encounter, based on the ten read-only checks described in the colleague's note.
+
+## Applied Note Sections
+
+The following parts of the colleague's note applied to this server:
+- **C1 (Tool list without token)**: Applied. Tested `initialize`, `tools/list`, and `server/discover` without authentication.
+- **C2 (Tool refusal as result)**: Applied. Evaluated error responses for missing and non-existent IDs on the read-only tool `get_note`.
+- **C3 (Session survival)**: Applied. Tested valid read-only requests following a tool error within the same session.
+- **C4 (Published outputSchema honoured)**: Applied. Tested valid calls against declared `outputSchema`.
+- **C5 (Serialisation of results)**: Applied. Inspected JSON-RPC response bodies for valid JSON formatting, serialisation errors, and consistency.
+- **C6 (Surface version & fingerprint)**: Applied partially. Checked local source, version declarations, resource endpoints, and surface locking mechanism. External registry lookup was not applicable as the server is unlisted.
+- **C7 (Structured call logging)**: Applied. Inspected the server's request handling and logging mechanism in `server.py`.
+- **C8 (Tool count and names)**: Applied. Inspected all advertised tool names against the identifier regex `^[a-zA-Z0-9_-]{1,64}$`.
+- **C9 (Honest version negotiation)**: Applied. Tested `initialize` with `"protocolVersion": "banana"`.
+- **C10 (outputSchema constraint checking)**: Applied. Tested whether defined output schemas constrain and reject corrupted result payloads.
+
+---
+
+## Results Summary
+
+| Check | Result | Evidence | Story Link / Fix |
+| :--- | :--- | :--- | :--- |
+| **C1 · Tool list answers without a token** | **PASS** | `initialize` (HTTP 200, session issued), `tools/list` (HTTP 200, 3 tools returned: `search_notes`, `get_note`, `add_note`). `server/discover` returns HTTP 200 with JSON-RPC error `-32601` (method not found). | [My MCP server hid its own tool list behind a login](https://worklore.dev/s/2026-09-27-my-mcp-server-hid-its-own-tool-list-behind-a-login) |
+| **C2 · Tool refusal comes back as a result, not a protocol error** | **FAIL** | Calling `get_note` with non-existent id `n-99999` returned JSON-RPC error `{"code": -32602, "message": "note not found: n-99999"}` instead of HTTP 200 with `result.isError: true`. Missing required `id` argument also returned code `-32602`. Client SDKs throw on JSON-RPC error instead of letting models inspect the failure. | [My live MCP test asserted the bug: a real client threw where my test passed](https://worklore.dev/s/2026-10-02-my-live-mcp-test-asserted-the-bug-a-real-client-threw-where-) |
+| **C3 · Session survives an error** | **PASS** | Reusing `Mcp-Session-Id` immediately after refusal errors to call `get_note(id="n-1")` succeeded with HTTP 200 and returned the expected note. | [My live MCP test asserted the bug: a real client threw where my test passed](https://worklore.dev/s/2026-10-02-my-live-mcp-test-asserted-the-bug-a-real-client-threw-where-) |
+| **C4 · Published outputSchema is honoured** | **PASS** | Valid calls to `get_note` and `search_notes` returned HTTP 200 with `isError: false` and valid `structuredContent` matching all declared properties and constraints. | [My tests passed because they agreed with me](https://worklore.dev/s/2026-09-28-my-tests-passed-because-they-agreed-with-me) |
+| **C5 · Results survive serialisation** | **PASS** | All response bodies parsed cleanly as JSON. `content` and `structuredContent` agreed, with no leaking Python or database types. | [My tests passed because they agreed with me](https://worklore.dev/s/2026-09-28-my-tests-passed-because-they-agreed-with-me) |
+| **C6 · Version moves when surface moves** | **FAIL** | No committed surface lock file exists in repository. Furthermore, `initialize` advertises resource capabilities (`"resources": {"subscribe": false, "listChanged": false}`), but `resources/list` rejects unauthenticated callers with HTTP 401 `{"error": "unauthorized"}`. (Not listed in MCP Registry). | [My MCP listing said read-only. My server could write.](https://worklore.dev/s/2026-09-30-my-mcp-listing-said-read-only-my-server-could-write) |
+| **C7 · Calls are logged** | **PASS** | Verified via source in `server.py`: all POST JSON-RPC requests pass through `Handler.do_POST` which invokes `log(req.get("method"), tool, ok, latency_ms, who)` writing one JSON line per call to `stderr`. | [Your MCP server is one URL — getting per-tool, per-user analytics anyway](https://worklore.dev/s/2026-09-23-your-mcp-server-is-one-url-getting-per-tool-per-user-analyti) |
+| **C8 · Tool count and names** | **PASS** | Count: 3 tools (`search_notes`, `get_note`, `add_note`). All names match `^[a-zA-Z0-9_-]{1,64}$` without dots, spaces, or illegal characters. | [An MCP server for the price of one more endpoint](https://worklore.dev/s/2026-09-25-an-mcp-server-for-the-price-of-one-more-endpoint) |
+| **C9 · Version negotiation is honest** | **PASS** | Handshake `initialize` with `"protocolVersion": "banana"` returns HTTP 200 with the server's actual supported protocol version `"2025-06-18"`, rather than echoing `"banana"`. | [An MCP server for the price of one more endpoint](https://worklore.dev/s/2026-09-25-an-mcp-server-for-the-price-of-one-more-endpoint) |
+| **C10 · outputSchema can reject a wrong answer** | **FAIL** | `search_notes` declares `outputSchema: {"type": "object"}` without defined properties or constraints, accepting corrupted objects (e.g. `{}`) without rejection. (`get_note` correctly rejected the corrupted structure). | [My MCP server's output schemas accepted wrong answers](https://worklore.dev/s/2026-10-15-my-mcp-server-s-output-schemas-accepted-wrong-answers-7-of-8) |
+
+---
+
+## Verdict
+
+**has the problem**
+
+The server failed checks **C2**, **C6**, and **C10**.
+
+### Items Not Checked / Limitations
+- **MCP Registry Verification (under C6)**: The server is not yet published in the official MCP Registry (`README.md` confirms "Not yet listed in any registry"), so remote registry hash verification could not be performed against a public registry entry.

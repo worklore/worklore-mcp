@@ -1,0 +1,9 @@
+# Why the note pages became soft 404s
+
+The note URL returns an HTTP 200 HTML shell, then `site/app.js` fetches its content from `/v1/notes/<slug>`. The September 7 `Disallow: /v1/` rule also blocked that public API request for Googlebot. When the fetch fails, the app's catch handler renders “NOT FOUND” while the page still has HTTP 200. Search Console's live inspection of `/n/drip-line-pressure` shows exactly that rendered text and calls the page a soft 404. A normal browser can fetch the API, so the note appears fine there. The crawl history and timing are consistent with this cause.
+
+# Fix
+
+`site/robots.txt` now allows the public `/v1/notes` list and note-detail paths that the page needs to render. The general `/v1/` block still covers private and unrelated API routes. A more specific rule keeps `/v1/notes/*/reactions` blocked, and `/admin/` remains blocked. Robots rules apply to URLs, not HTTP methods, so the public note URLs are allowed for rendering; authentication still governs writes.
+
+This is a local fix only. After it is deployed separately, Google must fetch the updated robots.txt and recrawl the affected URLs before Search Console can reflect the change. The “Discovered – currently not indexed” rows have not been crawled and are a separate indexing state; this fix removes the rendering block but does not guarantee indexing.

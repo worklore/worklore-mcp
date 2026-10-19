@@ -1,0 +1,40 @@
+Search Console says Soft 404 on note pages that open fine in a browser (see search-console/). Why, and fix it. Put the cause and the fix in ANSWER.md.
+
+Follow this guide:
+
+---
+
+# Soft 404 on pages that load fine: my robots.txt blocked the API my pages render from
+
+Google's indexing graph for my site went the wrong way: the indexed count slipped from 25 to 21 while I kept publishing. Every page opened fine in a browser. My agent checked all 60 sitemap URLs through the Search Console API: 17 indexed, 25 "Discovered – currently not indexed", 18 unknown to Google. No story published after late August had ever been crawled.
+
+The first theory was discovery. The homepage HTML that Google downloads contained zero links to stories, because the list is drawn by JavaScript, and stories didn't link to each other. We fixed that: the build now writes plain links into the homepage, every story page and every path page. Worth doing, but it wasn't the cause.
+
+The cause showed up when I inspected one of the new stories by hand: **"Page cannot be indexed: Soft 404."** A page that loads fine for me.
+
+My pages are rendered by JavaScript from my own API at `/v1/...`, and Google renders them the same way. On September 7 I had added `Disallow: /v1/` to robots.txt, to stop crawlers hitting POST-only API addresses that appear as text on story pages and logging 404s. Google obeys robots.txt when it renders too. So it opened the story, wasn't allowed to fetch the story's data, and when that fetch fails my app shows its "NOT FOUND — No story lives at this address" screen. Google read that as a page that doesn't exist. The graph lines up with the date: pages crawled before September 7 stayed indexed, and everything after was turned away.
+
+I'd fixed a few harmless 404s and created a soft 404 on every new page.
+
+The fix was robots.txt only: allow the public read endpoints the pages need, and keep the POST-only and per-user ones blocked with longer, more specific rules. Google uses the most specific matching rule, so `Disallow: /v1/stories/*/reproduced` still beats `Allow: /v1/stories`.
+
+What happened next: Google re-crawled the site on October 2, the day of the fix. Two days later none of the ten pages I inspected was a soft 404 any more. The story that had been "Soft 404" and four others were now "Crawled — currently not indexed" (Google has read them and is deciding), /skills moved to "Submitted and indexed", and three were still waiting in the queue. Indexing itself takes longer on a young site, but the block is gone.
+
+## Reproduce this
+
+Prerequisites: a site whose pages are filled in by JavaScript from an API on the same domain (React, Vue, vanilla JS, anything), a verified Google Search Console property, and access to the site's `robots.txt`.
+
+Your agent will need from you: the site URL, the path prefix of your API (e.g. `/api/` or `/v1/`), and one URL that Search Console reports as "Soft 404" or "Discovered – currently not indexed".
+
+Steps:
+1. Fetch `https://<site>/robots.txt`. List every `Disallow` rule that matches an address your page's JavaScript fetches while it renders (open the page with the browser's Network tab, or grep the app's source for `fetch(` / `axios`). Any match is a candidate cause: Googlebot renders the page without that data.
+2. Check what the page shows when that fetch fails. If it's a "not found" or empty screen served with HTTP 200, that is exactly what Google classifies as a soft 404.
+3. Rewrite robots.txt with Google's longest-match rule in mind: `Allow` the public read endpoints the pages need (`Allow: /v1/stories`), keep the general `Disallow: /v1/`, and re-block anything that must stay out with a longer rule (`Disallow: /v1/stories/*/reproduced`). Never unblock per-user or admin endpoints.
+4. Test the rules the way Google evaluates them before deploying: for each path, the longest matching rule wins, and `Allow` wins a tie. A 20-line script is enough; don't use Python's `urllib.robotparser`, which applies first-match.
+5. Deploy, then confirm the live file: `curl -s https://<site>/robots.txt`.
+6. Optional but cheap: make sure the page's server-side HTML carries real `<a href>` links to your content, so Google can find pages without depending on the sitemap alone. Check with `curl -s https://<site>/ | grep -o 'href="/<content-path>/[^"]*"' | sort -u | wc -l`.
+7. In Search Console: Settings → Crawling → robots.txt → Open report → ⋮ on your host → Request a recrawl. Then URL Inspection → Test live URL on the affected page, and Request indexing (about 10 URLs/day).
+
+Verify: URL Inspection → Test live URL on the page that was a soft 404 now reports that the page can be indexed, and the rendered screenshot shows the real content instead of your not-found screen. Within days to two weeks, the page moves to "Indexed" in the Pages report.
+
+Ground rules: work only inside the current directory. Do not deploy, publish, submit or report anything to any external service.

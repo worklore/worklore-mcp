@@ -1,0 +1,47 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..7903aa7
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,41 @@
++# MCP checkup: notes-mcp 0.3.1
++
++Run on 2026-10-19 against `http://127.0.0.1:55052/mcp` (I started `python3 server.py` from this folder, unchanged, and stopped it afterwards).
++I sent every request **without a token**. The dev token in the source/README was not used: nobody authorised it, and C1–C5 didn't need it.
++Read-only: only `initialize`, `notifications/initialized`, `ping`, `server/discover`, `tools/list`, `resources/list`, `resources/templates/list`, `prompts/list`, plus `tools/call` on `search_notes` and `get_note` (both `readOnlyHint: true`). I never called `add_note`.
++I had the source (`server.py`) and the server's stderr log.
++
++## Result: **has the problem** (C2, C6, C10 fail)
++
++| Check | Result | Evidence | Fix |
++|---|---|---|---|
++| C1 · Tool list without a token | **PASS** | No `Authorization` header: `initialize` gave HTTP 200 with a result and an `Mcp-Session-Id`. `tools/list` gave HTTP 200 with **3 tools**. `server/discover` gave HTTP 200 with `{"code":-32601,"message":"method not found: server/discover"}`, so it doesn't trip the Claude Code needs-auth probe. *Side finding:* `initialize` advertises `"resources": {...}`, but anonymous `resources/list` and `resources/templates/list` return **HTTP 401** `{"error":"unauthorized"}`. That body is not JSON-RPC and there is no `WWW-Authenticate` header (`server.py:155-157`). The resource is one static guide document. | — |
++| C2 · Refusal comes back as a result | **FAIL** | `get_note {"id":"n-999"}` gave HTTP 200 with `"error":{"code":-32602,"message":"note not found: n-999"}`. `get_note {}` gave HTTP 200 with `"error":{"code":-32602,"message":"missing required argument: id"}`. The cause is that `call_tool` raises `ValueError`, which becomes `rpc_error(-32602)` (`server.py:170-171`). A second problem: `search_notes {}` (required `query` missing) doesn't refuse at all. It returns **all 5 notes** as a normal result, because the missing query defaults to `""`, which matches everything (`server.py:105`). The unknown tool `no_such_tool` gives `-32601`, which is allowed. | [My live MCP test asserted the bug: a real client threw where my test passed](https://worklore.dev/s/2026-10-02-my-live-mcp-test-asserted-the-bug-a-real-client-threw-where-) |
++| C3 · Session survives an error | **PASS** | Same `Mcp-Session-Id`, right after the two refusals: `get_note {"id":"n-2"}` gave HTTP 200 with a normal result, `isError:false`. | — |
++| C4 · outputSchema is honoured | **PASS** | I validated against the schemas from the live `tools/list` response with `jsonschema` 4.26 (Draft 2020-12). `get_note n-2`: `structuredContent` present, 0 validation errors. `search_notes {"query":"frost","limit":5}`: `structuredContent` `{"hits":[…1 hit…],"total":1}`, 0 errors. That pass means little, because the schema is only `{"type":"object"}` (see C10). | — |
++| C5 · Results survive serialisation | **PASS** | Every body from C2–C4 parsed as JSON. No "not serializable" text. `words` is an integer (`18`). For `get_note`, the content text equals `structuredContent`. *Note:* for `search_notes`, the content text is only the `hits` array, while `structuredContent` is `{"hits":…,"total":…}`. The hits are the same, but the text leaves out `total`. | — |
++| C6 · Version moves with the surface | **FAIL (WARN: no lock)** | No registry entry: the README says "Not yet listed in any registry", there is no `server.json`, and I had no registry name to look up. So no `mcp-surface/1` block and no `verify.mjs` run. I computed the fingerprint myself by SPEC §1–§3, and my code reproduces the §7.1 test vector. The "method that does not exist" probe correctly gives `-32601`. Anonymous capture: `serverInfo.version` = `0.3.1`, declared sha256 = `55354fc1d1a10a403c32fe5390c6d6fdded5a24a34575a1c596c0b9517b523c2`. Only `tools` is served anonymously: `resources`, `resourceTemplates` and `prompts` are `null` (401, 401, -32601). Anonymous answers (§4): initialize/ping/tools/list true; resources/list, resources/templates/list, prompts/list false. sha256 `fe77895c3d4a39130852de2c50dfd24be2f103812e49e5e3c9ad8f75a8629bfe`. The repo has **no surface lock** and no tests, so nothing stops a drift: the version string is hard-coded twice (`server.py:142` and `server.py:177`), separately from `TOOLS`. The lists themselves are fine: `RESOURCES` is fixed in code, and the notes are reached through tools, not a growing `resources/list`. | [My MCP listing said read-only. My server could write.](https://worklore.dev/s/2026-09-30-my-mcp-listing-said-read-only-my-server-could-write); to list it later, [Getting into the MCP Registry](https://worklore.dev/s/2026-09-23-getting-into-the-mcp-registry-server-json-a-read-org-token-a) |
++| C7 · Calls are logged | **PASS (with a gap)** | `log()` (`server.py:79-82`) writes one JSON line per request to stderr: `{"t","method","tool","ok","ms","who"}`. The calls I made all show up, errors included (14 lines with `"ok": false`, e.g. `tools/call get_note ok:false`). **Gap 1:** JSON-RPC **batches** skip the log. The batch branch returns before `log()` (`server.py:207-213`). I confirmed it: a batched `[ping]` got a 200 answer and wrote **0 log lines**. **Gap 2:** `ok` is derived from a JSON-RPC `error` key. Once C2 is fixed and refusals become `isError:true` results, they will be logged as `ok:true` unless `isError` is checked too. | ([per-tool, per-user analytics](https://worklore.dev/s/2026-09-23-your-mcp-server-is-one-url-getting-per-tool-per-user-analyti), for the gaps) |
++| C8 · Tool count and names | **PASS** | 3 tools: `search_notes`, `get_note`, `add_note`. All match `^[a-zA-Z0-9_-]{1,64}$`. | — |
++| C9 · Version negotiation is honest | **PASS** | `initialize` with `"protocolVersion":"banana"` gave HTTP 200 with `"protocolVersion":"2025-06-18"`. It doesn't echo "banana". | — |
++| C10 · outputSchema can reject a wrong answer | **FAIL** | Built corrupted results from the `tools/list` schemas and validated them with `jsonschema`. `get_note`: `{"id":"mcp-drill-corruption",…,"words":-999999999}` was **rejected** (`id: pattern`, `words: minimum`). `add_note` (schema only, not called): `{"id":"mcp-drill-corruption"}` was **rejected** (`id: pattern`). `search_notes`: the schema is `{"type":"object"}` with no properties and no `required`, so the corrupted result is `{}` and it was **ACCEPTED**. Any object, even an empty one, passes as a valid search answer. | [My MCP server's output schemas accepted wrong answers](https://worklore.dev/s/2026-10-15-my-mcp-server-s-output-schemas-accepted-wrong-answers-7-of-8) |
++
++## Other things a real client will trip over (seen in the source, not probed)
++
++- **`add_note` without a token returns a bare HTTP 401** `{"error":"sign in required"}` (`server.py:172-173`). It has no JSON-RPC envelope and no `WWW-Authenticate` / protected-resource metadata. Clients will either throw or start an OAuth flow that has nowhere to go. A tool result with `isError: true` saying "sign in required" would be readable by the model. The same applies to the resources 401 in C1.
++- **Exceptions other than `ValueError` aren't caught.** For example, `search_notes {"query":"x","limit":"abc"}` raises `ValueError`, which becomes `-32602`. But `"arguments": []` or `limit: null` raises `AttributeError`/`TypeError` inside `do_POST`, and the client gets a dropped connection instead of an answer. I didn't send these (no fuzzing).
++- `limit` from `inputSchema` (1–50) isn't enforced: `limit: 0` silently returns no hits.
++- The server issues an `Mcp-Session-Id` but never checks it, and it accepts batches even though it negotiates `2025-06-18`, which removed batching.
++
++## What I could not check, and what would unlock it
++
++- **Authenticated surface** (`resources/list`, `resources/templates/list`, `resources/read` with a token): I didn't use the dev token because you didn't authorise it. With permission I could add the signed-in fingerprint. The source shows it would be the single `notes://guide` resource and an empty template list.
++- **Registry comparison / `verify.mjs`** for C6: there is no registry entry yet. Once it's listed, run `node verify.mjs <name> 0.3.1`.
++
++## Verification
++
++- All ten checks are in the table, each with evidence.
++- No write tool was called (`add_note` never invoked).
++- The token was never sent or printed.
++- `server.py`, `README.md` and `notes.json` are unchanged. The only new file in the repo is this `ANSWER.md`. Helper scripts, the venv for `jsonschema` and the server log went to `/tmp/mcp-checkup`, outside the repo.
++- Nothing was recorded to worklore or any other external service. The only outbound requests were a download of the `mcp-surface` SPEC from GitHub and `pip install jsonschema`.

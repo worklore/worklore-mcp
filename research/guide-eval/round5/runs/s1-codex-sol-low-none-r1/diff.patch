@@ -1,0 +1,35 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..97503c1
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,7 @@
++# HR range fix
++
++Changed `gen.py` to encode each planned HR corridor as `hr: {"start": low, "end": high, "units": "%lthr"}` and set `workout_doc.target` to `"HR"`.
++
++The old object put the lower bound in `value`, which denotes a single target, while `end` alone did not define a range. It also left the workout target selection implicit. The watch readback showed zone bands instead of the intended bounds. Explicit `start` and `end` preserve the planned percentage corridor, and `target: "HR"` selects heart rate for the workout.
++
++Verified locally that all four generated step types retain their planned bounds, including steps inside the repeat block. Watch behavior still requires a fresh sync to confirm; no external service was contacted for testing.
+diff --git a/gen.py b/gen.py
+index be0b3bc..a83cc68 100755
+--- a/gen.py
++++ b/gen.py
+@@ -10,7 +10,7 @@ import sys
+ def hr_target(step):
+     """HR corridor for a step, as a percentage of the athlete's LTHR."""
+     lo, hi = step["hr_pct"]
+-    return {"units": "%lthr", "value": lo, "end": hi}
++    return {"units": "%lthr", "start": lo, "end": hi}
+ 
+ 
+ def build_step(step):
+@@ -32,7 +32,7 @@ def build_doc(plan):
+             })
+         else:
+             steps.append(build_step(block))
+-    return {"steps": steps}
++    return {"target": "HR", "steps": steps}
+ 
+ 
+ def build_event(plan):

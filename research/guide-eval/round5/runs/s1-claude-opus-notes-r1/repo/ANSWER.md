@@ -1,0 +1,51 @@
+# Fix: HR corridors clamped to the watch's zones
+
+## What changed
+
+`gen.py`, `hr_target()`: the lower bound of each HR target is now written as
+`start` instead of `value`.
+
+Before: `{"units": "%lthr", "value": 68, "end": 75}`
+After:  `{"units": "%lthr", "start": 68, "end": 75}`
+
+Nothing else changed. The targets are still percentages of LTHR, so Intervals
+still converts them to bpm at export using the LTHR it has stored (172).
+
+## Why
+
+Intervals.icu decides how to export an HR target to the FIT file from the
+name of the lower-bound key:
+
+- `{value, end}` is exported as a zone-mapped (Lap-HR) target. The Garmin
+  snaps it to its own HR zones, which come from the watch's auto-detected
+  LTHR of 168. That matches `readback/watch-notes.md` exactly: every planned
+  corridor showed up as one of the watch's zone bands (118–137, 151–162,
+  137–151). Changing the watch's LTHR only moved the bands.
+- `{start, end}` is exported as an instant-HR corridor. The watch shows the
+  raw bpm Intervals computed, so 88–93% shows as 151–160 and 75–82% as
+  129–141, whatever LTHR the watch thinks it has.
+
+The API accepts both forms, which is why the readback looked fine. The
+earlier attempts in the notes (`units: "bpm"`, `start_bpm`/`end_bpm`) were
+the wrong fixes. The percentage units were never the problem.
+
+Source: `notes/exact-hr-corridors-on-garmin-from-intervals-icu-api-workouts.md`
+in this repo. It describes this exact symptom and checked the fix on a
+watch: Intervals LTHR 172, watch LTHR 168, and a 75–82% target showed as
+129–141 bpm.
+
+## Checked here / not checked
+
+- `python3 gen.py plans/tempo-run.json` now writes `start`/`end` for every
+  HR step, and no `value` keys remain.
+- I did not push anything or check on the watch, because the ground rules
+  rule out calling external services. To confirm: push, read back with
+  `GET /events/{id}`, sync the watch, and check that Tempo shows 151–160 and
+  Float shows 129–141.
+
+## Not done (optional follow-up)
+
+The same note says steps don't show up in the Intervals web UI unless the
+event also has a top-level `description` written in Intervals' text grammar.
+That has nothing to do with the watch bug, and if Intervals can't parse the
+description it wipes `workout_doc` too. So I left it out of this fix.

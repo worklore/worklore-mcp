@@ -1,0 +1,42 @@
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..35b18a9 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -2,25 +2,25 @@
+ # Nightly review of yesterday's commits, summary to Telegram.
+ set -u
+ 
++SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+ REPO="$HOME/projects/shop"
+ OUT="$HOME/Library/Logs/nightly-review-$(date +%F).md"
+-NOTIFY="$HOME/bin/notify.sh"
++NOTIFY="$SCRIPT_DIR/notify.sh"
+ 
+-SINCE=$(date -v-1d +%F)
+-PROMPT="Review the commits in this repository since $SINCE.
+-For each commit: one line on what it changes and whether anything looks risky
+-(migrations, auth, payments, deleted tests).
+-End with a three-line summary I can read on my phone.
+-Do not modify any file."
++if date -v -1d +%F >/dev/null 2>&1; then
++  SINCE=$(date -v -1d +%F)
++else
++  SINCE=$(date -d "yesterday" +%F)
++fi
+ 
+ cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
+ 
+-claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
++print -r -- "$PROMPT" | claude -p --output-format text > "$OUT"
++rc=$?
+ 
+-if [ $status -ne 0 ]; then
+-  "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
+-  exit $status
++if [ $rc -ne 0 ]; then
++  "$NOTIFY" "nightly review FAILED (exit $rc), see $OUT"
++  exit $rc
+ fi
+ 
+ "$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"

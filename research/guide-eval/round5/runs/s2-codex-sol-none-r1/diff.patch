@@ -1,0 +1,36 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..40c6043
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,7 @@
++# Ticket #4471
++
++The redesign removed `PostHogWidget` from the app's widget tree. The old UI wraps its `MaterialApp` with that widget; the new UI used only `PosthogObserver` with `GoRouter`. The observer tracks navigation, and `Posthog().capture` still sends events, but neither installs the widget hook needed for Flutter session replay. This is why users on the new UI have events but no recordings, despite the shared replay configuration and project settings.
++
++Fixed `NewApp` by wrapping `MaterialApp.router` in `PostHogWidget`, matching the old shell while keeping its existing `GoRouter` observer. New sessions on a build containing this change should be eligible for replay; recordings missing from past sessions cannot be recovered.
++
++Verification: formatting and diff checks pass. A live replay check still requires an iOS or Android run with a valid PostHog project key; this repository uses a CI placeholder key.
+diff --git a/lib/new_app.dart b/lib/new_app.dart
+index 92e4ff9..bcb2032 100644
+--- a/lib/new_app.dart
++++ b/lib/new_app.dart
+@@ -21,13 +21,12 @@ class NewApp extends StatelessWidget {
+ 
+   @override
+   Widget build(BuildContext context) {
+-    return MaterialApp.router(
+-      title: 'Loanly',
+-      theme: ThemeData(
+-        colorSchemeSeed: Colors.indigo,
+-        useMaterial3: true,
++    return PostHogWidget(
++      child: MaterialApp.router(
++        title: 'Loanly',
++        theme: ThemeData(colorSchemeSeed: Colors.indigo, useMaterial3: true),
++        routerConfig: _router,
+       ),
+-      routerConfig: _router,
+     );
+   }
+ }

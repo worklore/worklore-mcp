@@ -1,0 +1,41 @@
+# Changes Made (`scripts/deploy.sh`)
+
+Updated `scripts/deploy.sh` to apply explicit `Cache-Control` and `Content-Type` headers to the objects in `s3://$BUCKET/` after syncing `src/` and before running the CloudFront invalidation:
+
+- **Short TTL (`public, max-age=300` — 5 minutes) for HTML, JS, and CSS:**
+  - `*.html` (`src/index.html`, `src/clases.html`) with `--content-type "text/html"`
+  - `*.js` (`src/booking.js`) with `--content-type "application/javascript"`
+  - `*.css` (`src/styles.css`) with `--content-type "text/css"`
+- **Long TTL (`public, max-age=86400` — 24 hours) for `assets/` (`*.png`, `*.svg`):**
+  - `*.png` (`src/assets/logo.png`) with `--content-type "image/png"`
+  - `*.svg` (`src/assets/mark.svg`) with `--content-type "image/svg+xml"`
+- Kept `aws s3 sync src/ "s3://$BUCKET/" --delete --profile "$PROFILE"` so file uploads and deletions (`--delete`) continue to work, followed by the per-extension `aws s3 cp ... --metadata-directive REPLACE` loop (which also updates metadata on already-uploaded, unchanged objects in the bucket that `aws s3 sync` would otherwise skip), and added `--profile "$PROFILE"` (`studio`) to every AWS CLI call.
+- Kept `aws cloudfront create-invalidation` after the header updates so CloudFront drops cached objects with old/missing headers.
+
+---
+
+# Which Parts of the Colleague's Note Applied (and Which Did Not)
+
+## Parts That Applied
+
+1. **Root cause (missing `Cache-Control` behind a CDN):**
+   - Matches this project's issue described in `README.md`: `scripts/deploy.sh` synced files to S3 and invalidated CloudFront, but set no `Cache-Control` header, so browsers cached `booking.js` heuristically for days and never re-fetched it from CloudFront.
+2. **Never using `--metadata-directive REPLACE` without `--content-type` (Step 1):**
+   - Replacing metadata in S3 (`--metadata-directive REPLACE`) replaces *all* object metadata, not just `Cache-Control`. Omitting `--content-type` resets `Content-Type` to `binary/octet-stream`, causing browsers to download HTML/JS/CSS files instead of rendering/executing them.
+3. **Setting `Content-Type` and `Cache-Control` together per file extension (Step 2):**
+   - The five extension/type/TTL pairs in the note (`html:text/html:300`, `js:application/javascript:300`, `css:text/css:300`, `png:image/png:86400`, `svg:image/svg+xml:86400`) map directly to every file in `src/` (`index.html`, `clases.html`, `booking.js`, `styles.css`, and `assets/logo.png`, `assets/mark.svg`), giving short caching to HTML/JS/CSS and long caching to `assets/` while preserving accurate MIME types and updating existing objects in the bucket.
+4. **Invalidating the CDN *after* updating headers (Step 3):**
+   - `aws cloudfront create-invalidation` runs after the S3 metadata update loop so edge nodes evict responses cached without `Cache-Control`.
+5. **Putting the loop in the deploy script (`scripts/deploy.sh`) instead of running it ad hoc (Step 4):**
+   - Placing the loop inside `scripts/deploy.sh` ensures `Content-Type` and `Cache-Control` travel together on every deploy.
+
+## Parts That Did Not Apply / Were Adapted or Ignored
+
+1. **"Your agent will need from you: the bucket name, the CDN distribution id, and which paths are long-lived assets versus code":**
+   - Did not need to ask: `BUCKET="ruta-ceramica-site-7f3a"`, `DISTRIBUTION_ID="E2QX9ZK1DEMO01"`, and `PROFILE="studio"` were already defined in `scripts/deploy.sh`, and the prompt already specified short caching for HTML/JS and long caching for `assets/`.
+2. **Missing `--profile "$PROFILE"` in the note's snippet:**
+   - Adapted the loop in `scripts/deploy.sh` to pass `--profile "$PROFILE"` (`studio`), matching the rest of `scripts/deploy.sh` and `README.md`.
+3. **"If you inherited a script that does [`--metadata-directive REPLACE` without `--content-type`], treat it as a live outage waiting to happen" (Step 1):**
+   - The existing `scripts/deploy.sh` did not contain a broken `--metadata-directive REPLACE` command; it only had `aws s3 sync` with no headers at all.
+4. **Running the deploy and live verification (`curl -sI https://your-site/` and browser testing):**
+   - Ignored per the ground rules not to deploy, publish, or connect to any external service, and to work only inside the current directory.

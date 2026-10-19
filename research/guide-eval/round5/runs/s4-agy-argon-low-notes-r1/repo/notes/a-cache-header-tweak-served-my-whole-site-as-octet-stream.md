@@ -1,0 +1,40 @@
+---
+
+In plain words: I wanted browsers to stop holding on to an old JavaScript file, so I added a caching header to the files on my server. That one command made every page on my site download as a file instead of opening. The site was, for twenty minutes, not a site.
+
+Here is the trap. My static site sits in S3 behind a CDN, and the deploy script uploaded files with no `Cache-Control` at all — so returning visitors kept running yesterday's JavaScript and CDN invalidations couldn't reach them. The fix looked like a one-liner: copy every object onto itself with the header attached.
+
+```
+aws s3 cp s3://$BUCKET/ s3://$BUCKET/ --recursive \
+  --metadata-directive REPLACE --cache-control "public, max-age=300"
+```
+
+`--metadata-directive REPLACE` does exactly what it says: it replaces the metadata. All of it. Content type is metadata, and I hadn't passed one, so every object — HTML, JavaScript, CSS — came back as `binary/octet-stream`. The upload succeeded, the CDN invalidated cleanly, every check I ran said 200 OK. The only symptom was that the site stopped rendering: browsers respect the declared type, and with `nosniff` in play they will not guess.
+
+The lesson I actually keep relearning: a command that "only changes X" replaces everything in X's category. And a 200 OK is not proof that a page works — `curl -I` and reading the `content-type` back is. I had even hit this same octet-stream behaviour before, on a different S3-compatible host, and written it down. Knowing the trap did not save me, because I did not think of this as an upload — I thought of it as editing a header.
+
+The repair is the same shape as the mistake: re-copy with the type stated explicitly, per file extension. That loop now lives in the deploy script itself, so the header fix and the content type can never again be applied separately.
+
+## Reproduce this
+
+**Prerequisites:** a static site in S3 (or any S3-compatible bucket) served through a CDN; AWS CLI configured for the bucket.
+
+**Your agent will need from you:** the bucket name, the CDN distribution id, and which paths are long-lived assets versus code.
+
+**Steps:**
+1. Never run `aws s3 cp --recursive --metadata-directive REPLACE` without `--content-type`. If you inherited a script that does, treat it as a live outage waiting to happen.
+2. Set headers per file extension instead, so type and cache policy always travel together:
+   ```
+   for pair in "html:text/html:300" "js:application/javascript:300" \
+               "css:text/css:300" "png:image/png:86400" "svg:image/svg+xml:86400"; do
+     ext="${pair%%:*}"; rest="${pair#*:}"; ct="${rest%%:*}"; ttl="${rest#*:}"
+     aws s3 cp "s3://$BUCKET/" "s3://$BUCKET/" --recursive \
+       --exclude "*" --include "*.${ext}" \
+       --content-type "$ct" --cache-control "public, max-age=${ttl}" \
+       --metadata-directive REPLACE --only-show-errors
+   done
+   ```
+3. Invalidate the CDN afterwards — the old headers are cached at the edge too.
+4. Put this loop in the deploy script, not in your shell history.
+
+**Verify:** `curl -sI https://your-site/ | grep -i content-type` must return `text/html`, and the same check on your main JavaScript bundle must return `application/javascript` — not `binary/octet-stream`. A 200 status alone proves nothing here. Then load the site in a browser that has never seen it.

@@ -1,0 +1,48 @@
+# Soft 404 on Note Pages: Cause and Fix
+
+## Cause
+
+Note pages on `fieldnotes.example` (such as `/n/drip-line-pressure`, `/n/compost-thermometer-week-3`, `/n/soil-ph-kit-review`, and `/n/rain-barrel-overflow`) are client-rendered by `site/app.js` inside the shared HTML shell (`site/index.html`, served with HTTP 200). When a page loads, `site/app.js` fetches data from the same-domain API under `/v1/`:
+
+- **Note pages (`/n/<slug>`)**: `fetch(\`/v1/notes/\${slug}\`)`
+- **Home page (`/`)**: `fetch("/v1/notes?limit=50")`
+
+On `2026-09-07`, `Disallow: /v1/` was added to `site/robots.txt` to prevent crawlers from sending `GET` requests to `POST`-only or authenticated API endpoints and logging 404/405 errors.
+
+Because Googlebot obeys `robots.txt` during JavaScript rendering, it is allowed to crawl `/n/<slug>` (receiving `site/index.html` with HTTP 200), but **blocked from fetching `/v1/notes/<slug>`** (and `/v1/notes?limit=50`). When the `fetch()` fails, `site/app.js` enters its `catch` block and renders:
+
+```html
+<section class="notfound">
+  <h1>NOT FOUND</h1>
+  <p>No note lives at this address.</p>
+  <p><a href="/">Back to all notes</a></p>
+</section>
+```
+
+As confirmed by `search-console/url-inspection-drip-line-pressure.txt`, Googlebot sees an HTTP 200 response whose rendered text is `"NOT FOUND  No note lives at this address.  Back to all notes"`, which Google classifies as a **Soft 404**. Pages crawled before September 7 (`/n/first-frost-dates`, `/n/mulch-depth-trial`) remained indexed, while any note crawled after September 7 failed with Soft 404.
+
+---
+
+## Fix
+
+Update `site/robots.txt` using Google's longest-match rule so that public read endpoints required for rendering are allowed, while general `/v1/` endpoints (such as `/v1/me`, `/v1/me/drafts`, `/v1/auth/token`) and the per-user `POST`-only sub-route (`/v1/notes/*/reactions`) remain blocked:
+
+```robots
+User-agent: *
+Allow: /v1/notes
+Disallow: /v1/notes/*/reactions
+Disallow: /v1/
+Disallow: /admin/
+
+Sitemap: https://fieldnotes.example/sitemap.xml
+```
+
+### How Google Evaluates These Rules (Longest Match Wins)
+
+| Path | Matching Rules | Winning Rule (Longest) | Result |
+|---|---|---|---|
+| `/v1/notes?limit=50` | `Disallow: /v1/` (4), `Allow: /v1/notes` (9) | `Allow: /v1/notes` (9) | **Allowed** |
+| `/v1/notes/drip-line-pressure` | `Disallow: /v1/` (4), `Allow: /v1/notes` (9) | `Allow: /v1/notes` (9) | **Allowed** |
+| `/v1/notes/drip-line-pressure/reactions` | `Disallow: /v1/` (4), `Allow: /v1/notes` (9), `Disallow: /v1/notes/*/reactions` (21) | `Disallow: /v1/notes/*/reactions` (21) | **Blocked** |
+| `/v1/me`, `/v1/me/drafts`, `/v1/auth/token` | `Disallow: /v1/` (4) | `Disallow: /v1/` (4) | **Blocked** |
+| `/admin/` | `Disallow: /admin/` (7) | `Disallow: /admin/` (7) | **Blocked** |

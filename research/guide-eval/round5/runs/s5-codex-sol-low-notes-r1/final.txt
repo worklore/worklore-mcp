@@ -1,0 +1,3 @@
+Search Console fetched the note page with HTTP 200, but rendered the app’s “NOT FOUND” fallback. The page’s content comes from `/v1/notes/{slug}`, which `robots.txt` blocked for crawlers. Browsers could load that API response, so the page appeared normal there.
+
+I updated [robots.txt](/tmp/h-1DxN5U/site/robots.txt) to allow public note reads while keeping the other API routes blocked, and documented the cause and fix in [ANSWER.md](/tmp/h-1DxN5U/ANSWER.md). Local rule checks passed. Nothing was deployed or submitted; the live Search Console result can only be verified after the change is deployed.

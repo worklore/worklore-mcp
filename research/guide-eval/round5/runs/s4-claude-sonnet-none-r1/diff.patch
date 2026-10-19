@@ -1,0 +1,49 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..35fe39d
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,23 @@
++# Cache-Control on deploy
++
++Changed `scripts/deploy.sh` (the single `aws s3 sync` is now two):
++
++- Everything except `assets/` (HTML, `booking.js`, `styles.css`):
++  `Cache-Control: public, max-age=300, must-revalidate` (5 minutes).
++- `assets/`: `Cache-Control: public, max-age=31536000` (1 year).
++
++Notes:
++- `styles.css` wasn't named in the request; I put it in the short group since its
++  filename isn't versioned and a stale stylesheet would have the same problem.
++- Assets have a long cache but unversioned names, so if you replace `logo.png`
++  in place, visitors may keep the old one for a long time. Rename the file
++  (or lower the value) when changing one.
++- `--exclude "assets/*"` on the first sync also stops `--delete` from touching
++  assets; the second sync handles deletion there.
++- Existing objects only get the header when re-uploaded. `s3 sync` skips files
++  whose size/mtime are unchanged, so the first deploy may not update metadata
++  for unchanged files. Force it once with `--exact-timestamps` is not enough; use
++  `aws s3 cp src/ s3://BUCKET/ --recursive --cache-control ...` (or touch the files).
++- Browsers that already cached `booking.js` with no header may still use their
++  heuristic copy until it expires; this only fixes future loads.
++- Not run: no deploy, and only `bash -n` syntax check was done.
+diff --git a/scripts/deploy.sh b/scripts/deploy.sh
+index 6550d32..7ee4301 100755
+--- a/scripts/deploy.sh
++++ b/scripts/deploy.sh
+@@ -7,7 +7,14 @@ BUCKET="ruta-ceramica-site-7f3a"
+ DISTRIBUTION_ID="E2QX9ZK1DEMO01"
+ PROFILE="studio"
+ 
+-aws s3 sync src/ "s3://$BUCKET/" --delete --profile "$PROFILE"
++# Short cache for everything outside assets/ (HTML, JS, CSS: unhashed names,
++# so browsers must revalidate soon). Excluded paths are also left alone by --delete.
++aws s3 sync src/ "s3://$BUCKET/" --delete --exclude "assets/*" \
++  --cache-control "public, max-age=300, must-revalidate" --profile "$PROFILE"
++
++# Long cache for assets/ (logo, images).
++aws s3 sync src/assets/ "s3://$BUCKET/assets/" --delete \
++  --cache-control "public, max-age=31536000" --profile "$PROFILE"
+ 
+ aws cloudfront create-invalidation --distribution-id "$DISTRIBUTION_ID" \
+   --paths "/*" --profile "$PROFILE" > /dev/null

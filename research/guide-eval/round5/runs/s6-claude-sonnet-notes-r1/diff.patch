@@ -1,0 +1,86 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..8885c32
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,80 @@
++# notes-mcp: what real MCP clients will trip over
++
++Checked live against `python3 server.py` on port 56521 (curl, plus a read of `server.py`). I changed nothing in the server.
++
++## Disclosure
++
++While testing I called `add_note` twice with the dev token from README.md. The first call created `n-6`, and the second was a missing-argument check. Both went to the in-memory store only. `notes.json` is untouched, `git status` is clean, and I stopped the server afterwards. I should have kept to read-only calls.
++
++## Failures, most important first
++
++1. **Tool refusals are JSON-RPC errors, not tool results.**
++   - `get_note {}` returns `error -32602 "missing required argument: id"`.
++   - `get_note {"id":"zz"}` returns `error -32602 "note not found: zz"`.
++   - `get_note {"id":"n-1 "}` returns `-32602 "note not found"`.
++   - SDK clients throw on these, so the model never sees the message and cannot correct itself. The newer spec revisions want input and validation problems returned as `result` with `isError: true`.
++   - Only an unknown tool name should stay a protocol error. That one currently uses -32601; -32602 is the usual code.
++   - Fix: catch `ValueError` in the `tools/call` branch of `handle` and return `tool_result(msg, is_error=True)`.
++
++2. **Auth failures use a bare HTTP 401 with no OAuth hints.**
++   - Anonymous `add_note` returns `401 {"error":"sign in required"}`, which is not a JSON-RPC body.
++   - Anonymous `resources/list`, `resources/read` and `resources/templates/list` also return 401.
++   - There is no `WWW-Authenticate` header and no `/.well-known/oauth-protected-resource`. `GET` on that path returns 405 "use POST".
++   - Clients that see a 401 start OAuth discovery, fail, and may flag the whole server as needs-auth, which hides the read tools that work anonymously.
++   - `tools/list` advertises `add_note` to everyone, and `initialize` advertises `resources` to everyone. Anonymous users then get a 401 on both. This contradicts the capabilities the server announces.
++   - Pick one of these:
++     - Make the anonymous resources endpoints work (public guide only).
++     - Return `isError: true` for `add_note`, with a message that says to use a bearer token.
++     - Add a proper `WWW-Authenticate: Bearer` header and metadata.
++   - The "signed-in session" wording in the tool description and instructions is also misleading, since the real mechanism is a static bearer header.
++
++3. **Notifications get a response body they should not have.**
++   - `notifications/cancelled` (and any other notification except `initialized`) gets `200` with `{"id":null,"error":-32601}`. It should get `202` with no body, and it is logged `ok:false`.
++   - Clients send `notifications/cancelled`, `notifications/roots/list_changed` and similar routinely. Handle them with a no-op, or treat any request with no `id` as a notification.
++   - A batch containing only notifications returns `200 []` instead of `202`.
++   - Not a client problem, but a batch of `[]` is not rejected as invalid.
++
++4. **The declared schemas are not enforced, and some are weak.**
++   - `search_notes` declares `limit` min 1 and max 50. `limit: 0` is accepted and returns nothing, and `limit: "5"` (a string) is accepted. Values like `"abc"` or 999 give a -32602 error or no check at all.
++   - `get_note` declares `pattern ^n-[0-9]+$`, but a bad id falls through to "not found".
++   - `add_note` does not validate `title` (minLength 1). A missing `body` raises `KeyError`, which is not caught, so you get a dropped connection or a 500 instead of a clean error.
++   - `search_notes` has `outputSchema: {"type":"object"}`, which says nothing about `hits` and `total`. Declare the real shape.
++   - `total` is the count after truncating to `limit`, not the number of matches.
++   - `get_note` passes the schema: the output validated for `n-1`, and the text and `structuredContent` agree.
++
++5. **Browser and HTTP-level gaps.**
++   - `OPTIONS /mcp` returns `501` with an HTML page. There are no CORS headers, so browser-based clients and inspectors cannot connect.
++   - `GET /mcp` returns `405` with no `Allow: POST` header. That is acceptable for the spec's "no SSE stream" case, but add the header.
++   - The server speaks HTTP/1.0 with no keep-alive, so every request opens a new connection. It still works.
++   - `Mcp-Session-Id` is issued at `initialize` but never stored or validated. A bogus session id is accepted, and `DELETE` always returns 204. Harmless, but sessions mean nothing.
++   - The `MCP-Protocol-Version` request header is ignored. `1999-01-01` was accepted.
++   - A request that sends `Accept: text/event-stream` only still gets JSON.
++
++6. **`resources/read` ignores the URI.** `notes://other` returns the guide content labelled `notes://guide`. It should return an error for an unknown URI. `resources/templates/list` is implemented, and `prompts/list` correctly returns -32601 because no prompts capability is declared.
++
++7. **Logging gaps.**
++   - Calls are logged one JSON line each, with method, tool, ok, ms and who, which is good.
++   - Batched requests are not logged at all.
++   - `who` is only `dev` or `anon`.
++   - Parse errors are not logged.
++   - Failed `tools/call` logs are `ok:false` only by inference from the body.
++
++8. **Data and concurrency, lower priority.**
++   - `add_note` computes the next id as `max(...) + 1` with no lock on a `ThreadingHTTPServer`. Concurrent writes can collide.
++   - New notes are in memory only and vanish on restart.
++   - `max()` raises on an empty store.
++
++## Passed
++
++- `initialize` and `tools/list` work with no token and return 3 tools.
++- Tool names match `^[a-zA-Z0-9_-]{1,64}$`.
++- Version negotiation: `protocolVersion: "banana"` gets `2025-06-18` back, not an echo. (The server always answers with its one version, which is fine.)
++- `server/discover` without a token returns `-32601`, not a 401, so probing clients are not blocked.
++- The session is not broken by an error: a normal call after a refusal works.
++- `get_note` output validates against its declared `outputSchema`, and the text and structured content agree.
++- `ping` works and the parse-error path returns -32700.
++
++## Not checked
++
++- Registry listing or a surface-fingerprint lock: README says the server is not listed, and there is no lock file in the repo. That means nothing stops the tool surface drifting unnoticed. I made no external requests.
++- `add_note` output schema validation against the real success path (only seen with the in-memory write above, where it returned `{"id":"n-6"}` and matched).

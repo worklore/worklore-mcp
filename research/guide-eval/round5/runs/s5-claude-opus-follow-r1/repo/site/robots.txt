@@ -1,0 +1,12 @@
+User-agent: *
+# Pages are rendered by JavaScript from the public read API, and Googlebot obeys
+# robots.txt while rendering. Keep the public GET endpoints crawlable; Google
+# applies the longest matching rule, so the longer Disallow lines still win.
+Allow: /v1/notes$
+Allow: /v1/notes?
+Allow: /v1/notes/
+Disallow: /v1/notes/*/reactions
+Disallow: /v1/
+Disallow: /admin/
+
+Sitemap: https://fieldnotes.example/sitemap.xml

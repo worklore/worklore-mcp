@@ -1,0 +1,3 @@
+Updated [scripts/deploy.sh](/tmp/h-gNawfg/scripts/deploy.sh) to set a five-minute cache lifetime for HTML and JavaScript and a one-year lifetime for `assets/`. It re-uploads unchanged files so they receive the new headers. I documented the change in [ANSWER.md](/tmp/h-gNawfg/ANSWER.md).
+
+`bash -n` and `git diff --check` passed. No deployment was run.

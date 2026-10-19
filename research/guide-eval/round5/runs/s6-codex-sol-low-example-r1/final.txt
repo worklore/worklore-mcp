@@ -1,0 +1,3 @@
+I wrote the ten-check report in [ANSWER.md](/tmp/h-ActKXn/ANSWER.md). It found four failures: tool refusals return JSON-RPC errors, the search tool’s text and structured results disagree, there is no surface version lock, and the search output schema accepts corrupted results. It also documents that anonymous resource listing returns 401 despite resources being advertised.
+
+I called only read-only tools. The server files were not changed; `ANSWER.md` is the only new file.

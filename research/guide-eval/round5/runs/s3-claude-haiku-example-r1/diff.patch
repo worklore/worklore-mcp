@@ -1,0 +1,163 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..25182af
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,107 @@
++# Why nightly-review never reported anything
++
++## Short answer
++
++The job did run. `launchctl-print.txt` shows `runs = 6` and `last exit code = 1`,
++and `Library/Logs/nightly-review.err` has one failure per run. Two bugs stacked:
++
++1. **The review failed: `Not logged in · Please run /login`.** `claude -p` could
++   not find its login from the launchd environment. The plist sets only `PATH`,
++   and `launchctl print` shows no `USER` in the job's environment.
++   `HOME` must be set, or `set -u` would have stopped the script at line 5 with
++   `HOME: parameter not set`, and the err log has no such line.
++2. **The failure notice never went out: `read-only variable: status`.**
++   Line 19 of `nightly-review.zsh` is `status=$?`. In zsh, `status` is a read-only
++   alias for `$?`, so the assignment aborts the script. The `notify.sh` call that
++   would have sent the failure sat below that line, so the script died silently.
++
++So the job failed and then the thing that reports failures died before it could
++speak. Nothing reached Telegram: no summary and no failure note.
++
++I reproduced bug 2 directly: `zsh -c 'set -u; false; status=$?'` prints
++`read-only variable: status` and exits 1. The original script, run with a fake
++failing `claude` and a fake notifier, sends nothing.
++
++## What changed
++
++`bin/nightly-review.zsh`
++- `status=$?` is now `rc=$?`, and every later use follows it. The failure notice
++  is now reachable.
++- `claude` gets `< /dev/null`, so a headless run never waits on stdin.
++- Each run logs its start time and `claude exited <rc> after <N>s`, which goes
++  to `nightly-review.out`. A run that finishes in a few seconds is visibly
++  suspicious.
++- Exit 0 with an empty output file is treated as a failure and reported. A green
++  exit with nothing done is no longer a success.
++
++`Library/LaunchAgents/com.vk.nightly-review.plist`
++- Added `USER` = `vk` under `EnvironmentVariables`. I took `vk` from the paths
++  already hard-coded in the plist (`/Users/vk/...`). If your short username is
++  different, change it.
++
++## Which parts of the colleague's note applied
++
++Applied, and confirmed by this job's logs:
++- zsh `status` is read-only, and assigning to it kills the script before the
++  failure notice. This is exactly what happened here.
++- The notifier sat downstream of the failure. This is the key lesson.
++- The "Not logged in" trap: the CLI needs `USER` in the plist, and that was
++  missing here.
++- `launchctl print` shows the runs count and last exit code. Here they proved
++  the job fired on schedule, which contradicted the belief that launchd was not
++  firing.
++
++Applied as defensive hardening, not evidenced by these logs:
++- `< /dev/null` on `claude`. The prompt is passed as an argument, so this is a
++  precaution against stdin waits. The logs show no such hang.
++- Logging each run's duration and checking that the output is non-empty.
++
++Did not apply:
++- "Input must be provided either through stdin or as a prompt argument". That
++  error does not appear in these logs. The prompt is passed as a quoted argument,
++  and the script is unchanged in that respect, so the stdin-pipe fix was not
++  needed.
++
++The colleague's claim that a failing exit code is trustworthy is what this case
++supports: here `last exit code = 1` matched the real failure. Their correction
++still holds: a 0 exit with no work is possible, so the output check was added.
++
++## Not verified here
++
++- I could not run the job under real launchd. This folder is a snapshot, and a
++  real run would send a Telegram message, so I stayed in a scratch home with a
++  fake `claude` and a fake notifier. The "USER unset causes Not logged in"
++  connection is inferred from the logs and the colleague's note, not reproduced
++  against the real CLI.
++- `notify.sh` reads its token from the keychain with `security`. The README says
++  it works by hand. Whether it works from launchd is untested until you run the
++  success test below.
++- `claude` is at `/opt/homebrew/bin/claude`, which is on the plist's PATH.
++
++## What you need to do to deploy
++
++I did not deploy anything. On your machine:
++
++```sh
++cp bin/nightly-review.zsh ~/bin/nightly-review.zsh
++cp Library/LaunchAgents/com.vk.nightly-review.plist ~/Library/LaunchAgents/
++launchctl bootout gui/$(id -u)/com.vk.nightly-review
++launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.vk.nightly-review.plist
++launchctl kickstart -k gui/$(id -u)/com.vk.nightly-review
++```
++
++Then check:
++1. `launchctl print gui/$(id -u)/com.vk.nightly-review` shows `last exit code = 0`.
++2. `nightly-review.out` shows a duration that is plausible for a real review, not a
++   few seconds.
++3. The Telegram success message arrives, and `nightly-review-<date>.md` is fresh.
++
++To confirm failure is also visible, temporarily break the script (for example,
++point `REPO` at a missing directory, or make `claude` fail), kickstart again,
++and confirm the failure message arrives. Then restore the script.
++
++## Takeaway
++
++When automation is silent, first prove whether it ran, using `launchctl print`
++and its logs. Then check whether the failure reporter sits downstream of the
++failure. Here it did, and a single zsh reserved word silenced it.
+diff --git a/Library/LaunchAgents/com.vk.nightly-review.plist b/Library/LaunchAgents/com.vk.nightly-review.plist
+index c347363..d49eacf 100644
+--- a/Library/LaunchAgents/com.vk.nightly-review.plist
++++ b/Library/LaunchAgents/com.vk.nightly-review.plist
+@@ -24,6 +24,8 @@
+   <dict>
+     <key>PATH</key>
+     <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
++    <key>USER</key>
++    <string>vk</string>
+   </dict>
+ </dict>
+ </plist>
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..f0fb654 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -13,14 +13,27 @@ For each commit: one line on what it changes and whether anything looks risky
+ End with a three-line summary I can read on my phone.
+ Do not modify any file."
+ 
++START=$SECONDS
++echo "$(date '+%F %T') nightly review start"
++
+ cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
+ 
+-claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
++# zsh reserves $status as a read-only alias of $?, so the exit code goes in rc.
++# </dev/null: the prompt is an argument; keep claude from waiting on stdin.
++claude -p "$PROMPT" --output-format text < /dev/null > "$OUT"
++rc=$?
++
++echo "$(date '+%F %T') claude exited $rc after $((SECONDS - START))s"
++
++if [ $rc -ne 0 ]; then
++  "$NOTIFY" "nightly review FAILED (exit $rc), see $OUT"
++  exit $rc
++fi
+ 
+-if [ $status -ne 0 ]; then
+-  "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
+-  exit $status
++# exit 0 with no output still means nothing was reviewed
++if [ ! -s "$OUT" ]; then
++  "$NOTIFY" "nightly review FAILED (empty output), see $OUT"
++  exit 1
+ fi
+ 
+ "$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"

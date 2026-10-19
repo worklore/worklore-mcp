@@ -1,0 +1,16 @@
+# Changes and Rationale
+
+## What Changed
+In `gen.py`, updated the `hr_target` function to use key `"start"` instead of `"value"` for the lower bound of the HR corridor:
+
+```python
+def hr_target(step):
+    """HR corridor for a step, as a percentage of the athlete's LTHR."""
+    lo, hi = step["hr_pct"]
+    return {"units": "%lthr", "start": lo, "end": hi}
+```
+
+## Why
+When Intervals.icu generates FIT workout exports for Garmin devices:
+- Using `{"value": lo, "end": hi}` instructs Intervals to treat the HR target as a **Lap-HR / zone-mapped** target. In this mode, the Garmin watch clamps targets to its own local (and often stale or auto-detected) LTHR zones rather than using the custom planned bpm ranges.
+- Using `{"start": lo, "end": hi}` routes the target as an **Instant-HR corridor**. In this mode, Intervals calculates the raw bpm corridor from its configured athlete LTHR threshold at export time, and Garmin displays the exact calculated bpm values (e.g. 151–160 bpm and 129–141 bpm) drift-immune and independent of the watch's internal zone definitions.

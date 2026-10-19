@@ -1,0 +1,11 @@
+# Cause
+
+The note URL itself is crawlable and returns HTTP 200, but its HTML is only a JavaScript shell. `site/app.js` fetches `/v1/notes/<slug>` to render the note. The September 7 `Disallow: /v1/` rule prevented Googlebot from fetching that data during rendering. The app catches the failed fetch and displays “NOT FOUND — No note lives at this address” inside the successful page response. Search Console therefore classifies the rendered page as a Soft 404. Its October 16 live inspection of `/n/drip-line-pressure` shows exactly that text, and the exported report shows the same verdict on other notes crawled in October; notes last crawled in August remain indexed.
+
+# Fix
+
+`site/robots.txt` now allows `/v1/notes`, which covers the public list (`/v1/notes?limit=50`) and individual note data (`/v1/notes/<slug>`). The general `/v1/` block still covers `/v1/me` and `/v1/auth/token`; the longer `/v1/notes/*/reactions` rule keeps per-user reactions blocked. Google uses the longest matching robots rule, with `Allow` winning a tie. Robots rules cannot distinguish GET from POST or PUT on the same URL, so the authenticated write methods sharing the public note paths remain protected by the API's bearer authorization, not by robots.txt.
+
+I checked the rules locally with longest-match evaluation: the note list, an individual note, and the note page are allowed; reactions, `/v1/me`, `/v1/me/drafts`, `/v1/auth/token`, and `/admin/` are blocked.
+
+This is a local fix only. After deployment, check the served `/robots.txt`, run Search Console's live URL test on an affected note, and confirm its rendered content is the real note. Then request a recrawl/indexing and monitor the Pages report; indexing is a separate Google decision and is not guaranteed by this change.

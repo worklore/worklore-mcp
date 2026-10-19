@@ -1,0 +1,96 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..309f7dd
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,24 @@
++# Cache-Control for the deploy
++
++## What I did
++Rewrote `scripts/deploy.sh` (nothing was run against AWS; only `bash -n` syntax-checked):
++- HTML, JS, CSS: `Cache-Control: public, max-age=300` (5 min).
++- `assets/` (png, svg): `public, max-age=31536000` (1 year).
++- Each upload sets `--content-type` and `--cache-control` together, per extension, in one loop.
++- Uses `aws s3 cp --recursive` per extension instead of `sync` for uploads. `sync` skips unchanged files, so the existing header-less `booking.js` etc. would never get the new headers. `cp` rewrites everything every deploy (the site is tiny).
++- A trailing `sync --delete` removes stale objects only. S3 copies are newer than local, so it skips them and does not strip headers.
++- The script aborts if `src/` contains a file type with no Content-Type rule.
++- Invalidation is unchanged.
++
++## Colleague's note: what applied
++- Applied: never replace metadata without stating Content-Type. Uploads here are fresh `cp` from local files with explicit types, never a bare `--metadata-directive REPLACE`.
++- Applied: type and cache policy travel together, per extension, inside the deploy script.
++- Applied: verify with `curl -sI`, not status code. After deploying:
++  `curl -sI https://<site>/booking.js | grep -iE 'content-type|cache-control'`
++  (expect `application/javascript`, `max-age=300`; same for the HTML page, `text/html`).
++- Not needed: the in-place S3-to-S3 copy. Deploy re-uploads from `src/`. Their extension list was widened to match this repo only.
++
++## Caveats
++- Files already cached by browsers for days stay stale until they expire; this only fixes future responses.
++- `assets/` at one year assumes filenames change when content changes. `logo.png` and `mark.svg` are unversioned, so a replaced logo could take a long time to appear. Rename it, or lower the TTL.
++- 5 minutes is a trade-off; adjust `CODE_CC` in the script.
+diff --git a/scripts/deploy.sh b/scripts/deploy.sh
+index 6550d32..064e1e9 100755
+--- a/scripts/deploy.sh
++++ b/scripts/deploy.sh
+@@ -1,5 +1,7 @@
+ #!/usr/bin/env bash
+ # Upload src/ to the bucket and invalidate CloudFront.
++# Content-Type and Cache-Control are always set together, per extension, so
++# neither can be lost when the other is changed.
+ set -euo pipefail
+ cd "$(dirname "$0")/.."
+ 
+@@ -7,9 +9,52 @@ BUCKET="ruta-ceramica-site-7f3a"
+ DISTRIBUTION_ID="E2QX9ZK1DEMO01"
+ PROFILE="studio"
+ 
+-aws s3 sync src/ "s3://$BUCKET/" --delete --profile "$PROFILE"
++# ext:content-type:cache-control
++# HTML and JS (booking.js) are short so a deploy reaches visitors within minutes;
++# CSS rides with them. Files under assets/ are long-lived.
++CODE_CC="public, max-age=300"
++ASSET_CC="public, max-age=31536000"
++RULES=(
++  "html:text/html; charset=utf-8:$CODE_CC"
++  "js:application/javascript; charset=utf-8:$CODE_CC"
++  "css:text/css; charset=utf-8:$CODE_CC"
++)
++ASSET_RULES=(
++  "png:image/png:$ASSET_CC"
++  "svg:image/svg+xml:$ASSET_CC"
++)
++
++# Refuse to upload a file type we have no Content-Type for.
++unknown=$(find src -type f ! -name '*.html' ! -name '*.js' ! -name '*.css' \
++  ! -path 'src/assets/*' -print; \
++  find src/assets -type f ! -name '*.png' ! -name '*.svg' -print)
++if [ -n "$unknown" ]; then
++  echo "No Content-Type rule for:" >&2; echo "$unknown" >&2; exit 1
++fi
++
++# cp (not sync) so unchanged files are re-uploaded too: sync skips them and
++# they would keep their old, header-less metadata.
++upload() { # src-dir dest-prefix rule...
++  local dir="$1" prefix="$2" rule ext rest ct cc; shift 2
++  for rule in "$@"; do
++    ext="${rule%%:*}"; rest="${rule#*:}"; ct="${rest%%:*}"; cc="${rest#*:}"
++    aws s3 cp "$dir" "s3://$BUCKET/$prefix" --recursive \
++      --exclude "*" --include "*.${ext}" \
++      --content-type "$ct" --cache-control "$cc" \
++      --only-show-errors --profile "$PROFILE"
++  done
++}
++
++upload src ""  "${RULES[@]}"
++upload src/assets "assets/" "${ASSET_RULES[@]}"
++
++# Remove files no longer in src/. Everything was just uploaded, so S3 copies are
++# newer than the local ones and sync skips them (keeping their headers); it only
++# deletes stale objects.
++aws s3 sync src/ "s3://$BUCKET/" --delete --only-show-errors --profile "$PROFILE"
+ 
+ aws cloudfront create-invalidation --distribution-id "$DISTRIBUTION_ID" \
+   --paths "/*" --profile "$PROFILE" > /dev/null
+ 
+ echo "deployed"
++echo "verify: curl -sI https://<site>/booking.js | grep -iE 'content-type|cache-control'"

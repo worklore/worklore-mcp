@@ -1,0 +1,69 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..5bed5d3
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,7 @@
++# Cache headers in the deploy
++
++Updated `scripts/deploy.sh` to upload every file with an explicit content type and `Cache-Control` header. HTML, JavaScript (including `booking.js`), and CSS use `public, max-age=300`; files under `assets/` use `public, max-age=86400`. The script rejects unknown file types before touching the bucket, removes deleted files, and invalidates CloudFront after upload.
++
++Uploading local files each time also updates headers on unchanged objects. The script does not use S3's `--metadata-directive REPLACE`, which could discard content types during a metadata-only copy.
++
++Local verification passed: Bash syntax, a mocked deploy checking all six uploads and command order, rejection of an unknown file type before any AWS call, and `git diff --check`. No deployment was run. After the next authorized deploy, check `Content-Type` and `Cache-Control` on the HTML page and `/booking.js`, then load the site in a fresh browser.
+diff --git a/README.md b/README.md
+index f29659a..767da2a 100644
+--- a/README.md
++++ b/README.md
+@@ -8,7 +8,6 @@ Static site for a ceramics studio: plain HTML, one CSS file, one JS file
+ 
+ Deploy: `./scripts/deploy.sh` (needs AWS CLI configured with the studio profile).
+ 
+-Known problem: after a deploy, returning visitors keep running the old
+-`booking.js` for days. The CloudFront invalidation runs every time, but
+-browsers never ask again, because the objects are uploaded with no
+-`Cache-Control` header at all.
++The deploy gives HTML, JavaScript, and CSS a five-minute browser cache and
++files under `assets/` a one-day cache. It uploads each file with an explicit
++content type, removes deleted files from the bucket, then invalidates CloudFront.
+diff --git a/scripts/deploy.sh b/scripts/deploy.sh
+index 6550d32..32ebe7f 100755
+--- a/scripts/deploy.sh
++++ b/scripts/deploy.sh
+@@ -7,6 +7,36 @@ BUCKET="ruta-ceramica-site-7f3a"
+ DISTRIBUTION_ID="E2QX9ZK1DEMO01"
+ PROFILE="studio"
+ 
++content_type_for() {
++  case "$1" in
++    *.html) content_type="text/html" ;;
++    *.js)   content_type="application/javascript" ;;
++    *.css)  content_type="text/css" ;;
++    *.png)  content_type="image/png" ;;
++    *.svg)  content_type="image/svg+xml" ;;
++    *) echo "Unknown content type for $1" >&2; return 1 ;;
++  esac
++}
++
++# Check every file before making any changes to the bucket.
++while IFS= read -r -d '' file; do
++  content_type_for "${file#src/}"
++done < <(find src -type f -print0)
++
++while IFS= read -r -d '' file; do
++  key="${file#src/}"
++  content_type_for "$key"
++  case "$key" in
++    assets/*) max_age=86400 ;;
++    *)        max_age=300 ;;
++  esac
++  aws s3 cp "$file" "s3://$BUCKET/$key" \
++    --content-type "$content_type" \
++    --cache-control "public, max-age=$max_age" \
++    --only-show-errors --profile "$PROFILE"
++done < <(find src -type f -print0)
++
++# The uploads above also refresh metadata on unchanged files.
+ aws s3 sync src/ "s3://$BUCKET/" --delete --profile "$PROFILE"
+ 
+ aws cloudfront create-invalidation --distribution-id "$DISTRIBUTION_ID" \

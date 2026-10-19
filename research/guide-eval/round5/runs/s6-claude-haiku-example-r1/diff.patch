@@ -1,0 +1,47 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..d46e9a8
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,41 @@
++# MCP checkup: notes-mcp (127.0.0.1:51367/mcp)
++
++**Verdict: has the problem.** Three checks FAIL (C2, C7 in part, C10), C6 is a WARN (no surface lock, counted as FAIL), and the rest PASS. Every check ran anonymously. No token was used, so the result is not "incomplete".
++
++What I did: started `python3 server.py` from this folder (no edits to the server or repo; the server stopped afterwards), then sent only allowed methods to it: `initialize`, `notifications/initialized`, `ping`, `server/discover`, `tools/list`, `resources/list`, `prompts/list`, and `tools/call` on `search_notes` and `get_note` (both `readOnlyHint: true`). I did not call `add_note`, did not send `resources/templates/list` (not on the allowed list), and did not send the spec's non-existent-method probe. Requests were sequential, about 16 in total. The checkup script and raw exchanges are in a scratch directory outside the repo.
++
++## Report
++
++| Check | Result | Evidence | Story that fixes it |
++|---|---|---|---|
++| C1 · tool list without a token | PASS | `initialize` → 200, `serverInfo.version` 0.3.1. `tools/list` → 200, **3 tools**: `search_notes`, `get_note`, `add_note`. `server/discover` → 200, `{"error":{"code":-32601,"message":"method not found: server/discover"}}` (allowed: 200 with `-32601`). | — |
++| C2 · refusal as result, not protocol error | **FAIL** | `get_note` with `{"id":"n-999"}` → 200, `{"error":{"code":-32602,"message":"note not found: n-999"}}`. `get_note` with `{}` → 200, `{"error":{"code":-32602,"message":"missing required argument: id"}}`. Both are JSON-RPC errors, not `result` with `isError: true`. | [My live MCP test asserted the bug: a real client threw where my test passed](https://worklore.dev/s/2026-10-02-my-live-mcp-test-asserted-the-bug-a-real-client-threw-where-) |
++| C3 · session survives an error | PASS | Same `Mcp-Session-Id` (`14cc226e…`) sent after the two refusals. `search_notes {"query":"compost"}` → 200, `isError: false`, `total: 1`. (The server is stateless, so this passes by construction; it does not prove much more.) | — |
++| C4 · outputSchema honoured | PASS | `search_notes` and `get_note` (valid args): 200, `isError: false`, `structuredContent` present, no validation errors against the published `outputSchema`. `add_note` not called (`readOnlyHint: false`). Note: `search_notes`'s schema is just `{"type":"object"}`, so this pass is weak; see C10. | — |
++| C5 · results survive serialisation | PASS | Every body parses as JSON. `get_note`: `content` text equals `structuredContent` exactly; `words` is an integer. `search_notes`: `content` text is the bare `hits` array, `structuredContent` is `{hits, total}`. Same hits, different wrapper; no encoder errors, no numbers as strings. | — |
++| C6 · version moves with the surface | **WARN → FAIL** | No registry entry for this server (a registry search for `notes-mcp` returned no entry for it; I checked only the first page; the README says "not yet listed in any registry"). No `mcp-surface/1` block, so `verify.mjs` cannot run (it only reads the registry). Computed the fingerprint by spec §2–§3: **sha256 `55354fc1d1a10a403c32fe5390c6d6fdded5a24a34575a1c596c0b9517b523c2`**, `serverInfo.version` **0.3.1**. My implementation reproduces both spec test vectors (§7.1 `06c6e65c…`, §7.2 `c7255a44…`). No lock file in the repo (`git ls-files`: `README.md`, `notes.json`, `server.py`). No list in the surface changes by itself: `notes.json` is not exposed, and the lists are fixed in code. | [My MCP listing said read-only. My server could write.](https://worklore.dev/s/2026-09-30-my-mcp-listing-said-read-only-my-server-could-write); for publishing an entry later, [Getting into the MCP Registry](https://worklore.dev/s/2026-09-23-getting-into-the-mcp-registry-server-json-a-read-org-token-a) |
++| C7 · calls are logged | **FAIL** (narrow) | `log()` is called once per single HTTP request (`server.py:216`), with method, tool, ok, latency and who. Observed: one stderr line for each single call, including errors (`"ok": false`). **But a JSON-RPC batch of two calls wrote 0 lines**: the list branch in `do_POST` (`server.py:205-211`) returns before `log()`. That breaks "one line per call". Also from reading the code (not tested): a non-object JSON body would raise inside `handle()` and go unlogged. | [Your MCP server is one URL — getting per-tool, per-user analytics anyway](https://worklore.dev/s/2026-09-23-your-mcp-server-is-one-url-getting-per-tool-per-user-analyti) |
++| C8 · tool count and names | PASS | 3 tools; `search_notes`, `get_note`, `add_note` all match `^[a-zA-Z0-9_-]{1,64}$`. | — |
++| C9 · version negotiation | PASS | `initialize` with `"protocolVersion":"banana"` → 200, `protocolVersion: "2025-06-18"` (the only version it implements). | — |
++| C10 · outputSchema rejects wrong answers | **FAIL** | Built corrupted results per the spec and validated with Python `jsonschema` (Draft 2020-12). `search_notes`: corrupted `{}` **accepted** (the schema has no `properties` and no `required`), so the schema cannot tell a wrong answer from a right one. `get_note`: rejected by `pattern` and `minimum`. `add_note` (not called): rejected by `pattern`. | [My MCP server's output schemas accepted wrong answers](https://worklore.dev/s/2026-10-15-my-mcp-server-s-output-schemas-accepted-wrong-answers-7-of-8) |
++
++**Could not check / what would unlock it**
++- C6 full registry comparison: needs the registry name. The server is not listed (per README), so there is nothing to compare against yet. The local fingerprint is recorded above for when it is published.
++- C7 from logs: no log access was given; the source was read, and the batch gap was reproduced on a fresh instance of this same `server.py`.
++- C10 with mcp-drill: not run; the Python `jsonschema` builder is the alternative the check allows.
++
++## Other things I found (not among the ten checks)
++
++1. **`resources` is advertised but answered with 401 to anonymous callers.** `initialize` returns `capabilities.resources`, but `resources/list` returns `401 {"error":"unauthorized"}` with no token. That body is not a JSON-RPC error, so clients that trust the capability get an auth failure. The 401 also makes the fingerprint's `resources` read as "not served". (`resources/templates/list` is 401 for anonymous callers too, per the source; I did not send it.) Your colleague's note describes the same bug and their fix: answer `resources/list` without a token, listing only public items.
++2. **`search_notes` does not enforce its required `query`.** Called with `{}` it returns `isError: false` with all 5 notes, because an empty query matches everything. The server never validates `inputSchema`. `get_note` is fine only because it checks its argument by hand.
++3. **A fallback write token is in the source.** `server.py:18` uses `dev-token-123` when `NOTES_TOKEN` is unset, and the README repeats it. If the server runs anywhere without `NOTES_TOKEN` set, anyone who reads the repo can call the write tool `add_note` and the gated resources. I did not use this token. Consider setting `NOTES_TOKEN` and removing the default before the server is reachable from outside.
++
++## How the colleague's note applied
++
++- **Applied:** the ten checks, the PASS/FAIL/NOT CHECKED rules, the report format, the spec for the fingerprint (§2–§3, with the §7 test vectors to confirm my implementation), the "no lock" WARN, and the rule that a check that cannot run is not recorded as a pass.
++- **Applied, with a result:** the incomplete rule did not trigger, because `tools/call` on read-only tools works anonymously here, so C2–C5 all ran.
++- **Did not apply:** the registry check (no entry, so nothing to compare); `verify.mjs` (needs a registry entry); the token steps (no token used or needed); the Decimal and dotted-name cases (not present in this server).
++- **Not done:** the note's last step, recording `has_problem` on worklore. You did not ask for it, and it is an outward-facing action, so I did not do it. I also did not open the worklore story links, so I have not confirmed they resolve.
++- **Not used:** mcp-drill (Python `jsonschema` was the option I used, which the check allows).
++
++Nothing in the repo was changed except this new `ANSWER.md`. The server was started and stopped by me during the checkup; it is not running now.

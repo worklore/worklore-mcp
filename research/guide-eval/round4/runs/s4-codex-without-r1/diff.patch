@@ -1,0 +1,33 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..8252c9e
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,27 @@
++# What is not in 3NF?
++
++This reviews the **effective schema after all migrations**, rather than treating the original `init.sql` tables as current. In 3NF, every nontrivial dependency `X → Y` within a relation must have `X` as a superkey or `Y` as a prime attribute. The clearest remaining departures are:
++
++| Table | Dependency / redundant value | Why it misses 3NF |
++| --- | --- | --- |
++| `identities` | `person_id → project_id` | A person's ID identifies their project, but `person_id` is not a key of `identities`. |
++| `items` | `person_id → project_id`; when `account_id` is present, `account_id → project_id, platform` | Those facts also live on `people` and `accounts`. `platform` is independently needed for discovered items with no account, so the account dependency applies only to account-linked rows. |
++| `touches` | `person_id → project_id`; when `item_id` is present, `item_id → person_id, project_id` | The touch repeats facts determined by its person or item. |
++| `document_chunks` | `document_id → project_id` | The document already identifies the project. |
++| `documents`, `project_memory` | When `theme_id` is present, `theme_id → project_id` | Each theme belongs to one project. Rows without a theme still need their own `project_id`. |
++| `idea_items` | `idea_id → project_id` and `item_id → project_id` | Either parent identifies the project, while the table's key is `(idea_id, item_id)`. This is also a partial-key dependency, hence a 2NF problem. |
++| `code_questions` | For questions with an `item_id`, `item_id → project_id` | The project is repeated from the item. Questions without an item still need their own project. |
++
++The [normal-forms migration](supabase/migrations/20261010040000_normal_forms.sql) explicitly retains these `project_id` copies for row-level security and indexes. Its composite foreign keys keep them consistent with their parents, but a constraint does **not** make a redundant dependency satisfy 3NF. `code_questions` was added later in [the ask-code migration](supabase/migrations/20261015010000_ask_code_model_calls.sql) with separate `item_id` and `project_id` foreign keys, and has no corresponding composite constraint; an item could even point to another project.
++
++`model_calls` also stores `project_id` beside optional `item_id`, and its draft backfill takes the project from the item. If `project_id` means the item's **current** project, this is the same transitive dependency. If it means the project **at call time**, it is an independent historical fact; the schema and logger do not enforce either interpretation. Unlike `code_questions`, I would not call it an unconditional 3NF violation.
++
++## Stored derivations
++
++These are further logical redundancies, although several are deliberately controlled caches rather than uncontrolled duplicate data:
++
++- `projects.url_key` is generated from `url`; `documents.is_public` from `label`; `items.triage_route`, `triage_kind`, `triage_action`, `triage_confidence`, and `triage_summary` from `triage`; and `drafts.tokens_in` / `tokens_out` from `tokens`. The determinants are nonkeys. PostgreSQL generated columns prevent disagreement, but they remain derived attributes in the stored schema. See [URL key](supabase/migrations/20261009150000_project_url_key.sql), [triage route](supabase/migrations/20261008230100_knowledge_chunks.sql), [backend v1](supabase/migrations/20261008230200_backend_v1.sql), and [normal forms](supabase/migrations/20261010040000_normal_forms.sql).
++- `model_calls.usage` repeats token counts and cost in `tokens_in`, `tokens_out`, and `cost_usd`; [the call logger](supabase/functions/_shared/server/usage.ts) writes all of them. `code_questions.usage` also repeats `cost_usd` for answered runs in [the ask-code handler](supabase/functions/_shared/server/ask_code.ts). These columns are independently writable, so they can drift. A cost may be intentionally frozen at the price used when the call occurred; it should then be documented as a historical amount rather than recomputed from today's price list.
++- `people.first_touch_at` / `last_touch_at` cache the minimum and maximum `touches.occurred_at` per person, and `ideas.asked_by` caches the count of distinct people via `idea_items → items`. Triggers maintain these ([normal forms](supabase/migrations/20261010040000_normal_forms.sql)). These are aggregate facts from **other rows**, so they are denormalized caches, not the usual within-row transitive functional dependencies used to test 3NF.
++
++The migration already removed `idea_items.person_id` and the copied document metadata from `document_chunks`. Arrays, JSON snapshots, document hashes, and GitHub metadata should not automatically be labeled 3NF violations: they need a demonstrated functional dependency or a separate requirement to decompose their structure.

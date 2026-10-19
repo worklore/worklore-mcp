@@ -1,0 +1,43 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..adf360c
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,9 @@
++# Ticket #4471: empty replays on the new UI
++
++**Cause:** On mobile, `posthog_flutter` builds replays from screenshots taken through `PostHogWidget`. `LegacyApp` wraps its `MaterialApp` in `PostHogWidget`. `NewApp` (`lib/new_app.dart`) returns a bare `MaterialApp.router`, so the redesign dropped the wrapper. `Analytics.init()` still sets `sessionReplay = true` and `PosthogObserver` is still on the router. That is why events and screen views arrive but there is no recording. Project settings were never the problem.
++
++**Fix:** Wrapped `MaterialApp.router` in `PostHogWidget` in `lib/new_app.dart`, with a comment so it isn't removed later.
++
++**Not verified:** I didn't run the app, and `flutter analyze` and the tests weren't run. To check, build on a device or emulator, click through a few screens, background the app, and look in the Replay tab after a few minutes. Nothing was deployed.
++
++**Note:** With `maskAllTexts = true`, text will appear masked in replays. That is intended.
+diff --git a/lib/new_app.dart b/lib/new_app.dart
+index 92e4ff9..e4db1a5 100644
+--- a/lib/new_app.dart
++++ b/lib/new_app.dart
+@@ -21,13 +21,17 @@ class NewApp extends StatelessWidget {
+ 
+   @override
+   Widget build(BuildContext context) {
+-    return MaterialApp.router(
+-      title: 'Loanly',
+-      theme: ThemeData(
+-        colorSchemeSeed: Colors.indigo,
+-        useMaterial3: true,
++    // PostHogWidget is required for session replay: it supplies the
++    // screenshot source. Without it events still arrive but no replay.
++    return PostHogWidget(
++      child: MaterialApp.router(
++        title: 'Loanly',
++        theme: ThemeData(
++          colorSchemeSeed: Colors.indigo,
++          useMaterial3: true,
++        ),
++        routerConfig: _router,
+       ),
+-      routerConfig: _router,
+     );
+   }
+ }

@@ -1,0 +1,3 @@
+Reading additional input from stdin...
+2026-10-19T03:07:57.886138Z ERROR codex_core::tools::router: error=exec_command failed: CreateProcess { message: "Rejected(\"`/bin/zsh -lc 'git show HEAD:analysis_options.yaml > analysis_options.yaml; rm -rf .dart_tool pubspec.lock'` rejected: rm -f style commands are not permitted. Use a safer approach\")" }
+2026-10-19T03:08:00.784971Z ERROR codex_core::tools::router: error=apply_patch verification failed: invalid patch: multiple operations target /tmp/h-QVIlSt/analysis_options.yaml

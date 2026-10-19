@@ -1,0 +1,26 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..8b46ae7
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,20 @@
++# MCP client checkup
++
++Checked `http://127.0.0.1:55632/mcp` on 2026-10-19 without an Authorization header. The server was started with `python3 server.py`; requests were sent one at a time with `Content-Type: application/json`, `Accept: application/json, text/event-stream`, and the returned `Mcp-Session-Id` on later requests. Only `get_note` and `search_notes` were called; both advertise `readOnlyHint: true`.
++
++| Check | Result | Evidence | Fix story for FAIL |
++| --- | --- | --- | --- |
++| C1 · Anonymous discovery | PASS | `initialize` → HTTP 200, `tools/list` → HTTP 200 with 3 tools. `server/discover` → HTTP 200, JSON-RPC `-32601` (“method not found”), which is allowed by this check. **Related finding:** `initialize` advertises resources, but anonymous `resources/list` and `resources/templates/list` both return HTTP 401 `{"error":"unauthorized"}`. Anonymous clients cannot browse the advertised resource. | — |
++| C2 · Refusals are tool results | FAIL | `get_note({"id":"n-999999"})` → HTTP 200, JSON-RPC error `-32602`, “note not found: n-999999”. `get_note({})` → HTTP 200, JSON-RPC error `-32602`, “missing required argument: id”. Neither returns `result.isError: true`. | [My live MCP test asserted the bug](https://worklore.dev/s/2026-10-02-my-live-mcp-test-asserted-the-bug-a-real-client-threw-where-) |
++| C3 · Session survives an error | PASS | Immediately after the missing-argument error, `get_note({"id":"n-1"})` in the same `Mcp-Session-Id` session → HTTP 200, normal result, `isError: false`. | — |
++| C4 · Published outputSchema is honoured | PASS | `get_note(n-1)` and `search_notes("compost")` both → HTTP 200, `isError: false`, with `structuredContent`. The returned note has the published required `id`, `title`, `body`, and integer `words`, with matching declared types and constraints; the search result is an object, satisfying its published `{"type":"object"}` schema. No write tool was called. | — |
++| C5 · Results survive serialisation | FAIL | Both valid calls return parseable JSON, but `search_notes` text content parses to a **list** of hits while `structuredContent` is an **object** containing `hits` and `total`. For the `compost` call, the text begins `[{"id":"n-2"...}]` while structured content begins `{"hits":[{"id":"n-2"...}],"total":1}`. They do not agree as representations of the result. | [My tests passed because they agreed with me](https://worklore.dev/s/2026-09-28-my-tests-passed-because-they-agreed-with-me) |
++| C6 · Version moves with surface | FAIL | `initialize` reports `notes-mcp` version `0.3.1`. The README says it is not listed in a registry and has no CI; the tracked files contain no surface lock or test binding a surface hash to the version. Anonymous `resources/list` and `resources/templates/list` return HTTP 401, so a complete public surface fingerprint could not be computed. The fixed `RESOURCES` list does not grow with note data. This is the guide’s no-lock warning, counted as FAIL; registry agreement was not checked. | [My MCP listing said read-only. My server could write.](https://worklore.dev/s/2026-09-30-my-mcp-listing-said-read-only-my-server-could-write) |
++| C7 · Calls are logged | PASS | `Handler.do_POST` logs each individual JSON-RPC request with `method`, `tool`, `ok`, `ms`, and `who`. The observed stderr includes separate lines for both failed `get_note` calls (`"ok": false`) and the successful one (`"ok": true`), all with `"who": "anon"`. | — |
++| C8 · Tool count and names | PASS | `tools/list` returns 3 names: `search_notes`, `get_note`, `add_note`. All match `^[a-zA-Z0-9_-]{1,64}$`. | — |
++| C9 · Version negotiation | PASS | `initialize` with `"protocolVersion":"banana"` → HTTP 200, result reports `"protocolVersion":"2025-06-18"`, not `banana`. | — |
++| C10 · outputSchema rejects a wrong answer | FAIL | The published `search_notes` output schema is only `{"type":"object"}` and declares no properties. The check's corrupted object is therefore `{}`, which satisfies the schema despite omitting the actual `hits` and `total` result. The other published schemas constrain `id` with `^n-[0-9]+$`, which rejects a corrupted string. No tool was called for this check. A third-party JSON Schema validator was unavailable locally; this verdict follows directly from the complete one-key `search_notes` schema. | [My MCP server's output schemas accepted wrong answers](https://worklore.dev/s/2026-10-15-my-mcp-server-s-output-schemas-accepted-wrong-answers-7-of-8) |
++
++**Overall: has the problem.**
++
++Could not check a Registry version or run its independent fingerprint verifier: this server is not listed, so there is no Registry name/version entry. A complete anonymous surface hash is also blocked by HTTP 401 on resource lists; access to an authorized read-only session would unlock those lists. A formal C10 validator run would require an installed JSON Schema validator. No token was used or printed.

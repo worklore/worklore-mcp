@@ -1,0 +1,24 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..d58e457
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,5 @@
++# HR corridor fix
++
++Changed `gen.py` to emit each HR target as `{"units": "%lthr", "start": low, "end": high}`. The previous `value` field caused Intervals.icu to export a zone-mapped target, so Garmin displayed the watch's zone boundaries instead of the planned range. Using `start` makes it an instant-HR corridor; Intervals computes its bpm endpoints from the athlete's LTHR.
++
++Verified locally that the generated tempo-run event uses `start` and `end` for every HR step, including steps inside the repeat block. A new watch sync was not performed.
+diff --git a/gen.py b/gen.py
+index be0b3bc..4aeba5a 100755
+--- a/gen.py
++++ b/gen.py
+@@ -10,7 +10,7 @@ import sys
+ def hr_target(step):
+     """HR corridor for a step, as a percentage of the athlete's LTHR."""
+     lo, hi = step["hr_pct"]
+-    return {"units": "%lthr", "value": lo, "end": hi}
++    return {"units": "%lthr", "start": lo, "end": hi}
+ 
+ 
+ def build_step(step):

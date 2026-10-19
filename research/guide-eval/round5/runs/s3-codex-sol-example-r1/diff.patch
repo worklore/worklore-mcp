@@ -1,0 +1,91 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..aa81a13
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,22 @@
++# Why the nightly job was silent
++
++The job **did run**. The saved `launchctl print` shows `runs = 6` and `last exit code = 1`, and `Library/Logs/nightly-review.err` has six pairs of errors. The first error in each pair is `Not logged in · Please run /login` from `claude`. The plist provided `PATH` but no `USER`; the missing login identity is the supported explanation for that headless authentication failure. The snapshot cannot prove a successful authenticated run, so this part still needs checking on the real Mac after the updated plist is loaded.
++
++The second error explains why no failure message arrived: `bin/nightly-review.zsh` assigned `status=$?` immediately after `claude`. In zsh, `status` is read only. The assignment terminated the script before its Telegram failure branch. The empty stdout log does not mean launchd never started the job; the review output was redirected to a dated Markdown file.
++
++## Fixes in this snapshot
++
++- Added `USER=vk` to the LaunchAgent environment for the headless CLI's login lookup.
++- Replaced the read only `status` assignment with a conditional that captures the agent exit code in `rc` and sends the failure notification. It also reports an empty summary as a failure and logs elapsed time.
++- Kept the existing prompt argument and closed stdin with `< /dev/null`, so the CLI cannot wait for input after receiving that argument.
++- Made the notifier report a failed keychain lookup or HTTP response to stderr instead of silently accepting it. This is a safeguard; neither failure is shown in the saved log.
++
++## What applied from the colleague's note
++
++The `launchctl print` and stderr checks, zsh's read only `status`, the missing `USER` in the plist, closed stdin for an argument prompt, duration logging, and testing the failure path all applied. The note's **missing prompt** diagnosis did not: this script already supplied `"$PROMPT"` as a single quoted argument, and the saved error is about login. Piping the prompt through stdin would be an alternative, but there is no evidence it is needed here. The note's correction about exit codes also applies: six runs and exit code 1 establish attempted runs and failure, not a completed review.
++
++## Verification and deployment limit
++
++Syntax checks passed for both shell scripts, and `plutil -lint` accepted the plist. With local mock `claude` and notifier commands, the job produced a success notification on a nonempty summary, a failure notification and exit code 7 when the agent failed, and a failure notification and exit code 1 on empty output. Mocked keychain and HTTP failures also made the notifier exit nonzero. No live `claude`, Telegram, or launchd invocation was made.
++
++These edits are only in the provided snapshot. On the real Mac, the updated plist must be loaded before `USER` takes effect. Then verify a run with `launchctl print gui/$UID/com.vk.nightly-review`, the fresh dated summary, elapsed time in stderr, and receipt of the success notification. A forced local agent failure should also produce a Telegram failure notification. A fresh `Not logged in` error after loading the plist would require checking the CLI's login and keychain access in that launchd context.
+diff --git a/Library/LaunchAgents/com.vk.nightly-review.plist b/Library/LaunchAgents/com.vk.nightly-review.plist
+index c347363..f371054 100644
+--- a/Library/LaunchAgents/com.vk.nightly-review.plist
++++ b/Library/LaunchAgents/com.vk.nightly-review.plist
+@@ -22,6 +22,8 @@
+   <string>/Users/vk/Library/Logs/nightly-review.err</string>
+   <key>EnvironmentVariables</key>
+   <dict>
++    <key>USER</key>
++    <string>vk</string>
+     <key>PATH</key>
+     <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+   </dict>
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..f1388eb 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -15,12 +15,19 @@ Do not modify any file."
+ 
+ cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
+ 
+-claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
+-
+-if [ $status -ne 0 ]; then
+-  "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
+-  exit $status
++started=$(date +%s)
++if claude -p "$PROMPT" --output-format text < /dev/null > "$OUT"; then
++  if [[ ! -s "$OUT" ]]; then
++    print -u2 -- "nightly review: claude returned no summary after $(($(date +%s) - started))s"
++    "$NOTIFY" "nightly review FAILED: empty summary, see $OUT"
++    exit 1
++  fi
++else
++  rc=$?
++  print -u2 -- "nightly review: claude exited $rc after $(($(date +%s) - started))s"
++  "$NOTIFY" "nightly review FAILED (exit $rc), see $OUT"
++  exit "$rc"
+ fi
+ 
+ "$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"
++print -u2 -- "nightly review: summary sent after $(($(date +%s) - started))s"
+diff --git a/bin/notify.sh b/bin/notify.sh
+index 818e531..f9a3d37 100755
+--- a/bin/notify.sh
++++ b/bin/notify.sh
+@@ -1,7 +1,13 @@
+ #!/bin/bash
+ # usage: notify.sh "message"  — sends a Telegram message to me.
+ set -eu
+-: "${TG_BOT_TOKEN:=$(security find-generic-password -s tg-bot -w)}"
++if [ -z "${TG_BOT_TOKEN:-}" ]; then
++  TG_BOT_TOKEN=$(security find-generic-password -s tg-bot -w) || {
++    echo "notify: could not read Telegram token from keychain" >&2
++    exit 1
++  }
++fi
++[ -n "$TG_BOT_TOKEN" ] || { echo "notify: Telegram token is empty" >&2; exit 1; }
+ CHAT_ID=123456789
+-curl -sS -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
++curl -fsS -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
+   -d chat_id="$CHAT_ID" --data-urlencode text="$1" > /dev/null

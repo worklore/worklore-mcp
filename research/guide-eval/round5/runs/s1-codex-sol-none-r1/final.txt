@@ -1,0 +1,3 @@
+Updated [gen.py](/tmp/h-ODjKAX/gen.py) to encode each HR corridor with `start` and `end`, the range fields shown in an [Intervals.icu workout example](https://forum.intervals.icu/t/workout-builder/1163/1123). The previous payload used `value` for the lower bound, which denotes a single target. The change and its rationale are in [ANSWER.md](/tmp/h-ODjKAX/ANSWER.md).
+
+I verified that the generated event contains all four planned ranges and the three repeats. I did not push an event, so the watch display remains unverified.

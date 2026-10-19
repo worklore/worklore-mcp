@@ -1,0 +1,47 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..0614359
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,7 @@
++# Cache headers in the deploy
++
++Updated `scripts/deploy.sh` to upload HTML, JavaScript, and CSS with `Cache-Control: public, max-age=300`, and files in `assets/` with `Cache-Control: public, max-age=86400`. The deploy still removes deleted files and invalidates CloudFront after the uploads.
++
++The script reuploads the local files after `s3 sync`, so existing objects receive the new headers even when their contents have not changed. HTML, JavaScript, and CSS uploads set their content types explicitly; asset uploads use the AWS CLI's MIME type detection from local files.
++
++Verified with `bash -n`, `git diff --check`, and a local mock of the AWS CLI that checked the upload options and invalidation order. No deployment or external AWS call was made.
+diff --git a/scripts/deploy.sh b/scripts/deploy.sh
+index 6550d32..2d5b07b 100755
+--- a/scripts/deploy.sh
++++ b/scripts/deploy.sh
+@@ -7,7 +7,28 @@ BUCKET="ruta-ceramica-site-7f3a"
+ DISTRIBUTION_ID="E2QX9ZK1DEMO01"
+ PROFILE="studio"
+ 
+-aws s3 sync src/ "s3://$BUCKET/" --delete --profile "$PROFILE"
++# Sync removes deleted files. The copies below also refresh metadata on files
++# whose contents have not changed, since sync skips those objects.
++aws s3 sync src/ "s3://$BUCKET/" --delete \
++  --cache-control "public, max-age=300" --profile "$PROFILE"
++
++for file_type in \
++  "html:text/html" \
++  "js:application/javascript" \
++  "css:text/css"; do
++  extension="${file_type%%:*}"
++  content_type="${file_type#*:}"
++  aws s3 cp src/ "s3://$BUCKET/" --recursive \
++    --exclude "*" --include "*.${extension}" --exclude "assets/*" \
++    --content-type "$content_type" \
++    --cache-control "public, max-age=300" \
++    --only-show-errors --profile "$PROFILE"
++done
++
++# Copy from local files so the CLI detects each asset's MIME type.
++aws s3 cp src/assets/ "s3://$BUCKET/assets/" --recursive \
++  --cache-control "public, max-age=86400" \
++  --only-show-errors --profile "$PROFILE"
+ 
+ aws cloudfront create-invalidation --distribution-id "$DISTRIBUTION_ID" \
+   --paths "/*" --profile "$PROFILE" > /dev/null

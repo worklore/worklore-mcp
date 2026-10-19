@@ -1,0 +1,49 @@
+{
+ "answer_file": true,
+ "answer_source": "repo",
+ "robots_changed": true,
+ "rules": [
+  [
+   "disallow",
+   "/v1/"
+  ],
+  [
+   "allow",
+   "/v1/notes"
+  ],
+  [
+   "disallow",
+   "/v1/notes/*/reactions"
+  ],
+  [
+   "disallow",
+   "/admin/"
+  ]
+ ],
+ "verdicts": {
+  "/v1/notes?limit=50": true,
+  "/v1/notes/soil-ph-kit-review": true,
+  "/v1/notes/soil-ph-kit-review/reactions": false,
+  "/v1/me": false,
+  "/v1/me/drafts": false,
+  "/admin/": false
+ },
+ "public_reads_allowed": true,
+ "private_still_blocked": true,
+ "admin_still_blocked": true,
+ "prerendered_alternative": false,
+ "api_moved_alternative": false,
+ "cause_named": true,
+ "render_explained": true,
+ "dates_noted": true,
+ "recrawl_named": true,
+ "longest_match_mentioned": true,
+ "web_used": false,
+ "changed_files": [
+  "ANSWER.md",
+  "site/robots.txt"
+ ],
+ "commands_issued": 13,
+ "answer_chars": 1776,
+ "PASS": true
+}

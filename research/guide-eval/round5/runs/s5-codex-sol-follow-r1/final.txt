@@ -1,0 +1,3 @@
+The Soft 404 comes from the robots rule blocking `/v1/notes/<slug>`. Google can fetch the note page, but the app cannot fetch its content during rendering, so it shows “NOT FOUND” inside an HTTP 200 page.
+
+I updated [site/robots.txt](/tmp/h-gg5fyx/site/robots.txt) to allow public note data while keeping reactions, account routes, and admin paths blocked. The cause, fix, and post-deployment checks are in [ANSWER.md](/tmp/h-gg5fyx/ANSWER.md). Local longest-match rule checks passed; nothing was deployed or submitted.

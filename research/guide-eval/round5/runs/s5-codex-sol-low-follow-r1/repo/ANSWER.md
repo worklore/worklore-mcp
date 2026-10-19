@@ -1,0 +1,9 @@
+# Why note pages were marked Soft 404
+
+Search Console's live test for `/n/drip-line-pressure` fetched the page successfully (HTTP 200), but its rendered text was the app's “NOT FOUND” screen. The HTML is only a shell: `site/app.js` fetches each note from `/v1/notes/{slug}` and displays that screen whenever the fetch fails. `site/robots.txt` blocked all of `/v1/`, including the public note data that Google needs while rendering. The block was added on September 7; the export shows older notes last crawled in August indexed, while notes crawled in October were classified as Soft 404. Notes marked “Discovered - currently not indexed” have no crawl date, so this evidence does not establish their eventual verdict.
+
+# Fix
+
+`site/robots.txt` now allows `/v1/notes` (the list and individual public notes), while retaining the general `/v1/` block and `/admin/` block. A longer `Disallow: /v1/notes/*/reactions` keeps the per-user reactions endpoint out. The `/v1/me` and `/v1/auth/token` paths remain covered by the general block. Google uses the longest matching robots rule, with `Allow` winning ties. Robots rules apply to URL paths, not HTTP methods: allowing the public `GET /v1/notes` necessarily allows that same URL for crawler access even though the API also accepts authenticated POST there.
+
+Verified locally against the robots rules: the note list and a note detail URL are allowed; reactions, `/v1/me`, `/v1/auth/token`, other `/v1/` routes, and `/admin/` are blocked. This changes only local files. Confirm the deployed robots.txt and use Search Console's live URL test after deployment to verify Google renders the note content; this workspace has no post-deployment indexing evidence.

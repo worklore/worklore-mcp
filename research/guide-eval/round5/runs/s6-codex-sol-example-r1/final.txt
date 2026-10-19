@@ -1,0 +1,3 @@
+I wrote the ten-check report to [ANSWER.md](/tmp/h-pexIlI/ANSWER.md). It found four failures: tool refusals return JSON-RPC errors, there is no version-to-surface lock, batched calls bypass logging, and `search_notes` has an output schema too broad to reject corrupt values. It also records that anonymous clients receive 401 when listing advertised resources.
+
+I called only read-only tools. The server was stopped after testing, and `ANSWER.md` is the only file change.

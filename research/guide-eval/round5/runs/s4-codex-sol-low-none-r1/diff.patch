@@ -1,0 +1,30 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..f3ecd5d
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,6 @@
++Updated `scripts/deploy.sh` to set `Cache-Control` on every deploy:
++
++- HTML, JavaScript, and other files outside `assets/`: `public, max-age=300` (5 minutes).
++- Files under `assets/`: `public, max-age=2592000` (30 days).
++
++The deploy still syncs with `--delete` and invalidates CloudFront. It then re-uploads files with the appropriate header, including unchanged objects that need their existing metadata updated. No deploy was run.
+diff --git a/scripts/deploy.sh b/scripts/deploy.sh
+index 6550d32..3424616 100755
+--- a/scripts/deploy.sh
++++ b/scripts/deploy.sh
+@@ -9,6 +9,13 @@ PROFILE="studio"
+ 
+ aws s3 sync src/ "s3://$BUCKET/" --delete --profile "$PROFILE"
+ 
++# Re-upload to apply metadata to existing objects as well as changed files.
++# HTML, JavaScript, and the root stylesheet should refresh promptly.
++aws s3 cp src/ "s3://$BUCKET/" --recursive --exclude "assets/*" \
++  --cache-control "public, max-age=300" --profile "$PROFILE"
++aws s3 cp src/assets/ "s3://$BUCKET/assets/" --recursive \
++  --cache-control "public, max-age=2592000" --profile "$PROFILE"
++
+ aws cloudfront create-invalidation --distribution-id "$DISTRIBUTION_ID" \
+   --paths "/*" --profile "$PROFILE" > /dev/null
+ 

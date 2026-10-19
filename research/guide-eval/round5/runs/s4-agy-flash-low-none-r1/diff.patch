@@ -1,0 +1,45 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..0580575
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,16 @@
++# Deploy Cache-Control Headers Configuration
++
++## Summary of Changes
++
++Updated [`scripts/deploy.sh`](scripts/deploy.sh) to apply differentiated `Cache-Control` headers during deployment:
++
++1. **Static Assets (`src/assets/`)**:
++   - Synchronized to `s3://$BUCKET/assets/` with a long cache lifetime:
++     `--cache-control "public, max-age=31536000, immutable"` (1 year, immutable).
++   - This ensures media assets like images/SVGs are cached aggressively by both CloudFront and browsers.
++
++2. **HTML and JavaScript files (`src/`)**:
++   - Synchronized to `s3://$BUCKET/` excluding `assets/*` with a short cache lifetime:
++     `--cache-control "public, max-age=0, must-revalidate"`.
++   - Combined with `--delete` to remove removed files on the bucket.
++   - This ensures browsers revalidate HTML pages and [`booking.js`](src/booking.js) immediately rather than serving stale versions for days after new deployments.
+diff --git a/scripts/deploy.sh b/scripts/deploy.sh
+index 6550d32..863f970 100755
+--- a/scripts/deploy.sh
++++ b/scripts/deploy.sh
+@@ -7,7 +7,17 @@ BUCKET="ruta-ceramica-site-7f3a"
+ DISTRIBUTION_ID="E2QX9ZK1DEMO01"
+ PROFILE="studio"
+ 
+-aws s3 sync src/ "s3://$BUCKET/" --delete --profile "$PROFILE"
++# Sync static assets with long cache lifetime (e.g., 1 year)
++aws s3 sync src/assets/ "s3://$BUCKET/assets/" \
++  --cache-control "public, max-age=31536000, immutable" \
++  --profile "$PROFILE"
++
++# Sync remaining files (HTML, JS, CSS) with short cache lifetime / revalidation, and handle deletions
++aws s3 sync src/ "s3://$BUCKET/" \
++  --exclude "assets/*" \
++  --cache-control "public, max-age=0, must-revalidate" \
++  --delete \
++  --profile "$PROFILE"
+ 
+ aws cloudfront create-invalidation --distribution-id "$DISTRIBUTION_ID" \
+   --paths "/*" --profile "$PROFILE" > /dev/null

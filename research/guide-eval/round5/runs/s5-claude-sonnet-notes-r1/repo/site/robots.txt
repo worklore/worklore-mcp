@@ -1,0 +1,9 @@
+User-agent: *
+Disallow: /v1/
+# Public read endpoints the pages render from (Googlebot renders pages and obeys robots.txt for their fetches)
+Allow: /v1/notes
+# Longer rules win over Allow: keep POST-only / per-user paths blocked
+Disallow: /v1/notes/*/reactions
+Disallow: /admin/
+
+Sitemap: https://fieldnotes.example/sitemap.xml

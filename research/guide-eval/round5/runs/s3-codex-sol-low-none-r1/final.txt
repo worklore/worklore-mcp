@@ -1,0 +1,5 @@
+The job did run six times. Each run failed because Claude CLI was not logged in, then the script exited before sending a failure note: `status` is a read-only variable in zsh.
+
+I fixed the script to capture the exit code in `review_exit` and include the CLI error in its failure notification. The causes and remaining setup step are in [ANSWER.md](/tmp/h-6iuctv/ANSWER.md). Syntax and plist checks passed.
+
+Claude CLI still needs a usable login in the real account. The snapshot cannot establish whether Telegram delivery works from launchd, so confirm that on the next run.

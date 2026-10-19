@@ -1,0 +1,32 @@
+# Soft 404 on note pages that load fine
+
+## Cause
+`site/robots.txt` has `Disallow: /v1/` (added 2026-09-07 to stop crawler 404/405 noise on POST-only API paths). Every note page is a static shell that `site/app.js` fills in by fetching `GET /v1/notes/<slug>`. Googlebot obeys robots.txt when rendering, so it can't fetch that request. `app.js` then hits its `catch` branch and shows "NOT FOUND — No note lives at this address." with HTTP 200. Google reads that as a soft 404.
+
+Evidence:
+- `search-console/url-inspection-drip-line-pressure.txt`: the page fetch succeeds (HTTP 200) but the rendered text is the NOT FOUND screen, and the verdict is "Soft 404".
+- The CSV shows pages crawled in late August as Indexed. Notes crawled in October are Soft 404, or never crawled ("Discovered – currently not indexed"). That matches the 2026-09-07 date and the 25 → 21 drop in indexed pages.
+- The homepage list comes from `GET /v1/notes`, which is blocked the same way. Google therefore also sees an empty or not-found homepage, with no links to notes.
+
+## Fix (`site/robots.txt` only)
+```
+User-agent: *
+Disallow: /v1/
+Allow: /v1/notes
+Disallow: /v1/notes/*/reactions
+Disallow: /admin/
+```
+Google uses the longest matching rule. `Allow: /v1/notes` opens the two public GET endpoints the pages render from. The reactions endpoint (POST, per-user) is re-blocked by a longer rule. `/v1/me`, `/v1/auth` and `/admin/` stay blocked by the broader rules.
+
+I checked this with a small longest-match script (not `urllib.robotparser`, which uses first-match):
+- Allowed: `/v1/notes`, `/v1/notes?limit=50`, `/v1/notes/<slug>`.
+- Blocked: `/v1/notes/x/reactions`, `/v1/me`, `/v1/me/drafts`, `/v1/auth/token`, `/admin/`.
+
+Nothing was deployed. After deploying:
+1. Run `curl -s https://fieldnotes.example/robots.txt` to confirm the live file.
+2. In Search Console, request a robots.txt recrawl.
+3. Run URL Inspection → Test live URL on `/n/drip-line-pressure`, and request indexing.
+
+## Recommended follow-ups (not done)
+- Make `app.js` show a real error when the API fetch fails, and don't call it "not found" when the cause was a network or API error. Better, have the server return a real 404 status for unknown slugs.
+- Put plain `<a href="/n/...">` links in the homepage HTML at build time, so discovery doesn't depend on JavaScript.

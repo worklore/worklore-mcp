@@ -1,0 +1,40 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..cd9e016
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,7 @@
++# Ticket #4471
++
++The new UI's `MaterialApp.router` was missing `PostHogWidget`. Flutter session replay uses that widget to capture frames. The legacy shell wraps its `MaterialApp`, so its recordings appear; the new shell still sends events through the shared PostHog setup and router observer, but produces no replay frames. The project recording settings and SDK version are shared between both groups and do not explain the difference.
++
++I wrapped `MaterialApp.router` in `PostHogWidget` in `lib/new_app.dart` and added a comment explaining why the wrapper must stay. The existing `sessionReplay = true` setup and `PosthogObserver` remain in place.
++
++Verification: `git diff --check` passes. `flutter analyze --no-pub` cannot resolve Flutter and package imports because this checkout has no `.dart_tool` package configuration; dependencies were not fetched. Replay itself requires a device or emulator and a PostHog recording after the changed build runs, so it was not verified here.
+diff --git a/lib/new_app.dart b/lib/new_app.dart
+index 92e4ff9..78d0282 100644
+--- a/lib/new_app.dart
++++ b/lib/new_app.dart
+@@ -21,13 +21,16 @@ class NewApp extends StatelessWidget {
+ 
+   @override
+   Widget build(BuildContext context) {
+-    return MaterialApp.router(
+-      title: 'Loanly',
+-      theme: ThemeData(
+-        colorSchemeSeed: Colors.indigo,
+-        useMaterial3: true,
++    // Flutter session replay needs this wrapper to capture app frames.
++    return PostHogWidget(
++      child: MaterialApp.router(
++        title: 'Loanly',
++        theme: ThemeData(
++          colorSchemeSeed: Colors.indigo,
++          useMaterial3: true,
++        ),
++        routerConfig: _router,
+       ),
+-      routerConfig: _router,
+     );
+   }
+ }

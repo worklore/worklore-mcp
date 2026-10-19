@@ -1,0 +1,3 @@
+Updated [deploy.sh](/tmp/h-asBwi3/scripts/deploy.sh) to set a five minute cache lifetime for HTML, JavaScript, and CSS, and a one day lifetime for `assets/`. The script refreshes headers on unchanged files and preserves their content types.
+
+Documented the change in [ANSWER.md](/tmp/h-asBwi3/ANSWER.md). Syntax, diff, and a local mock deploy check passed. Nothing was deployed or sent to AWS.

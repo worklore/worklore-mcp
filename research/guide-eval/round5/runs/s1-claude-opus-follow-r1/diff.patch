@@ -1,0 +1,144 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..f63eaac
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,66 @@
++# Fix: HR corridors clamped to the watch's zones
++
++## Cause
++
++`gen.py` wrote each HR target as `{"units": "%lthr", "value": lo, "end": hi}`.
++Intervals accepts that shape, and the readback looks fine. But when it builds
++the FIT file, `{value, end}` becomes a **Lap-HR / zone-mapped** target, so the
++watch snaps it to its own HR zone bands (built from its auto-detected LTHR of 168).
++That matches every row in `readback/watch-notes.md`: the watch displayed one of its
++own zones (118–137, 151–162, 137–151) and never the planned range. Changing the
++watch's LTHR moved the bands, but they were still zone edges.
++
++The earlier tries failed for different reasons. Absolute `bpm` gets misread at
++export (the watch showed 214–249). `start_bpm`/`end_bpm` aren't part of the schema
++and get dropped silently (constant 101 is Garmin's "no valid target" fallback).
++
++## Change (`gen.py`)
++
++1. **`hr_target`: the lower bound is now `start` instead of `value`.**
++   `{"units": "%lthr", "start": lo, "end": hi}` exports as an **Instant-HR
++   corridor**. The watch then shows the raw bpm that Intervals computed from its
++   own LTHR (172) and ignores the watch's zones. Targets stay as percentages,
++   so Intervals does the conversion at export from the threshold it has stored.
++   This rename is the actual fix.
++2. **The event now gets a top-level `description`** in Intervals' text
++   grammar, so the steps show in the Intervals web UI (the UI reads
++   `description`, not `workout_doc`). For the tempo plan:
++
++   ```
++   - Warm-up easy 10m 68-75% LTHR
++
++   3x
++   - Tempo 8m 88-93% LTHR
++   - Float 2m 75-82% LTHR
++
++   - Cool-down 5m 65-72% LTHR
++   ```
++
++   It follows the grammar rules: `m` means minutes and is used only for
++   durations (non-whole minutes become `s`). There are blank lines around `Nx`
++   repeat blocks and targets are explicit `% LTHR`, never a bare `Z<n>`. A label
++   that starts with a digit raises an error instead of being sent, because the
++   parser would read the digit as a duration, and a description it can't parse
++   makes Intervals wipe both representations.
++
++## Expected on the watch (LTHR 172 in Intervals)
++
++| step | % LTHR | bpm |
++|---|---|---|
++| Warm-up easy | 68–75 | 117–129 |
++| Tempo | 88–93 | 151–160 |
++| Float | 75–82 | 129–141 |
++| Cool-down | 65–72 | 112–124 |
++
++## Not done here (needs your account and watch)
++
++Following the ground rules, I didn't push anything. To verify:
++
++1. `python3 gen.py plans/tempo-run.json > event.json && ./push.sh event.json`
++2. `GET /api/v1/athlete/{id}/events/{new id}`: `workout_doc.steps` should be
++   non-empty with `start`/`end` in the HR targets. If you get `steps: []`, the
++   description parser choked.
++3. Sync through Garmin Connect and open the workout. The watch should show the
++   bpm values in the table above. Because the watch's LTHR (168) differs from
++   Intervals' (172), this proves the targets come from Intervals.
++4. Delete the old event 184233 (and the test event, if you want).
+diff --git a/gen.py b/gen.py
+index be0b3bc..680ae49 100755
+--- a/gen.py
++++ b/gen.py
+@@ -8,9 +8,15 @@ import sys
+ 
+ 
+ def hr_target(step):
+-    """HR corridor for a step, as a percentage of the athlete's LTHR."""
++    """HR corridor for a step, as a percentage of the athlete's LTHR.
++
++    The lower bound must be `start`, not `value`: `{value, end}` is FIT-exported
++    as a Lap-HR / zone target, which the watch clamps to its own HR zones.
++    `{start, end}` is exported as an Instant-HR corridor in the bpm Intervals
++    computed from its own LTHR.
++    """
+     lo, hi = step["hr_pct"]
+-    return {"units": "%lthr", "value": lo, "end": hi}
++    return {"units": "%lthr", "start": lo, "end": hi}
+ 
+ 
+ def build_step(step):
+@@ -35,11 +41,49 @@ def build_doc(plan):
+     return {"steps": steps}
+ 
+ 
++def describe_duration(minutes):
++    # Intervals text grammar: `m` is minutes, `s` is seconds (distance would be mtr/km).
++    secs = round(minutes * 60)
++    return f"{secs // 60}m" if secs % 60 == 0 else f"{secs}s"
++
++
++def describe_step(step):
++    label = step.get("label", "")
++    if label[:1].isdigit():
++        # A leading digit gets parsed as a duration and breaks the whole description.
++        raise ValueError(f"step label must not start with a digit: {label!r}")
++    parts = ["-"]
++    if label:
++        parts.append(label)
++    parts.append(describe_duration(step["minutes"]))
++    if "hr_pct" in step:
++        lo, hi = step["hr_pct"]
++        parts.append(f"{lo}-{hi}% LTHR")
++    return " ".join(parts)
++
++
++def build_description(plan):
++    """Steps in Intervals' native text grammar, so they render in the web UI."""
++    lines = []
++    for block in plan["steps"]:
++        if "repeat" in block:
++            # Repeat blocks need blank lines around them.
++            if lines and lines[-1] != "":
++                lines.append("")
++            lines.append(f"{block['repeat']}x")
++            lines.extend(describe_step(s) for s in block["steps"])
++            lines.append("")
++        else:
++            lines.append(describe_step(block))
++    return "\n".join(lines).strip() + "\n"
++
++
+ def build_event(plan):
+     return {
+         "category": "WORKOUT",
+         "type": plan["sport"],
+         "name": plan["name"],
++        "description": build_description(plan),
+         "start_date_local": plan["date"] + "T00:00:00",
+         "workout_doc": build_doc(plan),
+     }

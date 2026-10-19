@@ -1,0 +1,161 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..97dfc69
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,86 @@
++# Cache-Control for the ruta-ceramica deploy
++
++## What I changed
++
++Only `scripts/deploy.sh`. Before, it ran a bare `aws s3 sync`, so objects went up
++with no `Cache-Control`. Browsers then guessed their own cache lifetime, which is
++why returning visitors kept the old `booking.js` for days. The CloudFront
++invalidation can't fix that, because it only clears the edge cache, not browser caches.
++
++The script now uploads by file type. Each rule sets the Content-Type and the
++Cache-Control together:
++
++| Files                         | Content-Type                            | Cache-Control                       |
++|-------------------------------|-----------------------------------------|-------------------------------------|
++| `*.html`                      | `text/html; charset=utf-8`              | `public, max-age=300` (5 min)       |
++| `*.js` (`booking.js`)         | `application/javascript; charset=utf-8` | `public, max-age=300`               |
++| `*.css`                       | `text/css; charset=utf-8`               | `public, max-age=300`               |
++| `assets/*.png`, `assets/*.svg`| `image/png`, `image/svg+xml`            | `public, max-age=2592000` (30 days) |
++
++Details:
++- **`cp --recursive` instead of `sync` for uploads.** `sync` skips files whose bytes
++  haven't changed, so the objects already in the bucket would never get the new
++  headers. Now every file is re-uploaded with its headers on every deploy. The site
++  is seven files, so this costs almost nothing.
++- **Deletions still happen.** After the uploads, `sync --delete --size-only` removes
++  objects that are no longer in `src/`. `--size-only` means it won't re-upload
++  anything (a re-upload there would go up without the headers).
++- **Files with no rule stop the deploy.** If `src/` has a file that no rule covers
++  (say a new `.woff2`, or a `.png` outside `assets/`), the script exits before
++  uploading anything. That stops a file going up with no header or a guessed type.
++  To fix it, add a line to `RULES`.
++- **CSS is short-cached** even though you didn't mention it. `styles.css` sits at the
++  top level and its name has no version in it, so it has the same stale-file
++  problem as `booking.js`.
++- **30 days for assets, not a year or `immutable`.** The asset names don't change
++  between versions either. If you change `logo.png`, give the new one a new
++  filename, or visitors may see the old one for up to 30 days.
++- The invalidation stays. It clears the copies cached at the CloudFront edge.
++
++## How I checked it
++
++I didn't deploy or contact AWS. I checked the syntax (`bash -n`), then ran the script
++with a fake `aws` command on `PATH` that only prints its arguments. The output showed
++the five uploads with the right type and cache header for each, then the
++delete-only sync and the invalidation. I also added a dummy `src/x.txt` to test the
++"no rule" check: the script stopped with exit 1 before uploading anything.
++
++**After the next real deploy**, check what the server actually sends back. A 200
++status alone doesn't prove the headers are right:
++
++```
++curl -sI https://<site>/            | grep -iE 'content-type|cache-control'
++curl -sI https://<site>/booking.js  | grep -iE 'content-type|cache-control'
++curl -sI https://<site>/assets/logo.png | grep -iE 'content-type|cache-control'
++```
++
++Expect `text/html` / `application/javascript` / `image/png`, never
++`binary/octet-stream`, and the max-age values above. Visitors whose browsers already
++hold the old `booking.js` without a header will only pick up the new policy once
++their browser's own guessed expiry runs out. From then on, a change reaches visitors
++within about 5 minutes.
++
++## Which parts of the colleague's note applied
++
++**Applied:**
++- **Set the type and the cache header together, by extension.** This is the core of
++  the change. Every upload passes `--content-type` explicitly next to
++  `--cache-control`, so the type is never left to chance.
++- **Put the fix in the deploy script**, not in a one-off command. Every future
++  deploy applies the headers, and nothing has to be run separately.
++- **Keep the CloudFront invalidation** after uploading.
++- **Verify with `curl -I` and read back `content-type`**, not just the status code.
++  That's in the checklist above. I couldn't run it myself without deploying.
++
++**Not applied:**
++- **The bucket-to-bucket `cp --metadata-directive REPLACE` approach.** It wasn't
++  needed. This script uploads from local `src/` on every deploy, so the headers get
++  set at upload time and nothing has to edit objects already in S3. That also avoids
++  the trap the note describes: `REPLACE` wiping the content type.
++- **The note's TTLs** (86400 for images, CSS bundled with the short group "because
++  it's code"). I chose my own values from your "short for HTML and JS, long for
++  assets/" and the actual layout. The long cache applies only under `assets/`,
++  rather than to any `.png`/`.svg` anywhere.
++- **The story about the other S3-compatible host** and the "load in a fresh
++  browser" step. Those are general advice, not something to change in this repo.
++  The fresh-browser check is still worth doing after the first real deploy.
+diff --git a/scripts/deploy.sh b/scripts/deploy.sh
+index 6550d32..d51e11c 100755
+--- a/scripts/deploy.sh
++++ b/scripts/deploy.sh
+@@ -1,5 +1,12 @@
+ #!/usr/bin/env bash
+ # Upload src/ to the bucket and invalidate CloudFront.
++#
++# Every object is uploaded with an explicit Content-Type AND Cache-Control,
++# set together per file type, so one can never be changed without the other:
++#   - HTML / JS / CSS (top level): short cache, so a new booking.js reaches
++#     returning visitors within minutes of a deploy.
++#   - assets/: long cache. These files are not fingerprinted, so to change
++#     one, give it a new filename rather than overwriting it.
+ set -euo pipefail
+ cd "$(dirname "$0")/.."
+ 
+@@ -7,9 +14,50 @@ BUCKET="ruta-ceramica-site-7f3a"
+ DISTRIBUTION_ID="E2QX9ZK1DEMO01"
+ PROFILE="studio"
+ 
+-aws s3 sync src/ "s3://$BUCKET/" --delete --profile "$PROFILE"
++SHORT="public, max-age=300"
++LONG="public, max-age=2592000"   # 30 days
++
++# ext:content-type:cache-control-variable:path-prefix
++RULES=(
++  "html:text/html; charset=utf-8:SHORT:"
++  "js:application/javascript; charset=utf-8:SHORT:"
++  "css:text/css; charset=utf-8:SHORT:"
++  "png:image/png:LONG:assets/"
++  "svg:image/svg+xml:LONG:assets/"
++)
++
++# Refuse to deploy files that no rule covers: they would go up with no
++# Cache-Control (or a guessed type), which is the bug this script fixes.
++known=()
++for rule in "${RULES[@]}"; do
++  IFS=: read -r ext _ _ prefix <<<"$rule"
++  known+=(-not -path "src/${prefix}*.${ext}")
++done
++unknown=$(find src -type f "${known[@]}")
++if [[ -n "$unknown" ]]; then
++  echo "deploy: no content-type/cache rule for:" >&2
++  echo "$unknown" >&2
++  exit 1
++fi
++
++# cp (not sync) so every object is re-uploaded with its headers each deploy,
++# including files whose bytes did not change. The site is small.
++for rule in "${RULES[@]}"; do
++  IFS=: read -r ext ct policy prefix <<<"$rule"
++  aws s3 cp src/ "s3://$BUCKET/" --recursive \
++    --exclude "*" --include "${prefix}*.${ext}" \
++    --content-type "$ct" --cache-control "${!policy}" \
++    --only-show-errors --profile "$PROFILE"
++done
++
++# Remove objects that no longer exist in src/. --size-only: everything was
++# just uploaded above, so this pass should only delete, never re-upload
++# (a re-upload here would drop the headers).
++aws s3 sync src/ "s3://$BUCKET/" --delete --size-only \
++  --only-show-errors --profile "$PROFILE"
+ 
+ aws cloudfront create-invalidation --distribution-id "$DISTRIBUTION_ID" \
+   --paths "/*" --profile "$PROFILE" > /dev/null
+ 
+ echo "deployed"
++echo "check: curl -sI https://<site>/booking.js | grep -iE 'content-type|cache-control'"

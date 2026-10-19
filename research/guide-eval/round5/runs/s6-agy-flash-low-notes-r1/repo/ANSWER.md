@@ -1,0 +1,27 @@
+# MCP Server Audit Report
+
+Checkup performed on `notes-mcp` listening at `http://127.0.0.1:61389/mcp` based on the read-only inspection protocol in [`notes/check-your-mcp-server-in-a-few-minutes.md`](file:///tmp/h-X41XUt/notes/check-your-mcp-server-in-a-few-minutes.md).
+
+## Results
+
+| Check | Result | Evidence | Fix |
+|---|---|---|---|
+| **C1 · The tool list answers without a token** | **PASS** | `initialize` (HTTP 200, returns capabilities & serverInfo), `tools/list` (HTTP 200, 3 tools returned: `search_notes`, `get_note`, `add_note`), and `server/discover` (HTTP 200, JSON-RPC error `-32601` method not found) all answer without `Authorization`. | — |
+| **C2 · A tool refusal comes back as a result, not a protocol error** | **FAIL** | Calling `get_note` with non-existent id `n-99999` returned JSON-RPC error `{"code": -32602, "message": "note not found: n-99999"}` instead of HTTP 200 `result` with `isError: true`. Missing required argument `id` also returned `{"code": -32602, "message": "missing required argument: id"}`. | [My live MCP test asserted the bug: a real client threw where my test passed](https://worklore.dev/s/2026-10-02-my-live-mcp-test-asserted-the-bug-a-real-client-threw-where-) |
+| **C3 · The session survives an error** | **PASS** | In the same session (`Mcp-Session-Id: 247a0143d9d54233a1e7efccae82121c`), immediately following the C2 errors, a valid call to `get_note` (`id: "n-1"`) succeeded with HTTP 200 and returned the expected note object. | — |
+| **C4 · The published outputSchema is honoured** | **PASS** | Valid calls to both read-only tools returned valid `structuredContent`: `search_notes` returned `{"hits": [], "total": 0}` (matches `outputSchema: {"type": "object"}`), and `get_note` returned all required fields (`id`, `title`, `body`, `words`, `tags`) with types matching schema. | — |
+| **C5 · Results survive serialisation** | **PASS** | All JSON responses from C2–C4 parsed cleanly without serialization/encoder errors, and `content` text JSON matched `structuredContent`. | — |
+| **C6 · The version moves when the surface moves** | **FAIL** | No committed surface lock file exists in repository to prevent drift. Furthermore, `server.py` advertises `capabilities.resources` at `initialize` but responds with HTTP 401 to anonymous `resources/list`, and no MCP registry entry exists. | [My MCP listing said read-only. My server could write.](https://worklore.dev/s/2026-09-30-my-mcp-listing-said-read-only-my-server-could-write) |
+| **C7 · Calls are logged** | **PASS** | `server.py` lines 80–84 and 216 log one structured JSON line per JSON-RPC call to `sys.stderr` containing `t`, `method`, `tool`, `ok`, `ms`, and `who`. Verified in execution logs. | — |
+| **C8 · Tool count and names** | **PASS** | `tools/list` returns 3 tools: `search_notes`, `get_note`, `add_note`. All names conform to regex `^[a-zA-Z0-9_-]{1,64}$`. | — |
+| **C9 · Version negotiation is honest** | **PASS** | Sending `initialize` with `"protocolVersion": "banana"` does not echo `"banana"`; the server honestly returns `"protocolVersion": "2025-06-18"`. | — |
+| **C10 · The outputSchema can reject a wrong answer** | **FAIL** | `search_notes` declares `outputSchema: {"type": "object"}` with no required properties or constraints, accepting the corrupted payload `{}` without error. | [My MCP server's output schemas accepted wrong answers](https://worklore.dev/s/2026-10-15-my-mcp-server-s-output-schemas-accepted-wrong-answers-7-of-8) |
+
+## Overall Assessment
+
+**has the problem**
+
+At least one check came back FAIL (C2, C6, C10).
+
+## What Could Not Be Checked / Limitations
+- MCP Registry listing verification for C6 could not query external registry services (per ground rules). Evaluated against local repository state (absence of committed surface lock file and unauthenticated resource endpoint mismatch).

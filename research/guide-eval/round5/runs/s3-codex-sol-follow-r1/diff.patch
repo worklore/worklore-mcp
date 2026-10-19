@@ -1,0 +1,98 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..cc0358c
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,14 @@
++# Why the nightly review was silent
++
++The job **did run**. The saved `launchctl-print.txt` reports `runs = 6` and `last exit code = 1`. `Library/Logs/nightly-review.err` contains six repetitions of the same two errors:
++
++1. `Not logged in · Please run /login`: Claude exited before producing a review. The plist supplied `PATH` but not `USER` in `EnvironmentVariables`. A headless Claude process needs the account name to find its keychain login. The plist now sets `USER` to `vk`.
++2. `read-only variable: status`: the zsh wrapper assigned `status=$?` immediately after Claude failed. `status` is a read-only zsh parameter, so the wrapper stopped before its failure notification. The wrapper now uses `rc` and sends the failure notification immediately after checking it.
++
++The original log does **not** show a missing-prompt error. Passing the prompt through stdin is a precaution for the scheduled, headless invocation; it is not an observed cause of these six failures. The wrapper now pipes the prompt to `claude -p`, rejects an empty review even if Claude exits zero, and logs elapsed time to stderr. The notifier now uses `curl -f` so an HTTP error produces a failing exit status.
++
++## Verification
++
++`zsh -n`, `bash -n`, and `plutil -lint` pass. Local runs with stubbed Claude and notifier commands confirmed a success summary, a nonzero Claude failure, a zero-exit empty review, and a missing repository all produce the expected notification and exit code; each logs duration. The success case also confirmed that Claude received the prompt on stdin and wrote a nonempty review.
++
++This directory is a snapshot, so these checks do not prove that the real account is logged into Claude or that Telegram delivers a message. No live launchd job was reloaded or kicked off. After installing these files on the actual Mac, reload the agent, kickstart it, and check `launchctl print gui/$UID/com.vk.nightly-review`, a fresh nonempty review file, the duration in `Library/Logs/nightly-review.err`, and the success notification. Then force one Claude failure and confirm the failure notification.
+diff --git a/Library/LaunchAgents/com.vk.nightly-review.plist b/Library/LaunchAgents/com.vk.nightly-review.plist
+index c347363..d49eacf 100644
+--- a/Library/LaunchAgents/com.vk.nightly-review.plist
++++ b/Library/LaunchAgents/com.vk.nightly-review.plist
+@@ -24,6 +24,8 @@
+   <dict>
+     <key>PATH</key>
+     <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
++    <key>USER</key>
++    <string>vk</string>
+   </dict>
+ </dict>
+ </plist>
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..99dbc15 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -2,9 +2,14 @@
+ # Nightly review of yesterday's commits, summary to Telegram.
+ set -u
+ 
+-REPO="$HOME/projects/shop"
+-OUT="$HOME/Library/Logs/nightly-review-$(date +%F).md"
+-NOTIFY="$HOME/bin/notify.sh"
++RUN_START=$(date +%s)
++TRAPEXIT() {
++  print -u2 -- "nightly review duration: $(($(date +%s) - RUN_START))s"
++}
++
++REPO="${NIGHTLY_REPO:-$HOME/projects/shop}"
++OUT="${NIGHTLY_OUT:-$HOME/Library/Logs/nightly-review-$(date +%F).md}"
++NOTIFY="${NIGHTLY_NOTIFY:-$HOME/bin/notify.sh}"
+ 
+ SINCE=$(date -v-1d +%F)
+ PROMPT="Review the commits in this repository since $SINCE.
+@@ -13,14 +18,25 @@ For each commit: one line on what it changes and whether anything looks risky
+ End with a three-line summary I can read on my phone.
+ Do not modify any file."
+ 
+-cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
++cd "$REPO" || {
++  print -u2 -- "nightly review: repo missing: $REPO"
++  "$NOTIFY" "nightly review FAILED: repo missing: $REPO"
++  exit 1
++}
++
++print -r -- "$PROMPT" | claude -p --output-format text > "$OUT"
++rc=$?
+ 
+-claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
++if (( rc != 0 )); then
++  print -u2 -- "nightly review: agent failed (exit $rc)"
++  "$NOTIFY" "nightly review FAILED (exit $rc), see $OUT"
++  exit $rc
++fi
+ 
+-if [ $status -ne 0 ]; then
+-  "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
+-  exit $status
++if [[ ! -s "$OUT" ]]; then
++  print -u2 -- "nightly review: agent produced an empty review"
++  "$NOTIFY" "nightly review FAILED: empty review, see $OUT"
++  exit 1
+ fi
+ 
+ "$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"
+diff --git a/bin/notify.sh b/bin/notify.sh
+index 818e531..bc9115f 100755
+--- a/bin/notify.sh
++++ b/bin/notify.sh
+@@ -3,5 +3,5 @@
+ set -eu
+ : "${TG_BOT_TOKEN:=$(security find-generic-password -s tg-bot -w)}"
+ CHAT_ID=123456789
+-curl -sS -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
++curl -fsS -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
+   -d chat_id="$CHAT_ID" --data-urlencode text="$1" > /dev/null

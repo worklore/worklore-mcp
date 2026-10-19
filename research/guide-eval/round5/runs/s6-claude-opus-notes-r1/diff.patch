@@ -1,0 +1,194 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..e9ffd41
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,188 @@
++# notes-mcp: checks for problems real MCP clients hit
++
++Server: `server.py` v0.3.1, run locally with `python3 server.py` on 127.0.0.1:58558 and probed with curl.
++The server code was not changed. No successful writes were made: `add_note` was only called without a
++token (rejected), and once with a token but no `title` (it crashed before storing anything). The server
++was stopped afterwards.
++
++## Summary
++
++| # | Severity | Problem |
++|---|----------|---------|
++| 1 | High | Resources are advertised at `initialize`, but `resources/list` returns HTTP 401 without a token |
++| 2 | High | An anonymous `add_note` call gets HTTP 401 in the middle of a session, with no `WWW-Authenticate` header and no OAuth metadata |
++| 3 | High | Tool failures are sent as JSON-RPC errors instead of `isError: true` results |
++| 4 | High | Bad input crashes the request handler, so the client gets no HTTP response at all |
++| 5 | Medium | Notifications other than `initialized` get a 200 JSON-RPC error instead of 202 |
++| 6 | Medium | Version negotiation ignores what the client asked for (`"banana"` is accepted) |
++| 7 | Medium | Inputs are not checked against `inputSchema`, so `structuredContent` can break its own `outputSchema` |
++| 8 | Medium | The `Origin` header is not checked (DNS-rebinding protection is a MUST in the spec) |
++| 9 | Low | Sessions are issued but never enforced. DELETE does nothing |
++| 10 | Low | Smaller issues: unknown tool code, batching, chunked bodies, logging gaps, wording |
++
++What works: `initialize`, `ping`, `tools/list` (open without a token, tool names are clean `[a-z_]`),
++`notifications/initialized` → 202, `GET` → 405 (allowed when there is no SSE stream), read-only/destructive
++annotations are set, results contain both text and `structuredContent`, and everything is plain
++JSON-serialisable (no Decimal or datetime values).
++
++---
++
++## 1. Resources are advertised, then refused with a 401 (High)
++
++`initialize` returns `capabilities.resources`. Many clients, Claude Code included, call `resources/list`
++(and `resources/templates/list`) straight after connecting. Without a token:
++
++```
++POST /mcp {"method":"resources/list","id":2}
++HTTP/1.0 401 Unauthorized
++{"error": "unauthorized"}
++```
++
++An HTTP 401 at transport level tells the client "this whole server needs authentication". Clients will
++then start OAuth discovery (which fails, see #2), mark the server as "needs auth"/failed, or drop the
++connection. So the read tools, which work without a token, can become unusable. The body is also not a
++JSON-RPC message.
++
++Possible fixes: serve the guide resource without a token, or leave `resources` out of the capabilities
++for anonymous sessions, or reply with a JSON-RPC error inside a 200 instead of an HTTP 401.
++(server.py:150-153)
++
++## 2. `add_note` without a token returns an HTTP 401 mid-session (High)
++
++```
++POST /mcp tools/call add_note (no Authorization)
++HTTP/1.0 401 Unauthorized
++{"error": "sign in required"}
++```
++
++- There is no `WWW-Authenticate` header and no `/.well-known/oauth-protected-resource` (a GET to it
++  returns **405**, because every GET returns 405). MCP clients that follow the authorization spec will
++  try discovery, fail, and report the server as broken or "authentication failed". They will not show
++  the model a "please sign in" message.
++- A 401 for a single tool call while other calls succeed looks to the client like the session's
++  credentials expired. Some clients tear down the connection or keep retrying.
++- The model never sees why the call failed.
++
++The README describes the auth as a static bearer token (`dev-token-123`), but the tool description and
++`instructions` say "needs a signed-in session". There is no sign-in flow for a client to follow.
++
++Possible fix: return a normal tool result with `isError: true` and text like "add_note needs an
++Authorization: Bearer token configured in the client". Or, if HTTP 401 is wanted, send
++`WWW-Authenticate: Bearer resource_metadata=...` and serve the protected-resource metadata.
++(server.py:126-127, 165-166)
++
++## 3. Tool failures are sent as protocol errors (High)
++
++```
++get_note {"id":"n-99"} → {"error":{"code":-32602,"message":"note not found: n-99"}}
++get_note {"id":"zzz"}  → {"error":{"code":-32602,"message":"note not found: zzz"}}
++search_notes {"limit":"abc"} → {"error":{"code":-32602,"message":"invalid literal for int() with base 10: 'abc'"}}
++```
++
++The spec separates protocol errors (JSON-RPC `error`) from tool execution errors (a result with
++`isError: true`). Clients usually show a JSON-RPC error as a failed or thrown call: some SDKs throw, and
++the model gets a generic "tool failed" or nothing. So it can't correct itself ("that id doesn't exist,
++search first"). "Note not found" is a normal tool outcome and should be
++`{"content":[{"type":"text","text":"note not found: n-99"}],"isError":true}`. The `pattern` for `id`
++(`^n-[0-9]+$`) is not enforced either: `zzz` gets the same "not found" reply. The `limit` error leaks a
++Python exception message.
++(server.py:116-119, 106, 163-164)
++
++## 4. Bad input crashes the handler and the client gets no response (High)
++
++Every `except` path in `do_POST` only catches `ValueError`/`JSONDecodeError`. Any other exception kills
++the request thread, and the socket closes with no HTTP response (curl exit 52, "empty reply"). Clients
++see a network error, often retry, and some mark the server as down. Reproduced:
++
++| Request | Exception |
++|---|---|
++| `tools/call get_note` with `"arguments": ["n-1"]` (array) | `AttributeError: 'list' object has no attribute 'get'` |
++| body is a JSON string/number, e.g. `"hello"` | `AttributeError` on `req.get` |
++| `add_note` with a token but no `title` | `KeyError: 'title'` |
++| `Content-Length: abc` | `ValueError` from `int()` outside the try |
++
++None of these are logged in the JSON log either, because `log()` runs only after `handle()` returns. They
++only show up as stderr tracebacks. They should become JSON-RPC `-32602`/`-32600` errors, or `isError`
++results for argument problems.
++(server.py:154-166, 197-212)
++
++## 5. Notifications other than `initialized` get a response (Medium)
++
++```
++POST {"jsonrpc":"2.0","method":"notifications/cancelled","params":{"requestId":1}}
++HTTP/1.0 200 OK
++{"jsonrpc":"2.0","id":null,"error":{"code":-32601,"message":"method not found: notifications/cancelled"}}
++```
++
++The Streamable HTTP spec says a POST that carries only notifications must get **202 Accepted with no
++body**. JSON-RPC also forbids replying to a notification. Clients send `notifications/cancelled` (on
++timeouts/aborts), `notifications/roots/list_changed`, and `notifications/progress`. A strict client
++SDK can reject the unexpected body or log it as a protocol error. Any message without an `id` should
++get 202. (server.py:142-143, 168)
++
++## 6. Version negotiation ignores the client (Medium)
++
++`initialize` always answers `"protocolVersion": "2025-06-18"`, whatever the client sent. With
++`"banana"` it still says 2025-06-18 and starts a session. With `"2025-03-26"` it answers 2025-06-18,
++and a client that only speaks 2025-03-26 has to disconnect. That is allowed, but the server never tells
++the client it doesn't support the requested version. The `MCP-Protocol-Version` header that clients send
++on later requests is also ignored. An unsupported or invalid version should get a clear JSON-RPC error
++that lists the supported versions. If you can, also accept 2025-03-26 and the newest version, since
++clients differ in what they ask for. (server.py:136-141)
++
++## 7. No input validation, so output can break its own `outputSchema` (Medium)
++
++The server publishes `inputSchema` but never checks it, and clients don't all check it either. The
++`add_note` input schema says `title` has `minLength: 1`, but `add_note {"title":"", ...}` would be stored.
++A later `get_note` for it would then return `structuredContent` with `title: ""`, which breaks the
++`get_note` outputSchema (`minLength: 1`). Clients built on the official SDKs check `structuredContent`
++against `outputSchema` and turn the call into an error, so that note could never be read. I found this
++by reading the code and did not run it, to avoid writing. Also:
++- `search_notes` with `limit: -2` returns all hits except the last two (Python slice), even though
++  `minimum: 1` is declared. An empty `query` matches everything.
++- `search_notes` declares `outputSchema: {"type":"object"}`, which tells clients nothing. It could
++  describe `hits`/`total`.
++- `get_note` accepts non-string ids (e.g. a number) and just reports "not found".
++(server.py:105-108, 126-129)
++
++## 8. `Origin` is not validated (Medium, security)
++
++A request with `Origin: http://evil.example` is served normally. The Streamable HTTP spec says servers
++**MUST** validate `Origin` to prevent DNS rebinding. Binding to 127.0.0.1 helps, but a malicious web page
++can still reach a local server through rebinding. Reads need no token, so the notes could leak. Reject
++`Origin` values that aren't on an allowlist (403).
++
++## 9. Sessions are issued but never used (Low)
++
++`initialize` returns an `Mcp-Session-Id`, but later requests are never checked against it. Requests
++with no session or a made-up one are accepted. `DELETE` always returns 204 and changes nothing. Clients
++will work with this, but the server claims to be stateful when it isn't, and an unknown session never
++gets the 404 that tells a client to re-initialize. Either stop issuing session ids (stateless is fine) or
++track them. (server.py:189-190, 207-213)
++
++## 10. Smaller issues (Low)
++
++- **Unknown tool** returns `-32601` (method not found). The spec example uses `-32602` (invalid params),
++  because the method `tools/call` exists. (server.py:158-159)
++- **Batching**: JSON arrays are handled, but JSON-RPC batching was removed in 2025-06-18, which is the
++  version this server announces. A batch that contains only notifications returns `200 []` instead of
++  202. Batches are not logged. (server.py:201-207)
++- **Chunked request bodies** (no `Content-Length`) are read as empty, giving
++  `method not found: None` with `id: null`. Most clients send `Content-Length`, but some streaming
++  HTTP stacks don't. (server.py:197-199)
++- **Unknown request paths for GET** (including the `/.well-known/...` OAuth discovery URLs) return 405
++  instead of 404. This confuses discovery, see #2.
++- **`resources/read` ignores `uri`** and returns the guide for any URI. It should return an error for
++  unknown URIs.
++- **`add_note`** writes to memory only, so notes are lost on restart. The next id is computed without a
++  lock under `ThreadingHTTPServer`, so two concurrent adds can get the same id.
++- **Logging**: requests that crash (#4) and batch requests are missing from the one-line-per-call log.
++  `ok` is computed per request, so notifications that wrongly got errors (#5) show as failures.
++- **HTTP/1.0** responses (BaseHTTPRequestHandler default) close the connection after every request.
++  This works, but it is slower for clients that expect keep-alive.
++
++## How to reproduce
++
++Start `python3 server.py`, then send each request with
++`curl -s -i -X POST http://127.0.0.1:58558/mcp -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' -d '<json>'`.
++For #4, curl prints nothing and exits with code 52.

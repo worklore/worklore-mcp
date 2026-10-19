@@ -1,0 +1,9 @@
+User-agent: *
+Disallow: /v1/
+Disallow: /admin/
+# Public read endpoints the note pages render from (longest match wins)
+Allow: /v1/notes
+# POST-only / per-user paths stay blocked (longer rules beat Allow: /v1/notes)
+Disallow: /v1/notes/*/reactions
+
+Sitemap: https://fieldnotes.example/sitemap.xml

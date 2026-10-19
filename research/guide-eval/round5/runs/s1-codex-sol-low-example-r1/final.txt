@@ -1,0 +1,3 @@
+Updated [gen.py](/tmp/h-WtQKnJ/gen.py) to generate HR corridors with `start` and `end` instead of `value` and `end`. This addresses the zone clamping shown in the watch readback. The change and which parts of the colleague’s note applied are documented in [ANSWER.md](/tmp/h-WtQKnJ/ANSWER.md).
+
+Local verification passed for all four HR targets, including the repeated steps. Watch behavior still needs a fresh sync to confirm; no external service was contacted.

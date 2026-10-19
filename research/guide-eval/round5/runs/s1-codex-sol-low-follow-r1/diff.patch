@@ -1,0 +1,55 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..640741b
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,7 @@
++# Generator fix
++
++Changed `gen.py` so each HR target uses `{"units": "%lthr", "start": low, "end": high}`. Intervals treats `value`/`end` as a zone-mapped Lap-HR target, which explains the watch's zone-edge ranges in `readback/watch-notes.md`. `start`/`end` requests the Instant-HR corridor, preserving the planned percentage bounds when Intervals exports them using its stored LTHR.
++
++The generated event also includes a top-level `description` in Intervals' workout text grammar. It uses minute durations, explicit `% LTHR` targets, and blank lines around the `3x` repeat block so the steps can appear in the web UI and survive description parsing.
++
++Verified locally with `python3 gen.py plans/tempo-run.json`: all four HR steps have `start`/`end` targets, and the description contains the warm-up, repeat block, and cool-down. A Garmin display check requires a later API push, readback, and watch sync; none were performed here.
+diff --git a/gen.py b/gen.py
+index be0b3bc..16dfea2 100755
+--- a/gen.py
++++ b/gen.py
+@@ -10,7 +10,28 @@ import sys
+ def hr_target(step):
+     """HR corridor for a step, as a percentage of the athlete's LTHR."""
+     lo, hi = step["hr_pct"]
+-    return {"units": "%lthr", "value": lo, "end": hi}
++    return {"units": "%lthr", "start": lo, "end": hi}
++
++
++def description_step(step):
++    """Render a step in Intervals' workout text grammar."""
++    line = f'- {step["label"]} {step["minutes"]}m'
++    if "hr_pct" in step:
++        lo, hi = step["hr_pct"]
++        line += f" {lo}-{hi}% LTHR"
++    return line
++
++
++def build_description(plan):
++    blocks = []
++    for block in plan["steps"]:
++        if "repeat" in block:
++            lines = [f'{block["repeat"]}x']
++            lines.extend(description_step(step) for step in block["steps"])
++            blocks.append("\n".join(lines))
++        else:
++            blocks.append(description_step(block))
++    return "\n\n".join(blocks)
+ 
+ 
+ def build_step(step):
+@@ -41,6 +62,7 @@ def build_event(plan):
+         "type": plan["sport"],
+         "name": plan["name"],
+         "start_date_local": plan["date"] + "T00:00:00",
++        "description": build_description(plan),
+         "workout_doc": build_doc(plan),
+     }
+ 

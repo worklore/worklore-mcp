@@ -1,0 +1,20 @@
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..3536100 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -16,11 +16,11 @@ Do not modify any file."
+ cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
+ 
+ claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
++exit_status=$?
+ 
+-if [ $status -ne 0 ]; then
+-  "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
+-  exit $status
++if [ $exit_status -ne 0 ]; then
++  "$NOTIFY" "nightly review FAILED (exit $exit_status), see $OUT"
++  exit $exit_status
+ fi
+ 
+ "$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"

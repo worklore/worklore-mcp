@@ -1,0 +1,5 @@
+The job **did run**: the launchd snapshot shows six runs. Each failed with “Not logged in,” and then the script stopped at `status=$?` because `status` is read-only in zsh. That stopped the failure notification too.
+
+I set `USER=vk` in the plist, changed the exit-code variable to `rc`, and passed the prompt through stdin. The causes and evidence are in [ANSWER.md](/tmp/h-2z1iOo/ANSWER.md). Shell syntax, plist validation, and `git diff --check` passed.
+
+I did not run the job or contact Telegram. The edited plist must be reloaded in the live home directory before its environment change takes effect.

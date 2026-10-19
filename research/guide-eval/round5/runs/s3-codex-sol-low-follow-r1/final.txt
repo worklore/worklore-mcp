@@ -1,0 +1,5 @@
+The job was running: the captured launchd state shows six runs, all exiting with code 1. Its log shows Claude could not find its login, then zsh stopped at the read-only `status` assignment before the failure notification could run.
+
+I fixed the plist’s `USER` setting and the wrapper’s failure path, and documented the causes in [ANSWER.md](/tmp/h-ORK4fQ/ANSWER.md). The wrapper now also logs run duration and treats empty output as a failure.
+
+Local tests with stubbed commands confirmed success, agent failure, and empty-output notifications. I did not reload or run the installed launchd job; this directory is a snapshot.

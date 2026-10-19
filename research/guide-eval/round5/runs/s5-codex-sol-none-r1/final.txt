@@ -1,0 +1,5 @@
+The note URLs return HTTP 200, but their content is loaded from `/v1/notes/<slug>`. `robots.txt` blocked that API path, so Google’s rendered page showed “NOT FOUND”—the text recorded in Search Console—and was classified as a Soft 404.
+
+I updated [robots.txt](/tmp/h-1kHB1H/site/robots.txt) to allow public note requests and [app.js](/tmp/h-1kHB1H/site/app.js) to show “NOT FOUND” only for an actual API 404. The cause, fix, and remaining limitation for genuinely missing slugs are in [ANSWER.md](/tmp/h-1kHB1H/ANSWER.md).
+
+Local checks passed for live notes, missing notes, and API or network failures. Nothing was deployed or sent to an external service.

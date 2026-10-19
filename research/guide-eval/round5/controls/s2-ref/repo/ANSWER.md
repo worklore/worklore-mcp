@@ -1,0 +1,1 @@
+Cause: on Flutter, PostHog replay is built from screenshots taken by `PostHogWidget`. The legacy shell wraps its MaterialApp in it; the new shell (`MaterialApp.router` in lib/new_app.dart) does not, so events arrive but no frames. Fix: wrapped the new shell in PostHogWidget and left a comment.

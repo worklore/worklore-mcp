@@ -1,0 +1,22 @@
+diff --git a/scripts/deploy.sh b/scripts/deploy.sh
+index 6550d32..b218ef0 100755
+--- a/scripts/deploy.sh
++++ b/scripts/deploy.sh
+@@ -8,6 +8,17 @@ DISTRIBUTION_ID="E2QX9ZK1DEMO01"
+ PROFILE="studio"
+ 
+ aws s3 sync src/ "s3://$BUCKET/" --delete --profile "$PROFILE"
++# Set Cache-Control and Content-Type per file type
++for pair in "html:text/html:300" "js:application/javascript:300" "css:text/css:300" "png:image/png:86400" "svg:image/svg+xml:86400"; do
++  ext="${pair%%:*}"
++  rest="${pair#*:}"
++  ct="${rest%%:*}"
++  ttl="${rest#*:}"
++  aws s3 cp "s3://$BUCKET/" "s3://$BUCKET/" --recursive \
++    --exclude "*" --include "*.${ext}" \
++    --content-type "$ct" --cache-control "public, max-age=${ttl}" \
++    --metadata-directive REPLACE --profile "$PROFILE" --only-show-errors
++done
+ 
+ aws cloudfront create-invalidation --distribution-id "$DISTRIBUTION_ID" \
+   --paths "/*" --profile "$PROFILE" > /dev/null

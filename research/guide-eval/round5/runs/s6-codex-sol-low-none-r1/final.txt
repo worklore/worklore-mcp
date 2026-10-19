@@ -1,0 +1,1 @@
+I wrote the MCP client compatibility review to [ANSWER.md](/tmp/h-EcwfCx/ANSWER.md). It covers seven findings, including requests that close the connection, session IDs that are not validated, responses to notifications, and incorrect resource reads. I confirmed the observable failures with a local instance. The server was not changed.

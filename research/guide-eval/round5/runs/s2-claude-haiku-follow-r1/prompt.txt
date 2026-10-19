@@ -1,0 +1,81 @@
+Session replay in PostHog is empty for users on the new UI; the old UI records fine (SUPPORT-TICKET.md). Why, and fix it. Notes in ANSWER.md.
+
+Follow this guide:
+
+---
+
+# PostHog session replay not working in Flutter? Add PostHogWidget
+
+PostHog can record videos of real user sessions, so you can watch where people
+get stuck. In our Flutter app the setup looked complete, and nothing showed up.
+Events arrived, screens were tracked, taps were counted. The Replay tab was
+still empty.
+
+Here is what we had: the `posthog_flutter` SDK set up, "Record user sessions"
+turned on in project settings, `sessionReplay = true` in the config (we later
+moved to `startSessionRecording()` behind a feature flag), and
+`PosthogObserver` on the router. Every checklist item we could find was ticked.
+PostHog's troubleshooting page covers sampling, retention and disabled
+settings, and none of those applied.
+
+So I guessed. I changed settings in the PostHog console. I initialized the SDK
+in different ways. Each code change meant a new store release, and getting a
+release out to users could take a week. Then I'd wait for real sessions, open
+the Replay tab, and find it still empty. Every guess cost a week.
+
+PostHog support gave us the answer. On mobile, Flutter replay is built from
+screenshots of your widget tree, and the thing that takes those screenshots is
+`PostHogWidget`. If it doesn't wrap your `MaterialApp`, the SDK still records
+taps and other events, but it has no frames to send, so a replay never
+appears. You get no error or warning, and the debug log says nothing is wrong.
+
+The fix was one wrapper around `MaterialApp`. Later we added a second app shell
+(a redesigned UI with its own `MaterialApp.router`) and made the same mistake
+again: the old shell had the wrapper and the new one didn't. Now the code
+carries a comment saying why the wrapper is there.
+
+If you have more than one `MaterialApp` (flavors, a redesign, a white-label
+build), check each of them. Replay works only in the ones that have the
+wrapper.
+
+## Check if this applies to you
+Read-only. Preconditions: a Flutter app that depends on `posthog_flutter` and
+expects session replay.
+1. `grep -rn "posthog_flutter" pubspec.yaml` — the package must be there.
+2. `grep -rn "sessionReplay\|startSessionRecording" lib/` — replay is
+   intended.
+3. `grep -rn "MaterialApp" lib/` and `grep -rn "PostHogWidget" lib/`.
+Applies if any `MaterialApp` / `MaterialApp.router` / `CupertinoApp` that runs
+in production is not inside a `PostHogWidget`.
+
+## Reproduce this
+Prerequisites: a Flutter app (iOS or Android) with
+[posthog_flutter](https://pub.dev/packages/posthog_flutter) >= 5.14.0
+initialized via `Posthog().setup(config)`; a PostHog project with Session
+Replay enabled (Project settings → Session Replay → Record user sessions).
+
+Your agent will need from you: which entry point(s) and app widget(s) ship to
+users; a device or emulator to run on.
+
+Steps:
+1. Find every root app widget (`MaterialApp`, `MaterialApp.router`,
+   `CupertinoApp`).
+2. Wrap each one: `return PostHogWidget(child: MaterialApp(...));`
+   (import `package:posthog_flutter/posthog_flutter.dart`). Add a comment
+   saying replay needs it, so nobody removes it later.
+3. Make sure recording actually starts: `config.sessionReplay = true` before
+   `Posthog().setup(config)`, or call `Posthog().startSessionRecording()`
+   after setup if you gate it (feature flag, consent).
+4. Keep `PosthogObserver()` in `navigatorObservers` (or the router's
+   `observers`) so replays are split by screen.
+5. Optional, for PII: `config.sessionReplayConfig.maskAllTexts = true`.
+
+Verify: run a build on a real device or emulator (replay on web works
+differently and goes through posthog-js), move through 3–4 screens, then put
+the app in the background so it flushes. Within a few minutes, PostHog →
+Session replay should list the session, and playing it should show your
+screens, not a blank player with only an event timeline.
+
+Reference: [PostHog — Flutter session replay installation](https://posthog.com/docs/session-replay/installation/flutter)
+
+Ground rules: work only inside the current directory. Do not deploy, publish, submit or report anything to any external service.

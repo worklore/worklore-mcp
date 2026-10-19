@@ -1,0 +1,30 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..e9c539b
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,7 @@
++# HR corridor fix
++
++Changed `gen.py` to emit HR targets as `{"units": "%lthr", "start": low, "end": high}` instead of using `value` for the lower bound. This applies to every step, including steps inside repeats.
++
++The watch readback shows the old `value`/`end` targets displayed as its own HR zone bands. The local end-to-end investigation in `notes/exact-hr-corridors-on-garmin-from-intervals-icu-api-workouts.md` found that `start`/`end` selects an instant HR corridor, so Intervals exports the planned percentage-of-LTHR bounds as bpm. The plan percentages remain unchanged.
++
++Verified locally that the generated tempo run has the expected `start`/`end` targets for all four distinct steps. No event was pushed or watch sync performed.
+diff --git a/__pycache__/gen.cpython-314.pyc b/__pycache__/gen.cpython-314.pyc
+new file mode 100644
+index 0000000..d6d6de1
+Binary files /dev/null and b/__pycache__/gen.cpython-314.pyc differ
+diff --git a/gen.py b/gen.py
+index be0b3bc..4aeba5a 100755
+--- a/gen.py
++++ b/gen.py
+@@ -10,7 +10,7 @@ import sys
+ def hr_target(step):
+     """HR corridor for a step, as a percentage of the athlete's LTHR."""
+     lo, hi = step["hr_pct"]
+-    return {"units": "%lthr", "value": lo, "end": hi}
++    return {"units": "%lthr", "start": lo, "end": hi}
+ 
+ 
+ def build_step(step):

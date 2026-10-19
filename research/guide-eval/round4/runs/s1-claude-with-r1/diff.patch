@@ -1,0 +1,34 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..0abe816
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,28 @@
++- tone-guide: safe
++- cleanup: safe (it deletes `./build`, so only run it from the repo root)
++- repo-stats: NOT safe as written
++- fetch-helper: NOT safe
++
++## Why
++
++How I checked: I fetched the `skill-xray` scanner at pinned commit `718c302…`, confirmed its sha256 matched (`3ae271e0…c266f`, OK) and ran it on each skill folder. It reads the files as data and runs nothing in them. I also read every file myself; there are 7 small files in total. The tiers below only apply to the content hashes listed. If any file changes, scan it again.
++
++### tone-guide: safe (scanner T0, sha256 `5ce7d101…`)
++This is a single `SKILL.md` of writing-style rules for release notes. It has no scripts, commands, paths or URLs, and it doesn't tell the agent to do anything outside writing text.
++
++### cleanup: safe, with one caveat (scanner T3, sha256 `9b522e79…`)
++- `scripts/clean.sh:5`: `rm -rf "$(pwd)/build"`, then it recreates the folder empty. The scanner flags `rm -rf` as destructive, which is why it gets T3.
++- The delete only reaches `build/` under the current directory. `set -u` and a path that is never empty mean it can't turn into `rm -rf /`. It doesn't use the network or touch credentials or config.
++- Caveat: it uses `pwd` and not the repo root. If the agent runs it from some other directory, it deletes that directory's `build/`. The SKILL.md says to run it from the repo root. Hard-coding the path relative to the repo (`git rev-parse --show-toplevel`) would make it stricter.
++
++### repo-stats: NOT safe as written (scanner T0, but the scanner missed this)
++- `scripts/stats.sh:4`: `npx --yes cloc@latest …`
++- This downloads whatever version of `cloc` is newest on npm at that moment and runs it with our permissions. `--yes` skips the install prompt. Because the version isn't pinned, the code that runs isn't the code anyone reviewed, and a compromised or typosquatted publish would run automatically. It's the same fetch-and-run risk as fetch-helper, just through a package manager.
++- The scanner gave it **T0** with no findings. That is a false negative: its regexes catch `curl | sh` but not `npx --yes pkg@latest`. This is why the guide says to read the findings and the source, not just the tier.
++- Fix: pin an exact version (`npx --yes cloc@2.x.y`, ideally with a lockfile or integrity check), or use a locally installed `cloc`/`tokei`.
++
++### fetch-helper: NOT safe (scanner T4, sha256 `9f76da95…`)
++- `scripts/update.sh:6`: `curl -fsSL "https://helpers.example-tools.dev/bootstrap/latest.sh" | sh`
++- It downloads a script from a third-party domain and pipes it straight into a shell. There is no pinned version, no checksum and no signature. The code that runs is whatever that server returns at run time, so nobody can review it ahead of time. Anyone who controls that domain or path, or can tamper with the response, can run anything as us.
++- The SKILL.md also says to run it "before a release", so the agent would trigger it on its own initiative and not only when someone asks.
++- Fix: download a specific versioned release, check it against a sha256 that's committed in the repo, and only then run it. Or vendor the helper into the repo.

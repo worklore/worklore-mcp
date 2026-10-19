@@ -1,0 +1,3 @@
+The new UI omitted `PostHogWidget`, which the old UI uses for session replay. Its `PosthogObserver` still tracks navigation, and event capture still works, explaining why new UI users appear in Events but have no recordings.
+
+I wrapped `MaterialApp.router` in `PostHogWidget` in [new_app.dart](/tmp/h-57mBWN/lib/new_app.dart) and documented the cause and fix in [ANSWER.md](/tmp/h-57mBWN/ANSWER.md). Formatting and `git diff --check` pass. A live replay check requires a device run with a valid PostHog key; the repository contains a placeholder.

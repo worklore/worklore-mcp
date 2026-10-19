@@ -1,0 +1,7 @@
+User-agent: *
+Disallow: /v1/
+Allow: /v1/notes
+Disallow: /v1/notes/*/reactions
+Disallow: /admin/
+
+Sitemap: https://fieldnotes.example/sitemap.xml

@@ -1,0 +1,3 @@
+Fixed [gen.py](/tmp/h-P0wZHr/gen.py) to emit HR corridors with `start` and `end`, including steps inside repeats. The watch notes show that the previous `value` and `end` form was mapped to the watch’s HR zones.
+
+I documented the change and reason in [ANSWER.md](/tmp/h-P0wZHr/ANSWER.md). A local check confirmed all four tempo-run targets use the new form. I did not push an event or sync a watch, so the watch result remains unverified for this change.

@@ -1,0 +1,53 @@
+# MCP Server Checkup Report (`notes-mcp` v0.3.1)
+
+Target URL: `http://127.0.0.1:59244/mcp`  
+Server: `notes-mcp` (`version: 0.3.1`, `protocolVersion: 2025-06-18`)  
+Source & Logs: Checked (`server.py`, stderr JSON logs)  
+MCP Registry: Not listed (`README.md`: *"Not yet listed in any registry."*)
+
+## Summary Table
+
+| Check | Result | Evidence | Story Link (if FAIL / WARN) |
+| :--- | :--- | :--- | :--- |
+| **C1 · The tool list answers without a token** | **PASS** | With no `Authorization` header: `initialize` → HTTP `200` (`{"result":{"protocolVersion":"2025-06-18",...,"serverInfo":{"name":"notes-mcp","version":"0.3.1"}}}`), `notifications/initialized` → HTTP `202`, `tools/list` → HTTP `200` returning 3 tools (`search_notes`, `get_note`, `add_note`). `server/discover` → HTTP `200` with JSON-RPC error `-32601` (`{"error":{"code":-32601,"message":"method not found: server/discover"}}`). *(Note: `initialize` advertises `capabilities.resources`, but `resources/list` without a token returns HTTP `401 {"error": "unauthorized"}`.)* | — |
+| **C2 · A tool refusal comes back as a result, not a protocol error** | **FAIL** | Calling `get_note` with non-existent ID `{"id": "n-999"}` returns HTTP `200` with JSON-RPC protocol error `-32602`: `{"jsonrpc":"2.0","id":4,"error":{"code":-32602,"message":"note not found: n-999"}}`. Calling `get_note` with missing required argument `{}` also returns a `-32602` JSON-RPC error: `{"jsonrpc":"2.0","id":5,"error":{"code":-32602,"message":"missing required argument: id"}}` instead of a tool result with `isError: true` ([SEP-1303](https://modelcontextprotocol.io/community/seps/1303-input-validation-errors-as-tool-execution-errors)). | [My live MCP test asserted the bug: a real client threw where my test passed](https://worklore.dev/s/2026-10-02-my-live-mcp-test-asserted-the-bug-a-real-client-threw-where-) |
+| **C3 · The session survives an error** | **PASS** | In the same session (`Mcp-Session-Id: 0149235edc184d8f87b37d0758865d82`) immediately after the C2 refusals, calling `get_note` with `{"id": "n-1"}` returns HTTP `200` with a normal result (`{"result":{"content":[{"type":"text","text":"..."}],"isError":false,"structuredContent":{"id":"n-1","title":"Soil pH kit review",...}}}`). | — |
+| **C4 · The published outputSchema is honoured** | **PASS** | Both read-only tools declare `outputSchema` and return `isError: false` with `structuredContent` matching their schemas on valid calls: `get_note({"id":"n-1"})` returns `{"id":"n-1","title":"Soil pH kit review","body":"...","words":17,"tags":["soil"]}` (validates all required fields, types, and constraints); `search_notes({"query":"soil"})` returns `{"hits":[...],"total":1}` (validates against `{"type": "object"}`). | — |
+| **C5 · Results survive serialisation** | **PASS** | All responses from C2–C4 parse cleanly as valid JSON with standard types (no `Decimal` or encoder errors). For `get_note`, `content[0].text` (`{"id": "n-1", ...}`) and `structuredContent` match. *(Minor discrepancy on `search_notes`: `content[0].text` serialises the `hits` array `[{"id": "n-1", ...}]` whereas `structuredContent` wraps it in an object `{"hits": [...], "total": 1}`.)* | — |
+| **C6 · The version moves when the surface moves** | **FAIL** (WARN) | The server is not in the MCP Registry (`README.md`: *"Not yet listed in any registry"*), and the repository has **no committed surface lock file or test** to prevent surface drift without a version bump (`serverInfo.version` is `0.3.1`). The static resources list (`notes://guide`) does not grow dynamically with notes. | [My MCP listing said read-only. My server could write.](https://worklore.dev/s/2026-09-30-my-mcp-listing-said-read-only-my-server-could-write) / [Getting into the MCP Registry](https://worklore.dev/s/2026-09-23-getting-into-the-mcp-registry-server-json-a-read-org-token-a) |
+| **C7 · Calls are logged** | **PASS** | `server.py` (`log()` at line 80, called in `do_POST` at line 216) logs one structured JSON line per JSON-RPC call to `stderr` with timestamp, method, tool name, `ok` status, latency (`ms`), and caller (`who`), including errors, e.g. `{"t": "2026-10-19T00:25:28", "method": "tools/call", "tool": "get_note", "ok": false, "ms": 0.0, "who": "anon"}`. *(Caveat: JSON-RPC batch arrays in `do_POST` lines 205–211 return early before calling `log()`.)* | — |
+| **C8 · Tool count and names** | **PASS** | 3 tools (`search_notes`, `get_note`, `add_note`). Every tool name matches `^[a-zA-Z0-9_-]{1,64}$`. | — |
+| **C9 · Version negotiation is honest** | **PASS** | Sending `initialize` with `"protocolVersion": "banana"` returns HTTP `200` with `"protocolVersion": "2025-06-18"` (`{"jsonrpc":"2.0","id":9,"result":{"protocolVersion":"2025-06-18",...}}`), rather than echoing `"banana"`. | — |
+| **C10 · The outputSchema can reject a wrong answer** | **FAIL** | Built corrupted payloads (`"mcp-drill-corruption"` for strings, `-999999999` for integers) for all 3 tools that declare `outputSchema`: `get_note` rejects (`id` fails `^n-[0-9]+$`, `words` fails `minimum: 0`), and `add_note` rejects (`id` fails `^n-[0-9]+$`), **but `search_notes` declares `"outputSchema": {"type": "object"}` with no required properties or value constraints, so it accepts `{}` (and any arbitrary object).** | [My MCP server's output schemas accepted wrong answers](https://worklore.dev/s/2026-10-15-my-mcp-server-s-output-schemas-accepted-wrong-answers-7-of-8) |
+
+**Verdict:** **has the problem** (C2, C6, and C10 failed).
+
+---
+
+## Detailed Findings & Additional Client Pitfalls in `server.py`
+
+### 1. Primary Checkup Failures
+1. **C2 — Tool refusals and input validation errors return JSON-RPC `-32602` instead of tool execution errors (`server.py:113-120`, `161-164`):**
+   - When `get_note` is called with an unknown ID (`n-999`) or missing `id`, `call_tool` raises `ValueError`, which `handle()` catches and turns into `rpc_error(id_, -32602, str(e))`.
+   - Real MCP client SDKs throw an exception on JSON-RPC protocol errors instead of passing the message back to the LLM, preventing the model from seeing `"note not found: n-999"` and self-correcting. Per SEP-1303, domain refusals and input validation failures should return `rpc_result` with `{"content": [{"type": "text", "text": "..."}], "isError": true}`.
+2. **C10 — Vacuous `outputSchema` on `search_notes` (`server.py:34`):**
+   - `search_notes` declares `"outputSchema": {"type": "object"}`. Because it specifies no `required` fields (`hits`, `total`) and no property schemas or value constraints, a JSON Schema validator accepts any object (including `{}` or corrupted data).
+3. **C6 — No surface lock file (`server.py` / repo root):**
+   - While `serverInfo.version` is `0.3.1`, there is no committed surface lock file or test verifying the surface fingerprint against the version, so tools/resources/schemas can drift without bumping `0.3.1`.
+
+### 2. Other Things Real MCP Clients Trip Over in `server.py`
+4. **Advertised `resources` capability returns HTTP `401` to anonymous callers (`server.py:138`, `148-150`):**
+   - `initialize` unconditionally advertises `"resources": {"subscribe": False, "listChanged": False}` to anonymous sessions, and the `notes://guide` resource is just static documentation (`"How to use this server"`). Yet `resources/list`, `resources/read`, and `resources/templates/list` immediately return HTTP `401 {"error": "unauthorized"}` without a bearer token. Clients that automatically fetch `resources/list` after seeing the `resources` capability at `initialize` will fail or mark the server as needing authentication even for read-only use.
+5. **Missing `WWW-Authenticate` header on `401` responses & unadvertised `prompts/list`:**
+   - When `resources/*` or `add_note` returns HTTP `401`, the server sends a bare `{"error": "..."}` JSON body without a `WWW-Authenticate` header, which MCP OAuth / auth-capable clients rely on to discover how to authenticate.
+   - `prompts/list` is not handled and returns `-32601 method not found` (acceptable since `capabilities.prompts` is not advertised, though some clients probe it).
+6. **Streamable HTTP transport edge cases (`server.py:186-211`):**
+   - **`GET /mcp` returns `405` with custom JSON (`server.py:186-187`):** Acceptable per the Streamable HTTP spec when server-initiated SSE streams are not supported, though clients opening a GET SSE listener must handle 405 cleanly.
+   - **`resources/read` ignores the requested `uri` parameter (`server.py:155`):** Any authenticated `resources/read` call returns the `notes://guide` contents regardless of `params.get("uri")`.
+   - **`search_notes` snippet indexing bug (`server.py:107-110`):** `i = text.find(q)` computes the match offset in `n["title"] + " " + n["body"]`, and then slices `n["body"][max(0, i - 30): i + 50]`, which slices the wrong offset in `body` (off by `len(title) + 1`).
+   - **JSON-RPC batch requests bypass logging and session initialization (`server.py:205-211`):** If a client sends a JSON-RPC batch (`isinstance(req, list)`), `do_POST` returns early without logging any calls or assigning an `Mcp-Session-Id`.
+
+---
+
+## What Could Not Be Checked & What Would Unlock It
+- **Live MCP Registry comparison (part of C6):** `README.md` notes the server is *"Not yet listed in any registry"*, and external network queries were not needed. Once published, providing the official MCP Registry server name (and publishing an `mcp-surface/1` block or running `verify.mjs`) unlocks live registry-to-server version and surface verification.

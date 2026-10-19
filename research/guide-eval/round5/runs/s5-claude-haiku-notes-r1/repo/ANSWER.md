@@ -1,0 +1,80 @@
+# Soft 404 on note pages: robots.txt blocks the API the notes render from
+
+## Cause
+
+Each note page is a static HTML shell. `site/app.js` fills it in by fetching
+`/v1/notes/{slug}` (line 7). `site/robots.txt` had:
+
+```
+User-agent: *
+Disallow: /v1/
+```
+
+So Googlebot was allowed to load `/n/<slug>` but not the `/v1/notes/<slug>`
+data it needs to render the note. When that fetch is refused, `app.js` catches
+the error and shows its "NOT FOUND — No note lives at this address." screen,
+and the HTTP status stays 200. Google reads a 200 page that says "not found" as
+a soft 404.
+
+Evidence in `search-console/`:
+
+- The URL Inspection test for `/n/drip-line-pressure` (2026-10-16) says the
+  page is allowed, fetches with HTTP 200, but is a Soft 404. Its rendered text
+  is "NOT FOUND — No note lives at this address."
+- The affected pages are the ones whose data Googlebot could not load. The
+  robots.txt rule has been in place since 2026-09-07, and the sitemap pages
+  added after that date are the ones showing "Discovered – currently not
+  indexed" or "Soft 404".
+- I checked the current rules against the paths the app uses. `/n/<slug>` is
+  allowed, but `/v1/notes/<slug>` and `/v1/notes?limit=50` are blocked.
+
+The explanation is consistent with the export. I could not fetch the live site
+or query Search Console from here, so the fix still needs to be verified there.
+
+## Fix
+
+`site/robots.txt` now reads:
+
+```
+User-agent: *
+# Public read endpoints the pages render from (app.js fetches these)
+Allow: /v1/notes
+# POST-only, per-user; longer rule than Allow wins for these
+Disallow: /v1/notes/*/reactions
+Disallow: /v1/
+Disallow: /admin/
+
+Sitemap: https://fieldnotes.example/sitemap.xml
+```
+
+Google applies the longest matching rule, and `Allow` wins a tie. `Allow:
+/v1/notes` (9 characters) beats `Disallow: /v1/` (4), so the note and list
+endpoints are readable. `Disallow: /v1/notes/*/reactions` (21 characters) beats
+the Allow, so the POST-only reactions path stays blocked. `/v1/me`,
+`/v1/auth/token` and `/admin/` remain blocked.
+
+I tested the old and new rules with a small longest-match script. The results
+for the app's paths:
+
+| Path | Before | After |
+|---|---|---|
+| `/n/drip-line-pressure` | ALLOW | ALLOW |
+| `/v1/notes/drip-line-pressure` | BLOCK | ALLOW |
+| `/v1/notes?limit=50` | BLOCK | ALLOW |
+| `/v1/notes/x/reactions` | BLOCK | BLOCK |
+| `/v1/me`, `/v1/me/drafts`, `/v1/auth/token` | BLOCK | BLOCK |
+| `/admin/` | BLOCK | BLOCK |
+
+Not done here: nothing was deployed or submitted to Search Console. Remaining
+steps:
+
+1. Deploy `site/robots.txt` and confirm it with `curl -s https://fieldnotes.example/robots.txt`.
+2. In Search Console, request a robots.txt recrawl, then run URL Inspection →
+   Test live URL on `/n/drip-line-pressure` and request indexing.
+
+## Optional hardening (not applied)
+
+`app.js` shows the NOT FOUND screen with HTTP 200 for every fetch failure,
+including network errors and blocked requests. A real missing note should
+return 404. On static hosting that needs a CloudFront or Lambda change, so it
+was left out of this fix.

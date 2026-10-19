@@ -1,0 +1,3 @@
+Updated [deploy.sh](/tmp/h-GOzPkE/scripts/deploy.sh) to upload files with explicit content types and cache headers: five minutes for HTML, JS, and CSS; one day for `assets/`. It refreshes headers on unchanged files, then removes deleted files and invalidates CloudFront.
+
+Documented the change in [ANSWER.md](/tmp/h-GOzPkE/ANSWER.md). Bash syntax and a mocked deploy passed. No live deployment was run.

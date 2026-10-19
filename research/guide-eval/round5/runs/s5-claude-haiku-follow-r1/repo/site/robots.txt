@@ -1,0 +1,12 @@
+User-agent: *
+# Public read endpoints the pages render from. Googlebot renders the page with
+# these fetches, so they must not be blocked.
+Allow: /v1/notes
+# POST-only per-note routes. Google's longest match keeps these blocked even
+# though /v1/notes is allowed above.
+Disallow: /v1/notes/*/reactions
+# Everything else under the API (auth, per-user, drafts, create/edit) stays out.
+Disallow: /v1/
+Disallow: /admin/
+
+Sitemap: https://fieldnotes.example/sitemap.xml
