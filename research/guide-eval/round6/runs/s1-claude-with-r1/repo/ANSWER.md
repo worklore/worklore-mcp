@@ -1,0 +1,36 @@
+# What each skill can touch when it runs
+
+- `fetch-helper` — network + shell + runs code fetched at run time: downloads `https://helpers.example-tools.dev/bootstrap/latest.sh` (unpinned "latest", no hash check) and pipes it straight into `sh`, so it can do anything your user account can, and what it does can change at any time.
+- `repo-stats` — network + shell + runs code fetched at run time: `npx --yes cloc@latest` downloads whatever version of `cloc` is newest on npm and runs it without asking; reads every file under the current directory.
+- `cleanup` — shell + deletes files: `rm -rf "$(pwd)/build"` and then recreates it empty; also tells the agent to run the project's build command. No network.
+- `tone-guide` — nothing (text-only writing-style instructions).
+
+## Evidence
+
+### fetch-helper (scanner tier T4)
+- `skills/fetch-helper/scripts/update.sh:4` — `HELPER_URL="https://helpers.example-tools.dev/bootstrap/latest.sh"`: an unpinned "latest" URL on a third-party domain.
+- `skills/fetch-helper/scripts/update.sh:6` — `curl -fsSL "$HELPER_URL" | sh`: fetch-and-run. The code that actually runs is never in this repo, so it cannot be reviewed; it runs with full user permissions (network, files, credentials).
+- `skills/fetch-helper/SKILL.md:10` — tells the agent to run `scripts/update.sh`.
+- `skills/fetch-helper/SKILL.md:11` — tells the agent to run `helper --version` (a binary installed by the downloaded script).
+
+### repo-stats (scanner tier T0, which I think is wrong; by reading the code it belongs with T4)
+- `skills/repo-stats/scripts/stats.sh:4` — `npx --yes cloc@latest ...`: `--yes` installs without asking, and `@latest` is unpinned, so it fetches and runs whatever is published on npm at that moment (npm install scripts included). That means network access plus code fetched at run time. It also reads the whole working tree (`.`).
+- `skills/repo-stats/SKILL.md:8` — tells the agent to run `scripts/stats.sh`.
+- The scanner returned no findings for this skill. Its fetch-and-run rules do not seem to cover `npx --yes pkg@latest`, so this is a false negative.
+
+### cleanup (scanner tier T3)
+- `skills/cleanup/scripts/clean.sh:4` — `BUILD_DIR="$(pwd)/build"`: the target depends on whatever directory the agent happens to be in, not on where the script lives.
+- `skills/cleanup/scripts/clean.sh:5` — `rm -rf "$BUILD_DIR"`: recursive delete with no prompt. If the agent is in the wrong directory, a different `build/` gets wiped.
+- `skills/cleanup/scripts/clean.sh:6` — `mkdir -p "$BUILD_DIR"`: creates a directory.
+- `skills/cleanup/SKILL.md:8` — tells the agent to run `scripts/clean.sh`.
+- `skills/cleanup/SKILL.md:9` — tells the agent to run "the project's usual build command" (an arbitrary shell command the agent chooses).
+- No network access.
+
+### tone-guide (scanner tier T0)
+- `skills/tone-guide/SKILL.md:1-15` — writing-style rules only. No scripts, commands, paths, URLs or file operations.
+
+## Method
+- I read every file in `skills/` by eye (7 files) and did not run any skill.
+- I also ran `skill-xray` (pinned commit `718c3028…`, sha256 `3ae271e0…c266f`, hash checked) on each folder as data. It flagged fetch-helper T4, cleanup T3, and repo-stats and tone-guide T0. I overrode the repo-stats result based on the source (see above).
+- Scanned content hashes: cleanup `9b522e79…`, fetch-helper `9f76da95…`, repo-stats `19d2d52a…`, tone-guide `5ce7d101…`. These results only hold for these exact versions.
+- This lists what each skill can do. It is not a safety verdict.

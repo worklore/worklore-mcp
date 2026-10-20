@@ -1,0 +1,49 @@
+`cleanup`: touches shell commands (`scripts/clean.sh`, `rm -rf`, `mkdir -p`, `echo`, and the project's build command) and files (deletes and recreates `./build/`, plus any files modified by the build command); touches no network or runtime-fetched code directly.
+`fetch-helper`: touches the network (`https://helpers.example-tools.dev/bootstrap/latest.sh`), shell commands (`scripts/update.sh`, `curl -fsSL "$HELPER_URL" | sh`, `helper --version`), code fetched at run time (downloads and pipes `latest.sh` directly into `sh`), and files (any files created, modified, or deleted by the remote bootstrap script).
+`repo-stats`: touches the network (npm registry via `npx`), shell commands (`scripts/stats.sh`, `npx --yes cloc@latest ...`), code fetched at run time (downloads and executes the unpinned `cloc@latest` npm package), and files (updates release notes with the output table, reads repository files in `.`, and writes to the npm/npx cache).
+`tone-guide`: nothing
+
+## Evidence
+
+### `cleanup` (`skills/cleanup`)
+- **Network**: None in the skill itself (unless the project's usual build command makes network requests; `skills/cleanup/SKILL.md:9`).
+- **Shell commands**:
+  - `skills/cleanup/SKILL.md:8` instructs the agent to run `scripts/clean.sh` from the repository root.
+  - `skills/cleanup/SKILL.md:9` instructs the agent to run the project's usual build command.
+  - `skills/cleanup/scripts/clean.sh:4-7` runs `pwd`, `rm -rf "$BUILD_DIR"`, `mkdir -p "$BUILD_DIR"`, and `echo "cleaned $BUILD_DIR"`.
+- **Files it changes or deletes**:
+  - `skills/cleanup/scripts/clean.sh:4-5` sets `BUILD_DIR="$(pwd)/build"` and recursively deletes it with `rm -rf "$BUILD_DIR"`.
+  - `skills/cleanup/scripts/clean.sh:6` recreates the empty directory with `mkdir -p "$BUILD_DIR"`.
+  - `skills/cleanup/SKILL.md:9` runs the project's build command, which writes build artifacts.
+- **Code it fetches at run time**: None in `clean.sh`.
+
+### `fetch-helper` (`skills/fetch-helper`)
+- **Network**:
+  - `skills/fetch-helper/scripts/update.sh:4` defines `HELPER_URL="https://helpers.example-tools.dev/bootstrap/latest.sh"`.
+  - `skills/fetch-helper/scripts/update.sh:6` makes an HTTPS request to that URL using `curl -fsSL "$HELPER_URL"`.
+- **Shell commands**:
+  - `skills/fetch-helper/SKILL.md:10` instructs the agent to run `scripts/update.sh` from the repository root.
+  - `skills/fetch-helper/SKILL.md:11` instructs the agent to run `helper --version`.
+  - `skills/fetch-helper/scripts/update.sh:6` executes `curl -fsSL "$HELPER_URL" | sh`, piping the downloaded script directly into a shell.
+- **Files it changes or deletes**:
+  - `skills/fetch-helper/scripts/update.sh:6` executes arbitrary remote shell commands via `| sh`, which can create, modify, or delete any files accessible to the user (such as installing or overwriting the `helper` toolchain binary).
+- **Code it fetches at run time**:
+  - `skills/fetch-helper/scripts/update.sh:4,6` fetches unpinned remote shell code from `https://helpers.example-tools.dev/bootstrap/latest.sh` at run time and immediately executes it with `sh`.
+
+### `repo-stats` (`skills/repo-stats`)
+- **Network**:
+  - `skills/repo-stats/scripts/stats.sh:4` runs `npx --yes cloc@latest ...`, which contacts the npm registry over the network to resolve and download the `cloc@latest` package.
+- **Shell commands**:
+  - `skills/repo-stats/SKILL.md:8` instructs the agent to run `scripts/stats.sh` from the repository root.
+  - `skills/repo-stats/scripts/stats.sh:4` runs `npx --yes cloc@latest --quiet --md --exclude-dir=node_modules,vendor,build,dist .`.
+- **Files it changes or deletes**:
+  - `skills/repo-stats/SKILL.md:9` instructs the agent to paste the generated markdown table into the release notes under `"Code size"`.
+  - `skills/repo-stats/scripts/stats.sh:4` reads files across the repository (`.`) and populates/updates the local npm/npx cache when downloading `cloc@latest`.
+- **Code it fetches at run time**:
+  - `skills/repo-stats/scripts/stats.sh:4` uses `npx --yes cloc@latest` to automatically download (`--yes`) and execute the latest unpinned `cloc` package from npm at run time.
+
+### `tone-guide` (`skills/tone-guide`)
+- **Network**: None (`skills/tone-guide/SKILL.md:1-15` is static markdown text).
+- **Shell commands**: None (`skills/tone-guide/SKILL.md:1-15` contains only prose style rules and has no `scripts/` directory).
+- **Files it changes or deletes**: None directly (only provides style rules in `skills/tone-guide/SKILL.md:8-15` for when the agent is already drafting or editing release notes).
+- **Code it fetches at run time**: None (`skills/tone-guide/SKILL.md:1-15`).

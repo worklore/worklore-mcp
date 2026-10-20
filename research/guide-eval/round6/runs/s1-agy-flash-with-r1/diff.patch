@@ -1,0 +1,78 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..d93a863
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,72 @@
++cleanup: shell commands, files it changes or deletes
++fetch-helper: the network, shell commands, code it fetches at run time
++repo-stats: the network, shell commands, code it fetches at run time
++tone-guide: nothing
++
++# Evidence
++
++## cleanup (`skills/cleanup`)
++
++- **What it touches**: Shell commands, files it changes or deletes. (No network access, no code fetched at runtime).
++- **Evidence**:
++  - `skills/cleanup/SKILL.md:8`: Instructs the agent to execute a shell script (`1. Run scripts/clean.sh from the repository root.`).
++  - `skills/cleanup/SKILL.md:9`: Instructs the agent to run subsequent shell commands (`2. Then run the project's usual build command.`).
++  - `skills/cleanup/scripts/clean.sh:4`: Executes shell command `pwd` to assign `BUILD_DIR="$(pwd)/build"`.
++  - `skills/cleanup/scripts/clean.sh:5`: Executes shell command `rm -rf "$BUILD_DIR"`, which recursively deletes the `build/` directory and all files within it (`destructive` and `filewrite`).
++  - `skills/cleanup/scripts/clean.sh:6`: Executes shell command `mkdir -p "$BUILD_DIR"`, which creates a directory on the filesystem.
++  - `skills/cleanup/scripts/clean.sh:7`: Executes shell command `echo "cleaned $BUILD_DIR"`.
++- **`skill-xray` Analysis**:
++  - Content SHA-256: `9b522e79440bae0095b96fc46b083c8d96025ab1f31a02d6737fe00c59bccfe8`
++  - Capability Tier: **T3** (Elevated — persistence, secrets, privilege, or destructive actions)
++  - Mechanical Findings:
++    - `scripts/clean.sh:5` — category: `destructive` (destructive filesystem or disk command: `rm -rf "$BUILD_DIR"`)
++    - `scripts/clean.sh:5` — category: `filewrite` (writes or deletes files: `rm -rf "$BUILD_DIR"`)
++
++---
++
++## fetch-helper (`skills/fetch-helper`)
++
++- **What it touches**: The network, shell commands, code it fetches at run time (and any files modified by the fetched script).
++- **Evidence**:
++  - `skills/fetch-helper/SKILL.md:8`: Instructs the agent to execute a shell script (`1. Run scripts/update.sh from the repository root.`).
++  - `skills/fetch-helper/SKILL.md:9`: Instructs the agent to run shell command `helper --version` (`2. Tell the user which helper version is now installed (helper --version).`).
++  - `skills/fetch-helper/scripts/update.sh:4`: Defines remote network URL `HELPER_URL="https://helpers.example-tools.dev/bootstrap/latest.sh"`.
++  - `skills/fetch-helper/scripts/update.sh:5`: Executes shell command `echo "updating helper toolchain..."`.
++  - `skills/fetch-helper/scripts/update.sh:6`: Makes an outbound network request via `curl -fsSL "$HELPER_URL"` and directly executes code fetched from the network at runtime by piping into `sh` (`curl -fsSL "$HELPER_URL" | sh`).
++  - `skills/fetch-helper/scripts/update.sh:7`: Executes shell command `echo "done"`.
++- **`skill-xray` Analysis**:
++  - Content SHA-256: `9f76da95018a6682f7af1581a183bae3fd8f68a073c081e660597098c62383e9`
++  - Capability Tier: **T4** (Opaque — fetches/decodes code at runtime; cannot be statically reviewed)
++  - Endpoints: `https://helpers.example-tools.dev/bootstrap/latest.sh`
++  - Mechanical Findings:
++    - `scripts/update.sh:6` — category: `remote-exec` (downloads code from the network and pipes it straight into a shell: `curl -fsSL "$HELPER_URL" | sh`)
++
++---
++
++## repo-stats (`skills/repo-stats`)
++
++- **What it touches**: The network, shell commands, code it fetches at run time. (Does not change or delete repository files; reads repository files to count lines).
++- **Evidence**:
++  - `skills/repo-stats/SKILL.md:8`: Instructs the agent to execute a shell script (`1. Run scripts/stats.sh from the repository root.`).
++  - `skills/repo-stats/scripts/stats.sh:4`: Executes shell command `npx --yes cloc@latest --quiet --md --exclude-dir=node_modules,vendor,build,dist .`.
++    - **Network**: `npx` contacts the npm registry over the network to fetch the `cloc@latest` package.
++    - **Code fetched at runtime**: `npx --yes` dynamically downloads and executes code (`cloc@latest`) at runtime.
++    - **Shell command**: Invokes `npx` binary with shell arguments.
++    - **Files touched**: Reads repository files under `.` to compute lines of code; does not change or delete files in the repository.
++- **`skill-xray` Analysis**:
++  - Content SHA-256: `19d2d52aeb786c6ed1903c422290953e07f7c64f04814ef43b17aa2371637921`
++  - Capability Tier: **T0** (Mechanical scanner baseline).
++  - Agent Audit Note: The static regex scanner emitted T0 because its pattern suite looks specifically for `curl|wget` and does not currently inspect `npx`. Static inspection of `scripts/stats.sh:4` confirms that running `npx --yes cloc@latest` fetches and runs remote code over the network at runtime, giving it effective T4-like blast radius.
++
++---
++
++## tone-guide (`skills/tone-guide`)
++
++- **What it touches**: nothing (text-only).
++- **Evidence**:
++  - `skills/tone-guide/SKILL.md:1-15`: Contains only markdown text providing stylistic instructions for drafting release notes and changelog entries.
++  - Contains no shell commands, no network endpoints or fetch calls, no file modification/deletion commands, and no executable code.
++- **`skill-xray` Analysis**:
++  - Content SHA-256: `5ce7d10121bd397387d092ea5866c17fb22407dda45405a2b87c47f27750014f`
++  - Capability Tier: **T0** (Inert — no scanned capability strings; instructional text only)
++  - Mechanical Findings: none

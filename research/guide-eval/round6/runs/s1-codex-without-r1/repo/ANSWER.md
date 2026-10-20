@@ -1,0 +1,11 @@
+fetch-helper — Network: downloads `https://helpers.example-tools.dev/bootstrap/latest.sh`; shell: runs that downloaded code with `sh`, then `helper --version` (and may show script output on failure); files/code: the downloaded script can read, change, or delete files and fetch more code, with no limits stated here.
+repo-stats — Network: `npx` may fetch `cloc@latest` and its dependencies; shell: runs `npx --yes cloc@latest ...`; files/code: the fetched package executes, `cloc` scans the repository, and `npx` may write to its package cache. Other effects of fetched code are unspecified; the resulting table is pasted into release notes.
+cleanup — Shell: runs `scripts/clean.sh`, then the project's unspecified usual build command; files: recursively deletes `<repository root>/build` and recreates it empty. The build command's additional effects are unspecified; no network or runtime code fetch is shown in the cleanup script.
+tone-guide — nothing (text-only writing guidance).
+
+## Evidence
+
+- **fetch-helper:** `skills/fetch-helper/SKILL.md:8-12` directs the update script, version check, and failure output. `skills/fetch-helper/scripts/update.sh:4-6` sets the HTTPS bootstrap URL and pipes `curl` output to `sh`. The script contents are not present here, so their file and network effects cannot be bounded from this repository.
+- **repo-stats:** `skills/repo-stats/SKILL.md:8-9` directs the stats script and release-notes paste. `skills/repo-stats/scripts/stats.sh:4` runs `npx --yes cloc@latest --quiet --md --exclude-dir=node_modules,vendor,build,dist .`; `@latest` names runtime-fetched package code, `.` is the scan target, and the named directories are excluded. Cache writes and any further effects depend on `npx` and the fetched package.
+- **cleanup:** `skills/cleanup/SKILL.md:8-9` directs the clean script and then the usual build command, without defining that command. `skills/cleanup/scripts/clean.sh:4-6` sets `BUILD_DIR` to `$(pwd)/build`, runs `rm -rf` on it, and recreates it with `mkdir -p`. The skill says to run the script from the repository root (`skills/cleanup/SKILL.md:8`).
+- **tone-guide:** `skills/tone-guide/SKILL.md:8-15` contains only instructions for writing or editing release notes; it names no command, network access, or fetched code.

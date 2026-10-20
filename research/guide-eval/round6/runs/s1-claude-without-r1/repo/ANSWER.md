@@ -1,0 +1,33 @@
+# What each skill can touch when it runs
+
+- **cleanup**: shell; deletes and recreates `./build` under the *current working directory* (`rm -rf`), then runs the project's build command. No network of its own.
+- **fetch-helper**: network + shell + code fetched at run time; downloads an unpinned script from `helpers.example-tools.dev` and pipes it straight into `sh`. Nobody can know in advance what that script reads, writes, deletes or sends.
+- **repo-stats**: network + shell + code fetched at run time; `npx --yes cloc@latest` downloads and runs whatever the newest `cloc` on npm is, without asking. Reads the whole repo tree, writes to the npm cache, and the agent then edits the release notes.
+- **tone-guide**: nothing (text-only style guidance, no scripts or commands).
+
+# Evidence
+
+## cleanup
+- `skills/cleanup/SKILL.md:8`: tells the agent to run `scripts/clean.sh`.
+- `skills/cleanup/SKILL.md:9`: then "run the project's usual build command". That is an arbitrary shell command, whatever the project's build does.
+- `skills/cleanup/scripts/clean.sh:4`: `BUILD_DIR="$(pwd)/build"`. The path comes from the current directory, not from the script's location or the repo root. If it runs from the wrong directory, it deletes that directory's `build/`.
+- `skills/cleanup/scripts/clean.sh:5`: `rm -rf "$BUILD_DIR"`, a recursive forced delete.
+- `skills/cleanup/scripts/clean.sh:6`: `mkdir -p "$BUILD_DIR"` recreates it empty.
+
+## fetch-helper
+- `skills/fetch-helper/SKILL.md:10`: tells the agent to run `scripts/update.sh`.
+- `skills/fetch-helper/SKILL.md:11`: runs `helper --version`, a binary installed by the downloaded script.
+- `skills/fetch-helper/scripts/update.sh:4`: `HELPER_URL="https://helpers.example-tools.dev/bootstrap/latest.sh"`. This is a moving `latest` URL with no version pin, checksum or signature.
+- `skills/fetch-helper/scripts/update.sh:6`: `curl -fsSL "$HELPER_URL" | sh`. The remote code runs with the agent's full user permissions. Whoever controls that domain (or its DNS/TLS path) decides what runs: any file change, deletion or network call is possible. This is the highest-risk skill.
+
+## repo-stats
+- `skills/repo-stats/SKILL.md:8`: tells the agent to run `scripts/stats.sh`.
+- `skills/repo-stats/SKILL.md:9`: the agent pastes the output into the release notes, so it modifies a file.
+- `skills/repo-stats/scripts/stats.sh:4`: `npx --yes cloc@latest ...`. `--yes` skips the install prompt, and `@latest` is unpinned, so each run fetches and runs whatever version npm serves at that moment. That includes any install scripts in the package or its dependencies. It also writes to the npm cache (normally `~/.npm`, outside the repo), and `cloc` reads every file under `.`, except `node_modules`, `vendor`, `build` and `dist`.
+
+## tone-guide
+- `skills/tone-guide/SKILL.md:1-15`: only style rules for writing release notes. It has no `scripts/` folder and names no commands, URLs or file operations. Like any writing guidance, it shapes text the agent writes, but by itself it runs nothing.
+
+# Notes
+- I read every file under `skills/`: 7 files in total, with no hidden files. I did not run any skill or script.
+- Suggested before adopting: pin `cloc` to a fixed version (or use a locally installed one); replace the `curl | sh` with a pinned, checksum-verified download, or drop it; and make `clean.sh` resolve the repo root (e.g. `git rev-parse --show-toplevel`) instead of using `$(pwd)`.
