@@ -1,0 +1,5 @@
+The second publish returned 500 because it was the first to store a related-story score. `similarity()` produced a Python float, and boto3 rejected that value in `put_item`.
+
+I converted scores to `Decimal` before storage and added a regression test that publishes into a populated table, covering fractional and zero scores. [ANSWER.md](/tmp/h-iBsNNw/ANSWER.md) records the cause, fix, and which parts of the colleague’s note applied.
+
+Verification: both tests pass with `python3 -m unittest discover tests -v`.

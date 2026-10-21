@@ -1,0 +1,92 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..822d791
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,20 @@
++# Authorization review
++
++## Finding and fix
++
++**Fixed: a stranger could mutate a private task through `like` and `view`.** Before the fix, Alice created private task `4`, and Bob's `POST /tasks/4/like` and `POST /tasks/4/view` each returned `200` (`{"id":4,"likes":1}` and `{"id":4,"views":1}`). Alice's subsequent `GET /tasks/4` returned `likes: 1` and `views: 1`, confirming both unauthorized changes. Both endpoints omitted the visibility check used by comments and nudge.
++
++Added `can_access` checks to both endpoints. After restarting the API, Bob's requests to both returned `403 {"error":"forbidden"}`; Alice's subsequent read showed `likes: 0` and `views: 0`.
++
++## Other observed checks
++
++| Check | Observed result |
++| --- | --- |
++| Authenticated unknown route `GET /nope` | `404 {"error":"no such route"}` |
++| Unauthenticated `GET /tasks` | `401 {"error":"missing or unknown bearer token"}` |
++| Malformed JSON `POST /tasks` with `{` | `400 {"error":"body is not valid JSON"}` |
++| Injection-shaped path `GET /tasks/1%27%20OR%201=1--` | `404 {"error":"no such route"}` |
++| Alice creates task with `owner: "bob"`, `done: true`, `likes: 99`, `views: 99` | `201`; stored values were `owner: "alice"`, `done: false`, `likes: 0`, `views: 0` |
++| Bob reads, edits, deletes, comments on, completes, or nudges Alice's private task | Each returned `403`; task remained present and otherwise unchanged |
++
++The probe tasks were deleted; each subsequent owner read returned `404 {"error":"no such task"}`. The regression suite now checks all eight cross-user actions on a private task and confirms Bob can still like and view a public task. `python3 -m unittest discover -s tests` passed (7 tests); `git diff --check` passed.
+diff --git a/__pycache__/api.cpython-314.pyc b/__pycache__/api.cpython-314.pyc
+index 0cbfb7a..69aa064 100644
+Binary files a/__pycache__/api.cpython-314.pyc and b/__pycache__/api.cpython-314.pyc differ
+diff --git a/api.py b/api.py
+index a777571..683b0fb 100644
+--- a/api.py
++++ b/api.py
+@@ -161,9 +161,13 @@ class Handler(BaseHTTPRequestHandler):
+             task["nudges"] += 1
+             return self.send(200, {"id": task["id"], "nudges": task["nudges"]})
+         if action == "like":
++            if not can_access(user, task):
++                return self.send(403, {"error": "forbidden"})
+             task["likes"] += 1
+             return self.send(200, {"id": task["id"], "likes": task["likes"]})
+         if action == "view":
++            if not can_access(user, task):
++                return self.send(403, {"error": "forbidden"})
+             task["views"] += 1
+             return self.send(200, {"id": task["id"], "views": task["views"]})
+         return self.send(404, {"error": "no such route"})
+diff --git a/tests/__pycache__/test_api.cpython-314.pyc b/tests/__pycache__/test_api.cpython-314.pyc
+index 921b248..bae679f 100644
+Binary files a/tests/__pycache__/test_api.cpython-314.pyc and b/tests/__pycache__/test_api.cpython-314.pyc differ
+diff --git a/tests/test_api.py b/tests/test_api.py
+index 1380af5..fea9006 100644
+--- a/tests/test_api.py
++++ b/tests/test_api.py
+@@ -10,6 +10,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+ import api  # noqa: E402
+ 
+ ALICE = "tok_alice_4f8c2e71b0"
++BOB = "tok_bob_9a1d7c3e55"
+ 
+ 
+ class ApiTest(unittest.TestCase):
+@@ -67,6 +68,29 @@ class ApiTest(unittest.TestCase):
+         self.assertEqual(self.call("POST", "/tasks", {"visibility": "public"})[0], 400)
+         self.assertEqual(self.call("GET", "/nope")[0], 404)
+ 
++    def test_stranger_cannot_touch_private_task(self):
++        code, task = self.call("POST", "/tasks", {"title": "Private probe"})
++        self.assertEqual(code, 201)
++        path = "/tasks/%d" % task["id"]
++        attempts = [
++            ("GET", path, None),
++            ("PATCH", path, {"title": "changed"}),
++            ("DELETE", path, None),
++            ("POST", path + "/comments", {"text": "hi"}),
++            ("POST", path + "/complete", {}),
++            ("POST", path + "/nudge", {}),
++            ("POST", path + "/like", {}),
++            ("POST", path + "/view", {}),
++        ]
++        for method, route, body in attempts:
++            with self.subTest(method=method, route=route):
++                self.assertEqual(self.call(method, route, body, BOB)[0], 403)
++        self.assertEqual(self.call("GET", path)[1], task)
++
++    def test_stranger_can_like_and_view_public_task(self):
++        self.assertEqual(self.call("POST", "/tasks/2/like", {}, BOB)[1]["likes"], 1)
++        self.assertEqual(self.call("POST", "/tasks/2/view", {}, BOB)[1]["views"], 1)
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

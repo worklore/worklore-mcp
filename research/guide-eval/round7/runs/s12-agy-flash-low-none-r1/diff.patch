@@ -1,0 +1,120 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..cf52972
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,44 @@
++# Authorization Audit & Fix Report
++
++## Findings: Can one user see or change what they shouldn't?
++
++**Yes.** In the original implementation, one user could see and modify the state of other users' private tasks via the `/like` and `/view` endpoints.
++
++### Vulnerabilities Identified
++
++1. **`POST /tasks/{id}/like` Missing Authorization Check**
++   - **Issue:** The handler did not verify whether the requesting user had access permissions (`can_access(user, task)`).
++   - **Impact:** Any authenticated user (e.g., Bob with `tok_bob_9a1d7c3e55`) could submit `POST /tasks/1/like` against Alice's private task (`#1`). This allowed Bob to increment the like count and confirmed the task's existence and like count via the `200 OK` response (`{"id": 1, "likes": ...}`).
++   - **Violation:** Violates the requirement that *"a private task is visible and touchable only by its owner (403 for anyone else, 401 without a token)"*.
++
++2. **`POST /tasks/{id}/view` Missing Authorization Check**
++   - **Issue:** The handler did not verify whether the requesting user had access permissions (`can_access(user, task)`).
++   - **Impact:** Any authenticated user could submit `POST /tasks/1/view` against Alice's private task (`#1`). This allowed Bob to increment the view count and confirmed the task's existence and view count via the `200 OK` response (`{"id": 1, "views": ...}`).
++   - **Violation:** Violates the requirement that private tasks must only be accessible and touchable by their owner.
++
++### Assessment of Other Endpoints
++
++All other endpoints properly enforce authorization rules:
++- `GET /tasks`: Correctly filters results to only include own tasks and public tasks (`can_access`).
++- `POST /tasks`: Correctly creates tasks with the authenticated user as the owner.
++- `GET /tasks/{id}`: Correctly returns `403 {"error": "forbidden"}` if a user attempts to read another user's private task.
++- `PATCH /tasks/{id}`: Correctly returns `403 {"error": "only the owner may edit a task"}` if a non-owner attempts to edit a task.
++- `DELETE /tasks/{id}`: Correctly returns `403 {"error": "only the owner may delete a task"}` if a non-owner attempts to delete a task.
++- `POST /tasks/{id}/comments`: Correctly returns `403 {"error": "forbidden"}` when targeting another user's private task.
++- `POST /tasks/{id}/complete`: Correctly returns `403 {"error": "only the owner may complete a task"}`.
++- `POST /tasks/{id}/nudge`: Correctly returns `403 {"error": "forbidden"}` when targeting another user's private task.
++- Authentication: Correctly rejects unauthenticated or invalid tokens with `401 {"error": "missing or unknown bearer token"}`.
++
++---
++
++## Fixes Applied
++
++1. **`api.py`**:
++   - Added `can_access(user, task)` authorization checks to both `action == "like"` and `action == "view"` handlers.
++   - If unauthorized, the API now returns `403 {"error": "forbidden"}`, consistent with `GET /tasks/{id}`, `POST /tasks/{id}/comments`, and `POST /tasks/{id}/nudge`.
++
++2. **`tests/test_api.py`**:
++   - Added `test_private_task_authorization` to verify that a non-owner (Bob) receives `403 Forbidden` when attempting to access or modify Alice's private task (`GET`, `PATCH`, `DELETE`, `comments`, `complete`, `nudge`, `like`, `view`), while Alice can still access and modify it.
++   - Added `test_public_task_authorization` to ensure social actions (`like`, `view`, `nudge`, `comments`) remain functional for public tasks while owner-only actions (`PATCH`, `DELETE`, `complete`) remain protected.
++
++All tests pass successfully.
+diff --git a/__pycache__/api.cpython-314.pyc b/__pycache__/api.cpython-314.pyc
+index 0cbfb7a..7372c7c 100644
+Binary files a/__pycache__/api.cpython-314.pyc and b/__pycache__/api.cpython-314.pyc differ
+diff --git a/api.py b/api.py
+index 25442f3..4e71d79 100644
+--- a/api.py
++++ b/api.py
+@@ -161,9 +161,13 @@ class Handler(BaseHTTPRequestHandler):
+             task["nudges"] += 1
+             return self.send(200, {"id": task["id"], "nudges": task["nudges"]})
+         if action == "like":
++            if not can_access(user, task):
++                return self.send(403, {"error": "forbidden"})
+             task["likes"] += 1
+             return self.send(200, {"id": task["id"], "likes": task["likes"]})
+         if action == "view":
++            if not can_access(user, task):
++                return self.send(403, {"error": "forbidden"})
+             task["views"] += 1
+             return self.send(200, {"id": task["id"], "views": task["views"]})
+         return self.send(404, {"error": "no such route"})
+diff --git a/tests/__pycache__/test_api.cpython-314.pyc b/tests/__pycache__/test_api.cpython-314.pyc
+index 921b248..dd66815 100644
+Binary files a/tests/__pycache__/test_api.cpython-314.pyc and b/tests/__pycache__/test_api.cpython-314.pyc differ
+diff --git a/tests/test_api.py b/tests/test_api.py
+index 1380af5..107d377 100644
+--- a/tests/test_api.py
++++ b/tests/test_api.py
+@@ -10,6 +10,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+ import api  # noqa: E402
+ 
+ ALICE = "tok_alice_4f8c2e71b0"
++BOB = "tok_bob_9a1d7c3e55"
+ 
+ 
+ class ApiTest(unittest.TestCase):
+@@ -67,6 +68,33 @@ class ApiTest(unittest.TestCase):
+         self.assertEqual(self.call("POST", "/tasks", {"visibility": "public"})[0], 400)
+         self.assertEqual(self.call("GET", "/nope")[0], 404)
+ 
++    def test_private_task_authorization(self):
++        # Alice's task #1 is private
++        self.assertEqual(self.call("GET", "/tasks/1", token=BOB)[0], 403)
++        self.assertEqual(self.call("PATCH", "/tasks/1", {"title": "Hacked"}, token=BOB)[0], 403)
++        self.assertEqual(self.call("DELETE", "/tasks/1", token=BOB)[0], 403)
++        self.assertEqual(self.call("POST", "/tasks/1/comments", {"text": "hi"}, token=BOB)[0], 403)
++        self.assertEqual(self.call("POST", "/tasks/1/complete", token=BOB)[0], 403)
++        self.assertEqual(self.call("POST", "/tasks/1/nudge", token=BOB)[0], 403)
++        self.assertEqual(self.call("POST", "/tasks/1/like", token=BOB)[0], 403)
++        self.assertEqual(self.call("POST", "/tasks/1/view", token=BOB)[0], 403)
++
++        # Alice herself can access and touch her private task
++        self.assertEqual(self.call("GET", "/tasks/1", token=ALICE)[0], 200)
++        self.assertEqual(self.call("POST", "/tasks/1/like", token=ALICE)[0], 200)
++        self.assertEqual(self.call("POST", "/tasks/1/view", token=ALICE)[0], 200)
++
++    def test_public_task_authorization(self):
++        # Task #2 is Alice's public task; Bob can interact with it but not edit/delete/complete it
++        self.assertEqual(self.call("GET", "/tasks/2", token=BOB)[0], 200)
++        self.assertEqual(self.call("POST", "/tasks/2/like", token=BOB)[0], 200)
++        self.assertEqual(self.call("POST", "/tasks/2/view", token=BOB)[0], 200)
++        self.assertEqual(self.call("POST", "/tasks/2/nudge", token=BOB)[0], 200)
++        self.assertEqual(self.call("POST", "/tasks/2/comments", {"text": "Bob comment"}, token=BOB)[0], 201)
++        self.assertEqual(self.call("PATCH", "/tasks/2", {"title": "Bob edit"}, token=BOB)[0], 403)
++        self.assertEqual(self.call("POST", "/tasks/2/complete", token=BOB)[0], 403)
++        self.assertEqual(self.call("DELETE", "/tasks/2", token=BOB)[0], 403)
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

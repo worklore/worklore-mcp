@@ -1,0 +1,3 @@
+Fixed both failures. `hidden` is a DynamoDB reserved word: using it directly crashed the hide update, while the feed projection omitted the flag and let a manually hidden story appear. The library now aliases attribute names in its DynamoDB expressions, and regression tests cover both hide paths.
+
+The causes are documented in [ANSWER.md](/tmp/h-9N3i4Z/ANSWER.md). All 8 tests pass.

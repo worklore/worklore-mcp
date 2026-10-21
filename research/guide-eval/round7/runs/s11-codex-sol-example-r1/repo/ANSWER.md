@@ -1,0 +1,7 @@
+# Second publish failure
+
+`logs/error.log` shows boto3 rejecting a Python `float` during `put_item`: `Float types are not supported. Use Decimal types instead.` The float came from `similarity()` through `related()` into the nested `similar[*].score` field. The first publish scans an empty table, so `related()` produces no scores and its item is valid. The second publish sees the first story, adds a float score, and returns 500 when DynamoDB serialization fails.
+
+`related()` now converts each rounded score with `Decimal(str(...))` before adding it to the item. This keeps the existing four-decimal, 0–1 score values while making them valid DynamoDB numbers. A regression test publishes two stories through the handler against the in-memory table, checks both responses are 201, and checks the second stored score is a `Decimal`. The test reproduced the 500 before the fix; `python3 -m unittest discover tests -v` now passes both tests.
+
+The colleague's note applied to the state-dependent failure, boto3's rejection of floats, and the need for a test with an existing record. Its suggestion to store integer percentages did not apply: this service already stores scores on a 0–1 scale with four decimal places, so `Decimal` preserves that representation. Its real-table verification step was not used because this task is limited to the current directory and external publishing is prohibited; the local fake table enforces boto3's float restriction.

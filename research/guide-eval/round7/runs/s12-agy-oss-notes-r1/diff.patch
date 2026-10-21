@@ -1,0 +1,18 @@
+diff --git a/api.py b/api.py
+index 769f237..8aae3ed 100644
+--- a/api.py
++++ b/api.py
+@@ -161,9 +161,13 @@ class Handler(BaseHTTPRequestHandler):
+             task["nudges"] += 1
+             return self.send(200, {"id": task["id"], "nudges": task["nudges"]})
+         if action == "like":
++            if not can_access(user, task):
++                return self.send(403, {"error": "forbidden"})
+             task["likes"] += 1
+             return self.send(200, {"id": task["id"], "likes": task["likes"]})
+         if action == "view":
++            if not can_access(user, task):
++                return self.send(403, {"error": "forbidden"})
+             task["views"] += 1
+             return self.send(200, {"id": task["id"], "views": task["views"]})
+         return self.send(404, {"error": "no such route"})

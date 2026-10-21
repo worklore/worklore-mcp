@@ -1,0 +1,3 @@
+Fixed the prompt cache boundary: `save_fact` now updates an uncached athlete-context block while the marked coaching instructions stay unchanged. I documented the change and its limits in [ANSWER.md](/tmp/h-WIWjt2/ANSWER.md).
+
+Both local tests pass. No live Claude call was made, so cache token counts remain unmeasured.

@@ -1,0 +1,3 @@
+I found and fixed an authorization flaw: Bob could `like` and `view` Alice’s private task, changing its counters and confirming the task existed. Both endpoints now return `403` unless the user can access the task.
+
+The finding and fix are documented in [ANSWER.md](/tmp/h-uZSlAh/ANSWER.md). All 7 tests pass, including new authorization regression tests.

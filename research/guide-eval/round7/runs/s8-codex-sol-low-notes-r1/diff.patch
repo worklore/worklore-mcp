@@ -1,0 +1,34 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..2f7a8cb
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,5 @@
++# Prompt cache fix
++
++`build_system()` now sends two text blocks, each with an ephemeral cache marker. The first contains the unchanged coaching instructions; the second contains the date, athlete profile, and long-term facts. When `save_fact` updates a fact, only the second block changes, so the stable instruction prefix can still be read from cache. Tool selection and the tool loop are unchanged.
++
++Verified locally with assertions that both markers are present, the instruction block remains identical after a fact is added, the athlete block changes, and the selected tools remain identical. `python3 -m py_compile bot.py` also passed. I did not call the Anthropic API, so token savings have not been measured live; the cache-read and cache-creation fields in `logs/usage.jsonl` can confirm the result on the next local run.
+diff --git a/__pycache__/bot.cpython-314.pyc b/__pycache__/bot.cpython-314.pyc
+new file mode 100644
+index 0000000..023b74f
+Binary files /dev/null and b/__pycache__/bot.cpython-314.pyc differ
+diff --git a/bot.py b/bot.py
+index e2ff241..13d2471 100644
+--- a/bot.py
++++ b/bot.py
+@@ -128,9 +128,11 @@ def athlete_context(a, today):
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    # Keep the stable prefix cacheable when save_fact changes the athlete context.
++    return [
++        {"type": "text", "text": INSTRUCTIONS, "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": athlete_context(a, today), "cache_control": {"type": "ephemeral"}},
++    ]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [

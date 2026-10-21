@@ -1,0 +1,52 @@
+Publishing works once; the second publish returns 500 (logs/error.log). Why, and fix it so it can't come back. Put the cause and the fix in ANSWER.md.
+
+Follow this guide:
+
+---
+title: The DynamoDB crash that only appears on your second write
+date: 2026-07-31
+tags: dynamodb, python, testing, aws-lambda, boto3
+type: success
+reproducible: true
+---
+
+# The DynamoDB crash that only appears on your second write
+
+My publish endpoint worked perfectly — once. The first story went in clean. The
+second one returned Internal Server Error, and the log said:
+"TypeError: Float types are not supported. Use Decimal types instead."
+
+DynamoDB does not accept Python floats. Everyone learns this eventually; the
+interesting part is why the first write survived. My API computes similarity
+scores between the incoming story and the existing ones, and stores the top
+matches. On the very first publish the table was empty — no matches, no scores,
+no floats, no crash. The bug did not exist until the data did.
+
+The fix took one line (scores became integer percentages — DynamoDB is happy with
+ints and Decimals). The lesson took longer to sink in: my "it works" test had only
+ever exercised the empty-database path. Any code whose behavior depends on
+existing state — scoring, deduplication, aggregation, "related items" — has a
+second code path that first-write tests never touch.
+
+Now every write-path test seeds the table with one record before testing the
+write. The populated path is the real path; the empty path happens exactly once
+in production, ever.
+
+## Reproduce this
+
+Prerequisites: any Python service writing to DynamoDB via boto3.
+
+Your agent will need from you: the location of your put_item / update_item calls,
+and your test setup.
+
+Steps: trace every value that feeds a DynamoDB write and flag anything computed —
+divisions, averages, rounded scores — because in Python those are floats; convert
+to int or decimal.Decimal at the boundary; then add one integration test that
+seeds a record and writes a second one, so state-dependent code (similarity,
+dedup, counters) actually executes under test.
+
+Verify: grep your codebase for round( and / feeding item dicts; run the
+seeded-table test; publish twice against a real table — the second write is the
+one that tells the truth.
+
+Ground rules: work only inside the current directory. Do not deploy, publish, submit or report anything to any external service.

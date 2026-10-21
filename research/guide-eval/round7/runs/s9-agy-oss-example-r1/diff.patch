@@ -1,0 +1,22 @@
+diff --git a/src/app.py b/src/app.py
+index 963b0b5..e9208d9 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -52,14 +52,15 @@ class StoryLibrary:
+         """Author withdraws a story: it stays in the table but leaves the feed."""
+         self.table.update_item(
+             Key={"slug": slug},
+-            UpdateExpression="SET hidden = :h, hidden_by = :by, hidden_at = :t",
++            UpdateExpression="SET #h = :h, hidden_by = :by, hidden_at = :t",
+             ConditionExpression="attribute_exists(slug)",
++            ExpressionAttributeNames={"#h": "hidden"},
+             ExpressionAttributeValues={":h": True, ":by": by, ":t": int(self.clock())},
+         )
+ 
+     def feed(self, limit=FEED_LIMIT):
+         """Public feed: newest first, hidden stories excluded, bodies left out."""
+-        resp = self.table.scan(ProjectionExpression="slug, title, hidden, published_at")
++        resp = self.table.scan(ProjectionExpression="slug, title, #h, published_at", ExpressionAttributeNames={"#h": "hidden"})
+         items = [i for i in resp["Items"] if not i.get("hidden")]
+         items.sort(key=lambda i: i["published_at"], reverse=True)
+         return [

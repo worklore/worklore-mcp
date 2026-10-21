@@ -1,0 +1,11 @@
+# Intervals.icu connect failures — causes and fixes
+
+1. **Connect button always 401 (all athletes).** The button was a plain link to `GET /api/intervals/auth/init`. A full-page navigation does not send the `Authorization` header the SPA keeps in localStorage, so `require_user` returned 401 (ticket #214, log section 1). Fix: init is now an authenticated `POST` returning `{authorize_url}` as JSON (`server.py`); the SPA calls it via the fetch wrapper and does `window.location.assign(authorize_url)` (`static/app.js`). The callback stays an unauthenticated GET; identity travels in the signed `state`.
+2. **Authorize URL rejected with 400 `invalid_request` since 2026-10-02.** `config.SCOPES` named `ACTIVITY` and `CALENDAR` twice (`:READ` and `:WRITE`). `:WRITE` implies `:READ`, and Intervals rejects repeats (the colleague's "Duplicate scope"; our 400 body doesn't name it, but this is the only malformed parameter and matches the timing of the calendar-sync change). Now `ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE`. Not verified against the live Intervals service.
+3. **Connection "expired" after an hour.** Intervals tokens have no `refresh_token` and no `expires_in`; they last until revoked. Our code invented a 3600s default TTL and the refresher marked tokens expired with no refresh token (log: Rivera, 2026-09-19). Fix: removed the default TTL; `expires_at` is `None` when the provider gives none and the refresher skips such tokens. Revocation is handled lazily: a 401 from the Intervals API marks the connection "expired, reconnect" and clears the token.
+
+## Colleague's note: what applied
+- Applied: no refresh_token / never expires (#3), duplicate scope (#2), GET→POST init (#1), lazy 401 handling.
+- Not applied: `SETTINGS:WRITE` scope (we don't need it); the token exchange without `grant_type`/`redirect_uri` (our exchange demonstrably worked in the Rivera log, so left unchanged); JWT state, encryption at rest, and the account-mismatch guard (good hardening, but not causes here and out of scope; our HMAC state with a 15-minute TTL already works; tokens are still stored in plaintext in memory).
+
+Not tested end-to-end: no real Intervals credentials here; only a syntax check was run.

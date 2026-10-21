@@ -1,0 +1,25 @@
+# Changes Made
+
+In [bot.py](file:///tmp/h-LTwJAH/bot.py), updated `build_system(a, today)` to split the `system` parameter into two separate text blocks, each marked with `cache_control: {"type": "ephemeral"}`:
+1. **Segment 1 (Static instructions)**: Contains `INSTRUCTIONS`, which is byte-identical across all users, dates, and messages.
+2. **Segment 2 (Volatile tail)**: Contains `athlete_context(a, today)`, which contains the date, athlete profile, zones, goal, facts, and language.
+
+### Why this fixes the issue
+Previously, `INSTRUCTIONS` and `athlete_context` were concatenated into a single cached text block. Anthropic prompt caching operates via prefix hashing: any change to the prompt invalidates the cached prefix from the point of change to the end. Whenever `save_fact` appended a fact to `a.facts`, the combined block's hash changed, causing Claude to evict and re-create the cache for the entire system prompt (~1,000+ tokens).
+
+With two `cache_control: {"type": "ephemeral"}` segments:
+- The static instruction block (~780 tokens) remains cached and hot regardless of fact updates.
+- Only the second, volatile athlete context block (~240-300 tokens) is invalidated and re-cached when a memory write occurs via `save_fact`.
+
+---
+
+# Colleague Note Review: What Applied and What Was Ignored
+
+### What Applied:
+- **Two `cache_control: {"type": "ephemeral"}` blocks (Step 1)**: Splitting `system` into two text blocks—one for byte-stable instructions and one for the volatile per-athlete tail (date, profile, memory)—directly solved the prompt cache invalidation issue.
+- **Verification via usage metrics (Step 4 / Verify)**: Observing `cache_creation_input_tokens` and `cache_read_input_tokens` in `logs/usage.jsonl` confirmed the pattern described: previously, `save_fact` triggered a full ~1000-token re-creation with 0 read tokens on the subsequent round.
+
+### What Was Ignored (and Why):
+- **Tool filtering changes / suggestions (Step 2 & "First win...")**: The codebase already has keyword-based tool filtering in `select_tools` with core tools (`save_fact`, `log_session`) always present. As noted in `NOTES.md` and the colleague note, tool filtering is already established and was kept as is.
+- **Top-N fact selection guidance (Step 3 & "The non-obvious part...")**: The bot currently loads all facts (`a.facts`) in `athlete_context()`. Top-N fact selection was not present in the codebase, so no action was needed to reject or remove it.
+- **Transport / Telegram integration details**: The Telegram bot architecture mentioned in the colleague note is external to this repository (per `README.md`, local chat runs on CLI and Telegram transport lives elsewhere).

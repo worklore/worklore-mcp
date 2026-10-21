@@ -1,0 +1,3 @@
+Fixed the prompt cache in [bot.py](/tmp/h-I2IgFa/bot.py). The cache breakpoint now follows the coaching instructions and stable athlete profile, so a `save_fact` write changes only the uncached facts block. I recorded the change and verification in [ANSWER.md](/tmp/h-I2IgFa/ANSWER.md).
+
+Local checks passed. Live cache usage remains unverified because it requires an API call.

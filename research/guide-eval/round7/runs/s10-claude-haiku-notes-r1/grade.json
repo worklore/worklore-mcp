@@ -1,0 +1,30 @@
+{
+ "answer_file": true,
+ "answer_source": "repo",
+ "events": {
+  "registration_email_started": "capture",
+  "registration_phone_started": "capture",
+  "loan_amount_changed": "capture",
+  "terms_accepted": "capture",
+  "registration_continue_tapped": "capture",
+  "offers_scrolled": "capture"
+ },
+ "all_events_implemented": true,
+ "trap_hits": [],
+ "on_change_end_used": true,
+ "once_flag_used": true,
+ "focus_lost_used": false,
+ "submit_or_editing_complete_used": false,
+ "scroll_end_used": true,
+ "scroll_update_mentioned": false,
+ "answer_mentions_keystroke_quota_once": true,
+ "flutter_or_dart_executed": false,
+ "changed_files": [
+  "ANSWER.md",
+  "lib/screens/offer_screen.dart",
+  "lib/screens/registration_screen.dart"
+ ],
+ "commands_issued": 8,
+ "answer_chars": 3093,
+ "PASS": true
+}

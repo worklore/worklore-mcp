@@ -1,0 +1,59 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..87a7ed4
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,6 @@
++# Causes and fix
++
++- **Hide crashes:** `hide()` used the reserved DynamoDB word `hidden` directly in its `UpdateExpression`. DynamoDB rejected the update with `ValidationException`, which surfaced as a 500. The update now uses `#hidden` with `ExpressionAttributeNames`.
++- **Hidden story stays in the feed:** `feed()` also used `hidden` directly in its `ProjectionExpression`. The projection omitted that attribute, so `i.get("hidden")` was false even for a hidden story. This was a read bug in the same table, not a cache issue. The projection now aliases `hidden`, allowing the existing filter to exclude it.
++
++Regression tests cover hiding through `StoryLibrary.hide()` and reading a story whose `hidden` field was set directly. `python3 -m unittest discover tests` passes (7 tests).
+diff --git a/src/app.py b/src/app.py
+index 963b0b5..fbcc8a3 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -52,14 +52,18 @@ class StoryLibrary:
+         """Author withdraws a story: it stays in the table but leaves the feed."""
+         self.table.update_item(
+             Key={"slug": slug},
+-            UpdateExpression="SET hidden = :h, hidden_by = :by, hidden_at = :t",
++            UpdateExpression="SET #hidden = :h, hidden_by = :by, hidden_at = :t",
+             ConditionExpression="attribute_exists(slug)",
++            ExpressionAttributeNames={"#hidden": "hidden"},
+             ExpressionAttributeValues={":h": True, ":by": by, ":t": int(self.clock())},
+         )
+ 
+     def feed(self, limit=FEED_LIMIT):
+         """Public feed: newest first, hidden stories excluded, bodies left out."""
+-        resp = self.table.scan(ProjectionExpression="slug, title, hidden, published_at")
++        resp = self.table.scan(
++            ProjectionExpression="slug, title, #hidden, published_at",
++            ExpressionAttributeNames={"#hidden": "hidden"},
++        )
+         items = [i for i in resp["Items"] if not i.get("hidden")]
+         items.sort(key=lambda i: i["published_at"], reverse=True)
+         return [
+diff --git a/tests/test_feed.py b/tests/test_feed.py
+index f64234e..e65b72d 100644
+--- a/tests/test_feed.py
++++ b/tests/test_feed.py
+@@ -39,6 +39,17 @@ class FeedTests(unittest.TestCase):
+         self.lib.rename("hello", "Hello, world")
+         self.assertEqual(self.lib.get("hello")["title"], "Hello, world")
+ 
++    def test_hide_removes_story_from_feed(self):
++        self.lib.publish("hello", "Hello", "...", "ann")
++        self.lib.hide("hello", by="ann")
++        self.assertEqual(self.lib.get("hello")["hidden"], True)
++        self.assertEqual(self.lib.feed(), [])
++
++    def test_manually_hidden_story_is_not_in_feed(self):
++        self.lib.publish("hello", "Hello", "...", "ann")
++        self.lib.table._items["hello"]["hidden"] = True
++        self.assertEqual(self.lib.feed(), [])
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

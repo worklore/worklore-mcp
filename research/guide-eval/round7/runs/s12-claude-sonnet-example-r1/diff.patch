@@ -1,0 +1,117 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..4b914c4
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,38 @@
++# Authorization review of tasks-api
++
++## Findings
++1. **Broken object-level authorization on `POST /tasks/{id}/like` and `POST /tasks/{id}/view` (fixed).**
++   Neither handler called `can_access()`. Any authenticated user (e.g. bob) could increment
++   `likes`/`views` on another user's *private* task (e.g. alice's #1) and got 200. Every other
++   endpoint (read, edit, delete, comment, complete, nudge) already returned 403 correctly.
++   Fix: added the same `can_access` check used by `comments` and `nudge` (`api.py`).
++   Found by reading the code and confirmed by the regression test, which fails on the old code
++   (2 failures) and passes on the new.
++2. **`PATCH /tasks/{id}` accepted unvalidated fields (fixed, hardening).** An owner could set
++   `visibility` to an arbitrary value (e.g. `"bogus"`). Because `can_access` only treats the exact
++   string `"public"` as public, a bogus value behaves like private, but the task would be
++   inconsistent. It could also set `title` to a non-string. It now returns 400, using the same rules as create.
++   This is not a cross-user issue.
++
++## Checked and fine
++- No token or unknown token returns 401. Malformed JSON returns 400. Unknown route or task returns 404.
++- Read, edit, delete, comment, complete and nudge on a private task by a non-owner all return 403.
++- No mass assignment: `owner` and the counters can't be set via create or PATCH; only `title` and `visibility` are accepted.
++- `GET /tasks` lists only own and public tasks.
++
++## Tests
++`tests/test_api.py`: added `test_stranger_cannot_touch_private_task` (every action as bob against
++alice's private task must be 403, and the task's state must be unchanged) and `test_patch_validation`.
++All 7 tests pass.
++
++## Colleague's note
++Applied: the cross-user matrix idea (one user makes a private resource, the other tries every action,
++including side-actions) and the "check every endpoint" lesson. That is exactly where the like/view
++gap was. Not applied: installing paranoid-qa (no installs or network; I reviewed manually),
++the unauthenticated injection pass (no DB or query layer here) and the premium-flag check
++(no such fields). I did not run a live probe against port 60320; evidence is from the code
++and the in-process test server, which uses the same handler. Probe tasks are not an issue because the store is in-memory.
++
++## Not covered / notes
++- Tokens are static dev tokens in the README. Replace them before launch.
++- No rate limiting, so likes/views can be inflated by anyone with access to a public task. This is by design but easy to abuse.
+diff --git a/__pycache__/api.cpython-314.pyc b/__pycache__/api.cpython-314.pyc
+index 0cbfb7a..cf80514 100644
+Binary files a/__pycache__/api.cpython-314.pyc and b/__pycache__/api.cpython-314.pyc differ
+diff --git a/api.py b/api.py
+index ea4ef6c..5bd9864 100644
+--- a/api.py
++++ b/api.py
+@@ -129,9 +129,13 @@ class Handler(BaseHTTPRequestHandler):
+             if method == "PATCH":
+                 if not is_owner(user, task):
+                     return self.send(403, {"error": "only the owner may edit a task"})
++                if "title" in data and (not isinstance(data["title"], str) or not data["title"].strip()):
++                    return self.send(400, {"error": "title must be a non-empty string"})
++                if "visibility" in data and data["visibility"] not in ("private", "public"):
++                    return self.send(400, {"error": "visibility must be private or public"})
+                 for k in ("title", "visibility"):
+                     if k in data:
+-                        task[k] = data[k]
++                        task[k] = data[k].strip() if k == "title" else data[k]
+                 return self.send(200, task)
+             if method == "DELETE":
+                 if not is_owner(user, task):
+@@ -161,9 +165,13 @@ class Handler(BaseHTTPRequestHandler):
+             task["nudges"] += 1
+             return self.send(200, {"id": task["id"], "nudges": task["nudges"]})
+         if action == "like":
++            if not can_access(user, task):
++                return self.send(403, {"error": "forbidden"})
+             task["likes"] += 1
+             return self.send(200, {"id": task["id"], "likes": task["likes"]})
+         if action == "view":
++            if not can_access(user, task):
++                return self.send(403, {"error": "forbidden"})
+             task["views"] += 1
+             return self.send(200, {"id": task["id"], "views": task["views"]})
+         return self.send(404, {"error": "no such route"})
+diff --git a/tests/__pycache__/test_api.cpython-314.pyc b/tests/__pycache__/test_api.cpython-314.pyc
+index 921b248..7b2aa77 100644
+Binary files a/tests/__pycache__/test_api.cpython-314.pyc and b/tests/__pycache__/test_api.cpython-314.pyc differ
+diff --git a/tests/test_api.py b/tests/test_api.py
+index 1380af5..7f08193 100644
+--- a/tests/test_api.py
++++ b/tests/test_api.py
+@@ -10,6 +10,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+ import api  # noqa: E402
+ 
+ ALICE = "tok_alice_4f8c2e71b0"
++BOB = "tok_bob_9a1d7c3e55"
+ 
+ 
+ class ApiTest(unittest.TestCase):
+@@ -67,6 +68,21 @@ class ApiTest(unittest.TestCase):
+         self.assertEqual(self.call("POST", "/tasks", {"visibility": "public"})[0], 400)
+         self.assertEqual(self.call("GET", "/nope")[0], 404)
+ 
++    def test_stranger_cannot_touch_private_task(self):
++        for method, path, body in [
++            ("GET", "/tasks/1", None), ("PATCH", "/tasks/1", {"title": "x"}),
++            ("DELETE", "/tasks/1", None), ("POST", "/tasks/1/comments", {"text": "x"}),
++            ("POST", "/tasks/1/complete", None), ("POST", "/tasks/1/nudge", None),
++            ("POST", "/tasks/1/like", None), ("POST", "/tasks/1/view", None)]:
++            self.assertEqual(self.call(method, path, body, token=BOB)[0], 403, path)
++        task = self.call("GET", "/tasks/1")[1]
++        self.assertEqual((task["likes"], task["views"], task["nudges"], task["done"]), (0, 0, 0, False))
++        self.assertEqual(task["comments"], [])
++
++    def test_patch_validation(self):
++        self.assertEqual(self.call("PATCH", "/tasks/1", {"visibility": "bogus"})[0], 400)
++        self.assertEqual(self.call("PATCH", "/tasks/1", {"title": 5})[0], 400)
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

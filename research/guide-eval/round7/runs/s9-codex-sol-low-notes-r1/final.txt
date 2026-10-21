@@ -1,0 +1,3 @@
+Fixed both causes. `hide()` now aliases the reserved DynamoDB name `hidden`, so the update no longer fails. `feed()` uses the same alias in its projection, so it receives the hidden flag and excludes hidden stories.
+
+The causes are documented in [ANSWER.md](/tmp/h-uPYxuO/ANSWER.md). I added regression tests for both the Hide action and a story hidden directly in the table. All 7 tests pass.

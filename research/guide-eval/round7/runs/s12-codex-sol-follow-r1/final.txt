@@ -1,0 +1,3 @@
+Found and fixed an authorization gap: Bob could increment the like and view counts on Alice’s private task even though he could not read it. Both endpoints now return `403` before changing the task.
+
+The evidence, other authorization checks, and probe cleanup are recorded in [ANSWER.md](/tmp/h-oQqrGc/ANSWER.md). Regression tests pass: **7 tests**, plus a live HTTP retest confirming Bob’s requests leave Alice’s task unchanged.

@@ -1,0 +1,3 @@
+I found and fixed an authorization gap: Bob could use `like` and `view` to change Alice’s private task. Live requests confirmed both changes before the fix and `403` responses with unchanged counts afterward.
+
+The evidence and full check results are in [ANSWER.md](/tmp/h-CbbG68/ANSWER.md). I added regression tests for every cross-user task action; all 7 tests pass. The probe tasks were deleted.

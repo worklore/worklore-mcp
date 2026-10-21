@@ -1,0 +1,3 @@
+Fixed both DynamoDB expressions. `hide()` now aliases the reserved word `hidden`, preventing the 500. `feed()` aliases it in the projection, so the filter can see and exclude hidden stories.
+
+The causes are documented in [ANSWER.md](/tmp/h-BxQy7j/ANSWER.md). Regression tests cover both hiding through the library and a story hidden directly in the table; all 7 tests pass.

@@ -1,0 +1,3 @@
+Fixed the Intervals.icu integration. The Connect button now uses an authenticated POST; scopes no longer repeat an area; token exchange sends only the required fields; and connections no longer expire after an invented one-hour TTL. A provider 401 now clears the encrypted token and prompts reconnection. The callback also validates signed state and checks for an athlete account mismatch.
+
+The causes are documented in [ANSWER.md](/tmp/h-o3CM7O/ANSWER.md). All five local tests pass. A live OAuth and revocation check still requires real Intervals credentials and an athlete account.

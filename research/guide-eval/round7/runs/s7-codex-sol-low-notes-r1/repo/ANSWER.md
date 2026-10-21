@@ -1,0 +1,7 @@
+# Intervals.icu connection failures
+
+1. The Connect control was a normal link to `GET /api/intervals/auth/init`. Browser navigation does not carry the SPA's `Authorization: Bearer` header, so the endpoint returned 401 for every athlete. Connect now calls an authenticated `POST` through the existing fetch wrapper, then navigates to the returned authorize URL.
+2. The requested scopes listed `ACTIVITY` and `CALENDAR` twice, with both `:READ` and `:WRITE`. Intervals.icu treats `:WRITE` as including `:READ` and rejects duplicate areas at authorization, causing the 400 `invalid_request` seen with a manually opened link. The scope list now has each area once.
+3. The token response has neither `expires_in` nor `refresh_token`. The app invented a one-hour expiry and its background job marked valid connections as expired. Intervals.icu access tokens persist until revoked; the app now keeps the connection and prompts for reconnection only after an Intervals API 401. The code exchange also now sends only the fields this provider accepts: client ID, client secret, and code.
+
+The OAuth callback remains a browser redirect, so it identifies the athlete through the signed, time-limited state parameter. A reconnect with a different Intervals athlete ID is rejected. Live provider verification requires the deployed OAuth credentials and a consenting athlete account; no external service was contacted here.

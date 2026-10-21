@@ -1,0 +1,269 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..ee71d9f
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,94 @@
++# Hide crash on prod, hidden story still in the feed on staging
++
++## Causes
++
++Both symptoms are the same bug: `hidden` is a DynamoDB reserved word and
++`src/app.py` used it as a bare attribute name in two different kinds of
++expression.
++
++1. **Prod crash (`logs/prod-error.log`).** `StoryLibrary.hide()` wrote
++   `SET hidden = :h, ...` in an UpdateExpression with `hidden` bare. DynamoDB
++   rejects that with `ValidationException: Attribute name is a reserved keyword;
++   reserved keyword: hidden`. Loud, and the Hide button returns 500.
++
++2. **Staging feed (`logs/bug-report.md`).** `StoryLibrary.feed()` asked for
++   `ProjectionExpression="slug, title, hidden, published_at"`. A bare reserved
++   word in a ProjectionExpression does not raise. The attribute is just absent
++   from the returned item. So `not i.get("hidden")` never saw the flag, and
++   every hidden story stayed in the public feed. Nothing was logged.
++
++   Dasha's hand-hide was correct: she used `#h` for the name, so `hidden: true`
++   is in the table. The write worked. The read side was the bug. The feed is
++   not cached and does not read another table. It reads the same table and
++   drops the field.
++
++Reproduced locally against `tests/fake_dynamo.py` before the fix:
++- `hide()` raises the same `ValidationException` as the prod log.
++- The hand-hide write succeeds, then `feed()` still returns the story.
++- `scan(ProjectionExpression="slug, hidden")` returns `[{'slug': 'a'}]`, with no
++  error.
++
++## Fix
++
++- `src/app.py`: every attribute name in every expression is now a `#alias`,
++  with an `ExpressionAttributeNames` entry. That covers `publish`, `rename`,
++  `hide`, `feed` and `archive`, including names that are safe today.
++- `archive()` had the same class of bug. `status` is in the
++  ConditionExpression bare, and it is reserved. It is not wired to the API yet,
++  so nothing has crashed, but it would have.
++- Stopped the feed from relying on a silent projection: the projection now uses
++  `#hidden`, with a comment saying why.
++
++Tests (`tests/test_feed.py`, 11 total, all passing):
++- `test_every_expression_uses_aliases`: static check. It parses `src/app.py` and
++  fails on any bare attribute name in any `*Expression` string, reserved or
++  not. This is the guard that stops the bug from coming back. It also catches
++  the silent projection case, which no runtime error would report.
++- `test_hide_then_feed_excludes_it`, and
++  `test_feed_excludes_story_with_hidden_flag_set_by_hand`: the second writes the
++  flag the way the CLI hand-fix did and asserts the feed drops the story. Those
++  two are the "field actually set" tests the note asks for.
++- `test_hide_records_who_and_when`, `test_archive_sets_archived_at`: cover the
++  two paths that were broken.
++- Test for the note's "verify" step, run directly: bare `hidden` in a
++  ProjectionExpression returns `[{'slug': 'a'}]` with no error; `#hidden`
++  returns the flag. Bare `status` in a ConditionExpression raises the
++  ValidationException.
++
++Against the original `src/app.py`, the new tests fail or error: the static guard,
++the hand-hide feed test, the hide test, the hide-then-feed test, and archive.
++Against the fix, all 11 pass.
++
++Not done: no deploy, no change to staging or prod data. The staging story
++`my-first-week` already has `hidden: true`, so it will leave the feed once the
++fixed code is deployed, with no data fix needed. The hand-hide did not set
++`hidden_by` or `hidden_at`, so that item lacks them. Backfilling those is a
++data change on staging, so I left it for a decision.
++
++## Colleague's note: what applied
++
++- **Applied:** the DynamoDB reserved-word failure in an UpdateExpression is loud.
++  The same failure in a ProjectionExpression is silent: the field comes back
++  absent and the filter does nothing. Both were in this repo, and the
++  second was the staging bug. (The note asks for the locations of its
++  update_item, scan and query calls. Here they are all in `src/app.py`:
++  update_item and scan, no query.)
++- **Applied:** alias every attribute name in every expression, as a blanket
++  convention and not a per-word check. Done in `src/app.py`, and enforced by
++  the static test.
++- **Applied:** the filter test must write the field and assert the filter
++  excludes the record. The existing tests never set `hidden`, which is why
++  nothing caught it.
++- **Applied:** `status`, `date`, `name`, `type` are on the reserved list. In this
++  repo `status` is the one in use (in `archive()`). The fake's `RESERVED` set
++  has `status`, `name`, `type` and `date`. `title`, `slug` and `published_at`
++  are not on that set, but are aliased anyway, per the blanket rule.
++- **Did not apply:** the reproduction steps about `similar` and the
++  "second write" crash. This repo has no `similar` field, and no second-write
++  path. The note's `update_item`, `scan` and `query` locations also do not
++  match: the repo has `update_item` and `scan` only, and `query` is not used.
++- **Not verified here:** the note says DynamoDB keeps 573 reserved words. I have
++  no access to the real list. The prod log confirms `hidden` is reserved on the
++  real service. The `status` claim comes only from the note and the fake's
++  subset, not from the real service. The blanket aliasing does not depend on
++  either claim.
+diff --git a/src/app.py b/src/app.py
+index 963b0b5..acfb915 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -34,7 +34,8 @@ class StoryLibrary:
+                 "published_at": int(self.clock()),
+                 "status": "published",
+             },
+-            ConditionExpression="attribute_not_exists(slug)",
++            ConditionExpression="attribute_not_exists(#slug)",
++            ExpressionAttributeNames={"#slug": "slug"},
+         )
+ 
+     def get(self, slug):
+@@ -43,8 +44,9 @@ class StoryLibrary:
+     def rename(self, slug, title):
+         self.table.update_item(
+             Key={"slug": slug},
+-            UpdateExpression="SET title = :t",
+-            ConditionExpression="attribute_exists(slug)",
++            UpdateExpression="SET #title = :t",
++            ConditionExpression="attribute_exists(#slug)",
++            ExpressionAttributeNames={"#title": "title", "#slug": "slug"},
+             ExpressionAttributeValues={":t": title},
+         )
+ 
+@@ -52,14 +54,31 @@ class StoryLibrary:
+         """Author withdraws a story: it stays in the table but leaves the feed."""
+         self.table.update_item(
+             Key={"slug": slug},
+-            UpdateExpression="SET hidden = :h, hidden_by = :by, hidden_at = :t",
+-            ConditionExpression="attribute_exists(slug)",
++            UpdateExpression="SET #hidden = :h, #hidden_by = :by, #hidden_at = :t",
++            ConditionExpression="attribute_exists(#slug)",
++            ExpressionAttributeNames={
++                "#slug": "slug",
++                "#hidden": "hidden",
++                "#hidden_by": "hidden_by",
++                "#hidden_at": "hidden_at",
++            },
+             ExpressionAttributeValues={":h": True, ":by": by, ":t": int(self.clock())},
+         )
+ 
+     def feed(self, limit=FEED_LIMIT):
+         """Public feed: newest first, hidden stories excluded, bodies left out."""
+-        resp = self.table.scan(ProjectionExpression="slug, title, hidden, published_at")
++        # `hidden` must be aliased: a bare reserved word in a ProjectionExpression
++        # is dropped from the result without an error, and the filter below
++        # would then never see the flag.
++        resp = self.table.scan(
++            ProjectionExpression="#slug, #title, #hidden, #published_at",
++            ExpressionAttributeNames={
++                "#slug": "slug",
++                "#title": "title",
++                "#hidden": "hidden",
++                "#published_at": "published_at",
++            },
++        )
+         items = [i for i in resp["Items"] if not i.get("hidden")]
+         items.sort(key=lambda i: i["published_at"], reverse=True)
+         return [
+@@ -72,7 +91,8 @@ class StoryLibrary:
+         Not wired to the API yet (planned for the admin console)."""
+         self.table.update_item(
+             Key={"slug": slug},
+-            UpdateExpression="SET archived_at = :t",
+-            ConditionExpression="status = :published",
++            UpdateExpression="SET #archived_at = :t",
++            ConditionExpression="#status = :published",
++            ExpressionAttributeNames={"#archived_at": "archived_at", "#status": "status"},
+             ExpressionAttributeValues={":t": int(self.clock()), ":published": "published"},
+         )
+diff --git a/tests/test_feed.py b/tests/test_feed.py
+index f64234e..85c933a 100644
+--- a/tests/test_feed.py
++++ b/tests/test_feed.py
+@@ -1,4 +1,6 @@
++import ast
+ import os
++import re
+ import sys
+ import unittest
+ 
+@@ -8,6 +10,46 @@ sys.path.insert(0, ROOT)
+ from src.app import StoryLibrary  # noqa: E402
+ from tests.fake_dynamo import ClientError, FakeTable  # noqa: E402
+ 
++# Words that may appear bare in an expression: operators, keywords and
++# functions. Anything else bare is an attribute name and must be a #alias.
++EXPRESSION_WORDS = {"AND", "OR", "NOT", "SET", "REMOVE", "ADD", "DELETE", "BETWEEN", "IN"}
++EXPRESSION_KWARGS = ("UpdateExpression", "ConditionExpression", "ProjectionExpression",
++                     "FilterExpression", "KeyConditionExpression")
++
++
++def bare_attribute_names(expr):
++    """Attribute names used without a #alias in one expression string."""
++    names = []
++    for m in re.finditer(r"(?<![#:\w])([A-Za-z_]\w*)\b(?!\s*\()", expr):
++        if m.group(1).upper() not in EXPRESSION_WORDS:
++            names.append(m.group(1))
++    return names
++
++
++class ExpressionAliasTests(unittest.TestCase):
++    """DynamoDB's reserved-word list is long, and a bare reserved word in a
++    ProjectionExpression fails silently. So every attribute name in every
++    expression in src/app.py must be a #alias, reserved or not."""
++
++    def test_every_expression_uses_aliases(self):
++        with open(os.path.join(ROOT, "src", "app.py")) as f:
++            tree = ast.parse(f.read())
++        checked, offenders = 0, []
++        for node in ast.walk(tree):
++            if not isinstance(node, ast.keyword) or node.arg not in EXPRESSION_KWARGS:
++                continue
++            self.assertIsInstance(node.value, ast.Constant, "expressions must be string literals")
++            checked += 1
++            for name in bare_attribute_names(node.value.value):
++                offenders.append(f"{node.arg}: {name!r} in {node.value.value!r}")
++        self.assertGreaterEqual(checked, 8)  # guard against the scan finding nothing
++        self.assertEqual(offenders, [])
++
++    def test_guard_catches_bare_names(self):
++        self.assertEqual(bare_attribute_names("SET hidden = :h"), ["hidden"])
++        self.assertEqual(bare_attribute_names("attribute_exists(#slug) AND status = :s"), ["status"])
++        self.assertEqual(bare_attribute_names("SET #hidden = :h, #by = :by"), [])
++
+ 
+ class FeedTests(unittest.TestCase):
+     def setUp(self):
+@@ -39,6 +81,38 @@ class FeedTests(unittest.TestCase):
+         self.lib.rename("hello", "Hello, world")
+         self.assertEqual(self.lib.get("hello")["title"], "Hello, world")
+ 
++    def test_hide_then_feed_excludes_it(self):
++        # The field must be set for the filter to mean anything: write it,
++        # then check the feed really drops the story.
++        self.lib.publish("hello", "Hello", "...", "ann")
++        self.lib.publish("other", "Other", "...", "bob")
++        self.lib.hide("hello", by="ann")
++        self.assertEqual([s["slug"] for s in self.lib.feed()], ["other"])
++
++    def test_feed_excludes_story_with_hidden_flag_set_by_hand(self):
++        # The same write the staging hand-fix did with the AWS CLI (aliased).
++        self.lib.publish("my-first-week", "My first week", "...", "dasha")
++        self.lib.table.update_item(
++            Key={"slug": "my-first-week"},
++            UpdateExpression="SET #h = :t",
++            ExpressionAttributeNames={"#h": "hidden"},
++            ExpressionAttributeValues={":t": True},
++        )
++        self.assertEqual(self.lib.get("my-first-week")["hidden"], True)
++        self.assertEqual(self.lib.feed(), [])
++
++    def test_hide_records_who_and_when(self):
++        self.lib.publish("hello", "Hello", "...", "ann")
++        self.lib.hide("hello", by="vk")
++        item = self.lib.get("hello")
++        self.assertEqual((item["hidden"], item["hidden_by"], item["hidden_at"]),
++                         (True, "vk", self.now))
++
++    def test_archive_sets_archived_at(self):
++        self.lib.publish("hello", "Hello", "...", "ann")
++        self.lib.archive("hello")
++        self.assertEqual(self.lib.get("hello")["archived_at"], self.now)
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

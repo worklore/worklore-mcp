@@ -1,0 +1,98 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..ce7177e
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,36 @@
++# Cause and Fix for Second Publish 500 Error
++
++## Cause
++On the first publish to an empty DynamoDB table (`stories`), `table.scan()` returns no items (`existing = []`). As a result, `related(story, existing)` returns an empty list (`similar: []`), and no similarity score is computed or stored.
++
++On the second publish, the table contains existing stories, so `similarity(story, other)` is invoked. In Python, `similarity()` calculated a floating-point score:
++```python
++round(0.7 * tag_score + 0.3 * word_score, 4)
++```
++Boto3's DynamoDB serializer (`TypeSerializer`) does not support Python `float` values, raising:
++```
++TypeError: Float types are not supported. Use Decimal types instead.
++```
++This unhandled exception caused the Lambda `handler()` to catch the generic exception and return `500 Internal Server Error`.
++
++## Fix
++1. **Source Fix (`src/app.py`)**:
++   Imported `Decimal` from Python's standard `decimal` library and converted the computed similarity score from `similarity()` to `Decimal`:
++   ```python
++   return Decimal(str(round(0.7 * tag_score + 0.3 * word_score, 4)))
++   ```
++   DynamoDB serializes `Decimal` numbers without error.
++
++2. **Regression Prevention / Test Suite Update (`tests/test_publish.py`)**:
++   Added an integration test (`test_second_publish_succeeds_with_similarity_scores`) that publishes an initial story and then performs a second publish. This exercises the non-empty table write path where similarity scoring executes, ensuring floats cannot be reintroduced into DynamoDB items.
++
++## Colleague's Note: What Applied and What Was Ignored
++
++### Parts that applied:
++- **Root cause analysis**: The observation that DynamoDB rejects Python `float` values (`TypeError: Float types are not supported. Use Decimal types instead.`) and that the bug only surfaces when existing records exist because similarity calculation is bypassed on an empty table.
++- **Conversion to Decimal**: Converting floating-point scores to `Decimal` before writing to DynamoDB.
++- **Testing recommendations**: Seeding/testing against a populated table (publishing at least twice) to exercise state-dependent code paths.
++
++### Parts ignored:
++- Converting similarity scores to integer percentages: Retaining `Decimal(str(round(...)))` preserves the existing 4-decimal-place precision expected by clients without changing score representation to integer percentages.
++- Advice regarding external deployment, publishing, or real AWS tables, as the workspace uses local tests (`FakeTable`) under the given ground rules.
+diff --git a/src/app.py b/src/app.py
+index db49c5e..5931a84 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -4,6 +4,7 @@ Each story is stored in one DynamoDB item together with the three most similar
+ stories already in the library (``similar``), so the reader page can show
+ "related" without a query at read time.
+ """
++from decimal import Decimal
+ import json
+ import logging
+ import re
+@@ -27,7 +28,7 @@ def similarity(a, b):
+     tag_score = len(ta & tb) / len(ta | tb) if (ta | tb) else 0
+     wa, wb = words(a.get("body")), words(b.get("body"))
+     word_score = len(wa & wb) / len(wa | wb) if (wa | wb) else 0
+-    return round(0.7 * tag_score + 0.3 * word_score, 4)
++    return Decimal(str(round(0.7 * tag_score + 0.3 * word_score, 4)))
+ 
+ 
+ def related(story, existing):
+diff --git a/tests/test_publish.py b/tests/test_publish.py
+index 6c9ac44..9a1e82b 100644
+--- a/tests/test_publish.py
++++ b/tests/test_publish.py
+@@ -23,6 +23,30 @@ class PublishTest(unittest.TestCase):
+         self.assertEqual(table.get_item(Key={"slug": "why-my-cron-ran-twice"})["Item"]["title"], "Why my cron ran twice")
+         self.assertEqual(table.scan()["Count"], 1)
+ 
++    def test_second_publish_succeeds_with_similarity_scores(self):
++        table = FakeTable()
++        story1 = {
++            "slug": "why-my-cron-ran-twice",
++            "title": "Why my cron ran twice",
++            "tags": ["cron", "linux"],
++            "body": "Two crontabs, one for root and one for me, both had the line.",
++        }
++        story2 = {
++            "slug": "debugging-cron-jobs",
++            "title": "Debugging cron jobs",
++            "tags": ["cron", "monitoring"],
++            "body": "Checking logs for cron schedule issues.",
++        }
++        resp1 = app.handler({"body": app.json.dumps(story1)}, table)
++        self.assertEqual(resp1["statusCode"], 201)
++
++        resp2 = app.handler({"body": app.json.dumps(story2)}, table)
++        self.assertEqual(resp2["statusCode"], 201)
++
++        stored2 = table.get_item(Key={"slug": "debugging-cron-jobs"})["Item"]
++        self.assertEqual(len(stored2["similar"]), 1)
++        self.assertEqual(stored2["similar"][0]["slug"], "why-my-cron-ran-twice")
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

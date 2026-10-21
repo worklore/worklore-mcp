@@ -1,0 +1,31 @@
+# Fix for Prompt Caching Invalidation on Memory Writes
+
+## Cause of the Issue
+Previously in `bot.py`, `build_system()` concatenated the static coaching instructions (`INSTRUCTIONS`) and the dynamic athlete profile / memory facts (`athlete_context`) into a single text content block with `cache_control: {"type": "ephemeral"}`:
+
+```python
+def build_system(a, today):
+    # One block, cached as a whole: instructions + per-athlete context.
+    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
+```
+
+Because Claude prompt caching operates on exact sequential prefix matches, any update to `a.facts` via `save_fact` altered the text of this single block. This caused a complete cache miss, requiring subsequent API calls to pay full cache-creation costs (`cache_creation_input_tokens` ~1000+) to re-cache the entire system prompt.
+
+## Changes Made
+In `bot.py`, `build_system()` was updated to separate the system prompt into two distinct content blocks:
+
+1. **Static Instructions Block**: Contains `INSTRUCTIONS` with `"cache_control": {"type": "ephemeral"}`.
+2. **Dynamic Context Block**: Contains `athlete_context(a, today)` without a cache control breakpoint.
+
+```python
+def build_system(a, today):
+    # Split into static instructions (cached) and dynamic athlete context
+    return [
+        {"type": "text", "text": INSTRUCTIONS, "cache_control": {"type": "ephemeral"}},
+        {"type": "text", "text": athlete_context(a, today)},
+    ]
+```
+
+## Result
+The static prompt prefix (tools and coaching instructions) remains unchanged across memory updates and across athletes. When `save_fact` modifies an athlete's facts, only the subsequent dynamic context block changes, preventing eviction of the cached static instructions.

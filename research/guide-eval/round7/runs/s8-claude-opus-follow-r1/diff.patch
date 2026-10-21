@@ -1,0 +1,103 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..ee404c6
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,59 @@
++# Prompt caching fix: memory writes no longer evict the static instructions
++
++## Problem
++`build_system()` sent the whole system prompt (`INSTRUCTIONS` plus athlete context)
++as **one** text block with a single `cache_control` marker. The cache works on a
++prefix hash, so when `save_fact` appended a fact, the block's hash changed and the
++whole cached prefix (about 1,050 tokens: tools, instructions, context) missed.
++`logs/usage.jsonl` shows this: every call after a `save_fact` has
++`cache_read_input_tokens: 0` and `cache_creation_input_tokens` ≈ the full prompt.
++
++## Change (`bot.py`, `build_system`)
++The system prompt is now two text blocks, each with `cache_control: {"type": "ephemeral"}`:
++
++1. `INSTRUCTIONS`: static and byte-identical for every athlete and every day
++   (nothing is interpolated into it).
++2. `athlete_context(a, today)`: the volatile tail (date, profile, zones, goal,
++   facts, language).
++
++A memory write (or the date changing) now invalidates only segment 2. The
++tools + instructions prefix stays cached. The request uses 2 of the 4 allowed markers.
++Tool selection was left as it is. `select_tools` keeps a fixed order, so the
++tools part of the prefix is byte-stable for a given keyword group. I also
++updated the caching paragraph in `README.md`.
++
++Checked offline (no API calls): segment 1 is identical across athletes 42 and
++77, across dates, and before and after a fact is appended. Only segment 2 changes.
++
++## ⚠ Caveat: the static segment may be below the minimum cacheable size
++`claude-sonnet-4-5` caches a prefix only if it is **at least 1,024 tokens**.
++Shorter prefixes are silently not cached, even when they carry a marker.
++Estimate from the logs: athlete 77's whole prompt is exactly 1,024 tokens, and
++athlete 42's is 1,046 with 3 facts at roughly 15 tokens per fact. The tail is
++about 110–130 tokens. That puts **tools (core only) + instructions at about
++900–930 tokens, under the limit**:
++
++- Messages that pull in the `plan` or `race` tool group have a static prefix of
++  roughly 1,100+ tokens, so the fix works for them.
++- On core-only messages (most of them), marker 1 is probably ignored. A memory
++  write would then still re-cache the full ~1,050 tokens.
++
++I could not measure this precisely without calling the API (I didn't). Ways to
++get the static prefix past 1,024 tokens, which I left for you to choose:
++- always send `plan_week` and `predict_race`. That is about 150–250 more tokens,
++  but they are read from cache at 10% price, and the tools become fully
++  byte-stable. NOTES.md says to keep keyword filtering, so I didn't do this.
++- add more genuinely static coaching content to `INSTRUCTIONS`.
++
++Note also that Opus 4.5 and Haiku 4.5 have a 4,096-token minimum. Switching
++`MODEL` to either would make both segments uncacheable.
++
++## How to verify
++Run `python3 bot.py 42` and look at `logs/usage.jsonl`:
++1. Send two messages within 5 minutes. The second should show
++   `cache_read_input_tokens` covering about the whole prompt.
++2. Tell the bot a durable fact (this triggers `save_fact`). On the next call,
++   `cache_read_input_tokens` should be about the static size (~900+) and
++   `cache_creation_input_tokens` should be only the tail (~130).
++   If `cache_creation` is still the full prompt, you are hitting the 1,024-token
++   minimum described above.
+diff --git a/README.md b/README.md
+index ebd390e..0985958 100644
+--- a/README.md
++++ b/README.md
+@@ -12,5 +12,8 @@ Run it locally with `COACH_ANTHROPIC_KEY=sk-ant-... python3 bot.py 42` and type
+ messages on stdin (the Telegram long-polling transport, which needs
+ `COACH_TELEGRAM_TOKEN`, lives in a separate deploy repo and just calls `reply()`).
+ Requires Python 3.11+ and `pip install anthropic`. Prompt caching is on: the system
+-prompt carries a `cache_control` marker so the tool-loop rounds and follow-up
+-messages inside the 5-minute window read it from cache.
++prompt is two blocks, each with a `cache_control` marker: the static coaching
++rules, then the per-athlete tail (date, profile, facts). Tool-loop rounds and
++follow-up messages inside the 5-minute window read both from cache; a
++`save_fact` only re-caches the tail. Keep `INSTRUCTIONS` byte-stable (nothing
++interpolated) or every call misses.
+diff --git a/bot.py b/bot.py
+index e2ff241..a88a0eb 100644
+--- a/bot.py
++++ b/bot.py
+@@ -128,9 +128,15 @@ def athlete_context(a, today):
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    # Two cached segments. The cache is a prefix hash, so with one marker every
++    # save_fact (which rewrites the facts list) evicted the instructions too.
++    # Segment 1 is INSTRUCTIONS only: byte-identical for every athlete and day,
++    # never interpolate anything into it. Segment 2 is the volatile tail (date,
++    # profile, facts); a memory write re-caches only this part.
++    return [
++        {"type": "text", "text": INSTRUCTIONS, "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": athlete_context(a, today), "cache_control": {"type": "ephemeral"}},
++    ]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [

@@ -1,0 +1,52 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..23de3b5
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,7 @@
++# Second publish returns 500
++
++**Cause:** `related()` in `src/app.py` puts `score` values into the item as Python floats (`similarity()` returns `round(..., 4)`). boto3's DynamoDB serializer rejects floats (`TypeError: Float types are not supported. Use Decimal types instead.`). The first publish worked only because the table was empty, so `similar` was `[]` and no float was written. Every publish after that has at least one scored neighbour and fails in `put_item`. `handler` turns the TypeError into a 500.
++
++**Fix:** `related()` now stores `Decimal(str(score))`. The `str()` step avoids binary-float noise in the stored value. The change is at the point where the item is built, so no float can reach `put_item`.
++
++**Prevention:** the fake table in `tests/fake_dynamo.py` already rejects floats like boto3 does. The only existing test published a single story, so it never hit the failing path. I added `test_second_publish_with_similar_stories`, which publishes several stories in a row. Run the tests with `python3 -m unittest discover tests`.
+diff --git a/src/app.py b/src/app.py
+index db49c5e..d3d8129 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -8,6 +8,7 @@ import json
+ import logging
+ import re
+ import time
++from decimal import Decimal
+ 
+ log = logging.getLogger("stories")
+ 
+@@ -35,7 +36,7 @@ def related(story, existing):
+     for other in existing:
+         if other["slug"] == story["slug"]:
+             continue
+-        scored.append({"slug": other["slug"], "score": similarity(story, other)})
++        scored.append({"slug": other["slug"], "score": Decimal(str(similarity(story, other)))})
+     scored.sort(key=lambda s: s["score"], reverse=True)
+     return scored[:TOP_N]
+ 
+diff --git a/tests/test_publish.py b/tests/test_publish.py
+index 6c9ac44..d64cb35 100644
+--- a/tests/test_publish.py
++++ b/tests/test_publish.py
+@@ -23,6 +23,13 @@ class PublishTest(unittest.TestCase):
+         self.assertEqual(table.get_item(Key={"slug": "why-my-cron-ran-twice"})["Item"]["title"], "Why my cron ran twice")
+         self.assertEqual(table.scan()["Count"], 1)
+ 
++    def test_second_publish_with_similar_stories(self):
++        table = FakeTable()
++        for slug, tags in (("first-story", ["cron", "linux"]), ("second-story", ["cron"]), ("third-story", ["go"])):
++            app.publish(table, {"slug": slug, "title": slug, "tags": tags, "body": "cron runs twice"})
++        similar = table.get_item(Key={"slug": "third-story"})["Item"]["similar"]
++        self.assertEqual(len(similar), 2)
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

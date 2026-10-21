@@ -1,0 +1,30 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..302e6f3
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,5 @@
++# Prompt cache fix
++
++`build_system()` now sends two text blocks with `cache_control: ephemeral`: the shared coaching instructions first, followed by the date and athlete context. A `save_fact` write changes only the second block, so the unchanged instruction prefix can still be read from cache. Tool selection and the tool-use loop are unchanged.
++
++Verified locally that a `save_fact` call changes the athlete context block while leaving the instruction block and selected tools identical. No live API call was made, so cache token counts were not measured after the change.
+diff --git a/bot.py b/bot.py
+index e2ff241..d24dede 100644
+--- a/bot.py
++++ b/bot.py
+@@ -128,9 +128,11 @@ def athlete_context(a, today):
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    # Keep the shared instructions cached when an athlete's context changes.
++    return [
++        {"type": "text", "text": INSTRUCTIONS, "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": athlete_context(a, today), "cache_control": {"type": "ephemeral"}},
++    ]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [

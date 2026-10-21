@@ -1,0 +1,3 @@
+The second publish failed because it stored a similarity score as a Python float. The first publish had no existing stories, so it stored no score and succeeded. DynamoDB rejected the float on the second write.
+
+I converted stored scores to `Decimal` in [app.py](/tmp/h-l1C3Nt/src/app.py), added a two-publish regression test, and documented the cause, fix, and applicable parts of the colleague’s note in [ANSWER.md](/tmp/h-l1C3Nt/ANSWER.md). The new test reproduced the 500 before the fix; both tests now pass.

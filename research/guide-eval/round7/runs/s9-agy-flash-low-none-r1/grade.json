@@ -1,0 +1,36 @@
+{
+ "answer_file": true,
+ "answer_source": "repo",
+ "bug1_named": true,
+ "bug2_named": true,
+ "latent_named": true,
+ "blanket_rule_named": true,
+ "bare_reserved_left": [],
+ "update_bare_hidden_left": [],
+ "projection_bare_left": [],
+ "hidden_check": {
+  "hide_ok": true,
+  "feed_ok": true,
+  "visible_ok": true,
+  "error": null,
+  "feed": [
+   "beta"
+  ]
+ },
+ "bug1_fixed": true,
+ "bug2_fixed": true,
+ "blanket": true,
+ "seeded_test": false,
+ "fixture_tests_pass": true,
+ "fixture_tests_tail": [
+  "OK"
+ ],
+ "changed_files": [
+  "ANSWER.md",
+  "src/app.py",
+  "tests/test_feed.py"
+ ],
+ "commands_issued": 6,
+ "answer_chars": 1646,
+ "PASS": true
+}

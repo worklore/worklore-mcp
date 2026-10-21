@@ -1,0 +1,131 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..eb19c13
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,11 @@
++# Intervals.icu connect failures — causes and fixes
++
++1. **Connect button always 401 (all athletes).** The button was a plain link to `GET /api/intervals/auth/init`. A full-page navigation does not send the `Authorization` header the SPA keeps in localStorage, so `require_user` returned 401 (ticket #214, log section 1). Fix: init is now an authenticated `POST` returning `{authorize_url}` as JSON (`server.py`); the SPA calls it via the fetch wrapper and does `window.location.assign(authorize_url)` (`static/app.js`). The callback stays an unauthenticated GET; identity travels in the signed `state`.
++2. **Authorize URL rejected with 400 `invalid_request` since 2026-10-02.** `config.SCOPES` named `ACTIVITY` and `CALENDAR` twice (`:READ` and `:WRITE`). `:WRITE` implies `:READ`, and Intervals rejects repeats (the colleague's "Duplicate scope"; our 400 body doesn't name it, but this is the only malformed parameter and matches the timing of the calendar-sync change). Now `ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE`. Not verified against the live Intervals service.
++3. **Connection "expired" after an hour.** Intervals tokens have no `refresh_token` and no `expires_in`; they last until revoked. Our code invented a 3600s default TTL and the refresher marked tokens expired with no refresh token (log: Rivera, 2026-09-19). Fix: removed the default TTL; `expires_at` is `None` when the provider gives none and the refresher skips such tokens. Revocation is handled lazily: a 401 from the Intervals API marks the connection "expired, reconnect" and clears the token.
++
++## Colleague's note: what applied
++- Applied: no refresh_token / never expires (#3), duplicate scope (#2), GET→POST init (#1), lazy 401 handling.
++- Not applied: `SETTINGS:WRITE` scope (we don't need it); the token exchange without `grant_type`/`redirect_uri` (our exchange demonstrably worked in the Rivera log, so left unchanged); JWT state, encryption at rest, and the account-mismatch guard (good hardening, but not causes here and out of scope; our HMAC state with a 15-minute TTL already works; tokens are still stored in plaintext in memory).
++
++Not tested end-to-end: no real Intervals credentials here; only a syntax check was run.
+diff --git a/config.py b/config.py
+index 54a8144..e39e425 100644
+--- a/config.py
++++ b/config.py
+@@ -8,6 +8,6 @@ INTERVALS_BASE = os.environ.get("INTERVALS_BASE", "https://intervals.icu")
+ CLIENT_ID = "tricoach-dev"
+ CLIENT_SECRET = "s3cr3t-placeholder-0000"
+ REDIRECT_URI = f"http://localhost:{PORT}/api/intervals/callback"
+-SCOPES = "ACTIVITY:READ,ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:READ,CALENDAR:WRITE"
++SCOPES = "ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE"
+ 
+ REFRESH_INTERVAL = 60      # seconds between passes of the token refresher
+diff --git a/server.py b/server.py
+index 351cbb7..477936d 100644
+--- a/server.py
++++ b/server.py
+@@ -12,7 +12,6 @@ import config
+ STATIC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
+ TOKEN_URL = config.INTERVALS_BASE + "/api/oauth/token"
+ AUTHORIZE_URL = config.INTERVALS_BASE + "/oauth/authorize"
+-DEFAULT_TOKEN_TTL = 3600   # seconds; used when the provider does not say how long a token lives
+ 
+ # --- in-memory store -------------------------------------------------------
+ USERS = {
+@@ -63,18 +62,17 @@ def exchange_code(code):
+ 
+ 
+ def store_connection(user_id, tok):
+-    expires_in = int(tok.get("expires_in") or DEFAULT_TOKEN_TTL)
++    # Intervals tokens are long-lived: no refresh_token, no expires_in. They die only on revocation (seen as a 401).
++    expires_in = int(tok["expires_in"]) if tok.get("expires_in") else None
+     refresh = tok.get("refresh_token")
+-    if not refresh:
+-        log(f"{user_id}: no refresh_token in response, scheduling expiry in {expires_in}s")
+     athlete = tok.get("athlete") or {}
+     with LOCK:
+         CONNECTIONS[user_id] = {
+             "athlete_id": athlete.get("id"), "athlete_name": athlete.get("name"),
+             "access_token": tok["access_token"], "refresh_token": refresh,
+-            "scope": tok.get("scope"), "expires_at": time.time() + expires_in, "status": "connected",
++            "scope": tok.get("scope"), "expires_at": time.time() + expires_in if expires_in else None, "status": "connected",
+         }
+-    log(f"{user_id}: connected as athlete {athlete.get('id')} (expires in {expires_in}s)")
++    log(f"{user_id}: connected as athlete {athlete.get('id')} (expires_in={expires_in})")
+ 
+ 
+ def refresh_tokens():
+@@ -84,7 +82,7 @@ def refresh_tokens():
+         now = time.time()
+         with LOCK:
+             for uid, c in CONNECTIONS.items():
+-                if c["status"] != "connected" or c["expires_at"] - now > 300:
++                if c["status"] != "connected" or c["expires_at"] is None or c["expires_at"] - now > 300:
+                     continue
+                 if not c["refresh_token"]:
+                     log(f"{uid}: token expiry passed and no refresh token on file -> expired, reconnect")
+@@ -164,8 +162,6 @@ class Handler(BaseHTTPRequestHandler):
+         if url.path == "/api/me":
+             user = self.require_user()
+             return user and self.send_json(200, user)
+-        if url.path == "/api/intervals/auth/init":
+-            return self.auth_init()
+         if url.path == "/api/intervals/callback":
+             return self.callback(q)
+         if url.path == "/api/intervals/status":
+@@ -176,6 +172,8 @@ class Handler(BaseHTTPRequestHandler):
+ 
+     def do_POST(self):
+         url = urllib.parse.urlsplit(self.path)
++        if url.path == "/api/intervals/auth/init":
++            return self.auth_init()
+         if url.path == "/api/intervals/disconnect":
+             user = self.require_user()
+             if user:
+@@ -192,7 +190,7 @@ class Handler(BaseHTTPRequestHandler):
+             return
+         params = {"client_id": config.CLIENT_ID, "redirect_uri": config.REDIRECT_URI,
+                   "scope": config.SCOPES, "state": sign_state(user["id"])}
+-        self.redirect(AUTHORIZE_URL + "?" + urllib.parse.urlencode(params, safe=":,"))
++        self.send_json(200, {"authorize_url": AUTHORIZE_URL + "?" + urllib.parse.urlencode(params, safe=":,")})
+ 
+     # Step 2: Intervals redirects back here with ?code=&state=.
+     def callback(self, q):
+@@ -233,6 +231,9 @@ class Handler(BaseHTTPRequestHandler):
+             code, data = intervals_get(c, "/wellness")
+             self.send_json(code, data)
+         except urllib.error.HTTPError as e:
++            if e.code == 401:  # revoked on the Intervals side
++                with LOCK:
++                    c.update(status="expired, reconnect", access_token=None)
+             self.send_json(e.code, {"error": f"intervals returned {e.code}"})
+         except Exception as e:
+             self.send_json(502, {"error": str(e)})
+diff --git a/static/app.js b/static/app.js
+index 368922e..f45fd8a 100644
+--- a/static/app.js
++++ b/static/app.js
+@@ -25,10 +25,15 @@ async function render() {
+     } else {
+       const why = st.status && st.status !== "disconnected" ? `<p class="muted">Status: ${esc(st.status)}</p>` : "";
+       card = `<div class="card">Intervals.icu is not connected.${why}
+-        <p><a class="btn" href="/api/intervals/auth/init">Connect Intervals.icu</a></p></div>`;
++        <p><button class="btn" id="connect">Connect Intervals.icu</button></p></div>`;
+     }
+     root.className = "";
+     root.innerHTML = `<p>Signed in as <b>${esc(me.name)}</b>.</p>${card}`;
++    const cn = document.getElementById("connect");
++    if (cn) cn.onclick = async () => {
++      try { window.location.assign((await api("/api/intervals/auth/init", { method: "POST" })).authorize_url); }
++      catch (e) { root.innerHTML = `<p class="card">Error: ${esc(e.message)}</p>`; }
++    };
+     const d = document.getElementById("disconnect");
+     if (d) d.onclick = async () => { await api("/api/intervals/disconnect", { method: "POST" }); render(); };
+   } catch (e) {

@@ -1,0 +1,101 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..65bd0b0
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,28 @@
++# Cause and Fix: Second Publish 500 Error
++
++## Cause
++
++1. **DynamoDB Rejects Python Floats**:
++   Boto3 / DynamoDB serializers do not support native Python `float` values, requiring `int` or `decimal.Decimal` instead (as evidenced by `TypeError: Float types are not supported. Use Decimal types instead` in `logs/error.log`).
++
++2. **Why the First Publish Succeeded**:
++   When the table was completely empty, `table.scan()` returned no items (`[]`). Consequently, `related(story, existing)` returned an empty list `[]`. No similarity scores were calculated or stored in `item["similar"]`, so no float attributes existed during the first `table.put_item()` call.
++
++3. **Why the Second Publish Failed**:
++   On the second publish, the table already contained the first item. The state-dependent similarity code path executed: `similarity(story, other)` computed the similarity score using `round(0.7 * tag_score + 0.3 * word_score, 4)`, returning a Python `float`. This float was stored under `item["similar"][i]["score"]`, causing `table.put_item(Item=item)` to fail with a `TypeError`, which `handler()` caught and returned as HTTP 500.
++
++---
++
++## Fix
++
++1. **Code Fix (`src/app.py`)**:
++   Updated `similarity()` in [src/app.py](file:///tmp/h-10mOYE/src/app.py) to return integer percentages instead of floating-point numbers:
++   ```python
++   return round(100 * (0.7 * tag_score + 0.3 * word_score))
++   ```
++   In Python 3, `round(x)` without a precision argument returns an `int`, which DynamoDB safely accepts.
++
++2. **Test Fix (`tests/test_publish.py`)**:
++   Added integration tests in [tests/test_publish.py](file:///tmp/h-10mOYE/tests/test_publish.py) that seed the table with an existing story before publishing a second one:
++   - `test_publish_with_seeded_table_computes_similarity`: Verifies that publishing to a seeded table executes the similarity calculation path, successfully writes to the table, and stores integer scores.
++   - `test_handler_publish_twice`: Verifies end-to-end `POST /stories` handling across multiple consecutive publishes.
+diff --git a/src/app.py b/src/app.py
+index db49c5e..75a8727 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -27,7 +27,7 @@ def similarity(a, b):
+     tag_score = len(ta & tb) / len(ta | tb) if (ta | tb) else 0
+     wa, wb = words(a.get("body")), words(b.get("body"))
+     word_score = len(wa & wb) / len(wa | wb) if (wa | wb) else 0
+-    return round(0.7 * tag_score + 0.3 * word_score, 4)
++    return round(100 * (0.7 * tag_score + 0.3 * word_score))
+ 
+ 
+ def related(story, existing):
+diff --git a/tests/test_publish.py b/tests/test_publish.py
+index 6c9ac44..abd48f9 100644
+--- a/tests/test_publish.py
++++ b/tests/test_publish.py
+@@ -23,6 +23,49 @@ class PublishTest(unittest.TestCase):
+         self.assertEqual(table.get_item(Key={"slug": "why-my-cron-ran-twice"})["Item"]["title"], "Why my cron ran twice")
+         self.assertEqual(table.scan()["Count"], 1)
+ 
++    def test_publish_with_seeded_table_computes_similarity(self):
++        table = FakeTable()
++        seed_story = {
++            "slug": "why-my-cron-ran-twice",
++            "title": "Why my cron ran twice",
++            "tags": ["cron", "linux"],
++            "body": "Two crontabs, one for root and one for me, both had the line.",
++        }
++        app.publish(table, seed_story)
++
++        second_story = {
++            "slug": "cron-troubleshooting-guide",
++            "title": "Cron Troubleshooting Guide",
++            "tags": ["cron", "scheduling"],
++            "body": "When cron jobs run multiple times, check root and user crontabs.",
++        }
++        stored = app.publish(table, second_story)
++        self.assertEqual(stored["slug"], "cron-troubleshooting-guide")
++        self.assertEqual(len(stored["similar"]), 1)
++        self.assertEqual(stored["similar"][0]["slug"], "why-my-cron-ran-twice")
++        self.assertIsInstance(stored["similar"][0]["score"], int)
++        self.assertEqual(table.scan()["Count"], 2)
++
++    def test_handler_publish_twice(self):
++        import json
++        table = FakeTable()
++        body1 = {
++            "slug": "first-story",
++            "title": "First Story",
++            "tags": ["python"],
++            "body": "A story about python.",
++        }
++        body2 = {
++            "slug": "second-story",
++            "title": "Second Story",
++            "tags": ["python"],
++            "body": "Another story about python.",
++        }
++        resp1 = app.handler({"body": json.dumps(body1)}, table)
++        self.assertEqual(resp1["statusCode"], 201)
++        resp2 = app.handler({"body": json.dumps(body2)}, table)
++        self.assertEqual(resp2["statusCode"], 201)
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

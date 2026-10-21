@@ -1,0 +1,3 @@
+Found and fixed two authorization gaps: Bob could `like` and `view` Alice’s private task despite being unable to read it. Both actions now return `403` without changing the task.
+
+The cross-user regression checks and existing tests pass: **8 tests total**. The evidence, fix, and applicable parts of the colleague’s note are in [ANSWER.md](/tmp/h-rPxUUt/ANSWER.md).

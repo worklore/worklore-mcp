@@ -1,0 +1,56 @@
+{
+ "port": 60066,
+ "killed_before_start": [],
+ "server_started": true,
+ "server_error": "",
+ "tests_tail": "HTTP/1.1\" 201 -\n21:30:06 \"POST /tasks/2/like HTTP/1.1\" 200 -\n21:30:06 \"POST /tasks/2/view HTTP/1.1\" 200 -\n21:30:06 \"POST /tasks/2/nudge HTTP/1.1\" 200 -\n21:30:06 \"POST /tasks/2/complete HTTP/1.1\" 200 -\n.\n----------------------------------------------------------------------\nRan 8 tests in 0.526s\n\nOK\n",
+ "answer_file": true,
+ "answer_source": "repo",
+ "setup": {
+  "private_id": 4,
+  "public_id": 5
+ },
+ "probe_private_by_bob": {
+  "get": 403,
+  "patch": 403,
+  "comments": 403,
+  "complete": 403,
+  "nudge": 403,
+  "like": 403,
+  "view": 403,
+  "delete": 403,
+  "list": "ok"
+ },
+ "private_counters_after": {
+  "likes": 0,
+  "views": 0
+ },
+ "legit_paths": {
+  "alice_reads_private": true,
+  "bob_reads_public": true,
+  "bob_likes_public": true,
+  "bob_views_public": true,
+  "bob_delete_public_forbidden": true
+ },
+ "gaps_closed": true,
+ "other_endpoints_closed": true,
+ "regression": false,
+ "named_like": true,
+ "named_view": true,
+ "false_positives": [],
+ "two_accounts": true,
+ "probed_like": true,
+ "probed_view": true,
+ "fixture_tests_pass": true,
+ "api_changed": true,
+ "changed_files": [
+  "ANSWER.md",
+  "__pycache__/api.cpython-314.pyc",
+  "api.py",
+  "tests/__pycache__/test_api.cpython-314.pyc",
+  "tests/test_api.py"
+ ],
+ "commands_issued": 4,
+ "answer_chars": 1549,
+ "PASS": true
+}

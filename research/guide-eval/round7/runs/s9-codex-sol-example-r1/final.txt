@@ -1,0 +1,3 @@
+Fixed the hide crash and the feed path that could include a hidden story. All DynamoDB attribute names in this module’s expressions now use aliases, and regression tests cover both hiding through the library and a story marked hidden directly in the table.
+
+[ANSWER.md](/tmp/h-lJhsOU/ANSWER.md) records the causes, the relevant parts of the colleague’s note, and the verification limit. All 8 tests pass. No deployment or live AWS test was performed.

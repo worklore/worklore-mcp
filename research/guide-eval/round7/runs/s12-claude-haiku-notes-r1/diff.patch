@@ -1,0 +1,133 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..a9e5ec6
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,66 @@
++# Authorization review: tasks-api
++
++**Question:** can one user see or change what they shouldn't?
++
++**Answer:** Yes, before the fix. One user could change another user's private task. Bob could
++`POST /tasks/1/like` and `POST /tasks/1/view` on Alice's private task and get 200 back, which
++incremented her counters. Every other endpoint correctly returned 403 for Bob.
++
++## Finding (fixed)
++
++| | |
++|---|---|
++| Endpoints | `POST /tasks/{id}/like`, `POST /tasks/{id}/view` |
++| Cause | No `can_access` check. The other social endpoints (`comments`, `nudge`) have one. |
++| Violated rule | README: "a private task is visible and touchable only by its owner (403 for anyone else)" |
++| Reproduced | Bob → `like` on private task #1: 200, `likes` went 0 → 1. Same for `view`. |
++| Impact | A stranger can change counters on a private task and learn that it exists. Integrity impact is small, but it is a direct break of the stated rule. The same gap is described in `notes/a-stranger-could-like-my-private-tasks.md`. |
++
++**Fix** (`api.py`): both handlers now return 403 unless `can_access(user, task)` is true, the same
++guard `comments` and `nudge` use.
++
++## Hardening (fixed)
++
++- `PATCH /tasks/{id}` accepted any `visibility` string (e.g. `"secret"`), which leaves the task in a
++  state the access rules do not define. It now returns 400 unless the value is `private` or `public`.
++  This is an owner-only action, so it is not a cross-user hole.
++
++## Tests
++
++- Added to `tests/test_api.py`:
++  - `test_stranger_cannot_touch_private_task`: every endpoint returns 403 for Bob on private task #1,
++    and the owner's counters stay at 0.
++  - `test_stranger_can_like_and_view_public_task`: the fix does not block legitimate use on public tasks.
++  - `test_visibility_must_be_valid_on_patch`: invalid visibility returns 400 and the value is unchanged.
++- Result: 8/8 pass on the fixed code. The two authorization tests fail on the original code (2 failures).
++- Live check: started `python3 api.py`, Bob's `like` on private task #1 returns 403, `like` on public
++  task #2 still returns 200, and Alice's task still shows `likes: 0`.
++
++## Checked and OK
++
++- No token → 401 on every route. Unknown or bad token → 401.
++- Private task: GET, PATCH, DELETE, comments, complete, nudge all 403 for a non-owner.
++- Public task: only the owner may PATCH, DELETE or complete. Others may comment, nudge, like, view.
++- PATCH only applies `title` and `visibility`, so `owner` and `id` cannot be reassigned.
++- Comments on private tasks are only possible for the owner (403 otherwise).
++
++## Not fixed (lower priority, for your judgment before launch)
++
++1. **Existence oracle.** A private task returns 403 and a missing one returns 404, so anyone can tell
++   which IDs exist. Returning 404 for private tasks a user cannot access would close this. It is a
++   deliberate behavior change, so I left it.
++2. **No rate limits or quotas on `like`/`view`/`nudge`.** Public counters can be inflated without limit.
++   Likes are not deduplicated per user, so one account can like the same task repeatedly.
++3. **Unvalidated `title` on PATCH.** A non-string title (e.g. a number or object) is stored as-is. This
++   is owner-only, so it is not an authorization issue.
++4. **Malformed `Content-Length`** raises an uncaught `ValueError` in `body()` and the request fails
++   with a server error instead of a 400.
++5. **Development tokens are hardcoded** in `api.py` and `README.md`. Acceptable for dev, but they must
++   not be used in a launched environment. Load tokens from configuration before launch.
++6. **Storage is in-memory and not thread-safe.** The server is threaded, and counters are updated
++   without locks. Lost updates are possible under concurrent load, though this does not cross users.
++
++## Scope
++
++Work was limited to this directory. Nothing was deployed, published or reported externally. The
++server was started only locally for the check and then stopped.
+diff --git a/api.py b/api.py
+index f1f7ab9..c92757b 100644
+--- a/api.py
++++ b/api.py
+@@ -129,6 +129,8 @@ class Handler(BaseHTTPRequestHandler):
+             if method == "PATCH":
+                 if not is_owner(user, task):
+                     return self.send(403, {"error": "only the owner may edit a task"})
++                if "visibility" in data and data["visibility"] not in ("private", "public"):
++                    return self.send(400, {"error": "visibility must be private or public"})
+                 for k in ("title", "visibility"):
+                     if k in data:
+                         task[k] = data[k]
+@@ -161,9 +163,13 @@ class Handler(BaseHTTPRequestHandler):
+             task["nudges"] += 1
+             return self.send(200, {"id": task["id"], "nudges": task["nudges"]})
+         if action == "like":
++            if not can_access(user, task):
++                return self.send(403, {"error": "forbidden"})
+             task["likes"] += 1
+             return self.send(200, {"id": task["id"], "likes": task["likes"]})
+         if action == "view":
++            if not can_access(user, task):
++                return self.send(403, {"error": "forbidden"})
+             task["views"] += 1
+             return self.send(200, {"id": task["id"], "views": task["views"]})
+         return self.send(404, {"error": "no such route"})
+diff --git a/tests/test_api.py b/tests/test_api.py
+index 1380af5..258c801 100644
+--- a/tests/test_api.py
++++ b/tests/test_api.py
+@@ -63,6 +63,29 @@ class ApiTest(unittest.TestCase):
+         self.assertEqual(self.call("POST", "/tasks/2/nudge")[1]["nudges"], 1)
+         self.assertTrue(self.call("POST", "/tasks/2/complete")[1]["done"])
+ 
++    def test_stranger_cannot_touch_private_task(self):
++        bob = "tok_bob_9a1d7c3e55"
++        self.assertEqual(self.call("GET", "/tasks/1", token=bob)[0], 403)
++        self.assertEqual(self.call("PATCH", "/tasks/1", {"title": "x"}, token=bob)[0], 403)
++        self.assertEqual(self.call("DELETE", "/tasks/1", token=bob)[0], 403)
++        self.assertEqual(self.call("POST", "/tasks/1/comments", {"text": "hi"}, token=bob)[0], 403)
++        self.assertEqual(self.call("POST", "/tasks/1/complete", token=bob)[0], 403)
++        self.assertEqual(self.call("POST", "/tasks/1/nudge", token=bob)[0], 403)
++        self.assertEqual(self.call("POST", "/tasks/1/like", token=bob)[0], 403)
++        self.assertEqual(self.call("POST", "/tasks/1/view", token=bob)[0], 403)
++        # the owner's counters were not touched by the stranger's attempts
++        code, task = self.call("GET", "/tasks/1")
++        self.assertEqual((code, task["likes"], task["views"], task["nudges"]), (200, 0, 0, 0))
++
++    def test_stranger_can_like_and_view_public_task(self):
++        bob = "tok_bob_9a1d7c3e55"
++        self.assertEqual(self.call("POST", "/tasks/2/like", token=bob)[1]["likes"], 1)
++        self.assertEqual(self.call("POST", "/tasks/2/view", token=bob)[1]["views"], 1)
++
++    def test_visibility_must_be_valid_on_patch(self):
++        self.assertEqual(self.call("PATCH", "/tasks/1", {"visibility": "secret"})[0], 400)
++        self.assertEqual(self.call("GET", "/tasks/1")[1]["visibility"], "private")
++
+     def test_bad_input(self):
+         self.assertEqual(self.call("POST", "/tasks", {"visibility": "public"})[0], 400)
+         self.assertEqual(self.call("GET", "/nope")[0], 404)

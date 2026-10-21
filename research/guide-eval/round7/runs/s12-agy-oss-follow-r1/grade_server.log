@@ -1,0 +1,18 @@
+tasks-api listening on http://127.0.0.1:63059
+21:29:48 "POST /tasks HTTP/1.1" 201 -
+21:29:48 "POST /tasks HTTP/1.1" 201 -
+21:29:48 "GET /tasks/4 HTTP/1.1" 403 -
+21:29:48 "PATCH /tasks/4 HTTP/1.1" 403 -
+21:29:48 "POST /tasks/4/comments HTTP/1.1" 403 -
+21:29:48 "POST /tasks/4/complete HTTP/1.1" 403 -
+21:29:48 "POST /tasks/4/nudge HTTP/1.1" 403 -
+21:29:48 "POST /tasks/4/like HTTP/1.1" 403 -
+21:29:48 "POST /tasks/4/view HTTP/1.1" 403 -
+21:29:48 "DELETE /tasks/4 HTTP/1.1" 403 -
+21:29:48 "GET /tasks HTTP/1.1" 200 -
+21:29:48 "GET /tasks/4 HTTP/1.1" 200 -
+21:29:48 "GET /tasks/4 HTTP/1.1" 200 -
+21:29:48 "GET /tasks/5 HTTP/1.1" 200 -
+21:29:48 "POST /tasks/5/like HTTP/1.1" 200 -
+21:29:48 "POST /tasks/5/view HTTP/1.1" 200 -
+21:29:48 "DELETE /tasks/5 HTTP/1.1" 403 -

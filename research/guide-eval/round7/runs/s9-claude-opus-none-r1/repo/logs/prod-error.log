@@ -1,0 +1,21 @@
+2026-08-04T09:12:41Z INFO  api.hide_story slug=why-i-left-mobx user=vk
+2026-08-04T09:12:41Z ERROR api.hide_story unhandled exception
+Traceback (most recent call last):
+  File "/var/task/api.py", line 61, in hide_story
+    library.hide(slug, by=user)
+  File "/var/task/src/app.py", line 53, in hide
+    self.table.update_item(
+  File "/var/task/boto3/resources/factory.py", line 581, in do_action
+    response = action(self, *args, **kwargs)
+  File "/var/task/boto3/resources/action.py", line 88, in __call__
+    response = getattr(parent.meta.client, operation_name)(*args, **params)
+  File "/var/task/botocore/client.py", line 569, in _api_call
+    return self._make_api_call(operation_name, kwargs)
+  File "/var/task/botocore/client.py", line 1023, in _make_api_call
+    raise error_class(parsed_response, operation_name)
+botocore.exceptions.ClientError: An error occurred (ValidationException) when calling the UpdateItem operation: Invalid UpdateExpression: Attribute name is a reserved keyword; reserved keyword: hidden
+2026-08-04T09:12:41Z INFO  api.hide_story -> 500
+2026-08-04T09:14:02Z INFO  api.hide_story slug=why-i-left-mobx user=vk
+2026-08-04T09:14:02Z ERROR api.hide_story unhandled exception
+botocore.exceptions.ClientError: An error occurred (ValidationException) when calling the UpdateItem operation: Invalid UpdateExpression: Attribute name is a reserved keyword; reserved keyword: hidden
+2026-08-04T09:14:02Z INFO  api.hide_story -> 500

@@ -1,0 +1,50 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..e9b0a9c
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,23 @@
++# Caching fix
++
++**Cause:** `build_system` in `bot.py` put the instructions and the athlete context (which includes the
++facts list) in one text block with a single `cache_control` breakpoint. `save_fact` changes the
++facts, so the block's text changed and the whole ~1000-token prefix was re-created on the next call.
++
++**Change:** `build_system` now returns two blocks. The static `INSTRUCTIONS` block is first and has its
++own breakpoint. The per-athlete context (date, zones, goal, facts, language) is second and has its own
++breakpoint. After a `save_fact`, the instructions are still read from cache, and only the small
++context block is written again. With no memory write, both blocks are read from cache as before.
++
++**Not verified / caveats:**
++- I didn't run it, because there's no API access here. Check `logs/usage.jsonl` after deploying:
++  the call after a `save_fact` should show a non-zero `cache_read_input_tokens`.
++- The cache prefix order is tools, then system, then messages. The instructions breakpoint covers the
++  tools too. The minimum cacheable prefix is about 1024 tokens, and the whole prefix was only ~1100 tokens.
++  If tools plus instructions come in under that minimum, the first breakpoint won't cache by itself
++  and you'd see no improvement. The fix for that is to make the static prefix larger or to
++  measure it with the token-counting endpoint.
++- Keyword-based tool filtering (kept, as NOTES.md says) changes the tools array between messages.
++  Because tools come before the system prompt, a message that adds the `plan` or `race` tools
++  also misses the cache. That's a separate, smaller leak. One option is to always send all tools and
++  rely on the cache instead.
+diff --git a/bot.py b/bot.py
+index e2ff241..b0b00e4 100644
+--- a/bot.py
++++ b/bot.py
+@@ -128,9 +128,13 @@ def athlete_context(a, today):
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    # Two blocks, two breakpoints. The static instructions come first and get their own
++    # breakpoint, so a save_fact (which changes only the athlete context) cannot evict
++    # them. The second breakpoint caches the context too for the normal no-write case.
++    return [
++        {"type": "text", "text": INSTRUCTIONS, "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": athlete_context(a, today), "cache_control": {"type": "ephemeral"}},
++    ]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [

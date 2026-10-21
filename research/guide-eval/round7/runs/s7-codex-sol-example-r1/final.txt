@@ -1,0 +1,3 @@
+Fixed the Intervals.icu connection flow. Connect now makes an authenticated POST, the authorize URL requests each scope area once, and the server no longer expires tokens after an invented one hour lifetime. If Intervals returns 401, the app clears the token and prompts the athlete to reconnect.
+
+[ANSWER.md](/tmp/h-vgxdeY/ANSWER.md) records the causes, the evidence from `logs/`, and which parts of the colleague’s note applied. Local flow tests pass, and `node --check` passes. A live Intervals consent and revocation test remains unverified because this workspace has placeholder OAuth credentials.

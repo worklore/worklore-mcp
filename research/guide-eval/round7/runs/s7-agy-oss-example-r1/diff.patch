@@ -1,0 +1,76 @@
+diff --git a/config.py b/config.py
+index 54a8144..e39e425 100644
+--- a/config.py
++++ b/config.py
+@@ -8,6 +8,6 @@ INTERVALS_BASE = os.environ.get("INTERVALS_BASE", "https://intervals.icu")
+ CLIENT_ID = "tricoach-dev"
+ CLIENT_SECRET = "s3cr3t-placeholder-0000"
+ REDIRECT_URI = f"http://localhost:{PORT}/api/intervals/callback"
+-SCOPES = "ACTIVITY:READ,ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:READ,CALENDAR:WRITE"
++SCOPES = "ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE"
+ 
+ REFRESH_INTERVAL = 60      # seconds between passes of the token refresher
+diff --git a/server.py b/server.py
+index 351cbb7..36f2e77 100644
+--- a/server.py
++++ b/server.py
+@@ -62,19 +62,24 @@ def exchange_code(code):
+     })
+ 
+ 
+-def store_connection(user_id, tok):
+-    expires_in = int(tok.get("expires_in") or DEFAULT_TOKEN_TTL)
+-    refresh = tok.get("refresh_token")
+-    if not refresh:
+-        log(f"{user_id}: no refresh_token in response, scheduling expiry in {expires_in}s")
+-    athlete = tok.get("athlete") or {}
+-    with LOCK:
+-        CONNECTIONS[user_id] = {
+-            "athlete_id": athlete.get("id"), "athlete_name": athlete.get("name"),
+-            "access_token": tok["access_token"], "refresh_token": refresh,
+-            "scope": tok.get("scope"), "expires_at": time.time() + expires_in, "status": "connected",
+-        }
+-    log(f"{user_id}: connected as athlete {athlete.get('id')} (expires in {expires_in}s)")
++    def store_connection(user_id, tok):
++        athlete = tok.get("athlete") or {}
++        # Intervals tokens typically have no expires_in; treat as never expiring unless revoked.
++        expires_in = int(tok.get("expires_in") or 0)
++        if expires_in:
++            expires_at = time.time() + expires_in
++        else:
++            expires_at = None  # no expiry
++        refresh = tok.get("refresh_token")
++        if not refresh:
++            log(f"{user_id}: no refresh_token in response, token will be considered perpetual unless revoked")
++        with LOCK:
++            CONNECTIONS[user_id] = {
++                "athlete_id": athlete.get("id"), "athlete_name": athlete.get("name"),
++                "access_token": tok["access_token"], "refresh_token": refresh,
++                "scope": tok.get("scope"), "expires_at": expires_at, "status": "connected",
++            }
++        log(f"{user_id}: connected as athlete {athlete.get('id')} (expires_at={expires_at})")
+ 
+ 
+ def refresh_tokens():
+@@ -192,7 +197,7 @@ class Handler(BaseHTTPRequestHandler):
+             return
+         params = {"client_id": config.CLIENT_ID, "redirect_uri": config.REDIRECT_URI,
+                   "scope": config.SCOPES, "state": sign_state(user["id"])}
+-        self.redirect(AUTHORIZE_URL + "?" + urllib.parse.urlencode(params, safe=":,"))
++        self.send_json(200, {"authorize_url": AUTHORIZE_URL + "?" + urllib.parse.urlencode(params, safe=":," )})
+ 
+     # Step 2: Intervals redirects back here with ?code=&state=.
+     def callback(self, q):
+diff --git a/static/app.js b/static/app.js
+index 368922e..4829b11 100644
+--- a/static/app.js
++++ b/static/app.js
+@@ -25,7 +25,7 @@ async function render() {
+     } else {
+       const why = st.status && st.status !== "disconnected" ? `<p class="muted">Status: ${esc(st.status)}</p>` : "";
+       card = `<div class="card">Intervals.icu is not connected.${why}
+-        <p><a class="btn" href="/api/intervals/auth/init">Connect Intervals.icu</a></p></div>`;
++        <p><button class="btn" id="connect">Connect Intervals.icu</button></p></div>`;
+     }
+     root.className = "";
+     root.innerHTML = `<p>Signed in as <b>${esc(me.name)}</b>.</p>${card}`;

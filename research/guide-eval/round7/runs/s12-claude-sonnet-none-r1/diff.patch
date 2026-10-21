@@ -1,0 +1,62 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..ecebdca
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,21 @@
++# Authorization review
++
++## Found and fixed
++- **`POST /tasks/{id}/like` and `/view` had no access check.** Any authenticated user could
++  like or view-count a *private* task they don't own (for example bob on alice's task #1).
++  That changes the owner's data, and a 200 versus a 404 also confirms the task exists.
++  Both now return 403 unless the user is the owner or the task is public, matching the README.
++- **`PATCH /tasks/{id}` accepted unvalidated values.** `title` could be a non-string or empty,
++  and `visibility` could be any value. This is owner-only, so it isn't a cross-user hole,
++  but it could corrupt the task. Both are now validated like `POST /tasks`.
++
++## Checked and fine
++GET, comments and nudge on a task enforce visibility. PATCH, DELETE and complete are owner-only.
++Missing or unknown tokens get 401. `GET /tasks` only lists the user's own tasks plus public ones.
++
++## Not changed (noting for launch)
++- Tokens are hardcoded dev tokens and are published in the README. Replace them before launch.
++- Task ids are sequential. This is harmless now that access is enforced.
++- A nonexistent task returns 404 and a private one returns 403, so private task ids can be
++  enumerated. The README specifies 403, so I left it.
++- There is no rate limiting, so likes, views and nudges on public tasks can be inflated.
+diff --git a/__pycache__/api.cpython-314.pyc b/__pycache__/api.cpython-314.pyc
+index 0cbfb7a..20282b5 100644
+Binary files a/__pycache__/api.cpython-314.pyc and b/__pycache__/api.cpython-314.pyc differ
+diff --git a/api.py b/api.py
+index 1c740b9..71732a4 100644
+--- a/api.py
++++ b/api.py
+@@ -129,6 +129,10 @@ class Handler(BaseHTTPRequestHandler):
+             if method == "PATCH":
+                 if not is_owner(user, task):
+                     return self.send(403, {"error": "only the owner may edit a task"})
++                if "title" in data and (not isinstance(data["title"], str) or not data["title"].strip()):
++                    return self.send(400, {"error": "title must be a non-empty string"})
++                if "visibility" in data and data["visibility"] not in ("private", "public"):
++                    return self.send(400, {"error": "visibility must be private or public"})
+                 for k in ("title", "visibility"):
+                     if k in data:
+                         task[k] = data[k]
+@@ -161,9 +165,13 @@ class Handler(BaseHTTPRequestHandler):
+             task["nudges"] += 1
+             return self.send(200, {"id": task["id"], "nudges": task["nudges"]})
+         if action == "like":
++            if not can_access(user, task):
++                return self.send(403, {"error": "forbidden"})
+             task["likes"] += 1
+             return self.send(200, {"id": task["id"], "likes": task["likes"]})
+         if action == "view":
++            if not can_access(user, task):
++                return self.send(403, {"error": "forbidden"})
+             task["views"] += 1
+             return self.send(200, {"id": task["id"], "views": task["views"]})
+         return self.send(404, {"error": "no such route"})
+diff --git a/tests/__pycache__/test_api.cpython-314.pyc b/tests/__pycache__/test_api.cpython-314.pyc
+index 921b248..61750a7 100644
+Binary files a/tests/__pycache__/test_api.cpython-314.pyc and b/tests/__pycache__/test_api.cpython-314.pyc differ

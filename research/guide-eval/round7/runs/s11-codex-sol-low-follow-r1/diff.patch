@@ -1,0 +1,56 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..52df380
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,9 @@
++# Cause
++
++`publish()` stores related-story similarity scores in `similar[].score`. The first publish finds no existing stories, so it writes an empty list. On the second publish, `similarity()` produces a Python `float`; boto3 rejects floats while serializing the item for DynamoDB, raising `TypeError: Float types are not supported. Use Decimal types instead.` The handler catches that exception and returns 500.
++
++# Fix
++
++`similarity()` now returns a rounded integer percentage, which DynamoDB accepts. A regression test seeds the table through the handler, publishes a second story, and checks that the request succeeds and its stored score is an integer. This exercises the state-dependent write path that the original empty-table test missed.
++
++Verified with `python3 -m unittest discover tests` (2 tests pass). No external table was used.
+diff --git a/src/app.py b/src/app.py
+index db49c5e..788ff6b 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -27,7 +27,8 @@ def similarity(a, b):
+     tag_score = len(ta & tb) / len(ta | tb) if (ta | tb) else 0
+     wa, wb = words(a.get("body")), words(b.get("body"))
+     word_score = len(wa & wb) / len(wa | wb) if (wa | wb) else 0
+-    return round(0.7 * tag_score + 0.3 * word_score, 4)
++    # DynamoDB rejects floats; related-story scores are stored as percentages.
++    return round(100 * (0.7 * tag_score + 0.3 * word_score))
+ 
+ 
+ def related(story, existing):
+diff --git a/tests/test_publish.py b/tests/test_publish.py
+index 6c9ac44..e855b61 100644
+--- a/tests/test_publish.py
++++ b/tests/test_publish.py
+@@ -1,4 +1,5 @@
+ import os
++import json
+ import sys
+ import unittest
+ 
+@@ -23,6 +24,16 @@ class PublishTest(unittest.TestCase):
+         self.assertEqual(table.get_item(Key={"slug": "why-my-cron-ran-twice"})["Item"]["title"], "Why my cron ran twice")
+         self.assertEqual(table.scan()["Count"], 1)
+ 
++    def test_second_publish_stores_integer_similarity_score(self):
++        table = FakeTable()
++        first = {"slug": "first-story", "title": "First", "tags": ["python"], "body": "python dynamodb"}
++        second = {"slug": "second-story", "title": "Second", "tags": ["python"], "body": "python testing"}
++        self.assertEqual(app.handler({"body": json.dumps(first)}, table)["statusCode"], 201)
++        self.assertEqual(app.handler({"body": json.dumps(second)}, table)["statusCode"], 201)
++        stored = table.get_item(Key={"slug": "second-story"})["Item"]
++        self.assertEqual(stored["similar"], [{"slug": "first-story", "score": 80}])
++        self.assertIs(type(stored["similar"][0]["score"]), int)
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

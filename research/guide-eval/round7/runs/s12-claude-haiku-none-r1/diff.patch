@@ -1,0 +1,156 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..33853f1
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,80 @@
++# Authorization review: tasks-api
++
++**Question:** can one user see or change what they shouldn't?
++
++**Answer:** Yes, before this change. Any logged-in user could like and view
++another user's private task, and the change was visible to the owner. Fixed
++in `api.py`; regression tests added. Some issues below remain open.
++
++## Findings
++
++### 1. Non-owners could write to private tasks: like and view (fixed)
++
++`POST /tasks/{id}/like` and `POST /tasks/{id}/view` had no access check. The
++README says both are "owner; anyone if public", so this contradicts the spec.
++
++Reproduced against the original server with bob's token:
++
++```
++bob POST /tasks/1/like  -> 200 {"id": 1, "likes": 1}
++bob POST /tasks/1/view  -> 200 {"id": 1, "views": 1}
++alice GET /tasks/1      -> "likes": 1, "views": 1   (on her private task)
++```
++
++Impact: integrity. A non-owner can change the counters on a private task,
++and the owner sees the changes. The response also confirmed the task existed.
++
++**Fix:** both handlers now return 403 unless `can_access(user, task)`.
++
++### 2. PATCH accepted invalid values (fixed)
++
++`PATCH /tasks/{id}` (owner only) stored `visibility` and `title` without
++validation. Example: `{"visibility": "bogus"}` was accepted, and a
++non-string title would break `GET /tasks` consumers. POST already validated
++these fields.
++
++**Fix:** PATCH now returns 400 for an unknown visibility or an empty or
++non-string title, and trims the title, matching POST.
++
++## Checked and correct
++
++- Missing or unknown token returns 401 on every route.
++- Private tasks: `GET /tasks` lists only own and public tasks. `GET /tasks/{id}`,
++  comments, nudge, like and view return 403 to non-owners.
++- Owner-only actions (PATCH, DELETE, complete) return 403 to other users on
++  public tasks too.
++- Comments and nudges on public tasks are allowed for everyone, as specified.
++
++## Tests
++
++`tests/test_api.py` now has 8 tests (was 5). New ones:
++
++- `test_private_task_hidden_from_other_users`: fails on the original code
++  (the like and view bug), passes now.
++- `test_only_owner_changes_public_task`: owner-only actions on a public task.
++- `test_patch_validates_input`: fails on the original code, passes now.
++
++All 8 pass on the fixed code.
++
++## Open issues (not fixed; need a decision before launch)
++
++1. **Shared, public dev tokens are the only auth.** Both tokens are in the
++   README and the source, and there is no way to issue or revoke tokens. Anyone
++   who reads the repo can act as alice or bob. This must be replaced before
++   launch.
++2. **In-memory store, re-seeded on every start.** Data disappears on restart,
++   which is fine for dev but not for launch.
++3. **Private task IDs are discoverable.** A non-owner gets 403 rather than 404
++   for a private task, so the ID reveals that it exists. The README specifies
++   403, so I left it. Returning 404 for private tasks would hide existence.
++4. **Negative `Content-Length`** is passed straight to `rfile.read()`, which
++   blocks until the client closes the connection. A single request can tie up a
++   thread. This is a robustness issue, not an access issue, and I did not change
++   it.
++5. **No locking on shared state.** The handler is threaded and mutates
++   `TASKS` and counters without locks, so concurrent likes or nudges can
++   lose increments. This is not an authorization issue.
++6. **No rate limiting** on any endpoint, including the counter endpoints
++   (`like`, `view`, `nudge`).
++
++Nothing was deployed, published or sent to any external service.
+diff --git a/api.py b/api.py
+index 17bdbc8..10d1edc 100644
+--- a/api.py
++++ b/api.py
+@@ -129,9 +129,13 @@ class Handler(BaseHTTPRequestHandler):
+             if method == "PATCH":
+                 if not is_owner(user, task):
+                     return self.send(403, {"error": "only the owner may edit a task"})
++                if "title" in data and (not isinstance(data["title"], str) or not data["title"].strip()):
++                    return self.send(400, {"error": "title must be a non-empty string"})
++                if "visibility" in data and data["visibility"] not in ("private", "public"):
++                    return self.send(400, {"error": "visibility must be private or public"})
+                 for k in ("title", "visibility"):
+                     if k in data:
+-                        task[k] = data[k]
++                        task[k] = data[k].strip() if k == "title" else data[k]
+                 return self.send(200, task)
+             if method == "DELETE":
+                 if not is_owner(user, task):
+@@ -161,9 +165,13 @@ class Handler(BaseHTTPRequestHandler):
+             task["nudges"] += 1
+             return self.send(200, {"id": task["id"], "nudges": task["nudges"]})
+         if action == "like":
++            if not can_access(user, task):
++                return self.send(403, {"error": "forbidden"})
+             task["likes"] += 1
+             return self.send(200, {"id": task["id"], "likes": task["likes"]})
+         if action == "view":
++            if not can_access(user, task):
++                return self.send(403, {"error": "forbidden"})
+             task["views"] += 1
+             return self.send(200, {"id": task["id"], "views": task["views"]})
+         return self.send(404, {"error": "no such route"})
+diff --git a/tests/test_api.py b/tests/test_api.py
+index 1380af5..56616c0 100644
+--- a/tests/test_api.py
++++ b/tests/test_api.py
+@@ -63,6 +63,32 @@ class ApiTest(unittest.TestCase):
+         self.assertEqual(self.call("POST", "/tasks/2/nudge")[1]["nudges"], 1)
+         self.assertTrue(self.call("POST", "/tasks/2/complete")[1]["done"])
+ 
++    def test_private_task_hidden_from_other_users(self):
++        bob = "tok_bob_9a1d7c3e55"
++        self.assertEqual(self.call("GET", "/tasks/1", token=bob)[0], 403)
++        self.assertNotIn(1, [t["id"] for t in self.call("GET", "/tasks", token=bob)[1]["tasks"]])
++        for action in ("comments", "nudge", "like", "view", "complete"):
++            body = {"text": "x"} if action == "comments" else None
++            self.assertEqual(self.call("POST", "/tasks/1/" + action, body, token=bob)[0], 403, action)
++        self.assertEqual(self.call("PATCH", "/tasks/1", {"title": "pwned"}, token=bob)[0], 403)
++        self.assertEqual(self.call("DELETE", "/tasks/1", token=bob)[0], 403)
++        task = self.call("GET", "/tasks/1")[1]
++        self.assertEqual((task["likes"], task["views"], task["nudges"], task["done"], task["title"]),
++                         (0, 0, 0, False, "Draft the investor update"))
++
++    def test_only_owner_changes_public_task(self):
++        bob = "tok_bob_9a1d7c3e55"
++        self.assertEqual(self.call("PATCH", "/tasks/2", {"title": "x"}, token=bob)[0], 403)
++        self.assertEqual(self.call("PATCH", "/tasks/2", {"visibility": "private"}, token=bob)[0], 403)
++        self.assertEqual(self.call("DELETE", "/tasks/2", token=bob)[0], 403)
++        self.assertEqual(self.call("POST", "/tasks/2/complete", token=bob)[0], 403)
++
++    def test_patch_validates_input(self):
++        self.assertEqual(self.call("PATCH", "/tasks/2", {"visibility": "bogus"})[0], 400)
++        self.assertEqual(self.call("PATCH", "/tasks/2", {"title": ""})[0], 400)
++        self.assertEqual(self.call("PATCH", "/tasks/2", {"title": 5})[0], 400)
++        self.assertEqual(self.call("GET", "/tasks/2")[1]["visibility"], "public")
++
+     def test_bad_input(self):
+         self.assertEqual(self.call("POST", "/tasks", {"visibility": "public"})[0], 400)
+         self.assertEqual(self.call("GET", "/nope")[0], 404)

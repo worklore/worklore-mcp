@@ -1,0 +1,5 @@
+Fixed the Intervals.icu connection flow and documented the causes in [ANSWER.md](/tmp/h-mTcCH4/ANSWER.md).
+
+The Connect button now requests the authorize URL with the athlete’s bearer token. The integration requests only the needed scopes, and the server no longer invents a one-hour expiry for Intervals.icu tokens.
+
+Syntax checks passed. A local test confirmed the authenticated init response, scope string, and storage of a token without refresh fields. I did not run a live provider connection.

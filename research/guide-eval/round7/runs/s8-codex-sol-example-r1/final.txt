@@ -1,0 +1,3 @@
+Updated [bot.py](/tmp/h-S5dsdI/bot.py) so `save_fact` changes only the athlete-specific cache block; the static instructions remain reusable. I documented the change, the relevant parts of the colleague’s note, and the verification in [ANSWER.md](/tmp/h-S5dsdI/ANSWER.md).
+
+A local tool-loop check passed. I could not measure a live cache hit because the Anthropic SDK is not installed here.

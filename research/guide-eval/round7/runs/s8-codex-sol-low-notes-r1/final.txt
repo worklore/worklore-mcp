@@ -1,0 +1,3 @@
+I split the system prompt into two cached blocks in [bot.py](/tmp/h-M4q9GT/bot.py): stable coaching instructions and athlete context. A `save_fact` write now changes only the athlete block, leaving the instruction prefix eligible for a cache hit.
+
+I documented the change in [ANSWER.md](/tmp/h-M4q9GT/ANSWER.md). Local assertions and Python compilation passed. Live cache token savings remain unmeasured because I did not call the Anthropic API.

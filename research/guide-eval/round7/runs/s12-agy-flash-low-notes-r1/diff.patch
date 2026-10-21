@@ -1,0 +1,145 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..cb0e7a7
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,60 @@
++# Authorization Audit Report
++
++## Summary
++
++An authorization assessment was performed on the `tasks-api` service against the stated access rule:
++> *A private task is visible and touchable only by its owner (403 for anyone else, 401 without a token).*
++
++### Can one user see or change what they shouldn't?
++**Yes.** While viewing private tasks directly or modifying their core fields was restricted, another authenticated user could manipulate private task metadata through two missing authorization checks:
++
++1. **`POST /tasks/{id}/like`**: Any authenticated user could like another user's private task and increment its like counter.
++2. **`POST /tasks/{id}/view`**: Any authenticated user could record views on another user's private task and increment its view counter.
++
++---
++
++## Detailed Findings
++
++### 1. Broken Object-Level Authorization on `POST /tasks/{id}/like`
++- **Location**: [`api.py`](file:///tmp/h-LmDA3R/api.py#L163)
++- **Issue**: The handler lacked an authorization check verifying whether the requesting user owned or had permission to view the task.
++- **Impact**: Any authenticated user (e.g., Bob with token `tok_bob_9a1d7c3e55`) could send a request to `/tasks/1/like` on Alice's private task #1 ("Draft the investor update") and receive `HTTP 200`, mutating the task's like count.
++
++### 2. Broken Object-Level Authorization on `POST /tasks/{id}/view`
++- **Location**: [`api.py`](file:///tmp/h-LmDA3R/api.py#L168)
++- **Issue**: The handler did not verify task visibility or ownership before recording a view.
++- **Impact**: Any authenticated user could send requests to `/tasks/1/view` on another user's private task, mutating its view count and confirming the task's existence.
++
++### Other Endpoints Audited
++- `GET /tasks`: Correctly filters task list using `can_access(user, task)`.
++- `POST /tasks`: Correctly assigns ownership to the authenticated user.
++- `GET /tasks/{id}`: Correctly returns `403 Forbidden` if private and caller is not owner.
++- `PATCH /tasks/{id}`: Correctly returns `403 Forbidden` if caller is not owner.
++- `DELETE /tasks/{id}`: Correctly returns `403 Forbidden` if caller is not owner.
++- `POST /tasks/{id}/comments`: Correctly returns `403 Forbidden` if private and caller is not owner.
++- `POST /tasks/{id}/complete`: Correctly returns `403 Forbidden` if caller is not owner.
++- `POST /tasks/{id}/nudge`: Correctly returns `403 Forbidden` if private and caller is not owner.
++
++---
++
++## Fix Applied
++
++1. **`api.py`**:
++   Added `can_access(user, task)` authorization checks before executing `like` and `view` actions:
++   ```python
++   if action == "like":
++       if not can_access(user, task):
++           return self.send(403, {"error": "forbidden"})
++       task["likes"] += 1
++       return self.send(200, {"id": task["id"], "likes": task["likes"]})
++   if action == "view":
++       if not can_access(user, task):
++           return self.send(403, {"error": "forbidden"})
++       task["views"] += 1
++       return self.send(200, {"id": task["id"], "views": task["views"]})
++   ```
++
++2. **`tests/test_api.py`**:
++   Added regression test suite `test_private_task_authorization` verifying that non-owners receive `403 Forbidden` across all private task endpoints (`GET`, `PATCH`, `DELETE`, `comments`, `complete`, `nudge`, `like`, `view`), while task owners retain full access.
++
++All unit tests pass cleanly.
+diff --git a/__pycache__/api.cpython-314.pyc b/__pycache__/api.cpython-314.pyc
+index 0cbfb7a..7ec68bd 100644
+Binary files a/__pycache__/api.cpython-314.pyc and b/__pycache__/api.cpython-314.pyc differ
+diff --git a/api.py b/api.py
+index d470bc5..897edd2 100644
+--- a/api.py
++++ b/api.py
+@@ -161,9 +161,13 @@ class Handler(BaseHTTPRequestHandler):
+             task["nudges"] += 1
+             return self.send(200, {"id": task["id"], "nudges": task["nudges"]})
+         if action == "like":
++            if not can_access(user, task):
++                return self.send(403, {"error": "forbidden"})
+             task["likes"] += 1
+             return self.send(200, {"id": task["id"], "likes": task["likes"]})
+         if action == "view":
++            if not can_access(user, task):
++                return self.send(403, {"error": "forbidden"})
+             task["views"] += 1
+             return self.send(200, {"id": task["id"], "views": task["views"]})
+         return self.send(404, {"error": "no such route"})
+diff --git a/tests/__pycache__/test_api.cpython-314.pyc b/tests/__pycache__/test_api.cpython-314.pyc
+index 921b248..374a62b 100644
+Binary files a/tests/__pycache__/test_api.cpython-314.pyc and b/tests/__pycache__/test_api.cpython-314.pyc differ
+diff --git a/tests/test_api.py b/tests/test_api.py
+index 1380af5..f26a454 100644
+--- a/tests/test_api.py
++++ b/tests/test_api.py
+@@ -10,6 +10,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+ import api  # noqa: E402
+ 
+ ALICE = "tok_alice_4f8c2e71b0"
++BOB = "tok_bob_9a1d7c3e55"
+ 
+ 
+ class ApiTest(unittest.TestCase):
+@@ -67,6 +68,42 @@ class ApiTest(unittest.TestCase):
+         self.assertEqual(self.call("POST", "/tasks", {"visibility": "public"})[0], 400)
+         self.assertEqual(self.call("GET", "/nope")[0], 404)
+ 
++    def test_private_task_authorization(self):
++        # Alice's task 1 is private
++        # Bob cannot see task 1 in the list
++        code, body = self.call("GET", "/tasks", token=BOB)
++        self.assertEqual(code, 200)
++        self.assertNotIn("Draft the investor update", [t["title"] for t in body["tasks"]])
++
++        # Bob cannot GET task 1
++        self.assertEqual(self.call("GET", "/tasks/1", token=BOB)[0], 403)
++
++        # Bob cannot PATCH task 1
++        self.assertEqual(self.call("PATCH", "/tasks/1", {"title": "Hacked"}, token=BOB)[0], 403)
++
++        # Bob cannot DELETE task 1
++        self.assertEqual(self.call("DELETE", "/tasks/1", token=BOB)[0], 403)
++
++        # Bob cannot comment on task 1
++        self.assertEqual(self.call("POST", "/tasks/1/comments", {"text": "hi"}, token=BOB)[0], 403)
++
++        # Bob cannot complete task 1
++        self.assertEqual(self.call("POST", "/tasks/1/complete", token=BOB)[0], 403)
++
++        # Bob cannot nudge task 1
++        self.assertEqual(self.call("POST", "/tasks/1/nudge", token=BOB)[0], 403)
++
++        # Bob cannot like task 1
++        self.assertEqual(self.call("POST", "/tasks/1/like", token=BOB)[0], 403)
++
++        # Bob cannot view task 1
++        self.assertEqual(self.call("POST", "/tasks/1/view", token=BOB)[0], 403)
++
++        # Alice CAN access her own private task
++        self.assertEqual(self.call("GET", "/tasks/1", token=ALICE)[0], 200)
++        self.assertEqual(self.call("POST", "/tasks/1/like", token=ALICE)[1]["likes"], 1)
++        self.assertEqual(self.call("POST", "/tasks/1/view", token=ALICE)[1]["views"], 1)
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

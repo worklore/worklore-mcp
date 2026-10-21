@@ -1,0 +1,16 @@
+diff --git a/src/app.py b/src/app.py
+index 963b0b5..d2c0333 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -52,9 +52,10 @@ class StoryLibrary:
+         """Author withdraws a story: it stays in the table but leaves the feed."""
+         self.table.update_item(
+             Key={"slug": slug},
+-            UpdateExpression="SET hidden = :h, hidden_by = :by, hidden_at = :t",
++            UpdateExpression="SET #h = :h, #hb = :by, #ha = :t",
+             ConditionExpression="attribute_exists(slug)",
+             ExpressionAttributeValues={":h": True, ":by": by, ":t": int(self.clock())},
++            ExpressionAttributeNames={"#h": "hidden", "#hb": "hidden_by", "#ha": "hidden_at"},
+         )
+ 
+     def feed(self, limit=FEED_LIMIT):

@@ -1,0 +1,3 @@
+Fixed both paths. Hiding now aliases `hidden` in the DynamoDB update, preventing the production 500. The feed projection also aliases it, so a story marked hidden directly in the table is excluded. I applied the same alias convention to the other expressions.
+
+The causes and the applicable parts of the colleague’s note are in [ANSWER.md](/tmp/h-ojgZ5C/ANSWER.md). All 8 tests pass, including regressions for both hide paths.

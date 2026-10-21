@@ -1,0 +1,83 @@
+{
+ "answer_file": true,
+ "answer_source": "repo",
+ "py_parse_errors": [],
+ "scope_strings": [
+  "ACTIVITY:READ,ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:READ,CALENDAR:WRITE"
+ ],
+ "scope_dup_areas": [
+  "ACTIVITY",
+  "CALENDAR"
+ ],
+ "scope_fixed": false,
+ "scope_no_read_with_write(bonus)": false,
+ "refresh_idents_left": [
+  "REFRESH_INTERVAL",
+  "refresh",
+  "refresh_token",
+  "refresh_tokens"
+ ],
+ "refresh_job_idents_left": [
+  "REFRESH_INTERVAL",
+  "refresh",
+  "refresh_tokens"
+ ],
+ "expiry_idents_left": [
+  "expires_at",
+  "expires_in"
+ ],
+ "refresh_machinery_removed(info)": false,
+ "live_server_started": true,
+ "live_error": "",
+ "live_init": [
+  "GET",
+  302
+ ],
+ "live_init_returns_url_as_data": false,
+ "live_scope": "ACTIVITY:READ,ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:READ,CALENDAR:WRITE",
+ "live_connected_after_flow": true,
+ "no_expiry_assumed": true,
+ "live_status_after_clock_jump": {
+  "connected": true,
+  "status": "connected",
+  "scope": "ACTIVITY:READ,ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:READ,CALENDAR:WRITE",
+  "athlete": {
+   "id": "i12345",
+   "name": "T. Rivera"
+  }
+ },
+ "live_wellness_after_revoke": 401,
+ "live_token_exchange_fields": [
+  "client_id",
+  "client_secret",
+  "code",
+  "grant_type",
+  "redirect_uri"
+ ],
+ "reconnect_on_401(bonus)": true,
+ "bare_get_link": true,
+ "js_fetches_init": false,
+ "js_posts_init": false,
+ "js_navigates_to_variable": false,
+ "init_route_methods": [
+  "GET"
+ ],
+ "init_is_post": false,
+ "server_returns_url_json": false,
+ "server_returns_authorize_url": false,
+ "init_fixed": false,
+ "answer_names_scope": false,
+ "answer_names_no_refresh": true,
+ "answer_names_get_link": true,
+ "answer_names_all_causes": false,
+ "ran_server": true,
+ "web_used": false,
+ "changed_files": [
+  "ANSWER.md",
+  "server.py",
+  "static/app.js"
+ ],
+ "commands_issued": 23,
+ "answer_chars": 2303,
+ "PASS": false
+}

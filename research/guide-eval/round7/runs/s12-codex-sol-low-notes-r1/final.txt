@@ -1,0 +1,3 @@
+Found and fixed two authorization gaps: Bob could like and register a view on Alice’s private task, even though he could not read it. Both routes now return `403` before changing the task.
+
+The evidence and fix are documented in [ANSWER.md](/tmp/h-rwKXaf/ANSWER.md). Cross-user tests cover every task route; all 7 tests pass.

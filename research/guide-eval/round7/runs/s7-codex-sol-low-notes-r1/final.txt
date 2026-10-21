@@ -1,0 +1,3 @@
+Fixed the Intervals.icu integration and documented the causes in [ANSWER.md](/tmp/h-qyTAJb/ANSWER.md). Connect now uses an authenticated request, the scope list no longer contains duplicate areas, and valid tokens are no longer expired after an invented one-hour lifetime. The app prompts for reconnection when Intervals returns 401.
+
+Local HTTP flow checks and JavaScript syntax checks passed. I did not contact Intervals.icu or deploy anything.

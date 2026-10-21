@@ -1,0 +1,3 @@
+Fixed the Intervals.icu connection flow. The Connect button now starts OAuth through the authenticated API request, the requested scopes use one access level per area, and the server no longer expires tokens after an invented one hour lifetime. The causes and provider references are in [ANSWER.md](/tmp/h-O5RUMZ/ANSWER.md).
+
+All three local integration tests pass, and `static/app.js` passes the JavaScript syntax check. The token exchange was mocked, so the flow has not been tested against a live Intervals.icu account.

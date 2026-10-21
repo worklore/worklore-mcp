@@ -1,0 +1,80 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..2f2373e
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,7 @@
++# Cause
++
++The first publish finds no existing stories, so `similar` is empty and the item contains no similarity scores. On the second publish, `related()` adds a score returned by `similarity()`. That score is a Python `float` nested in `similar`. Boto3's DynamoDB serializer rejects floats, so `put_item` raises `TypeError` and the handler returns 500.
++
++# Fix
++
++Convert each computed score to `Decimal` before adding it to the item. This preserves the existing 0–1 score and four-decimal-place rounding while giving DynamoDB a supported numeric type. A regression test publishes two stories through the handler against the validating fake table, checks that both requests return 201, and confirms the second item's stored score is a `Decimal`. The test reproduced the 500 before the fix.
+diff --git a/src/app.py b/src/app.py
+index db49c5e..d2efa93 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -8,6 +8,7 @@ import json
+ import logging
+ import re
+ import time
++from decimal import Decimal
+ 
+ log = logging.getLogger("stories")
+ 
+@@ -35,7 +36,8 @@ def related(story, existing):
+     for other in existing:
+         if other["slug"] == story["slug"]:
+             continue
+-        scored.append({"slug": other["slug"], "score": similarity(story, other)})
++        # DynamoDB rejects Python floats, including floats nested inside lists.
++        scored.append({"slug": other["slug"], "score": Decimal(str(similarity(story, other)))})
+     scored.sort(key=lambda s: s["score"], reverse=True)
+     return scored[:TOP_N]
+ 
+diff --git a/tests/test_publish.py b/tests/test_publish.py
+index 6c9ac44..19729fe 100644
+--- a/tests/test_publish.py
++++ b/tests/test_publish.py
+@@ -1,6 +1,8 @@
++import json
+ import os
+ import sys
+ import unittest
++from decimal import Decimal
+ 
+ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+ sys.path.insert(0, os.path.dirname(__file__))
+@@ -23,6 +25,31 @@ class PublishTest(unittest.TestCase):
+         self.assertEqual(table.get_item(Key={"slug": "why-my-cron-ran-twice"})["Item"]["title"], "Why my cron ran twice")
+         self.assertEqual(table.scan()["Count"], 1)
+ 
++    def test_publish_into_populated_table_stores_dynamodb_compatible_scores(self):
++        table = FakeTable()
++        first = {
++            "slug": "why-my-cron-ran-twice",
++            "title": "Why my cron ran twice",
++            "tags": ["cron", "linux"],
++            "body": "Two crontabs ran the same job.",
++        }
++        second = {
++            "slug": "debugging-a-cron-job",
++            "title": "Debugging a cron job",
++            "tags": ["cron", "debugging"],
++            "body": "The same job ran twice.",
++        }
++
++        self.assertEqual(app.handler({"body": json.dumps(first)}, table)["statusCode"], 201)
++        self.assertEqual(app.handler({"body": json.dumps(second)}, table)["statusCode"], 201)
++
++        stored = table.get_item(Key={"slug": second["slug"]})["Item"]
++        self.assertEqual(table.scan()["Count"], 2)
++        self.assertEqual(stored["similar"][0]["slug"], first["slug"])
++        self.assertIsInstance(stored["similar"][0]["score"], Decimal)
++        self.assertGreater(stored["similar"][0]["score"], 0)
++        self.assertLessEqual(stored["similar"][0]["score"], 1)
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

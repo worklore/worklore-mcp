@@ -1,0 +1,3 @@
+Fixed the Intervals.icu connection flow. The Connect button now starts an authenticated POST, the authorization request uses scopes Intervals accepts, and the server no longer expires tokens after an assumed hour. It also uses the expected token exchange fields and prompts for reconnection when Intervals returns 401.
+
+The causes are documented in [ANSWER.md](/tmp/h-FMHkiY/ANSWER.md). Three local tests pass, and the JavaScript syntax check passes. No external service was contacted, so a live consent flow remains unverified.

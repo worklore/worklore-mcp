@@ -1,0 +1,3 @@
+I found and fixed an authorization gap: Bob could increase the like and view counts on Alice’s private task, even though he could not read it. Both routes now return `403` without changing the task.
+
+The evidence, other authorization checks, cleanup, and which parts of the colleague’s note applied are in [ANSWER.md](/tmp/h-go7cmm/ANSWER.md). I added regression coverage in [test_api.py](/tmp/h-go7cmm/tests/test_api.py); all 7 tests pass.

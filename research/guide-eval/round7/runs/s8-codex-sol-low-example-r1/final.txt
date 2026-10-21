@@ -1,0 +1,3 @@
+Split the system prompt into two cached blocks: stable coaching instructions and athlete context. A `save_fact` write now changes only the second block. I documented the change, the applicable parts of the colleague’s note, and the verification in [ANSWER.md](/tmp/h-h8bsTb/ANSWER.md).
+
+Local checks passed. Live Claude cache token counts remain unverified.

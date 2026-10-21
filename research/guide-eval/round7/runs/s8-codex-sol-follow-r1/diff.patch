@@ -1,0 +1,77 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..d0a7a8c
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,9 @@
++# Prompt cache fix
++
++`build_system()` now sends two text blocks, each with `cache_control: {"type": "ephemeral"}`. The first contains only the fixed `INSTRUCTIONS`; the second contains the date, athlete profile, zones, goal, facts, and language. A `save_fact` update changes the second block while leaving the first block byte-identical, so Claude can reuse the static prefix and create a new cache entry for the athlete context.
++
++The existing per-message tool selection and its order are unchanged. The selected tool list remains fixed across rounds of one tool-use loop.
++
++Added `test_bot.py` to check both cache boundaries, the static block across athletes, and the changed fact tail. `python3 -m unittest -v test_bot.py`, `python3 -m py_compile bot.py`, and `git diff --check` pass.
++
++Live cache token counts were not verified because that requires an Anthropic API call. In `logs/usage.jsonl`, after a `save_fact`, the expected result is a nonzero `cache_read_input_tokens` value for the static prefix and `cache_creation_input_tokens` for the changed tail, rather than a full-prompt cache creation.
+diff --git a/bot.py b/bot.py
+index e2ff241..ab5a41f 100644
+--- a/bot.py
++++ b/bot.py
+@@ -128,9 +128,12 @@ def athlete_context(a, today):
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    # The first cache boundary stays identical when an athlete's memory changes.
++    # Only the per-athlete tail needs to be cached again after save_fact.
++    return [
++        {"type": "text", "text": INSTRUCTIONS, "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": athlete_context(a, today), "cache_control": {"type": "ephemeral"}},
++    ]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [
+diff --git a/test_bot.py b/test_bot.py
+new file mode 100644
+index 0000000..7d344f5
+--- /dev/null
++++ b/test_bot.py
+@@ -0,0 +1,36 @@
++import datetime as dt
++import unittest
++
++from bot import Athlete, INSTRUCTIONS, build_request, build_system, select_tools
++
++
++class PromptCacheTests(unittest.TestCase):
++    def test_memory_write_changes_only_second_cache_segment(self):
++        athlete = Athlete(user_id="42", name="Marta")
++        today = dt.date(2026, 4, 20)
++        before = build_system(athlete, today)
++
++        athlete.facts.append("Runs before work")
++        after = build_system(athlete, today)
++
++        self.assertEqual(len(before), 2)
++        self.assertEqual([block["cache_control"] for block in after],
++                         [{"type": "ephemeral"}] * 2)
++        self.assertEqual(before[0], after[0])
++        self.assertEqual(before[0]["text"], INSTRUCTIONS)
++        self.assertNotEqual(before[1]["text"], after[1]["text"])
++        self.assertIn("Runs before work", after[1]["text"])
++
++    def test_request_keeps_selected_tools_and_static_segment_stable(self):
++        today = dt.date(2026, 4, 20)
++        tools = select_tools("How should I plan my week?")
++        first = build_request(Athlete(user_id="42", name="Marta"), [], tools, today)
++        second = build_request(Athlete(user_id="77", name="Jonas"), [], tools, today)
++
++        self.assertEqual(first["tools"], second["tools"])
++        self.assertEqual(first["system"][0], second["system"][0])
++        self.assertNotEqual(first["system"][1], second["system"][1])
++
++
++if __name__ == "__main__":
++    unittest.main()

@@ -1,0 +1,5 @@
+Fixed the Intervals.icu integration and documented the causes in [ANSWER.md](/tmp/h-rV6caK/ANSWER.md).
+
+Connect now uses an authenticated POST, scopes list each area once, and the token exchange sends the fields Intervals.icu expects. The app no longer expires tokens after an hour; it prompts reconnection when an API call returns 401. I also added signed callback state, an athlete ID mismatch check, and token encryption.
+
+Python compilation and local checks passed. A live OAuth and revocation test still requires a registered client and athlete account; this repository has placeholder credentials.

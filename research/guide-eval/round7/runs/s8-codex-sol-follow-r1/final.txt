@@ -1,0 +1,3 @@
+I split the Claude system prompt into two cached blocks: fixed instructions and athlete context. A `save_fact` update now changes only the context block. I added regression tests and documented the change in [ANSWER.md](/tmp/h-mnNQWj/ANSWER.md).
+
+The tests pass. Live cache token counts still need an Anthropic API call to verify.

@@ -1,0 +1,97 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..a2e31d9
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,66 @@
++# Answer: a memory write no longer evicts the static system prompt
++
++## Cause
++
++`build_system()` returned the whole system prompt as one text block with a single
++`cache_control` marker at the end. Caching is prefix-based, so any byte change
++after the start of the block is a cache miss for everything. `save_fact` appends to
++`athlete.facts`, which is rendered inside that block, so each save changed the
++prefix and re-cached the ~1000-token instructions along with the facts. That
++matches `NOTES.md` and the `usage.jsonl` pattern: `cache_read_input_tokens: 0` and
++`cache_creation_input_tokens` near the full prompt size on the call right after a save.
++
++## Change (`bot.py`, `build_system`)
++
++The system prompt is now two text blocks, each with `cache_control: ephemeral`:
++
++1. `INSTRUCTIONS`: a constant, byte-stable across users and days.
++2. `athlete_context(a, today)`: the per-athlete tail (date, name, zones, goal,
++   facts, language).
++
++A `save_fact` now invalidates only block 2. Block 1 stays in cache.
++
++Nothing else changed. Tools are still selected per message and placed above the
++system prompt, so a message that adds a tool group still misses the cache once.
++Fact selection is still "include all facts", as before.
++
++## Checked offline
++
++Stubbed `build_request` for two athletes on two days, with a fact added in between:
++
++- The instructions block is byte-identical in all three requests.
++- The tail changes after `save_fact`.
++- There are exactly two `cache_control` markers, which is within the limit of 4.
++
++I did not call the API. There is no `COACH_ANTHROPIC_KEY` in this environment, and I
++did not deploy anything.
++
++## Open risk: the minimum cacheable length
++
++Anthropic only caches a prefix that is at least the model's minimum length
++(1024 tokens for Sonnet-class models). Here the first marker's prefix is the core
++tools plus `INSTRUCTIONS`. `INSTRUCTIONS` is about 2,480 characters, and the core
++tools are about 420 characters. From the existing `usage.jsonl` numbers, that prefix
++is probably just under 1024 tokens. If it is, the first marker is silently ignored,
++the only effective marker is the tail one, and the bug is back: a memory write
++re-caches everything.
++
++I could not confirm this without an API call. To check:
++
++- After deploying, send a message and then a `save_fact` message within 5 minutes.
++  Then look at the next call in `logs/usage.jsonl`. If `cache_creation_input_tokens`
++  is roughly the tail size (~100-300 tokens), the fix works. If it is roughly the full
++  prompt (~1000+), the static block is below the minimum.
++- Or use the token-counting endpoint on the static prefix.
++
++If it is below the minimum, the options are to lengthen the static block (only with
++useful content, not filler) or to move a stable part of the per-athlete data into
++the static block. I did not pad the prompt, because that would add tokens on every
++cache write without improving the answer.
++
++## Verify with the usage log
++
++- Two messages within 5 minutes: the second call's `cache_read_input_tokens` should
++  cover roughly the whole prompt.
++- After a `save_fact`: the next call's `cache_read_input_tokens` should be about the
++  static block, and `cache_creation_input_tokens` about the tail only.
+diff --git a/__pycache__/bot.cpython-314.pyc b/__pycache__/bot.cpython-314.pyc
+new file mode 100644
+index 0000000..ac28a4e
+Binary files /dev/null and b/__pycache__/bot.cpython-314.pyc differ
+diff --git a/bot.py b/bot.py
+index e2ff241..ecdbb83 100644
+--- a/bot.py
++++ b/bot.py
+@@ -128,9 +128,13 @@ def athlete_context(a, today):
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    # Two cached segments. The static instructions go first and must stay byte-identical
++    # across users and days; the per-athlete tail (facts, date, profile) changes on every
++    # save_fact, and its marker means a write only re-caches the tail, not the instructions.
++    return [
++        {"type": "text", "text": INSTRUCTIONS, "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": athlete_context(a, today), "cache_control": {"type": "ephemeral"}},
++    ]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [

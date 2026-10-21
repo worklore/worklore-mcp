@@ -1,0 +1,129 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..ba65117
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,13 @@
++# Causes of the Intervals.icu Connection Issues
++
++### 1. Connect Button 401 Unauthorized Error
++- **Cause**: The "Connect Intervals.icu" button in `static/app.js` was implemented as a simple document navigation link (`<a class="btn" href="/api/intervals/auth/init">`). In the tricoach SPA, the user authentication token resides in browser `localStorage` and is attached to fetch requests via the `Authorization: Bearer` header. Clicking the link triggered a standard browser GET request that omitted the `Authorization` header, causing `require_user()` in `server.py` to reject the request with HTTP 401 `{"error": "unauthorized"}`.
++- **Fix**: The frontend was updated to append the user token as a query parameter (`/api/intervals/auth/init?token=...`), and `server.py` was updated so `current_user()` checks for the token in the query string as well as the `Authorization` header.
++
++### 2. Missing `response_type=code` in OAuth Authorization Request
++- **Cause**: In `server.py` (`auth_init`), the parameters passed when constructing the redirect URL to `https://intervals.icu/oauth/authorize` did not include `response_type=code`. Per RFC 6749 (Section 4.1.1), `response_type` is required for authorization code grant requests. Intervals.icu returned HTTP 400 `{"error": "invalid_request"}` whenever the authorize URL was accessed (which was previously misattributed to the `CALENDAR` scopes).
++- **Fix**: Added `"response_type": "code"` to the query parameters in `auth_init()`.
++
++### 3. Premature Expiration and "expired, reconnect" After 1 Hour
++- **Cause**: Intervals.icu issues long-lived OAuth access tokens and does not return `expires_in` or `refresh_token` in its token response. `server.py` incorrectly fell back to `DEFAULT_TOKEN_TTL = 3600` (1 hour) when `expires_in` was absent. After ~55 minutes, the background refresher loop `refresh_tokens()` detected that the connection was within 300 seconds of expiry. Because no `refresh_token` existed, it marked the status as `"expired, reconnect"` and nullified the valid access token.
++- **Fix**: Updated `store_connection()` to only set `expires_at` when `expires_in` is explicitly provided by the OAuth response (leaving it `None` for non-expiring tokens), and updated `refresh_tokens()` so it skips connections without an `expires_at` timestamp.
+diff --git a/server.py b/server.py
+index 351cbb7..4e55096 100644
+--- a/server.py
++++ b/server.py
+@@ -12,7 +12,6 @@ import config
+ STATIC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
+ TOKEN_URL = config.INTERVALS_BASE + "/api/oauth/token"
+ AUTHORIZE_URL = config.INTERVALS_BASE + "/oauth/authorize"
+-DEFAULT_TOKEN_TTL = 3600   # seconds; used when the provider does not say how long a token lives
+ 
+ # --- in-memory store -------------------------------------------------------
+ USERS = {
+@@ -63,18 +62,22 @@ def exchange_code(code):
+ 
+ 
+ def store_connection(user_id, tok):
+-    expires_in = int(tok.get("expires_in") or DEFAULT_TOKEN_TTL)
++    expires_in = tok.get("expires_in")
++    expires_at = (time.time() + int(expires_in)) if expires_in else None
+     refresh = tok.get("refresh_token")
+-    if not refresh:
++    if expires_at and not refresh:
+         log(f"{user_id}: no refresh_token in response, scheduling expiry in {expires_in}s")
+     athlete = tok.get("athlete") or {}
+     with LOCK:
+         CONNECTIONS[user_id] = {
+             "athlete_id": athlete.get("id"), "athlete_name": athlete.get("name"),
+             "access_token": tok["access_token"], "refresh_token": refresh,
+-            "scope": tok.get("scope"), "expires_at": time.time() + expires_in, "status": "connected",
++            "scope": tok.get("scope"), "expires_at": expires_at, "status": "connected",
+         }
+-    log(f"{user_id}: connected as athlete {athlete.get('id')} (expires in {expires_in}s)")
++    if expires_at:
++        log(f"{user_id}: connected as athlete {athlete.get('id')} (expires in {expires_in}s)")
++    else:
++        log(f"{user_id}: connected as athlete {athlete.get('id')} (no expiry)")
+ 
+ 
+ def refresh_tokens():
+@@ -84,7 +87,7 @@ def refresh_tokens():
+         now = time.time()
+         with LOCK:
+             for uid, c in CONNECTIONS.items():
+-                if c["status"] != "connected" or c["expires_at"] - now > 300:
++                if c["status"] != "connected" or not c.get("expires_at") or c["expires_at"] - now > 300:
+                     continue
+                 if not c["refresh_token"]:
+                     log(f"{uid}: token expiry passed and no refresh token on file -> expired, reconnect")
+@@ -95,9 +98,10 @@ def refresh_tokens():
+                         "grant_type": "refresh_token", "refresh_token": c["refresh_token"],
+                         "client_id": config.CLIENT_ID, "client_secret": config.CLIENT_SECRET,
+                     })
++                    exp = tok.get("expires_in")
+                     c.update(access_token=tok["access_token"],
+                              refresh_token=tok.get("refresh_token", c["refresh_token"]),
+-                             expires_at=now + int(tok["expires_in"]))
++                             expires_at=(now + int(exp)) if exp else None)
+                     log(f"{uid}: token refreshed")
+                 except Exception as e:
+                     log(f"{uid}: refresh failed ({e}) -> expired, reconnect")
+@@ -143,9 +147,14 @@ class Handler(BaseHTTPRequestHandler):
+ 
+     def current_user(self):
+         auth = self.headers.get("Authorization", "")
+-        if not auth.startswith("Bearer "):
+-            return None
+-        return USERS.get(auth[7:].strip())
++        if auth.startswith("Bearer "):
++            return USERS.get(auth[7:].strip())
++        url = urllib.parse.urlsplit(self.path)
++        q = dict(urllib.parse.parse_qsl(url.query))
++        token = q.get("token")
++        if token:
++            return USERS.get(token)
++        return None
+ 
+     def require_user(self):
+         user = self.current_user()
+@@ -191,7 +200,7 @@ class Handler(BaseHTTPRequestHandler):
+         if not user:
+             return
+         params = {"client_id": config.CLIENT_ID, "redirect_uri": config.REDIRECT_URI,
+-                  "scope": config.SCOPES, "state": sign_state(user["id"])}
++                  "response_type": "code", "scope": config.SCOPES, "state": sign_state(user["id"])}
+         self.redirect(AUTHORIZE_URL + "?" + urllib.parse.urlencode(params, safe=":,"))
+ 
+     # Step 2: Intervals redirects back here with ?code=&state=.
+@@ -233,6 +242,9 @@ class Handler(BaseHTTPRequestHandler):
+             code, data = intervals_get(c, "/wellness")
+             self.send_json(code, data)
+         except urllib.error.HTTPError as e:
++            if e.code == 401:
++                with LOCK:
++                    c.update(status="expired, reconnect", access_token=None)
+             self.send_json(e.code, {"error": f"intervals returned {e.code}"})
+         except Exception as e:
+             self.send_json(502, {"error": str(e)})
+diff --git a/static/app.js b/static/app.js
+index 368922e..d450d38 100644
+--- a/static/app.js
++++ b/static/app.js
+@@ -25,7 +25,7 @@ async function render() {
+     } else {
+       const why = st.status && st.status !== "disconnected" ? `<p class="muted">Status: ${esc(st.status)}</p>` : "";
+       card = `<div class="card">Intervals.icu is not connected.${why}
+-        <p><a class="btn" href="/api/intervals/auth/init">Connect Intervals.icu</a></p></div>`;
++        <p><a class="btn" href="/api/intervals/auth/init?token=${encodeURIComponent(TOKEN)}">Connect Intervals.icu</a></p></div>`;
+     }
+     root.className = "";
+     root.innerHTML = `<p>Signed in as <b>${esc(me.name)}</b>.</p>${card}`;

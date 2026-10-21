@@ -1,0 +1,7 @@
+# Intervals.icu connection: causes
+
+1. **Connect button always 401s.** The button was a plain link to `GET /api/intervals/auth/init`. A page navigation doesn't send the `Authorization: Bearer` header (it's only added by the SPA's `fetch` wrapper), so the server answered `{"error":"unauthorized"}`. Fix: `auth/init` is now an authenticated `POST` returning `{authorize_url}`; the button calls it via `api()` and does `window.location.assign(...)`.
+2. **Authorize URL rejected with 400 `invalid_request`.** Since the calendar sync (2026-10-02) the scope list was `ACTIVITY:READ,ACTIVITY:WRITE,...,CALENDAR:READ,CALENDAR:WRITE`. Intervals rejects a repeated area (`:WRITE` implies `:READ`) and its error body doesn't name the parameter (see `notes/`). Fix: `ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE`.
+3. **"Expired, reconnect" after an hour.** Intervals tokens have no `refresh_token` and no `expires_in`; they live until revoked. The code assumed a default 3600s TTL, and with no refresh token the background job expired the connection. Fix: no expiry is scheduled when `expires_in` is absent. Revocation is now handled lazily: a 401 from Intervals marks the connection "expired, reconnect".
+
+Not verified: I couldn't test against the real Intervals.icu. The `redirect_uri` registered for the client must match `config.REDIRECT_URI`. The notes say the token exchange needs only `client_id`, `client_secret` and `code`. I left the extra `grant_type`/`redirect_uri` fields as they are, since Rivera's exchange worked with them.

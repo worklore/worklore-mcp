@@ -1,0 +1,3 @@
+Fixed the hide crash and the feed leak. `hide()` used the reserved DynamoDB name `hidden` in an update; `feed()` used it in a projection, so the filter never saw the flag. I aliased every attribute name in the library’s DynamoDB expressions and documented the causes in [ANSWER.md](/tmp/h-cpjgW1/ANSWER.md).
+
+Regression tests cover hiding through the library and a story marked hidden directly in the table. All 8 tests pass.

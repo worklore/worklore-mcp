@@ -1,0 +1,3 @@
+I found one authorization flaw: Bob could use `/like` and `/view` to change counters on Alice’s private task. Both requests returned `200` before the fix.
+
+I added access checks in [api.py](/tmp/h-L1HGh5/api.py), added cross-user tests in [test_api.py](/tmp/h-L1HGh5/tests/test_api.py), and documented the finding in [ANSWER.md](/tmp/h-L1HGh5/ANSWER.md). After the fix, both requests return `403` and leave the counters unchanged. All 7 tests pass.

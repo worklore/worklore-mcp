@@ -1,0 +1,39 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..f853ab4
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,9 @@
++# Cache fix
++
++**Cause:** `build_system` (bot.py) put instructions + athlete context (incl. facts) in one block with one `cache_control` marker. `save_fact` changes the facts, so the prefix hash changed and the whole ~1100-token prompt was re-created (see `logs/usage.jsonl`: `cache_read 0`, `cache_creation ~1100` after a save).
++
++**Change:** `build_system` now returns two text blocks, each with `cache_control: ephemeral`: (1) `INSTRUCTIONS`, byte-stable; (2) `athlete_context(...)` (date, profile, zones, goal, facts, language). A memory write now only invalidates block 2. Tool filtering is untouched. Only 2 of the 4 allowed markers are used.
++
++**Caveat (please verify):** a cached prefix must meet the model's minimum cacheable length (1024 tokens for Sonnet 4.5). The static prefix is tools (~110 tokens) + instructions (~2.5k chars, roughly 600-750 tokens), so it is probably *below* 1024 and the first marker may silently not cache. I couldn't call the API here to check. After deploying, send two messages, then a `save_fact`, then a third, and look at `logs/usage.jsonl`: `cache_read_input_tokens` should stay at roughly the static size after the write. If it drops to 0, the static part is too short. Then the fix is to lengthen the static prefix with real content (for example more coaching rules or examples), not padding.
++
++Nothing was deployed or sent anywhere.
+diff --git a/__pycache__/bot.cpython-314.pyc b/__pycache__/bot.cpython-314.pyc
+new file mode 100644
+index 0000000..384ac21
+Binary files /dev/null and b/__pycache__/bot.cpython-314.pyc differ
+diff --git a/bot.py b/bot.py
+index e2ff241..de2e413 100644
+--- a/bot.py
++++ b/bot.py
+@@ -128,9 +128,12 @@ def athlete_context(a, today):
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    # Two cached segments: the static instructions, then the per-athlete tail. A save_fact
++    # changes only the tail, so the instructions stay a cache hit.
++    return [
++        {"type": "text", "text": INSTRUCTIONS, "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": athlete_context(a, today), "cache_control": {"type": "ephemeral"}},
++    ]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [

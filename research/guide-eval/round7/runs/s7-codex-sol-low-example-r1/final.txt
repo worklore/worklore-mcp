@@ -1,0 +1,3 @@
+Fixed the Intervals.icu integration. Connect now starts through an authenticated POST, the requested scopes no longer repeat areas, and tokens without expiry fields are no longer marked expired after an hour. The wellness proxy prompts reconnection when Intervals returns 401. I also tightened callback state validation and added an account mismatch check.
+
+The causes and which parts of the colleague’s note applied are in [ANSWER.md](/tmp/h-wnWz82/ANSWER.md). Local flow checks and `git diff --check` passed. A live OAuth check was not possible with the placeholder credentials.

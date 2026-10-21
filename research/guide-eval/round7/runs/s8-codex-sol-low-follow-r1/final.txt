@@ -1,0 +1,3 @@
+Split the system prompt into two cached blocks: stable coaching instructions and changing athlete context. A `save_fact` update now changes only the second block. I documented the change in [ANSWER.md](/tmp/h-ZOxRuR/ANSWER.md).
+
+Local checks passed, including confirming that adding a fact leaves the instruction block identical. I did not make a live Claude call, so cache token counts remain unverified.

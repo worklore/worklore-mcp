@@ -1,0 +1,72 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..9f8e7ad
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,7 @@
++# Second publish failure
++
++The first publish found no existing stories, so `similar` was empty. On the second publish, `similarity()` calculated a Python float and `related()` placed it in `similar[0].score`. `put_item` then failed while serializing the item because DynamoDB does not accept Python floats. The exception became the HTTP 500 shown in `logs/error.log`.
++
++`similarity()` now returns a rounded integer percentage (0–100), so computed scores are valid DynamoDB numbers. A regression test publishes two stories through the handler using the validating in-memory table, checks that both requests return 201, and verifies that the second item stores the expected integer score (65). This covers the populated-table path that the original first-publish test missed.
++
++Verification: `python3 -m unittest discover tests` passes (2 tests). No external table was used because this task is confined to the current directory.
+diff --git a/src/app.py b/src/app.py
+index db49c5e..c53ee63 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -22,12 +22,12 @@ def words(text):
+ 
+ 
+ def similarity(a, b):
+-    """Shared-tag ratio (Jaccard), blended with shared words of the two bodies."""
++    """Integer percentage blending shared tags and body words (Jaccard)."""
+     ta, tb = set(a.get("tags", [])), set(b.get("tags", []))
+     tag_score = len(ta & tb) / len(ta | tb) if (ta | tb) else 0
+     wa, wb = words(a.get("body")), words(b.get("body"))
+     word_score = len(wa & wb) / len(wa | wb) if (wa | wb) else 0
+-    return round(0.7 * tag_score + 0.3 * word_score, 4)
++    return round(100 * (0.7 * tag_score + 0.3 * word_score))
+ 
+ 
+ def related(story, existing):
+diff --git a/tests/test_publish.py b/tests/test_publish.py
+index 6c9ac44..8e6ddae 100644
+--- a/tests/test_publish.py
++++ b/tests/test_publish.py
+@@ -1,4 +1,5 @@
+ import os
++import json
+ import sys
+ import unittest
+ 
+@@ -23,6 +24,29 @@ class PublishTest(unittest.TestCase):
+         self.assertEqual(table.get_item(Key={"slug": "why-my-cron-ran-twice"})["Item"]["title"], "Why my cron ran twice")
+         self.assertEqual(table.scan()["Count"], 1)
+ 
++    def test_second_publish_stores_integer_similarity_score(self):
++        table = FakeTable()
++        first = {
++            "slug": "first-story",
++            "title": "First story",
++            "tags": ["python", "dynamodb"],
++            "body": "A story about publishing",
++        }
++        second = {
++            "slug": "second-story",
++            "title": "Second story",
++            "tags": ["python"],
++            "body": "A story about publishing",
++        }
++
++        self.assertEqual(app.handler({"body": json.dumps(first)}, table)["statusCode"], 201)
++        self.assertEqual(app.handler({"body": json.dumps(second)}, table)["statusCode"], 201)
++
++        stored = table.get_item(Key={"slug": "second-story"})["Item"]
++        self.assertEqual(stored["similar"], [{"slug": "first-story", "score": 65}])
++        self.assertIs(type(stored["similar"][0]["score"]), int)
++        self.assertEqual(table.scan()["Count"], 2)
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

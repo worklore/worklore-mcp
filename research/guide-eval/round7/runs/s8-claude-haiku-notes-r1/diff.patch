@@ -1,0 +1,98 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..7c7b822
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,71 @@
++# Fix: memory writes evicting the static system prompt
++
++## Cause
++
++`build_system()` in `bot.py` put the instructions and the per-athlete context
++(date, profile, zones, goal, facts) into one text block with a single
++`cache_control` marker. The prompt cache is a prefix hash, so every `save_fact`
++changed the facts inside that block, which invalidated everything after the
++first changed byte, including the instructions that never change.
++
++`logs/usage.jsonl` shows this: the call after each `save_fact` has
++`cache_read_input_tokens: 0` and `cache_creation_input_tokens` back at the full
++prompt size.
++
++## Change
++
++`bot.py`, `build_system()`: the system prompt is now two text blocks, each with
++`cache_control: {"type": "ephemeral"}`:
++
++1. `INSTRUCTIONS`, byte-identical for every athlete and every day.
++2. `athlete_context(a, today)`, the volatile tail.
++
++A `save_fact` write now invalidates only block two. Nothing else changed: the
++tools array, the message flow and the `save_fact` logic are the same.
++
++## Verification
++
++Run locally without calling the API or touching `data/athletes.json`:
++
++- Block one equals `INSTRUCTIONS` for two different athletes, two dates, and
++  an athlete with added facts.
++- Block two differs once facts change.
++- Both blocks carry a `cache_control` marker.
++- `tools` in the request is unchanged.
++
++I did not send a request to the Anthropic API, so cache hit rates are not yet
++measured.
++
++## Open problem: the static block may be below the cache minimum
++
++Anthropic ignores a cache marker when the cacheable prefix up to it is shorter
++than the model's minimum. For `claude-sonnet-4-5` (the model in `bot.py`) that
++minimum is 1,024 tokens.
++
++The instructions are about 2,500 characters, roughly 650–800 tokens by my
++estimate. The prefix includes the tools array, which is also above the system
++prompt. The usage log's first call creates about 1,046 cached tokens for tools
++plus system prompt, which implies the static block is around 800–900 tokens.
++So the marker on block one may be silently ignored, and a memory write would
++still evict everything, as before. The marker on block two would still cache
++the full prefix.
++
++I could not confirm the exact token count offline. Two ways to settle it:
++
++- Check the next real call after a `save_fact`: if `cache_creation_input_tokens`
++  is about the size of the tail (~200–250 tokens) and `cache_read_input_tokens`
++  covers the instructions, the fix works. If `cache_creation` is the full prompt
++  again, the static block is still below the minimum.
++- If it is below the minimum, the instructions need to grow by a few hundred
++  tokens of static content to reach 1,024 tokens (or the tools plus
++  instructions together). I did not add padding: the content should be coaching
++  material you choose, not filler. Once the block clears the threshold, the
++  split above does its job.
++
++## Not changed
++
++- Keyword-based tool-group selection sits above the system prompt in the cached
++  prefix, so a message that adds a tool group (e.g. `plan`, `race`) still misses
++  the cache for the whole prompt. This was already the case and the notes call it
++  an acceptable trade-off; I left it alone.
++- Nothing was deployed, committed or reported anywhere outside this directory.
+diff --git a/bot.py b/bot.py
+index e2ff241..706555c 100644
+--- a/bot.py
++++ b/bot.py
+@@ -128,9 +128,13 @@ def athlete_context(a, today):
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    # Two cached blocks. The cache is a prefix hash, so a save_fact write (which
++    # changes the athlete context) must not evict the static instructions above it.
++    # Block one is byte-identical for every athlete and day; block two is the tail.
++    return [
++        {"type": "text", "text": INSTRUCTIONS, "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": athlete_context(a, today), "cache_control": {"type": "ephemeral"}},
++    ]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [

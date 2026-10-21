@@ -1,0 +1,216 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..f6423e3
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,8 @@
++# Analytics events implemented
++
++- Registration sends `registration_email_started` and `registration_phone_started` once when each field first receives input. Neither event includes contact details.
++- The loan slider sends `loan_amount_changed` when an interaction ends with a changed value, including the chosen integer `amount`.
++- Accepting the checkbox sends `terms_accepted`. Tapping an enabled Continue button sends `registration_continue_tapped` with integer `amount` and boolean `terms` before opening offers.
++- Offers sends `offers_scrolled` once after the first user scroll ends, with the list's double `offset`.
++
++All events use the existing `Analytics.capture` wrapper. `flutter analyze` completed with no issues.
+diff --git a/lib/screens/offer_screen.dart b/lib/screens/offer_screen.dart
+index 921ee59..a4d12a6 100644
+--- a/lib/screens/offer_screen.dart
++++ b/lib/screens/offer_screen.dart
+@@ -1,5 +1,9 @@
++import 'dart:async';
++
+ import 'package:flutter/material.dart';
+ 
++import '../analytics.dart';
++
+ class Offer {
+   const Offer(this.bank, this.months, this.rate);
+   final String bank;
+@@ -20,25 +24,54 @@ const _offers = [
+   Offer('Nordlån', 60, 12.3),
+ ];
+ 
+-class OfferScreen extends StatelessWidget {
++class OfferScreen extends StatefulWidget {
+   const OfferScreen({super.key});
+ 
++  @override
++  State<OfferScreen> createState() => _OfferScreenState();
++}
++
++class _OfferScreenState extends State<OfferScreen> {
++  bool _userScrolled = false;
++  bool _scrollCaptured = false;
++
++  bool _onScroll(ScrollNotification notification) {
++    if (notification.depth != 0 || _scrollCaptured) return false;
++
++    if (notification is ScrollUpdateNotification &&
++        notification.dragDetails != null &&
++        notification.scrollDelta != 0) {
++      _userScrolled = true;
++    } else if (notification is ScrollEndNotification && _userScrolled) {
++      _scrollCaptured = true;
++      unawaited(
++        Analytics.capture('offers_scrolled', {
++          'offset': notification.metrics.pixels,
++        }),
++      );
++    }
++    return false;
++  }
++
+   @override
+   Widget build(BuildContext context) {
+     return Scaffold(
+       appBar: AppBar(title: const Text('Offers')),
+-      body: ListView.builder(
+-        itemCount: _offers.length,
+-        itemBuilder: (context, i) {
+-          final o = _offers[i];
+-          return ListTile(
+-            leading: const Icon(Icons.account_balance),
+-            title: Text('${o.bank}, ${o.months} months'),
+-            subtitle: Text('${o.rate.toStringAsFixed(1)}% APR'),
+-            trailing: const Icon(Icons.chevron_right),
+-            onTap: () {},
+-          );
+-        },
++      body: NotificationListener<ScrollNotification>(
++        onNotification: _onScroll,
++        child: ListView.builder(
++          itemCount: _offers.length,
++          itemBuilder: (context, i) {
++            final o = _offers[i];
++            return ListTile(
++              leading: const Icon(Icons.account_balance),
++              title: Text('${o.bank}, ${o.months} months'),
++              subtitle: Text('${o.rate.toStringAsFixed(1)}% APR'),
++              trailing: const Icon(Icons.chevron_right),
++              onTap: () {},
++            );
++          },
++        ),
+       ),
+     );
+   }
+diff --git a/lib/screens/registration_screen.dart b/lib/screens/registration_screen.dart
+index 059a250..276d8e7 100644
+--- a/lib/screens/registration_screen.dart
++++ b/lib/screens/registration_screen.dart
+@@ -1,5 +1,9 @@
++import 'dart:async';
++
+ import 'package:flutter/material.dart';
+ 
++import '../analytics.dart';
++
+ class RegistrationScreen extends StatefulWidget {
+   const RegistrationScreen({super.key});
+ 
+@@ -12,6 +16,9 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
+   final _phone = TextEditingController();
+   double _amount = 50000;
+   bool _terms = false;
++  bool _emailStarted = false;
++  bool _phoneStarted = false;
++  bool _amountChangedDuringInteraction = false;
+ 
+   @override
+   void dispose() {
+@@ -23,6 +30,54 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
+   bool get _canContinue =>
+       _terms && _email.text.contains('@') && _phone.text.length >= 10;
+ 
++  void _onEmailChanged(String value) {
++    if (!_emailStarted && value.isNotEmpty) {
++      _emailStarted = true;
++      unawaited(Analytics.capture('registration_email_started'));
++    }
++    setState(() {});
++  }
++
++  void _onPhoneChanged(String value) {
++    if (!_phoneStarted && value.isNotEmpty) {
++      _phoneStarted = true;
++      unawaited(Analytics.capture('registration_phone_started'));
++    }
++    setState(() {});
++  }
++
++  void _onAmountChanged(double value) {
++    if (value != _amount) _amountChangedDuringInteraction = true;
++    setState(() => _amount = value);
++  }
++
++  void _onAmountChangeEnd(double value) {
++    if (_amountChangedDuringInteraction) {
++      unawaited(
++        Analytics.capture('loan_amount_changed', {'amount': value.round()}),
++      );
++      _amountChangedDuringInteraction = false;
++    }
++  }
++
++  void _onTermsChanged(bool? value) {
++    final accepted = value ?? false;
++    if (accepted && !_terms) {
++      unawaited(Analytics.capture('terms_accepted'));
++    }
++    setState(() => _terms = accepted);
++  }
++
++  void _onContinue() {
++    unawaited(
++      Analytics.capture('registration_continue_tapped', {
++        'amount': _amount.round(),
++        'terms': _terms,
++      }),
++    );
++    Navigator.of(context).pushNamed('/offers');
++  }
++
+   @override
+   Widget build(BuildContext context) {
+     return Scaffold(
+@@ -36,14 +91,14 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
+               controller: _email,
+               keyboardType: TextInputType.emailAddress,
+               decoration: const InputDecoration(labelText: 'Email'),
+-              onChanged: (_) => setState(() {}),
++              onChanged: _onEmailChanged,
+             ),
+             const SizedBox(height: 12),
+             TextField(
+               controller: _phone,
+               keyboardType: TextInputType.phone,
+               decoration: const InputDecoration(labelText: 'Phone'),
+-              onChanged: (_) => setState(() {}),
++              onChanged: _onPhoneChanged,
+             ),
+             const SizedBox(height: 24),
+             Text('Loan amount: ${_amount.round()}'),
+@@ -53,19 +108,18 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
+               divisions: 49,
+               value: _amount,
+               label: _amount.round().toString(),
+-              onChanged: (v) => setState(() => _amount = v),
++              onChanged: _onAmountChanged,
++              onChangeEnd: _onAmountChangeEnd,
+             ),
+             CheckboxListTile(
+               value: _terms,
+               title: const Text('I accept the terms and conditions'),
+               controlAffinity: ListTileControlAffinity.leading,
+-              onChanged: (v) => setState(() => _terms = v ?? false),
++              onChanged: _onTermsChanged,
+             ),
+             const Spacer(),
+             FilledButton(
+-              onPressed: _canContinue
+-                  ? () => Navigator.of(context).pushNamed('/offers')
+-                  : null,
++              onPressed: _canContinue ? _onContinue : null,
+               child: const Text('Continue'),
+             ),
+           ],

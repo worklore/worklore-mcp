@@ -1,0 +1,3 @@
+Fixed both paths. `hide()` now aliases DynamoDB’s reserved `hidden` attribute, preventing the production update error. `feed()` projects that attribute through an alias, so it can exclude hidden stories, including ones changed directly in the table. I also fixed the reserved `status` name in `archive()` and made archived stories leave the feed.
+
+The causes are documented in [ANSWER.md](/tmp/h-LPIAUh/ANSWER.md). Regression tests pass: 9 tests with `python3 -m unittest discover tests`.

@@ -1,0 +1,3 @@
+Implemented all six events from `docs/EVENTS.md` on the [registration screen](/tmp/h-NFFi9n/lib/screens/registration_screen.dart) and [offers screen](/tmp/h-NFFi9n/lib/screens/offer_screen.dart) using `Analytics.capture`. Field-start events contain no email or phone number. I documented the behavior in [ANSWER.md](/tmp/h-NFFi9n/ANSWER.md).
+
+`flutter analyze --no-pub` passed. There is no test directory, so there were no tests to run.

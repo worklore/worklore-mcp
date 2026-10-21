@@ -1,0 +1,108 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..e6a748f
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,9 @@
++# Hidden story incident
++
++The production 500 came from `StoryLibrary.hide`: its `UpdateExpression` used `hidden` as a bare attribute name. DynamoDB treats `hidden` as reserved and rejected the update with the `ValidationException` shown in `logs/prod-error.log`.
++
++The staging story was successfully marked `hidden: true` by the manual CLI update. The public feed's `ProjectionExpression` also named `hidden` bare. In the read behavior reproduced by this repository's DynamoDB stand-in, that field was omitted from scanned items, so `not i.get("hidden")` evaluated true and let the story through. This explains why the manual write and redeploy did not fix the feed; the code shows no feed cache or second table.
++
++All attribute names in the library's DynamoDB expressions now use `#` aliases with `ExpressionAttributeNames`, including conditions and the planned archive operation. Regression tests cover both hiding through the library and a story marked hidden directly in the table, then assert it is absent from the feed. `python3 -m unittest discover -s tests -v` passes (8 tests).
++
++The colleague's note applied to the reserved `hidden` update failure, the projection/read failure, the convention of aliasing every expression attribute, and testing a record with `hidden` set. Its `similar` example did not apply to this codebase. The suggested deliberate bare-word experiments were unnecessary: the production log records the update rejection, and the existing fake plus regression test exercise the read behavior.
+diff --git a/src/app.py b/src/app.py
+index 963b0b5..3cd137d 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -34,7 +34,8 @@ class StoryLibrary:
+                 "published_at": int(self.clock()),
+                 "status": "published",
+             },
+-            ConditionExpression="attribute_not_exists(slug)",
++            ConditionExpression="attribute_not_exists(#slug)",
++            ExpressionAttributeNames={"#slug": "slug"},
+         )
+ 
+     def get(self, slug):
+@@ -43,8 +44,9 @@ class StoryLibrary:
+     def rename(self, slug, title):
+         self.table.update_item(
+             Key={"slug": slug},
+-            UpdateExpression="SET title = :t",
+-            ConditionExpression="attribute_exists(slug)",
++            UpdateExpression="SET #title = :t",
++            ConditionExpression="attribute_exists(#slug)",
++            ExpressionAttributeNames={"#title": "title", "#slug": "slug"},
+             ExpressionAttributeValues={":t": title},
+         )
+ 
+@@ -52,14 +54,18 @@ class StoryLibrary:
+         """Author withdraws a story: it stays in the table but leaves the feed."""
+         self.table.update_item(
+             Key={"slug": slug},
+-            UpdateExpression="SET hidden = :h, hidden_by = :by, hidden_at = :t",
+-            ConditionExpression="attribute_exists(slug)",
++            UpdateExpression="SET #hidden = :h, #hidden_by = :by, #hidden_at = :t",
++            ConditionExpression="attribute_exists(#slug)",
++            ExpressionAttributeNames={"#hidden": "hidden", "#hidden_by": "hidden_by", "#hidden_at": "hidden_at", "#slug": "slug"},
+             ExpressionAttributeValues={":h": True, ":by": by, ":t": int(self.clock())},
+         )
+ 
+     def feed(self, limit=FEED_LIMIT):
+         """Public feed: newest first, hidden stories excluded, bodies left out."""
+-        resp = self.table.scan(ProjectionExpression="slug, title, hidden, published_at")
++        resp = self.table.scan(
++            ProjectionExpression="#slug, #title, #hidden, #published_at",
++            ExpressionAttributeNames={"#slug": "slug", "#title": "title", "#hidden": "hidden", "#published_at": "published_at"},
++        )
+         items = [i for i in resp["Items"] if not i.get("hidden")]
+         items.sort(key=lambda i: i["published_at"], reverse=True)
+         return [
+@@ -72,7 +78,8 @@ class StoryLibrary:
+         Not wired to the API yet (planned for the admin console)."""
+         self.table.update_item(
+             Key={"slug": slug},
+-            UpdateExpression="SET archived_at = :t",
+-            ConditionExpression="status = :published",
++            UpdateExpression="SET #archived_at = :t",
++            ConditionExpression="#status = :published",
++            ExpressionAttributeNames={"#archived_at": "archived_at", "#status": "status"},
+             ExpressionAttributeValues={":t": int(self.clock()), ":published": "published"},
+         )
+diff --git a/tests/test_feed.py b/tests/test_feed.py
+index f64234e..f076920 100644
+--- a/tests/test_feed.py
++++ b/tests/test_feed.py
+@@ -39,6 +39,29 @@ class FeedTests(unittest.TestCase):
+         self.lib.rename("hello", "Hello, world")
+         self.assertEqual(self.lib.get("hello")["title"], "Hello, world")
+ 
++    def test_hide_removes_story_from_feed(self):
++        self.lib.publish("visible", "Visible", "...", "ann")
++        self.lib.publish("hidden", "Hidden", "...", "bob")
++        self.lib.hide("hidden", by="bob")
++        self.assertTrue(self.lib.get("hidden")["hidden"])
++        self.assertEqual([s["slug"] for s in self.lib.feed()], ["visible"])
++
++    def test_feed_excludes_story_hidden_outside_library(self):
++        self.lib.publish("visible", "Visible", "...", "ann")
++        self.lib.publish("manual", "Manual", "...", "bob")
++        self.lib.table.update_item(
++            Key={"slug": "manual"},
++            UpdateExpression="SET #hidden = :true",
++            ExpressionAttributeNames={"#hidden": "hidden"},
++            ExpressionAttributeValues={":true": True},
++        )
++        self.assertEqual([s["slug"] for s in self.lib.feed()], ["visible"])
++
++    def test_archive_uses_reserved_status_in_condition(self):
++        self.lib.publish("hello", "Hello", "...", "ann")
++        self.lib.archive("hello")
++        self.assertEqual(self.lib.get("hello")["archived_at"], self.now)
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

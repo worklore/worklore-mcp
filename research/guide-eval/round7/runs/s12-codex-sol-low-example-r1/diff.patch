@@ -1,0 +1,100 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..a302d6b
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,17 @@
++# Authorization review
++
++## Finding and fix
++
++Bob could mutate Alice's private task through `POST /tasks/1/like` and `POST /tasks/1/view`. Before the fix, both returned `200`; reading the task as Alice afterward showed `likes` and `views` had each changed from `0` to `1`. Bob's `GET /tasks/1` returned `403`.
++
++Added the same `can_access` guard used by comments and nudges to both endpoints. An unauthorized caller now receives `403` before either counter changes.
++
++## Checks
++
++The regression test sends Bob's token to every action on Alice's private task: read, edit, delete, comment, complete, nudge, like, and view. All now return `403`, and Alice's task is unchanged. It also confirms Bob cannot edit, delete, or complete Alice's public task; a create request with `"owner": "bob"` still creates a task owned by the authenticated Alice. Existing tests cover the missing-token `401`, unknown-route `404`, bad-input `400`, and authorized task actions.
++
++Command: `python3 -m unittest discover -s tests -q` — 8 tests passed. Tests use an ephemeral local server and reset the in-memory store for each case; no persistent test data remains.
++
++## Colleague's note
++
++The two-account, every-endpoint authorization matrix and confirmation of a mutation by rereading as the owner applied directly and found the issue. The suggested unauthenticated and bad-input checks were already partly covered by existing tests. Installing the linked Claude Code skill did not apply; the local code and tests supplied the needed evidence. No external service was contacted.
+diff --git a/__pycache__/api.cpython-314.pyc b/__pycache__/api.cpython-314.pyc
+index 0cbfb7a..13c832e 100644
+Binary files a/__pycache__/api.cpython-314.pyc and b/__pycache__/api.cpython-314.pyc differ
+diff --git a/api.py b/api.py
+index 3014ab3..81f5ac1 100644
+--- a/api.py
++++ b/api.py
+@@ -161,9 +161,13 @@ class Handler(BaseHTTPRequestHandler):
+             task["nudges"] += 1
+             return self.send(200, {"id": task["id"], "nudges": task["nudges"]})
+         if action == "like":
++            if not can_access(user, task):
++                return self.send(403, {"error": "forbidden"})
+             task["likes"] += 1
+             return self.send(200, {"id": task["id"], "likes": task["likes"]})
+         if action == "view":
++            if not can_access(user, task):
++                return self.send(403, {"error": "forbidden"})
+             task["views"] += 1
+             return self.send(200, {"id": task["id"], "views": task["views"]})
+         return self.send(404, {"error": "no such route"})
+diff --git a/tests/__pycache__/test_api.cpython-314.pyc b/tests/__pycache__/test_api.cpython-314.pyc
+index 921b248..a55e2b7 100644
+Binary files a/tests/__pycache__/test_api.cpython-314.pyc and b/tests/__pycache__/test_api.cpython-314.pyc differ
+diff --git a/tests/test_api.py b/tests/test_api.py
+index 1380af5..fba11ee 100644
+--- a/tests/test_api.py
++++ b/tests/test_api.py
+@@ -10,6 +10,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+ import api  # noqa: E402
+ 
+ ALICE = "tok_alice_4f8c2e71b0"
++BOB = "tok_bob_9a1d7c3e55"
+ 
+ 
+ class ApiTest(unittest.TestCase):
+@@ -67,6 +68,40 @@ class ApiTest(unittest.TestCase):
+         self.assertEqual(self.call("POST", "/tasks", {"visibility": "public"})[0], 400)
+         self.assertEqual(self.call("GET", "/nope")[0], 404)
+ 
++    def test_private_task_rejects_other_user_on_every_action(self):
++        attempts = [
++            ("GET", "/tasks/1", None),
++            ("PATCH", "/tasks/1", {"title": "changed"}),
++            ("DELETE", "/tasks/1", None),
++            ("POST", "/tasks/1/comments", {"text": "hi"}),
++            ("POST", "/tasks/1/complete", None),
++            ("POST", "/tasks/1/nudge", None),
++            ("POST", "/tasks/1/like", None),
++            ("POST", "/tasks/1/view", None),
++        ]
++        before = self.call("GET", "/tasks/1")[1]
++        for method, path, body in attempts:
++            with self.subTest(method=method, path=path):
++                self.assertEqual(self.call(method, path, body, token=BOB)[0], 403)
++        self.assertEqual(self.call("GET", "/tasks/1")[1], before)
++
++    def test_public_task_owner_only_mutations(self):
++        before = self.call("GET", "/tasks/2")[1]
++        for method, path, body in [
++            ("PATCH", "/tasks/2", {"title": "changed"}),
++            ("DELETE", "/tasks/2", None),
++            ("POST", "/tasks/2/complete", None),
++        ]:
++            with self.subTest(method=method, path=path):
++                self.assertEqual(self.call(method, path, body, token=BOB)[0], 403)
++        self.assertEqual(self.call("GET", "/tasks/2")[1], before)
++
++    def test_create_cannot_assign_another_owner(self):
++        code, task = self.call("POST", "/tasks", {"title": "Mine", "owner": "bob"})
++        self.assertEqual(code, 201)
++        self.assertEqual(task["owner"], "alice")
++        self.assertEqual(self.call("GET", "/tasks/%d" % task["id"], token=BOB)[0], 403)
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

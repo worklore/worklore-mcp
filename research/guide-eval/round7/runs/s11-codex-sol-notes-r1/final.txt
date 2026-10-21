@@ -1,0 +1,3 @@
+The second publish computes a related-story score as a Python float. The first publish has no related stories, so it never hits that path. DynamoDB rejects the float and the handler returns 500.
+
+I changed the stored score to `Decimal` and added a regression test that publishes twice through the handler. The test reproduced the 500 before the fix; all tests now pass. The cause and fix are in [ANSWER.md](/tmp/h-KsgEyn/ANSWER.md).

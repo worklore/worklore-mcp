@@ -1,0 +1,63 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..34acdb1
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,5 @@
++# Prompt cache fix
++
++Split the system prompt into two blocks. The cache breakpoint now ends after the coaching instructions and stable athlete profile (name, sport, zones, goal, language). The current date and long-term facts follow in an uncached block, so `save_fact` changes only text after the breakpoint. Added stable coaching guidance to keep the reusable prefix above Claude's minimum cache size.
++
++Verified locally that adding a fact and changing the date leave the cached block identical while updating the following block. `python3 -m py_compile bot.py` and `git diff --check` pass. Live cache usage was not tested because it requires an API call.
+diff --git a/bot.py b/bot.py
+index e2ff241..7a997b4 100644
+--- a/bot.py
++++ b/bot.py
+@@ -111,26 +111,40 @@ Formatting:
+ - Plain text. No markdown headings, no tables.
+ - Lists only for a session structure (warm-up / main / cool-down).
+ - Numbers with units: 45 min, 12 km, 150 bpm.
++
++Before replying, check the athlete's sport, goal, zones, language and durable facts
++against the requested training advice. For a workout, make the prescribed effort
++and duration clear. For a weekly plan, keep recovery and rest visible and respect
++the volume and hard-session limits above. If a relevant detail is missing, ask
++for it instead of filling it in. When a tool returns a result, use that result
++in the reply and keep the same coaching and safety rules.
+ """
+ 
+ 
+-def athlete_context(a, today):
++def athlete_profile(a):
+     lines = [
+-        f"Today: {today.isoformat()} ({today.strftime('%A')})",
+         f"Athlete: {a.name} (id {a.user_id}), sport: {a.sport}",
+         "Zones: " + ", ".join(f"{k} {v}" for k, v in a.zones.items()),
+         f"Goal: {a.goal}",
+-        "Long-term facts:",
++        f"Language: {a.lang}",
+     ]
++    return "\n".join(lines)
++
++
++def athlete_context(a, today):
++    lines = [f"Today: {today.isoformat()} ({today.strftime('%A')})", "Long-term facts:"]
+     lines += [f"- {f}" for f in a.facts] or ["- (none yet)"]
+-    lines.append(f"Language: {a.lang}")
+     return "\n".join(lines)
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    # Keep the cache breakpoint before the date and facts, which change on writes.
++    # The stable prefix includes the profile and enough instructions for caching.
++    return [
++        {"type": "text", "text": INSTRUCTIONS + "\n\n" + athlete_profile(a),
++         "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": athlete_context(a, today)},
++    ]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [

@@ -1,0 +1,5 @@
+Fixed both paths. The production crash came from bare `hidden` in the hide update. The staging feed included a manually hidden story because its projection omitted `hidden`, leaving the filter with no flag to check.
+
+I aliased every attribute name in the module’s DynamoDB expressions and added regression tests for both hide paths and the reserved `status` condition. The causes are documented in [ANSWER.md](/tmp/h-VHERxZ/ANSWER.md).
+
+Verification: all 8 tests pass.

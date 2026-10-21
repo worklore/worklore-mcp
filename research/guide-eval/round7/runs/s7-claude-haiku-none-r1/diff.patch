@@ -1,0 +1,232 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..477a5c4
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,73 @@
++# Intervals.icu connection: causes
++
++## 1. Connect button returns 401 for everyone (support #214)
++
++The button was a plain `<a href="/api/intervals/auth/init">`. A link navigation
++does not send the `Authorization: Bearer` header. The SPA only adds that header
++in its `fetch` wrapper, and the token lives in `localStorage`. So the server
++saw no credentials and answered `401 {"error": "unauthorized"}`, the page
++athletes reported.
++
++**Fix:** `auth_init` now returns `{"url": ...}` as JSON. The Connect button in
++`static/app.js` fetches that with the token, then sets `window.location` to the
++Intervals consent URL.
++
++## 2. Authorize step answers 400 `invalid_request` (support #214, #219)
++
++With a valid token, the URL from `auth_init` opens Intervals' authorize page
++and gets `{"error":"invalid_request"}` before the consent screen. Changing
++`state` or `redirect_uri` gave the same body, so the request is rejected
++before those are checked.
++
++What I checked:
++- The scope syntax (`ACTIVITY:READ,...,CALENDAR:WRITE`, comma-separated, no
++  spaces) matches Intervals' documented format, so the scope string itself is
++  not malformed.
++- The breakage started with the calendar sync on 2026-10-02, which added
++  `CALENDAR:*` scopes. Scope validation against the registered app is the
++  likely reason, but I could not confirm it against the live server.
++
++**Most likely cause:** `config.py` hard-coded the dev placeholder client
++(`tricoach-dev` / `s3cr3t-placeholder-0000`), even though the README says the
++real pair is in the deploy environment. Intervals does not know that client
++for the production app, so the request is rejected.
++
++**Fix:** `config.py` reads `INTERVALS_CLIENT_ID` and `INTERVALS_CLIENT_SECRET`
++from the environment and keeps the placeholders only as local-dev defaults.
++
++**Not yet done (needs you):** set those two variables in the deploy environment
++and check that the registered Intervals app has the `CALENDAR` scopes enabled.
++If the 400 persists with the real client, the next thing to check is that
++registration, not the code. I did not deploy or contact Intervals.
++
++## 3. Rivera's connection "expired" an hour after onboarding (support #219)
++
++The token response had no `expires_in` and no `refresh_token`
++(`connect-attempt.log`, 2026-09-19). The server defaulted `expires_in` to
++3600 s, then the refresher found no refresh token and marked the connection
++`expired, reconnect` at 18:37, about an hour after connecting. The token itself
++had no stated lifetime.
++
++**Fix:** a missing `expires_in` now means "no stated expiry", not one hour.
++The refresher skips such connections. A connection that does expire without a
++refresh token is still marked expired.
++
++## Other changes
++
++- `refresh_tokens` no longer holds `LOCK` during the network call to Intervals.
++  Previously one slow refresh blocked every request handler for up to 15 s per
++  connection.
++- A refresh that finishes after the user has disconnected or reconnected can
++  still overwrite the newer connection. I did not fix that; it needs a
++  compare-and-set on the refresh token.
++
++## What was tested
++
++- `python3 -m py_compile` on `server.py` and `config.py`.
++- Running the server locally: `auth/init` with a Bearer token returns the
++  authorize URL as JSON; without one it returns 401. `status` returns
++  disconnected.
++- In-process: a token with no `expires_in` stores `expires_at = None`; a token
++  with `expires_in` keeps the expected expiry.
++- Not tested: the real Intervals authorize, callback, and refresh, because
++  they need the deploy client credentials and network access to Intervals.
+diff --git a/config.py b/config.py
+index 54a8144..35ce119 100644
+--- a/config.py
++++ b/config.py
+@@ -3,10 +3,11 @@ import os
+ PORT = 8766
+ APP_SECRET = "dev-only-change-me-7c1f0a"          # signs the OAuth state parameter
+ 
+-# Intervals.icu OAuth client (placeholders; the real pair is in the deploy env)
++# Intervals.icu OAuth client. Deploy sets INTERVALS_CLIENT_ID / INTERVALS_CLIENT_SECRET;
++# the placeholders are only for local dev.
+ INTERVALS_BASE = os.environ.get("INTERVALS_BASE", "https://intervals.icu")
+-CLIENT_ID = "tricoach-dev"
+-CLIENT_SECRET = "s3cr3t-placeholder-0000"
++CLIENT_ID = os.environ.get("INTERVALS_CLIENT_ID", "tricoach-dev")
++CLIENT_SECRET = os.environ.get("INTERVALS_CLIENT_SECRET", "s3cr3t-placeholder-0000")
+ REDIRECT_URI = f"http://localhost:{PORT}/api/intervals/callback"
+ SCOPES = "ACTIVITY:READ,ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:READ,CALENDAR:WRITE"
+ 
+diff --git a/server.py b/server.py
+index 351cbb7..a24d568 100644
+--- a/server.py
++++ b/server.py
+@@ -63,18 +63,21 @@ def exchange_code(code):
+ 
+ 
+ def store_connection(user_id, tok):
+-    expires_in = int(tok.get("expires_in") or DEFAULT_TOKEN_TTL)
++    # Intervals only sends expires_in / refresh_token when the grant has them. A missing
++    # expires_in means "no stated lifetime", not "one hour"; the old default expired
++    # the onboarding connection an hour in.
++    expires_in = tok.get("expires_in")
++    expires_at = time.time() + int(expires_in) if expires_in else None
+     refresh = tok.get("refresh_token")
+-    if not refresh:
+-        log(f"{user_id}: no refresh_token in response, scheduling expiry in {expires_in}s")
+     athlete = tok.get("athlete") or {}
+     with LOCK:
+         CONNECTIONS[user_id] = {
+             "athlete_id": athlete.get("id"), "athlete_name": athlete.get("name"),
+             "access_token": tok["access_token"], "refresh_token": refresh,
+-            "scope": tok.get("scope"), "expires_at": time.time() + expires_in, "status": "connected",
++            "scope": tok.get("scope"), "expires_at": expires_at, "status": "connected",
+         }
+-    log(f"{user_id}: connected as athlete {athlete.get('id')} (expires in {expires_in}s)")
++    lifetime = f"expires in {expires_in}s" if expires_at else "no expiry given"
++    log(f"{user_id}: connected as athlete {athlete.get('id')} ({lifetime}, refresh_token={'yes' if refresh else 'no'})")
+ 
+ 
+ def refresh_tokens():
+@@ -82,26 +85,36 @@ def refresh_tokens():
+     while True:
+         time.sleep(config.REFRESH_INTERVAL)
+         now = time.time()
++        # Pick the work under the lock, then do the network calls outside it so a slow
++        # Intervals response does not block every request handler.
+         with LOCK:
+-            for uid, c in CONNECTIONS.items():
+-                if c["status"] != "connected" or c["expires_at"] - now > 300:
+-                    continue
+-                if not c["refresh_token"]:
+-                    log(f"{uid}: token expiry passed and no refresh token on file -> expired, reconnect")
+-                    c.update(status="expired, reconnect", access_token=None)
+-                    continue
+-                try:
+-                    tok = post_form(TOKEN_URL, {
+-                        "grant_type": "refresh_token", "refresh_token": c["refresh_token"],
+-                        "client_id": config.CLIENT_ID, "client_secret": config.CLIENT_SECRET,
+-                    })
+-                    c.update(access_token=tok["access_token"],
+-                             refresh_token=tok.get("refresh_token", c["refresh_token"]),
+-                             expires_at=now + int(tok["expires_in"]))
+-                    log(f"{uid}: token refreshed")
+-                except Exception as e:
+-                    log(f"{uid}: refresh failed ({e}) -> expired, reconnect")
+-                    c.update(status="expired, reconnect", access_token=None)
++            due = [(uid, dict(c)) for uid, c in CONNECTIONS.items()
++                   if c["status"] == "connected" and c["expires_at"] is not None
++                   and c["expires_at"] - now <= 300]
++        for uid, c in due:
++            if not c["refresh_token"]:
++                log(f"{uid}: token expiry passed and no refresh token on file -> expired, reconnect")
++                _set_status(uid, "expired, reconnect", access_token=None)
++                continue
++            try:
++                tok = post_form(TOKEN_URL, {
++                    "grant_type": "refresh_token", "refresh_token": c["refresh_token"],
++                    "client_id": config.CLIENT_ID, "client_secret": config.CLIENT_SECRET,
++                })
++                expires_in = tok.get("expires_in")
++                _set_status(uid, "connected", access_token=tok["access_token"],
++                            refresh_token=tok.get("refresh_token", c["refresh_token"]),
++                            expires_at=now + int(expires_in) if expires_in else None)
++                log(f"{uid}: token refreshed")
++            except Exception as e:
++                log(f"{uid}: refresh failed ({e}) -> expired, reconnect")
++                _set_status(uid, "expired, reconnect", access_token=None)
++
++
++def _set_status(uid, status, **fields):
++    with LOCK:
++        if uid in CONNECTIONS:
++            CONNECTIONS[uid].update(status=status, **fields)
+ 
+ 
+ def intervals_get(conn, path):
+@@ -185,14 +198,16 @@ class Handler(BaseHTTPRequestHandler):
+             return
+         self.send_json(404, {"error": "not found"})
+ 
+-    # Step 1: build the authorize URL and send the browser to Intervals.
++    # Step 1: build the authorize URL. Returned as JSON because the SPA fetches this with the
++    # Bearer header (a plain link navigation sends no Authorization header and got a 401).
++    # The SPA then sends the browser to the returned URL.
+     def auth_init(self):
+         user = self.require_user()
+         if not user:
+             return
+         params = {"client_id": config.CLIENT_ID, "redirect_uri": config.REDIRECT_URI,
+                   "scope": config.SCOPES, "state": sign_state(user["id"])}
+-        self.redirect(AUTHORIZE_URL + "?" + urllib.parse.urlencode(params, safe=":,"))
++        self.send_json(200, {"url": AUTHORIZE_URL + "?" + urllib.parse.urlencode(params, safe=":,")})
+ 
+     # Step 2: Intervals redirects back here with ?code=&state=.
+     def callback(self, q):
+diff --git a/static/app.js b/static/app.js
+index 368922e..d3cc46a 100644
+--- a/static/app.js
++++ b/static/app.js
+@@ -25,12 +25,22 @@ async function render() {
+     } else {
+       const why = st.status && st.status !== "disconnected" ? `<p class="muted">Status: ${esc(st.status)}</p>` : "";
+       card = `<div class="card">Intervals.icu is not connected.${why}
+-        <p><a class="btn" href="/api/intervals/auth/init">Connect Intervals.icu</a></p></div>`;
++        <p><button class="btn" id="connect">Connect Intervals.icu</button></p></div>`;
+     }
+     root.className = "";
+     root.innerHTML = `<p>Signed in as <b>${esc(me.name)}</b>.</p>${card}`;
+     const d = document.getElementById("disconnect");
+     if (d) d.onclick = async () => { await api("/api/intervals/disconnect", { method: "POST" }); render(); };
++    const c = document.getElementById("connect");
++    if (c) c.onclick = async () => {
++      // Fetch with the Bearer token, then leave the SPA for Intervals' consent screen.
++      try {
++        const { url } = await api("/api/intervals/auth/init");
++        window.location.href = url;
++      } catch (e) {
++        root.insertAdjacentHTML("beforeend", `<p class="card">Could not start the connection: ${esc(e.message)}</p>`);
++      }
++    };
+   } catch (e) {
+     root.innerHTML = `<p class="card">Error: ${esc(e.message)}</p>`;
+   }
