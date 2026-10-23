@@ -49,6 +49,7 @@ Write — these act as **you**, and need your authenticated session:
 | `report_check` | `slug`, `result` (`has_problem`/`no_problem`), `note` *(optional)* | the recorded result of a story's read-only "Check if this applies to you" section, run in your project. Only for stories that have one (`get_story` says `has_check: true`). **Never record "not applicable"** — when your project does not match the check's preconditions, don't call it. One result per person per story; the latest replaces the earlier one |
 | `publish_story` | `markdown`, or the parts (`title`, `narrative`, `reproduce`, `tags`, `type`, `stack`) | the published story's slug + URL. **Only ever call this with the author's explicit approval of the full draft** |
 | `edit_story` | `slug`, `markdown` (the full revised story), `kind` (`rephrase`/`addition`/`correction`, default `rephrase`), `note` *(required for a correction)*, `source` *(optional https URL)* | the slug, URL, the recorded `revision` (`at`, `kind`, `note`, `source`) and how many reproducers were `notified`. Only the story's author can edit it. **Show the author a before/after diff and get their approval first.** The story's `date` never changes. If something in the story was wrong, it is a `correction` — which tells everyone who reproduced it — never a rephrase |
+| `suggest_edit` | `slug`, `markdown` (the complete story as you propose it), `rationale` (one or two lines: what was wrong or outdated, what you changed) | the suggestion `id`, its `status` (`open`), the story URL and a note. For a story by SOMEONE ELSE — worklore's pull request. **Show the user the before/after diff and get their approval first.** The story does not change: its author is notified and either accepts it as a credited revision or declines it, optionally handing the text back as a draft of the user's own. One open suggestion per person per story; sending another replaces it. For the user's own story use `edit_story` |
 
 All eight carry MCP annotations (`readOnlyHint` / `openWorldHint` / `idempotentHint`)
 so a client can tell the user what a call will do before they approve it, and all
@@ -171,7 +172,7 @@ rendered as `docs/ACCESS.md`); the summary below is generated from it.
 
 - **Methods with no credential:** `initialize`, `notifications/initialized`, `notifications/cancelled`, `ping`, `tools/list`, `resources/list`, `resources/read`, `resources/templates/list`, `prompts/list`.
 - **Tools with no credential:** `search_stories`, `get_story`, `suggest_for_project`, `check_capability` (without `url`) — public stories only; a private story answers exactly like a missing one.
-- **Need a signed-in session:** `check_capability` with `url`, `report_reproduction`, `report_check`, `publish_story`, `edit_story`. Without one they answer `401` with a `WWW-Authenticate` header pointing at the authorization server.
+- **Need a signed-in session:** `check_capability` with `url`, `report_reproduction`, `report_check`, `publish_story`, `edit_story`, `suggest_edit`. Without one they answer `401` with a `WWW-Authenticate` header pointing at the authorization server.
 - A JSON-RPC batch answers without a token only if every message in it does.
 <!-- /generated -->
 
