@@ -1,0 +1,145 @@
+# Why the nightly review never reported anything
+
+## Short answer
+
+The job ran every night. It failed, and the failure reporter died before it could
+send anything. Two bugs caused this, and one of them hid the other.
+
+Evidence that it ran: `launchctl-print.txt` (captured 2026-10-18) shows
+`runs = 6` and `last exit code = 1`. The job was loaded on 2026-10-12, so six
+scheduled 02:30 runs fall between 10-13 and 10-18. `nightly-review.err` has exactly
+six failure blocks. The count matches. launchd fired the job; the script failed.
+
+## Cause 1: `status=$?` kills the script in zsh (the one that hid everything)
+
+`bin/nightly-review.zsh` line 19 was `status=$?`. In zsh, `status` is a read-only
+special parameter (a synonym for `$?`). Assigning to it aborts the script:
+
+```
+/Users/vk/bin/nightly-review.zsh:19: read-only variable: status
+```
+
+I reproduced this with zsh 5.9: `zsh -c 'status=1'` prints the same error and exits 1.
+
+Because the abort happened before the `if [ $status -ne 0 ]` block, the
+`nightly review FAILED` notification never ran. Failures were silent. This is the
+"failure reporter is downstream of the failure" problem.
+
+Fix: use `rc=$?` and call the notifier from a `fail` helper that runs first in the
+failure path.
+
+## Cause 2: `Not logged in` under launchd (the actual failure)
+
+Every run in `nightly-review.err` begins with:
+
+```
+Not logged in · Please run /login
+```
+
+The plist's `EnvironmentVariables` set only `PATH`, and `launchctl-print.txt` shows
+no `USER` in the job's environment. The Claude CLI looks up its login from the
+keychain using the user name. If `USER` is missing, it may not find the login and
+reports "Not logged in". Whether launchd supplies `USER` by default on your system
+is not something this snapshot can show.
+
+`PATH` is not the problem. If `claude` were not on `PATH`, the error would be
+"command not found", not "Not logged in".
+
+Fix: add `USER` to `EnvironmentVariables` in the plist (done, see below).
+
+I could not reproduce this under a live launchd here, so the mechanism is inferred
+from the error text and the plist contents. The post-fix checks below will confirm
+or refute it.
+
+## Hardening (not the cause, but cheap and closes gaps)
+
+- `claude -p` now runs with `< /dev/null`, so it never waits on stdin under launchd.
+- A zero exit with an empty output file is now a failure. Exit code alone is not
+  proof of work.
+- Every run appends one line to `~/Library/Logs/nightly-review.log` with the outcome
+  and duration, so "did it run, and how long did it take" is answerable from the log.
+- If `notify.sh` itself fails, the script says so on stderr and exits nonzero,
+  instead of losing the message.
+- `cd` to the repo now goes through the same `fail` path.
+
+## Colleague's note: what applied and what did not
+
+| Point in the note | Applied here? | Why |
+|---|---|---|
+| Check `launchctl print` first (runs, last exit code) | Yes | `launchctl-print.txt` shows `runs = 6`, `last exit code = 1`, which proved the job ran. |
+| Read the StandardErrorPath log before theorizing | Yes | `nightly-review.err` gave both the `status` error and `Not logged in`. |
+| Never assign to `status` in zsh; use `rc=$?` | Yes | This was cause 1, confirmed by the log. |
+| Failure notification close to the top of the failure path | Yes | `fail` logs and notifies first. |
+| Pipe the prompt via stdin instead of argv | **No** | Its failure was "Input must be provided…", which is not in our log. Our prompt is passed as an argument, which works. Adding `< /dev/null` is the note's other option and is what I did. |
+| Close stdin with `< /dev/null` when the prompt is an argument | Yes | Added to the `claude` call. |
+| Set `USER` in the plist's `EnvironmentVariables` | Yes | This is cause 2. |
+| Log each run's duration | Yes | Added to `nightly-review.log`. |
+| Treat a short run as suspicious | Yes, partly | The script now fails on empty output. It does not yet flag short runs by duration; the log records the duration for you to check. |
+| Verify with `launchctl kickstart`, then confirm the real output and success notification | **Not run** | Needs the live machine and your Telegram. Steps below. |
+| Force a failure once to test the failure notification | Simulated | Done with stub `claude` and `notify.sh` in a temporary sandbox (see below). Not done with the real Telegram bot. |
+
+## Changes made
+
+1. `bin/nightly-review.zsh`
+   - `status=$?` replaced with `rc=$?`.
+   - `fail` helper: logs, notifies, exits with the original code.
+   - `claude` gets `< /dev/null`.
+   - Empty output counts as failure.
+   - Per-run log line with duration in `~/Library/Logs/nightly-review.log`.
+   - Notifier failures are reported and make the run exit nonzero.
+2. `Library/LaunchAgents/com.vk.nightly-review.plist`
+   - Added `USER` = `vk` under `EnvironmentVariables`.
+   - **Check this value.** The paths in this snapshot use `/Users/vk`, so I used `vk`.
+     It must match your real short name: run `id -un` and use that if it differs.
+
+## Testing done
+
+- `zsh -n` syntax check: OK.
+- `plutil -lint` on the plist: OK.
+- Sandbox run in a temporary directory with stub `claude` and `notify.sh`, using
+  `env -i` to mimic launchd's minimal environment:
+  - claude exits 1 with "Not logged in": logged FAILED, failure notification sent,
+    exit 1, no `read-only variable` error.
+  - claude succeeds: logged OK with duration, success notification sent, exit 0.
+  - claude exits 0 with empty output: logged FAILED, failure notification sent.
+  - notifier fails: message printed to stderr, exit 1.
+  - repo missing: logged FAILED, failure notification sent.
+- The sandbox was deleted afterwards. No real Telegram message, no real launchd
+  change, nothing reported externally.
+
+## What you need to do on your machine
+
+The plist change needs a reload. `kickstart` does not re-read the plist.
+
+```sh
+cp Library/LaunchAgents/com.vk.nightly-review.plist ~/Library/LaunchAgents/
+cp bin/nightly-review.zsh ~/bin/nightly-review.zsh
+launchctl bootout gui/$(id -u)/com.vk.nightly-review   # ignore error if not loaded
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.vk.nightly-review.plist
+launchctl kickstart -k gui/$(id -u)/com.vk.nightly-review
+```
+
+Then check all three:
+
+1. `launchctl print gui/$(id -u)/com.vk.nightly-review`: `last exit code = 0`.
+2. `~/Library/Logs/nightly-review.log` has an `OK after Ns` line with a plausible
+   duration (tens of seconds or more, not 0 or 1 second), and
+   `~/Library/Logs/nightly-review-<today>.md` exists, is non-empty, and is fresh.
+3. You received the Telegram "done" message.
+
+Then force a failure once to test the failure path. For example, temporarily set
+`REPO` to a missing path, kickstart, and confirm the FAILED line in the log and the
+Telegram "FAILED" message. Restore the path afterwards.
+
+If `Not logged in` still appears in `nightly-review.err` after the reload, the
+keychain login is not reachable from the launchd session. The next thing to check
+is the keychain access for `claude` and `notify.sh`. I did not verify that here.
+
+## Things I could not verify
+
+- Whether `claude` under launchd now finds its login. This needs a live run.
+- Whether the keychain lookup in `notify.sh` (`security find-generic-password -s
+  tg-bot -w`) works from the launchd session. It worked when run by hand. If it
+  fails under launchd, the new code will report it, but the Telegram message cannot
+  be sent.
+- The actual Telegram round trip.

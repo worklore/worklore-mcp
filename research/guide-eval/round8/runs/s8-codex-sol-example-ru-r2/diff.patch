@@ -1,0 +1,69 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..2117817
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,7 @@
++# Исправление кеширования промпта
++
++В `bot.py` системный промпт разделён на два текстовых блока с отдельными `cache_control: ephemeral`. Первый содержит одинаковые для всех спортсменов инструкции, второй — дату, профиль, зоны, цель, факты и язык. После `save_fact` пересобирается только второй блок; первый остаётся байт-в-байт прежним. Постоянные инструкции дополнены пояснениями уже действующих правил, чтобы первый кешируемый префикс был достаточно длинным для кеша Claude. Подбор инструментов по ключевым словам оставлен прежним.
++
++Из заметки коллеги пригодились два кешируемых сегмента, требование стабильного префикса и проверка полей `cache_creation_input_tokens` / `cache_read_input_tokens`. Не применялись отбор фактов по релевантности и переделка фильтрации инструментов: все факты уже загружаются, а текущая фильтрация экономит токены. Схемы инструментов по-прежнему расположены перед системным промптом; смена набора инструментов может дать отдельный промах кеша.
++
++Проверено локально: синтаксис Python, неизменность первого блока для разных спортсменов и дат, изменение только второго блока после нового факта, а также цикл с подставным `save_fact`. Реальный ответ Claude не запрашивался по условию задачи. Для подтверждения в рабочем журнале следующий вызов после `save_fact` должен показывать чтение постоянного префикса из кеша и создание кеша лишь для изменившейся части; точные значения зависят от токенизации и выбранных инструментов.
+diff --git a/README.md b/README.md
+index ebd390e..818bcf0 100644
+--- a/README.md
++++ b/README.md
+@@ -11,6 +11,8 @@ its system prompt. Every API call appends its `usage` object to `logs/usage.json
+ Run it locally with `COACH_ANTHROPIC_KEY=sk-ant-... python3 bot.py 42` and type
+ messages on stdin (the Telegram long-polling transport, which needs
+ `COACH_TELEGRAM_TOKEN`, lives in a separate deploy repo and just calls `reply()`).
+-Requires Python 3.11+ and `pip install anthropic`. Prompt caching is on: the system
+-prompt carries a `cache_control` marker so the tool-loop rounds and follow-up
+-messages inside the 5-minute window read it from cache.
++Requires Python 3.11+ and `pip install anthropic`. Prompt caching uses two
++`cache_control` breakpoints: one after the shared coaching rules and one after
++the athlete context. A saved fact changes the athlete context while leaving
++the shared rules available for cache reads in subsequent tool-loop rounds and
++follow-up messages inside the 5-minute window.
+diff --git a/bot.py b/bot.py
+index e2ff241..35c1380 100644
+--- a/bot.py
++++ b/bot.py
+@@ -111,6 +111,19 @@ Formatting:
+ - Plain text. No markdown headings, no tables.
+ - Lists only for a session structure (warm-up / main / cool-down).
+ - Numbers with units: 45 min, 12 km, 150 bpm.
++
++Applying the coaching rules:
++- Treat the athlete profile as the source for names, sport, goal, language and zone boundaries. If a
++  field is missing or unclear, ask a brief question before using it in a calculation or prescription.
++- For a completed workout, record the reported duration with log_session and then respond to what
++  the athlete actually did. Do not turn an easy session into a hard one in the follow-up advice.
++- When a weekly plan is requested, use plan_week and base any explanation on its returned sessions.
++  Respect rest days and the athlete's stated constraints when explaining the plan.
++- A durable fact is something useful in future conversations, such as a recurring schedule,
++  long-standing preference, equipment or injury history. Save it once, as a short factual sentence.
++  A workout just completed, a temporary feeling or today's plan is not a durable fact.
++- If the athlete's request conflicts with a safety rule, give the safety guidance briefly and then
++  address the safe part of the request. Do not infer an injury diagnosis from a training report.
+ """
+ 
+ 
+@@ -128,9 +141,12 @@ def athlete_context(a, today):
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    # Keep the shared instructions at their own cache breakpoint. Changes to
++    # athlete data (including save_fact) then invalidate only the second block.
++    return [
++        {"type": "text", "text": INSTRUCTIONS, "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": athlete_context(a, today), "cache_control": {"type": "ephemeral"}},
++    ]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [

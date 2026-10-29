@@ -1,0 +1,29 @@
+diff --git a/bot.py b/bot.py
+index e2ff241..52bfbb4 100644
+--- a/bot.py
++++ b/bot.py
+@@ -128,9 +128,21 @@ def athlete_context(a, today):
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    """Construct the system prompt as two cacheable blocks.
++
++    The first block contains the static `INSTRUCTIONS` which never changes
++    between users or days, so it can be cached permanently. The second block
++    contains per‑athlete context (date, profile, zones, facts, language) which
++    changes when `save_fact` updates the athlete record. By splitting the prompt
++    into two `cache_control` segments, updates to the tail only invalidate the
++    mutable block, preserving the hot cache for the static instructions.
++    """
++    # Static block – unchanged across all requests
++    static_block = {"type": "text", "text": INSTRUCTIONS, "cache_control": {"type": "ephemeral"}}
++    # Dynamic tail – athlete‑specific context that may change over time
++    dynamic_text = athlete_context(a, today)
++    dynamic_block = {"type": "text", "text": dynamic_text, "cache_control": {"type": "ephemeral"}}
++    return [static_block, dynamic_block]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [

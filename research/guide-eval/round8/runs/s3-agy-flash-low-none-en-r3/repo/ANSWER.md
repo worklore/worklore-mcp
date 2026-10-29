@@ -1,0 +1,33 @@
+# Root Cause Analysis and Fix
+
+## 1. Primary Cause: Read-Only Variable in Zsh (`status`)
+In [bin/nightly-review.zsh](file:///tmp/h-W494dC/bin/nightly-review.zsh), line 19 attempted to assign the exit status of `claude` to a variable named `status`:
+```zsh
+status=$?
+```
+In `zsh`, `status` is a special built-in read-only variable aliased to `$?`. Attempting to assign to `status` produces a fatal error:
+```
+/Users/vk/bin/nightly-review.zsh:19: read-only variable: status
+```
+This fatal error aborts the shell script immediately before the subsequent conditional check and failure notification logic (`"$NOTIFY" "nightly review FAILED..."`) can execute. As a result, no notification was ever dispatched when `claude` failed.
+
+## 2. Underlying Failure: Claude CLI Authentication (`Not logged in`)
+As evidenced by the stderr logs in [Library/Logs/nightly-review.err](file:///tmp/h-W494dC/Library/Logs/nightly-review.err):
+```
+Not logged in · Please run /login
+```
+`claude` failed each night because the CLI was not logged in / authenticated in the launchd execution environment. When `claude` exited with a non-zero exit code, line 19 immediately triggered the read-only assignment error instead of handling the non-zero status.
+
+## 3. Fix Applied
+In [bin/nightly-review.zsh](file:///tmp/h-W494dC/bin/nightly-review.zsh), replaced `status` with `exit_code`:
+```zsh
+claude -p "$PROMPT" --output-format text > "$OUT"
+exit_code=$?
+
+if [ $exit_code -ne 0 ]; then
+  "$NOTIFY" "nightly review FAILED (exit $exit_code), see $OUT"
+  exit $exit_code
+fi
+```
+
+With this fix, failures from `claude` (such as authentication or network errors) will properly reach the notification handler and send failure alerts via `notify.sh`. Note that to get successful review runs, `claude` also needs to be logged in (`claude login` or setting the appropriate API key environment variable).

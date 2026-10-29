@@ -1,0 +1,38 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..487aec4
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,9 @@
++# Prompt cache fix
++
++Changed `build_system()` in `bot.py` to send two text blocks, each with an ephemeral cache marker. The first contains only the byte-stable coaching instructions. The second contains the date and athlete context, including long-term facts. The assembled prompt text and tool selection are unchanged.
++
++After `save_fact`, the context block changes, but the instruction block remains the same cached prefix. This addresses the full-prefix cache misses shown in `logs/usage.jsonl` after memory writes.
++
++The colleague's note applies to splitting static instructions from volatile memory, keeping both cache markers, and checking cache creation and read counts. Its advice to keep tools stable also applies; the existing keyword-based tool selection remains in place, so a changed tool set can still cause a separate prefix miss. Top-N fact selection was not present and was not added. The note's token counts, savings estimate, and live API verification are not assumed for this bot.
++
++Verified locally that a fact write changes only the second block, that both blocks have cache markers, and that `bot.py` compiles. No live Claude request was made, so actual cache hit and creation counts remain to be checked in `logs/usage.jsonl` on the next normal run.
+diff --git a/__pycache__/bot.cpython-314.pyc b/__pycache__/bot.cpython-314.pyc
+new file mode 100644
+index 0000000..e6eaab6
+Binary files /dev/null and b/__pycache__/bot.cpython-314.pyc differ
+diff --git a/bot.py b/bot.py
+index e2ff241..3717dab 100644
+--- a/bot.py
++++ b/bot.py
+@@ -128,9 +128,11 @@ def athlete_context(a, today):
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    # Cache the invariant instructions independently from the changing athlete context.
++    return [
++        {"type": "text", "text": INSTRUCTIONS, "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": "\n\n" + athlete_context(a, today), "cache_control": {"type": "ephemeral"}},
++    ]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [

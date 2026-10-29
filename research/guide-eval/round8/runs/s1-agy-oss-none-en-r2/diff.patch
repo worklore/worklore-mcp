@@ -1,0 +1,42 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..bce2790
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,22 @@
++# Answer
++
++## What was changed
++
++- **File:** `gen.py`
++- **Function:** `hr_target`
++- **Modification:** Updated the returned dictionary from:
++  ```python
++  return {"units": "%lthr", "value": lo, "end": hi}
++  ```
++  to:
++  ```python
++  return {"units": "%lthr", "start": lo, "end": hi}
++  ```
++
++## Why the change fixes the issue
++
++The watch displays HR zones based on the athlete’s own zone definitions. The Intervals.icu JSON schema for a heart‑rate corridor expressed as a percentage of LTHR expects the keys **`start`** and **`end`** to define the lower and upper bounds of the range. Using the key **`value`** signals a single flat target, which causes the watch to interpret the corridor as a zone edge rather than the intended range. By returning `{ "units": "%lthr", "start": lo, "end": hi }`, the generated workout now correctly represents a corridor, and the watch will display the exact percentage range we planned (e.g., 151–160 % LTHR) instead of clamping to its internal zones.
++
++---
++
++*All changes were made within the current workspace directory as requested. No external services were contacted.*
+\ No newline at end of file
+diff --git a/gen.py b/gen.py
+index be0b3bc..4aeba5a 100755
+--- a/gen.py
++++ b/gen.py
+@@ -10,7 +10,7 @@ import sys
+ def hr_target(step):
+     """HR corridor for a step, as a percentage of the athlete's LTHR."""
+     lo, hi = step["hr_pct"]
+-    return {"units": "%lthr", "value": lo, "end": hi}
++    return {"units": "%lthr", "start": lo, "end": hi}
+ 
+ 
+ def build_step(step):

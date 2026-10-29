@@ -1,0 +1,219 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..0c2c097
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,110 @@
++# Почему nightly-review молчал
++
++## Что показали факты
++
++- `launchctl-print.txt`: `runs = 6`, `last exit code = 1`. Агент загружен 12.10,
++  снимок сделан 18.10 в 09:10. Это шесть ночей в 02:30 (13–18.10), так что
++  **launchd срабатывал каждую ночь**. Задача запускалась, но каждый раз падала.
++- `Library/Logs/nightly-review.err` — шесть одинаковых пар строк:
++  ```
++  Not logged in · Please run /login
++  /Users/vk/bin/nightly-review.zsh:19: read-only variable: status
++  ```
++
++## Причины (их две, одна поверх другой)
++
++1. **`claude` под launchd не видит логин: "Not logged in".** В окружении
++   задачи (`environment` в launchctl print) есть только `PATH` и
++   `XPC_SERVICE_NAME`, а `USER` нет. CLI ищет свою учётную запись в связке
++   ключей по имени пользователя и без `USER` её не находит. Поэтому ревью
++   падает сразу с кодом 1, и `$OUT` получается пустым.
++2. **`status=$?` убивал скрипт до отправки уведомления.** В zsh `status` —
++   встроенная read-only переменная (синоним `$?`). Присвоить ей значение
++   нельзя: это фатальная ошибка, скрипт тут же завершается с кодом 1. Строка 19
++   стояла между вызовом `claude` и `notify.sh`. В итоге сначала падало ревью, а
++   потом погибал и код, который должен был сообщить об ошибке. Отсюда полная
++   тишина: ни сводки, ни сообщения о сбое. Сам `notify.sh` ни разу не
++   вызывался (при ручном запуске он работает).
++
++## Что исправлено
++
++`Library/LaunchAgents/com.vk.nightly-review.plist`
++- В `EnvironmentVariables` добавлены `USER=vk` и `HOME=/Users/vk` (лечит
++  "Not logged in"), а также `LANG=en_US.UTF-8`, чтобы zsh обрезал текст по
++  символам, а не по байтам: для Telegram нужен валидный UTF-8.
++
++`bin/nightly-review.zsh`
++- `status=$?` заменён на `rc=$?` (с комментарием, почему так).
++- Промпт передаётся через stdin (`print -r -- "$PROMPT" | claude -p ...`).
++  Многострочного аргумента больше нет, и claude не может зависнуть, ожидая
++  stdin.
++- Добавлен страховочный `trap ... EXIT`: при любом незапланированном выходе
++  (ошибка zsh и т.п.) всё равно уходит сообщение «FAILED unexpectedly».
++  Я проверил, что в zsh этот trap срабатывает даже на `read-only variable`.
++- Код возврата 0 больше не считается успехом сам по себе: пустой вывод тоже
++  отправляется как FAILED.
++- В лог пишутся время запуска, `USER`/`HOME`, код возврата, длительность и
++  размер вывода. Длительность попадает и в сообщение: ревью, которое заняло
++  пару секунд, почти наверняка ничего не сделало.
++- stderr claude сохраняется в отдельный файл за день, и его последние строки
++  попадают в сообщение о сбое. Например, «Not logged in» вы увидите прямо в
++  Telegram.
++- Попутный баг: промпт просит сводку **в конце**, а скрипт отправлял
++  `head -c 300`, то есть начало. Теперь отправляются последние строки,
++  обрезанные по символам.
++- Если упал сам `notify.sh`, это пишется в лог, а скрипт завершается с
++  ненулевым кодом.
++
++`bin/notify.sh`
++- `curl --fail-with-body --max-time 30`. Раньше ошибка Telegram API
++  (неверный токен, плохой текст, HTTP 4xx) молча считалась успехом, потому
++  что `-sS` без `-f` возвращает 0. Теперь это ненулевой выход, а ответ
++  Telegram пишется в stderr.
++
++## Как проверено (локально, без отправки куда-либо)
++
++`plutil -lint`, `zsh -n`, `bash -n` проходят. Затем скрипт прогнан во временном
++HOME с подставными `claude` и `notify.sh` (пишет в файл):
++успех → «done» со сводкой из конца файла, exit 0; «Not logged in» → FAILED с
++текстом ошибки, exit 1; пустой вывод → FAILED, exit 1; нет репозитория →
++FAILED; намеренно вставленный `status=1` → «FAILED unexpectedly» через trap.
++Временные файлы удалены.
++
++## Что сделать на настоящей машине (я этого не делал)
++
++```sh
++launchctl bootout gui/$UID/com.vk.nightly-review
++launchctl bootstrap gui/$UID ~/Library/LaunchAgents/com.vk.nightly-review.plist
++launchctl kickstart -k gui/$UID/com.vk.nightly-review
++launchctl print gui/$UID/com.vk.nightly-review | grep -E 'runs|last exit'
++```
++После этого проверьте: `last exit code = 0`, есть свежий непустой
++`~/Library/Logs/nightly-review-<дата>.md`, в `.err` записана правдоподобная
++длительность (не пара секунд), сообщение пришло в Telegram. Потом один раз
++сломайте что-нибудь нарочно (например, временно переименуйте репозиторий) и
++убедитесь, что пришло сообщение FAILED.
++
++Если «Not logged in» останется и с `USER` (например, связка ключей
++заблокирована в 02:30), запасной путь такой: `claude setup-token` и
++`CLAUDE_CODE_OAUTH_TOKEN` в окружении задачи. Хранить токен лучше не в
++plist открытым текстом. Та же оговорка про заблокированную связку ключей
++касается `security find-generic-password` в `notify.sh`.
++
++## Какие части заметки коллеги пригодились
++
++- **Пригодилось:** «сначала докажи, что задача запускалась» (`launchctl print`,
++  `runs`/`last exit code`) и «прочитай StandardErrorPath, прежде чем строить
++  теории». Именно так и нашлись обе причины.
++- **Пригодилось, совпало один в один:** `status=$?` в zsh как read-only
++  переменная, стоящая между сбоем и уведомлением; замена на `rc=$?`.
++- **Пригодилось:** ловушка из поправки к заметке (Mihai Perdum): без `USER` в
++  `EnvironmentVariables` CLI не находит логин в keychain и пишет
++  «Not logged in». Это ровно первая строка нашего лога.
++- **Пригодилось как профилактика:** передавать промпт через stdin / не
++  оставлять claude ждать stdin; «код 0 ≠ работа сделана», проверять реальный
++  результат и длительность; ставить уведомление о сбое как можно ближе к
++  началу пути ошибки и проверять его намеренной поломкой.
++- **Не пригодилось:** ошибка «Input must be provided either through stdin or as
++  a prompt argument» — в нашем логе её нет, промпт как аргумент доходил.
++  Переход на stdin сделан не ради неё, а для надёжности. Время задачи (16:50) и
++  прочие детали случая коллеги к нам не относятся.
+diff --git a/Library/LaunchAgents/com.vk.nightly-review.plist b/Library/LaunchAgents/com.vk.nightly-review.plist
+index c347363..dc65e40 100644
+--- a/Library/LaunchAgents/com.vk.nightly-review.plist
++++ b/Library/LaunchAgents/com.vk.nightly-review.plist
+@@ -24,6 +24,12 @@
+   <dict>
+     <key>PATH</key>
+     <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
++    <key>USER</key>
++    <string>vk</string>
++    <key>HOME</key>
++    <string>/Users/vk</string>
++    <key>LANG</key>
++    <string>en_US.UTF-8</string>
+   </dict>
+ </dict>
+ </plist>
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..5d7a5db 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -4,7 +4,29 @@ set -u
+ 
+ REPO="$HOME/projects/shop"
+ OUT="$HOME/Library/Logs/nightly-review-$(date +%F).md"
++CLAUDE_ERR="$HOME/Library/Logs/nightly-review-$(date +%F).claude.err"
+ NOTIFY="$HOME/bin/notify.sh"
++START=$SECONDS
++
++log() { print -r -- "$(date '+%F %T') $*" >&2 }
++
++notify() {
++  "$NOTIFY" "$1" || log "notify.sh failed (exit $?), message was: $1"
++}
++
++# Safety net: any exit we did not plan for (a zsh error, an unexpected exit)
++# still sends a failure note. Planned exits set DONE=1 first.
++DONE=0
++trap 'rc=$?; (( DONE )) || notify "nightly review FAILED unexpectedly (exit $rc, $(( SECONDS - START ))s), see ~/Library/Logs/nightly-review.err"' EXIT
++
++fail() {
++  log "FAILED: $1"
++  DONE=1
++  notify "nightly review FAILED: $1"
++  exit 1
++}
++
++log "start (USER=${USER:-unset} HOME=$HOME)"
+ 
+ SINCE=$(date -v-1d +%F)
+ PROMPT="Review the commits in this repository since $SINCE.
+@@ -13,14 +35,26 @@ For each commit: one line on what it changes and whether anything looks risky
+ End with a three-line summary I can read on my phone.
+ Do not modify any file."
+ 
+-cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
++cd "$REPO" || fail "repo missing: $REPO"
+ 
+-claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
++# Prompt goes in via stdin: no multi-line argument, and claude never waits on
++# an inherited stdin.
++print -r -- "$PROMPT" | claude -p --output-format text > "$OUT" 2> "$CLAUDE_ERR"
++rc=$?   # never `status=`: it is a read-only zsh builtin and kills the script
++elapsed=$(( SECONDS - START ))
++cat "$CLAUDE_ERR" >&2
++log "claude exit $rc after ${elapsed}s, $(wc -c < "$OUT" | tr -d ' ') bytes in $OUT"
+ 
+-if [ $status -ne 0 ]; then
+-  "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
+-  exit $status
++if (( rc != 0 )); then
++  fail "claude exit $rc after ${elapsed}s: $(tail -n 3 "$CLAUDE_ERR" | head -c 500)"
++fi
++if [[ ! -s "$OUT" ]]; then
++  fail "claude exit 0 but empty output after ${elapsed}s, see $OUT"
+ fi
+ 
+-"$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"
++# The prompt asks for the summary at the end, so send the tail, not the head.
++summary=$(tail -n 5 "$OUT")
++DONE=1
++"$NOTIFY" "nightly review done (${elapsed}s):
++${summary[1,1500]}" || { log "notify.sh failed on success message"; exit 1 }
++log "done"
+diff --git a/bin/notify.sh b/bin/notify.sh
+index 818e531..4be4769 100755
+--- a/bin/notify.sh
++++ b/bin/notify.sh
+@@ -3,5 +3,11 @@
+ set -eu
+ : "${TG_BOT_TOKEN:=$(security find-generic-password -s tg-bot -w)}"
+ CHAT_ID=123456789
+-curl -sS -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
+-  -d chat_id="$CHAT_ID" --data-urlencode text="$1" > /dev/null
++# --fail-with-body: an API error (bad token, bad text) is a non-zero exit with
++# Telegram's explanation, not a silent success.
++if ! resp=$(curl -sS --fail-with-body --max-time 30 \
++    -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
++    -d chat_id="$CHAT_ID" --data-urlencode text="$1"); then
++  echo "notify.sh: telegram send failed: $resp" >&2
++  exit 1
++fi

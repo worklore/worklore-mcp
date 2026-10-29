@@ -1,0 +1,25 @@
+diff --git a/bot.py b/bot.py
+index e2ff241..558d10e 100644
+--- a/bot.py
++++ b/bot.py
+@@ -128,9 +128,17 @@ def athlete_context(a, today):
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    # Split system prompt into a static cached instructions part and a dynamic per‑athlete context.
++    # The static instructions are cached across calls (no cache_control), while the athlete context,
++    # which includes mutable facts, is marked as ephemeral so it is not cached and can change without
++    # evicting the cached instructions.
++    static_msg = {"type": "text", "text": INSTRUCTIONS}
++    dynamic_msg = {
++        "type": "text",
++        "text": athlete_context(a, today),
++        "cache_control": {"type": "ephemeral"}
++    }
++    return [static_msg, dynamic_msg]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [

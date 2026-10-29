@@ -1,0 +1,3 @@
+Fixed the Intervals.icu connection flow and documented the causes in [ANSWER.md](/tmp/h-MifVNm/ANSWER.md).
+
+The Connect button now starts OAuth through an authenticated POST, the scope list no longer repeats areas, and tokens are no longer given an invented one hour expiry. An Intervals API 401 now clears the token and prompts reconnection. Local syntax and focused behavior checks passed; a live OAuth test still requires real client credentials and an athlete account.

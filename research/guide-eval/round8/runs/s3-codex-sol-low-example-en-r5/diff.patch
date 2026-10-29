@@ -1,0 +1,72 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..d4e21e8
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,15 @@
++# Why the nightly review was silent
++
++The agent **did run**: the captured `launchctl print` shows six runs and `last exit code = 1`. Every recorded run failed. `Library/Logs/nightly-review.err` contains six pairs of errors: `Not logged in · Please run /login`, followed by `read-only variable: status` at line 19 of the wrapper.
++
++The launchd environment had `PATH` but no `USER`. In that headless environment, `claude` could not locate its keychain login and exited before producing a review. The wrapper then assigned its exit code to zsh's read-only `status` parameter, which terminated the script before its failure notification. This explains why there was neither a summary nor a failure message. The empty stdout log is consistent with the agent stopping at login.
++
++I added `USER=vk` to the plist, matching the account and paths in the snapshot. The wrapper now saves the agent exit code in `rc`, closes stdin while passing the prompt as an argument, and treats an empty output file as failure. The notifier now makes HTTP error responses from Telegram fail the job instead of hiding them with `curl -sS`.
++
++## Which parts of the colleague's note applied
++
++- **Applied:** inspect `launchctl print` and stderr; the job ran but failed; zsh's `status` assignment killed the failure reporter; setting `USER` addresses the observed headless login failure.
++- **Applied as a safeguard:** close stdin with `< /dev/null` because this script passes the prompt as an argument. An empty review now fails instead of sending a success message.
++- **Did not apply:** the prompt was already passed as an argument, and the log has no missing-input error. Piping the prompt into `claude -p` is therefore not the fix for this snapshot.
++
++Syntax checks passed for both scripts, and `plutil -lint` accepted the plist. This snapshot cannot prove a live keychain login or Telegram delivery; no launchd job or external service was contacted. After installing these changes in the real home directory, reload the agent and check a run's exit code, output file, and Telegram delivery, including a forced failure.
+diff --git a/Library/LaunchAgents/com.vk.nightly-review.plist b/Library/LaunchAgents/com.vk.nightly-review.plist
+index c347363..f371054 100644
+--- a/Library/LaunchAgents/com.vk.nightly-review.plist
++++ b/Library/LaunchAgents/com.vk.nightly-review.plist
+@@ -22,6 +22,8 @@
+   <string>/Users/vk/Library/Logs/nightly-review.err</string>
+   <key>EnvironmentVariables</key>
+   <dict>
++    <key>USER</key>
++    <string>vk</string>
+     <key>PATH</key>
+     <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+   </dict>
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..716ff4e 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -15,12 +15,17 @@ Do not modify any file."
+ 
+ cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
+ 
+-claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
++claude -p "$PROMPT" --output-format text < /dev/null > "$OUT"
++rc=$?
+ 
+-if [ $status -ne 0 ]; then
+-  "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
+-  exit $status
++if (( rc != 0 )); then
++  "$NOTIFY" "nightly review FAILED (exit $rc), see $OUT"
++  exit $rc
++fi
++
++if [[ ! -s "$OUT" ]]; then
++  "$NOTIFY" "nightly review FAILED (empty output), see $OUT"
++  exit 1
+ fi
+ 
+ "$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"
+diff --git a/bin/notify.sh b/bin/notify.sh
+index 818e531..bc9115f 100755
+--- a/bin/notify.sh
++++ b/bin/notify.sh
+@@ -3,5 +3,5 @@
+ set -eu
+ : "${TG_BOT_TOKEN:=$(security find-generic-password -s tg-bot -w)}"
+ CHAT_ID=123456789
+-curl -sS -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
++curl -fsS -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
+   -d chat_id="$CHAT_ID" --data-urlencode text="$1" > /dev/null

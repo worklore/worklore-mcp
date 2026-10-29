@@ -1,0 +1,82 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..7e43fbd
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,23 @@
++# Почему ночная задача молчала
++
++Задача **запускалась**: в `launchctl-print.txt` указаны `runs = 6` и `last exit code = 1`. В `Library/Logs/nightly-review.err` для каждого запуска повторяются две ошибки:
++
++1. `claude` сразу завершался с `Not logged in · Please run /login`. В окружении загруженного LaunchAgent есть `PATH`, но нет `USER`. Для доступа CLI к учётным данным в этом контексте добавил `USER=vk` в `EnvironmentVariables` plist. Это наиболее вероятная причина ошибки авторизации по имеющимся данным; снимок не позволяет проверить состояние связки ключей на настоящем Mac.
++2. После завершения `claude` скрипт пытался выполнить `status=$?`. В zsh `status` — переменная только для чтения. Эта ошибка останавливала скрипт **перед** веткой отправки сообщения об ошибке, поэтому не приходило даже уведомление о сбое. Переменная заменена на `rc`.
++
++Файл `nightly-review.out` пуст, поскольку ответ агента перенаправлялся в отдельный датированный `nightly-review-YYYY-MM-DD.md`; ошибки попадали в `nightly-review.err`.
++
++## Что исправлено
++
++- В plist задан `USER=vk`.
++- Вызов `claude -p` получает закрытый stdin (`< /dev/null`), так как prompt уже передаётся аргументом. Это исключает ожидание ввода в фоновом запуске.
++- Скрипт логирует код выхода и длительность вызова агента, сообщает о его ошибке и считает пустой ответ ошибкой даже при коде выхода 0.
++- `notify.sh` использует `curl -f`, чтобы ответ Telegram с HTTP-ошибкой не выглядел успешной отправкой.
++
++## Проверка
++
++`plutil -lint`, `zsh -n`, `bash -n` и `git diff --check` прошли. Локальный прогон с заглушками `claude` и уведомителя подтвердил три ветки: ошибка агента (код 7 и сообщение о сбое), пустой ответ (код 1 и сообщение о сбое), непустой ответ (код 0 и сообщение об успехе). Заглушка также проверяла, что stdin агента закрыт. Реальные `launchctl`, связка ключей, `claude` и Telegram здесь не запускались: доступен только снимок, отправка во внешний сервис запрещена.
++
++## Что пригодилось из заметки коллеги
++
++Пригодились проверка `runs` и кода выхода через `launchctl print`, чтение stderr, предупреждение о переменной zsh `status`, установка `USER` для headless CLI, закрытие stdin при передаче prompt аргументом и проверка фактического результата наряду с кодом выхода. Prompt здесь уже был одним аргументом, поэтому совет передавать его через pipe не требовался. `kickstart` и реальную отправку тестовых уведомлений не выполнял: они затронули бы систему и внешний сервис за пределами разрешённого снимка.
+diff --git a/Library/LaunchAgents/com.vk.nightly-review.plist b/Library/LaunchAgents/com.vk.nightly-review.plist
+index c347363..f371054 100644
+--- a/Library/LaunchAgents/com.vk.nightly-review.plist
++++ b/Library/LaunchAgents/com.vk.nightly-review.plist
+@@ -22,6 +22,8 @@
+   <string>/Users/vk/Library/Logs/nightly-review.err</string>
+   <key>EnvironmentVariables</key>
+   <dict>
++    <key>USER</key>
++    <string>vk</string>
+     <key>PATH</key>
+     <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+   </dict>
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..d497e56 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -15,12 +15,19 @@ Do not modify any file."
+ 
+ cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
+ 
+-claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
++started_at=$SECONDS
++claude -p "$PROMPT" --output-format text < /dev/null > "$OUT"
++rc=$?
++print -r -- "nightly review: agent exit=$rc, duration=$(( SECONDS - started_at ))s" >&2
+ 
+-if [ $status -ne 0 ]; then
+-  "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
+-  exit $status
++if (( rc != 0 )); then
++  "$NOTIFY" "nightly review FAILED (exit $rc), see $OUT"
++  exit "$rc"
++fi
++
++if [[ ! -s "$OUT" ]]; then
++  "$NOTIFY" "nightly review FAILED (empty summary), see $OUT"
++  exit 1
+ fi
+ 
+ "$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"
+diff --git a/bin/notify.sh b/bin/notify.sh
+index 818e531..bc9115f 100755
+--- a/bin/notify.sh
++++ b/bin/notify.sh
+@@ -3,5 +3,5 @@
+ set -eu
+ : "${TG_BOT_TOKEN:=$(security find-generic-password -s tg-bot -w)}"
+ CHAT_ID=123456789
+-curl -sS -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
++curl -fsS -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
+   -d chat_id="$CHAT_ID" --data-urlencode text="$1" > /dev/null

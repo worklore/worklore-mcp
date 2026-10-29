@@ -1,0 +1,5 @@
+The job ran six times. Each run failed because Claude reported “Not logged in,” then the zsh wrapper stopped at `status=$?` before it could send a failure notification.
+
+I fixed the wrapper and plist, and documented the evidence and which parts of your colleague’s note applied in [ANSWER.md](/tmp/h-ExMxFO/ANSWER.md). Syntax checks and local mock runs passed for success, Claude failure, and empty output.
+
+The snapshot cannot confirm whether setting `USER` restores Claude’s login on the real Mac. The updated plist must be loaded there and a live run checked; I did not run Claude, Telegram, or launchd from this snapshot.

@@ -1,0 +1,104 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..e74f44b
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,62 @@
++# Кеш промпта: запись в память не должна вытеснять инструкции
++
++## Что изменил
++
++`bot.py`, `build_system()`: системный промпт теперь два текстовых блока, у каждого свой `cache_control: ephemeral`.
++
++- Блок 1: `INSTRUCTIONS`. Байт в байт одинаков для всех атлетов и всех дней.
++- Блок 2: `athlete_context()`. Дата, профиль, зоны, цель, факты, язык. Меняется при `save_fact`, смене дня и правке профиля.
++
++`save_fact` переписывает только блок 2, поэтому хеш блока 1 не меняется и инструкции остаются в кеше.
++
++`README.md`: исправлено описание кеширования (там был один маркер).
++
++Больше ничего не менял: отбор инструментов, список фактов, модель и `MAX_TOKENS` остались как были.
++
++## Что проверено
++
++Локально, без вызова API (ключа нет, пакет `anthropic` не установлен):
++
++- `system[0]` совпадает до и после `save_fact`; также совпадает у другого атлета и в другой день.
++- `system[1]` после `save_fact` меняется.
++- Для проверки подменены пути к `athletes.json` и `usage.jsonl`, реальные данные не тронуты.
++
++Проверка на живом API не сделана.
++
++## Блокер: статический блок может быть ниже минимума кеширования
++
++Кеш не создаётся для префикса короче минимума модели. Для Sonnet по документации это 1024 токена. Для `claude-sonnet-4-5` в документации это прямо не перечислено, но, скорее всего, так же. Если префикс короче, маркер молча игнорируется, без ошибки.
++
++Оценка по `logs/usage.jsonl`: первый вызов 2026-04-18 06:41:19 создал кеш на 1046 токенов. Это инструменты (`save_fact`, `log_session`), инструкции и контекст атлета 42 до его первого факта. Контекст занимает примерно 60–100 токенов. Значит, инструменты плюс инструкции — около 950–990 токенов, то есть ниже 1024.
++
++Последствия:
++
++- Для сообщений только с базовыми инструментами первый маркер ничего не кеширует. Тогда исправление не даёт экономии, которую ждём.
++- Группа `plan` или `race` добавляет около 60 токенов, и префикс может перейти порог. Но набор инструментов зависит от слов в сообщении, так что это не надёжно.
++
++Я не стал добивать префикс до 1024 паддингом. Нужно решение владельца. Варианты:
++
++1. Сделать статическую часть содержательнее. Удобный кандидат: описания инструментов `save_fact` и `log_session`, они короткие и лежат в префиксе выше системного промпта. Подробные описания полезны и модели. Но это меняет поведение бота, поэтому решать вам.
++2. Оставить как есть. Тогда первый маркер станет полезным, когда статика вырастет, а до тех пор кеш даёт только блок 2.
++
++## Ещё одна причина промахов, не связанная с памятью
++
++Набор инструментов зависит от ключевых слов (`select_tools`). Инструменты стоят в префиксе раньше системного промпта. Сообщение со словом «plan» или «race» меняет список инструментов и промахивается по всему префиксу, включая статику. Это уже видно в логе: вызов `plan_week` в 06:44:31 создал 1305 токенов. Я это не трогал: в `NOTES.md` отмечено, что фильтрация инструментов даёт выигрыш по токенам, и исправление промахов потребовало бы другого решения, например фиксированного набора инструментов.
++
++## Что пригодилось из заметки коллеги
++
++- Два маркера `cache_control` на два сегмента: использовано.
++- Не отбирать факты под сообщение, а грузить все: уже так и было, подтверждено.
++- Инструменты стоят выше системного промпта, и их стабильность важна: учтено в разборе выше.
++- Проверка через `usage` в логах: использовано, см. ниже.
++
++Что не подошло:
++
++- Цифры коллеги (~780 токенов статики) и утверждение, что всё работает, не проверяли минимум кеширования. У нас статика плюс инструменты вблизи порога, так что цифры не переносятся.
++
++## Как проверить после выката
++
++Смотрите `logs/usage.jsonl`. Для сообщения, где `save_fact` меняет факты:
++
++- раунд после `save_fact` должен показать `cache_read_input_tokens` примерно на статику (инструменты плюс инструкции, около 1000) и `cache_creation_input_tokens` примерно на хвост (60–250 токенов);
++- если `cache_creation` снова около полного префикса, статика ниже минимума, и нужен вариант 1 выше.
+diff --git a/README.md b/README.md
+index ebd390e..4aed4f2 100644
+--- a/README.md
++++ b/README.md
+@@ -12,5 +12,8 @@ Run it locally with `COACH_ANTHROPIC_KEY=sk-ant-... python3 bot.py 42` and type
+ messages on stdin (the Telegram long-polling transport, which needs
+ `COACH_TELEGRAM_TOKEN`, lives in a separate deploy repo and just calls `reply()`).
+ Requires Python 3.11+ and `pip install anthropic`. Prompt caching is on: the system
+-prompt carries a `cache_control` marker so the tool-loop rounds and follow-up
+-messages inside the 5-minute window read it from cache.
++prompt is two blocks, each with a `cache_control` marker. The first block holds the
++static coaching rules and must stay byte-identical across athletes and days. The second
++holds the per-athlete context (date, profile, zones, goal, facts). A `save_fact` rewrites
++only the second block, so the first stays cached. Tool-loop rounds and follow-up
++messages inside the 5-minute window read from cache.
+diff --git a/bot.py b/bot.py
+index e2ff241..c4d7a16 100644
+--- a/bot.py
++++ b/bot.py
+@@ -128,9 +128,13 @@ def athlete_context(a, today):
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    # Two cache breakpoints. The first block is byte-identical for every athlete and day, so it
++    # stays cached when the second block changes (save_fact, a new day, a profile edit).
++    # Keep INSTRUCTIONS free of per-request values, or the first breakpoint never hits.
++    return [
++        {"type": "text", "text": INSTRUCTIONS, "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": athlete_context(a, today), "cache_control": {"type": "ephemeral"}},
++    ]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [

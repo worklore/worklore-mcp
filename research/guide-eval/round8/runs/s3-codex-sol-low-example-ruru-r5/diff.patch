@@ -1,0 +1,84 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..1fd3145
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,12 @@
++# Почему ночной обзор молчал
++
++`launchctl-print.txt` показывает `runs = 6` и `last exit code = 1`: launchd запускал задачу по расписанию. Все шесть запусков оставили в `Library/Logs/nightly-review.err` одинаковую пару ошибок.
++
++1. `claude` завершался с `Not logged in · Please run /login`. В окружении задачи из снимка `launchctl print` задан `PATH`, но нет `USER`. Для headless CLI это вероятная причина, по которой он не находил вход через keychain. Добавил `USER=vk` в plist; доступность авторизации на настоящем Mac нужно подтвердить отдельным запуском.
++2. Сразу после ошибки скрипт выполнял `status=$?`. В zsh `status` доступна только для чтения, поэтому выполнение обрывалось до ветки с Telegram уведомлением. Заменил переменную на `rc`.
++
++Теперь промпт передаётся `claude -p` через stdin, фиксируются код выхода и длительность работы, а пустой ответ считается ошибкой. При ошибке CLI или пустом результате скрипт отправляет сообщение об отказе. Добавил `curl -f` в уведомитель: HTTP ошибка Telegram теперь даёт ненулевой код выхода вместо ложного успеха.
++
++Из заметки коллеги пригодились проверка `launchctl print` и stderr, правило о переменной `status` в zsh, передача промпта через stdin, `USER` в plist, учёт длительности и проверка реального результата. Совет закрывать stdin через `/dev/null` относится к варианту с промптом в аргументе и здесь не нужен. `launchctl kickstart` и настоящие Telegram/Claude запросы не запускались: это снимок домашней директории, а внешние обращения запрещены условиями задачи.
++
++Локально проверены синтаксис zsh, корректность plist и три сценария с подменёнными командами без сети: успешный ответ, отказ CLI и пустой ответ. Во всех случаях получен ожидаемый код выхода и соответствующее уведомление от локальной заглушки.
+diff --git a/Library/LaunchAgents/com.vk.nightly-review.plist b/Library/LaunchAgents/com.vk.nightly-review.plist
+index c347363..f371054 100644
+--- a/Library/LaunchAgents/com.vk.nightly-review.plist
++++ b/Library/LaunchAgents/com.vk.nightly-review.plist
+@@ -22,6 +22,8 @@
+   <string>/Users/vk/Library/Logs/nightly-review.err</string>
+   <key>EnvironmentVariables</key>
+   <dict>
++    <key>USER</key>
++    <string>vk</string>
+     <key>PATH</key>
+     <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+   </dict>
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..823605e 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -5,6 +5,7 @@ set -u
+ REPO="$HOME/projects/shop"
+ OUT="$HOME/Library/Logs/nightly-review-$(date +%F).md"
+ NOTIFY="$HOME/bin/notify.sh"
++STARTED=$(date +%s)
+ 
+ SINCE=$(date -v-1d +%F)
+ PROMPT="Review the commits in this repository since $SINCE.
+@@ -13,14 +14,22 @@ For each commit: one line on what it changes and whether anything looks risky
+ End with a three-line summary I can read on my phone.
+ Do not modify any file."
+ 
+-cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
++cd "$REPO" || { "$NOTIFY" "nightly review FAILED: repo missing ($REPO)"; exit 1; }
+ 
+-claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
++print -r -- "$PROMPT" | claude -p --output-format text > "$OUT"
++rc=$?
++elapsed=$(( $(date +%s) - STARTED ))
++print -r -- "nightly review: agent exit $rc after ${elapsed}s; output $OUT" >&2
+ 
+-if [ $status -ne 0 ]; then
+-  "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
+-  exit $status
++if (( rc != 0 )); then
++  "$NOTIFY" "nightly review FAILED (exit $rc, ${elapsed}s), see $OUT" || print -r -- "nightly review: failure notification failed" >&2
++  exit $rc
+ fi
+ 
+-"$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"
++if [[ ! -s "$OUT" ]]; then
++  print -r -- "nightly review: agent produced no output" >&2
++  "$NOTIFY" "nightly review FAILED: empty output after ${elapsed}s, see $OUT" || print -r -- "nightly review: failure notification failed" >&2
++  exit 1
++fi
++
++"$NOTIFY" "nightly review done (${elapsed}s): $(head -c 300 "$OUT")"
+diff --git a/bin/notify.sh b/bin/notify.sh
+index 818e531..bc9115f 100755
+--- a/bin/notify.sh
++++ b/bin/notify.sh
+@@ -3,5 +3,5 @@
+ set -eu
+ : "${TG_BOT_TOKEN:=$(security find-generic-password -s tg-bot -w)}"
+ CHAT_ID=123456789
+-curl -sS -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
++curl -fsS -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
+   -d chat_id="$CHAT_ID" --data-urlencode text="$1" > /dev/null

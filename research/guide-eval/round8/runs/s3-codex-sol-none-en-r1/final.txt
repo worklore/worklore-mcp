@@ -1,0 +1,5 @@
+The job **was running**. Its logs show that Claude was not logged in, then the script stopped when it tried to assign to zsh’s read-only `status` variable—before it could send a failure note.
+
+I fixed the failure path in [nightly-review.zsh](/tmp/h-P08mn8/bin/nightly-review.zsh), made [notify.sh](/tmp/h-P08mn8/bin/notify.sh) report Telegram HTTP errors, and documented the causes and credential setup in [ANSWER.md](/tmp/h-P08mn8/ANSWER.md). Local tests covered agent failure, success, and Telegram failure without sending a real request.
+
+The changes are only in this snapshot. For reviews to run on the Mac, the updated scripts need to be copied to their home-directory paths and Claude needs a usable credential, as described in `ANSWER.md`.

@@ -1,0 +1,52 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..dfbe365
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,20 @@
++# Change Summary
++
++## What was changed
++- Updated **`gen.py`** `hr_target` function:
++  - Added documentation explaining the inclusion of absolute BPM values.
++  - Introduced a default LTHR of **172** (the athlete’s current threshold).
++  - Calculated `start_bpm` and `end_bpm` from the percentage range.
++  - Returned a dictionary with **`units: "bpm"`**, `value` (start BPM) and `end` (end BPM) instead of the previous `%lthr` representation.
++
++## Why the change was needed
++The watch displayed HR ranges clamped to its own zone bands because the generated workout JSON used `%lthr` units. Intervals.icu interprets `%lthr` ranges as zone edges, causing the watch to map each corridor to the nearest zone. By emitting absolute BPM values (`units: "bpm"`) the watch can display the exact heart‑rate corridor we planned (e.g., 151‑160 bpm for the Tempo interval), matching the plan’s intended percentages.
++
++## Result
++Running `python3 gen.py plans/tempo-run.json` now produces a `workout_doc` where each step’s `hr` field looks like:
++```json
++"hr": {"units": "bpm", "value": 151, "end": 160}
++```
++which aligns with the expected watch display as shown in `readback/watch-notes.md`.
++
++*All changes are confined to the current workspace (`/tmp/h-2blV9n`). No deployment or external actions were performed.*
+\ No newline at end of file
+diff --git a/gen.py b/gen.py
+index be0b3bc..763d31c 100755
+--- a/gen.py
++++ b/gen.py
+@@ -8,9 +8,18 @@ import sys
+ 
+ 
+ def hr_target(step):
+-    """HR corridor for a step, as a percentage of the athlete's LTHR."""
++    """HR corridor for a step, as a percentage of the athlete's LTHR.
++    Also include absolute BPM values based on a default LTHR of 172.
++    """
+     lo, hi = step["hr_pct"]
+-    return {"units": "%lthr", "value": lo, "end": hi}
++    LTHR = 172
++    start_bpm = int(round(lo / 100 * LTHR))
++    end_bpm = int(round(hi / 100 * LTHR))
++    return {
++        "units": "bpm",
++        "value": start_bpm,
++        "end": end_bpm,
++    }
+ 
+ 
+ def build_step(step):

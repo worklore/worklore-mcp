@@ -1,0 +1,124 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..9bae295
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,61 @@
++# Почему вторая публикация возвращала 500
++
++## Причина
++
++`similar` хранит у каждой истории до трёх похожих историй в виде `{slug, score}`.
++`score` считает `similarity()` в `src/app.py`, и она возвращает обычный Python
++`float` (`round(..., 4)`).
++
++boto3 сериализует item через `TypeSerializer` и не принимает `float`: в DynamoDB
++числа нужно передавать как `Decimal`. Поэтому `put_item` падает с
++`TypeError: Float types are not supported. Use Decimal types instead.`, и
++handler отвечает 500.
++
++Почему именно вторая публикация:
++
++- Первая публикация: в таблице ещё нет историй, `related()` возвращает пустой
++  список, `similar=[]`, float в item нет. Лог: `similar=0 stored`, 201.
++- Вторая публикация: `scan` находит первую историю, `related()` создаёт
++  `{"slug": ..., "score": 0.xx}` с float, и запись падает. Лог: 500.
++
++Тест в `tests/test_publish.py` не ловил это, потому что публиковал только одну
++историю и `similar` всегда оставался пустым. Сам `FakeTable` float отклоняет
++правильно (он повторяет проверку boto3), но до этой проверки код в тесте не
++доходил.
++
++Записи, которые упали, в таблицу не попали (`put_item` не выполнился), поэтому
++повреждённых данных в таблице нет.
++
++## Исправление
++
++`src/app.py`, функция `related()`:
++
++```python
++score = Decimal(str(similarity(story, other)))
++scored.append({"slug": other["slug"], "score": score})
++```
++
++`Decimal(str(...))` даёт короткое точное представление (`Decimal('0.7')`), а не
++двоичный хвост float. Импорт `from decimal import Decimal` добавлен в начало
++файла. `similarity()` оставлен как был: float нужен только при сохранении, и
++сортировка внутри `related()` работает и с `Decimal`.
++
++## Как не допустить повтора
++
++1. **Новый тест** `test_second_publish_stores_related_scores` в
++   `tests/test_publish.py`: публикует две истории и проверяет, что вторая
++   сохранилась с `similar` и что `score` имеет тип `Decimal`. До исправления
++   тест падал с 500, после исправления проходит.
++2. `FakeTable` (`tests/fake_dynamo.py`) уже отклоняет float, поэтому любой
++   будущий float в item теперь упадёт в тестах, а не в продакшене, если тест
++   пройдёт через второй publish. Раньше этого не происходило только из-за того,
++   что тест не доходил до `similar`.
++3. Локальная проверка: тот же item сериализован настоящим
++   `boto3.dynamodb.types.TypeSerializer`. `score` уходит как `{'N': '0.88'}`.
++   Это проверка на сериализатор boto3, а не на реальную таблицу DynamoDB.
++
++Что проверено: `python3 -m unittest discover tests` — 2 теста, OK.
++Сценарий из четырёх историй через `handler()` — все 201, `similar` заполнен.
++
++Что не делалось: деплой, публикация в продакшен, отправка данных во внешние
++сервисы и изменения `logs/error.log`. Коммит тоже не делался.
+diff --git a/src/app.py b/src/app.py
+index db49c5e..bf1c34a 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -8,6 +8,7 @@ import json
+ import logging
+ import re
+ import time
++from decimal import Decimal
+ 
+ log = logging.getLogger("stories")
+ 
+@@ -35,7 +36,9 @@ def related(story, existing):
+     for other in existing:
+         if other["slug"] == story["slug"]:
+             continue
+-        scored.append({"slug": other["slug"], "score": similarity(story, other)})
++        # DynamoDB rejects Python floats; store the score as Decimal.
++        score = Decimal(str(similarity(story, other)))
++        scored.append({"slug": other["slug"], "score": score})
+     scored.sort(key=lambda s: s["score"], reverse=True)
+     return scored[:TOP_N]
+ 
+diff --git a/tests/test_publish.py b/tests/test_publish.py
+index 6c9ac44..610d60b 100644
+--- a/tests/test_publish.py
++++ b/tests/test_publish.py
+@@ -1,6 +1,8 @@
++import json
+ import os
+ import sys
+ import unittest
++from decimal import Decimal
+ 
+ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+ sys.path.insert(0, os.path.dirname(__file__))
+@@ -23,6 +25,20 @@ class PublishTest(unittest.TestCase):
+         self.assertEqual(table.get_item(Key={"slug": "why-my-cron-ran-twice"})["Item"]["title"], "Why my cron ran twice")
+         self.assertEqual(table.scan()["Count"], 1)
+ 
++    def test_second_publish_stores_related_scores(self):
++        # The first publish has nothing to relate to; the second one stores a
++        # score for the first, which is the case that failed in production.
++        table = FakeTable()
++        app.publish(table, {"slug": "aaa-first", "title": "A", "tags": ["cron"], "body": "cron job runs twice"})
++        response = app.handler(
++            {"body": json.dumps({"slug": "bbb-second", "title": "B", "tags": ["cron"], "body": "cron job runs once"})},
++            table,
++        )
++        self.assertEqual(response["statusCode"], 201)
++        similar = table.get_item(Key={"slug": "bbb-second"})["Item"]["similar"]
++        self.assertEqual([s["slug"] for s in similar], ["aaa-first"])
++        self.assertIsInstance(similar[0]["score"], Decimal)
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

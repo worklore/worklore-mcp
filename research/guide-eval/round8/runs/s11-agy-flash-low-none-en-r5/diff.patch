@@ -1,0 +1,90 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..8b88158
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,18 @@
++# Issue Analysis and Resolution
++
++## Cause of the Bug
++When the first story is published, the DynamoDB table is empty (`existing = []`), so `related(story, existing)` returns an empty list `[]`. No similarity scores are calculated, and the item is stored successfully with `similar: []`.
++
++When a second story is published, existing stories are present in the table. The `related()` function calculates similarity scores via `similarity(story, other)`, which returned a Python `float` (`round(0.7 * tag_score + 0.3 * word_score, 4)`).
++
++Because `boto3`'s DynamoDB serializer (`TypeSerializer`) explicitly disallows Python `float` types and requires `decimal.Decimal` to avoid binary floating-point precision loss, attempting `table.put_item(Item=item)` raises:
++```
++TypeError: Float types are not supported. Use Decimal types instead.
++```
++This uncaught `TypeError` gets caught by the general `except Exception:` clause in `handler()`, logging the error and returning HTTP `500`.
++
++## Fix
++In [`src/app.py`](src/app.py):
++1. Imported `Decimal` from the Python standard library `decimal` module.
++2. Updated `similarity()` to return `Decimal(str(round(0.7 * tag_score + 0.3 * word_score, 4)))` instead of a raw Python `float`.
++3. Added unit tests in [`tests/test_publish.py`](tests/test_publish.py) covering publishing subsequent stories with similarity scores and invoking `handler()` multiple times.
+diff --git a/src/app.py b/src/app.py
+index db49c5e..af4bb08 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -8,6 +8,7 @@ import json
+ import logging
+ import re
+ import time
++from decimal import Decimal
+ 
+ log = logging.getLogger("stories")
+ 
+@@ -27,7 +28,7 @@ def similarity(a, b):
+     tag_score = len(ta & tb) / len(ta | tb) if (ta | tb) else 0
+     wa, wb = words(a.get("body")), words(b.get("body"))
+     word_score = len(wa & wb) / len(wa | wb) if (wa | wb) else 0
+-    return round(0.7 * tag_score + 0.3 * word_score, 4)
++    return Decimal(str(round(0.7 * tag_score + 0.3 * word_score, 4)))
+ 
+ 
+ def related(story, existing):
+diff --git a/tests/test_publish.py b/tests/test_publish.py
+index 6c9ac44..26004ee 100644
+--- a/tests/test_publish.py
++++ b/tests/test_publish.py
+@@ -23,6 +23,40 @@ class PublishTest(unittest.TestCase):
+         self.assertEqual(table.get_item(Key={"slug": "why-my-cron-ran-twice"})["Item"]["title"], "Why my cron ran twice")
+         self.assertEqual(table.scan()["Count"], 1)
+ 
++    def test_publish_second_story_calculates_similarity_with_decimals(self):
++        table = FakeTable()
++        story1 = {
++            "slug": "why-my-cron-ran-twice",
++            "title": "Why my cron ran twice",
++            "tags": ["cron", "linux"],
++            "body": "Two crontabs, one for root and one for me, both had the line.",
++        }
++        story2 = {
++            "slug": "cron-best-practices",
++            "title": "Cron best practices",
++            "tags": ["cron", "linux", "devops"],
++            "body": "Crontabs should be managed cleanly without duplicate lines.",
++        }
++        app.publish(table, story1)
++        stored2 = app.publish(table, story2)
++        self.assertEqual(stored2["slug"], "cron-best-practices")
++        self.assertEqual(len(stored2["similar"]), 1)
++        self.assertEqual(stored2["similar"][0]["slug"], "why-my-cron-ran-twice")
++        self.assertEqual(table.scan()["Count"], 2)
++
++    def test_handler_second_publish_succeeds(self):
++        table = FakeTable()
++        event1 = {
++            "body": '{"slug": "story-one", "title": "Story One", "tags": ["tag1"], "body": "Body text"}'
++        }
++        event2 = {
++            "body": '{"slug": "story-two", "title": "Story Two", "tags": ["tag1"], "body": "Body text"}'
++        }
++        res1 = app.handler(event1, table)
++        self.assertEqual(res1["statusCode"], 201)
++        res2 = app.handler(event2, table)
++        self.assertEqual(res2["statusCode"], 201)
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

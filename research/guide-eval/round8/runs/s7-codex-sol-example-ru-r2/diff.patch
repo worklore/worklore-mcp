@@ -1,0 +1,378 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..82578cf
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,10 @@
++# Причины и исправление Intervals.icu
++
++1. Кнопка была ссылкой на `GET /api/intervals/auth/init`. Переход страницы не передаёт `Authorization: Bearer` из SPA, поэтому сервер отвечал `401` всем атлетам. Теперь кнопка делает авторизованный `POST` через `fetch`, получает `authorize_url` и перенаправляет браузер на него.
++2. Запрашивались `ACTIVITY:READ` вместе с `ACTIVITY:WRITE` и `CALENDAR:READ` вместе с `CALENDAR:WRITE`. Для Intervals.icu `:WRITE` уже включает чтение, а повтор области вызывает `Duplicate scope`. Оставлены `ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE`. Записанный в логе `invalid_request` сам по себе не указывает точный параметр; вывод о повторе областей опирается также на заметку коллеги и содержимое URL из лога.
++3. Ответ токена в логе не содержит `refresh_token` и `expires_in`, но код назначал срок в 3600 секунд и фоновый процесс помечал рабочее подключение как истёкшее. Удалены искусственный срок и попытки обновления. При `401` от API токен очищается, а интерфейс предлагает подключиться заново.
++4. Клиентская конфигурация OAuth была захардкожена, хотя README указывает на значения из окружения. `CLIENT_ID`, `CLIENT_SECRET`, `REDIRECT_URI` и секрет подписи state теперь читаются из переменных `INTERVALS_CLIENT_ID`, `INTERVALS_CLIENT_SECRET`, `INTERVALS_REDIRECT_URI`, `APP_SECRET`; локальные значения остались значениями по умолчанию для разработки.
++
++Из заметки пригодились: схема `POST` для init с `{authorize_url}`, правило об уникальных областях scope, поля обмена кода (`client_id`, `client_secret`, `code`), отсутствие refresh-токена и обработка отзыва по `401`. Callback остаётся без заголовка авторизации: подписанный `state` несёт идентификатор пользователя, назначение и время создания, проверяется в пределах 15 минут. Добавлена проверка, что при повторном подключении `athlete.id` совпадает с ранее привязанным.
++
++Проверка: `python3 -m unittest -v test_intervals.py` — три локальных теста HTTP-потока, срока и назначения state, защиты от смены атлета и реакции на `401`. Реальный OAuth и запрос к Intervals.icu не запускались согласно ограничению на внешние сервисы. В этом репозитории соединения хранятся только в памяти; для постоянного хранилища токен должен быть зашифрован, как советует заметка.
+diff --git a/config.py b/config.py
+index 54a8144..b6b861a 100644
+--- a/config.py
++++ b/config.py
+@@ -1,13 +1,11 @@
+ import os
+ 
+ PORT = 8766
+-APP_SECRET = "dev-only-change-me-7c1f0a"          # signs the OAuth state parameter
++APP_SECRET = os.environ.get("APP_SECRET", "dev-only-change-me-7c1f0a")  # signs OAuth state
+ 
+ # Intervals.icu OAuth client (placeholders; the real pair is in the deploy env)
+ INTERVALS_BASE = os.environ.get("INTERVALS_BASE", "https://intervals.icu")
+-CLIENT_ID = "tricoach-dev"
+-CLIENT_SECRET = "s3cr3t-placeholder-0000"
+-REDIRECT_URI = f"http://localhost:{PORT}/api/intervals/callback"
+-SCOPES = "ACTIVITY:READ,ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:READ,CALENDAR:WRITE"
+-
+-REFRESH_INTERVAL = 60      # seconds between passes of the token refresher
++CLIENT_ID = os.environ.get("INTERVALS_CLIENT_ID", "tricoach-dev")
++CLIENT_SECRET = os.environ.get("INTERVALS_CLIENT_SECRET", "s3cr3t-placeholder-0000")
++REDIRECT_URI = os.environ.get("INTERVALS_REDIRECT_URI", f"http://localhost:{PORT}/api/intervals/callback")
++SCOPES = "ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE"
+diff --git a/server.py b/server.py
+index 351cbb7..0e6099a 100644
+--- a/server.py
++++ b/server.py
+@@ -3,7 +3,7 @@
+ 
+ Stdlib only. State is in memory (same shape as the prod tables).
+ """
+-import base64, hashlib, hmac, json, os, threading, time
++import base64, binascii, hashlib, hmac, json, os, threading, time
+ import urllib.error, urllib.parse, urllib.request
+ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+ 
+@@ -12,14 +12,13 @@ import config
+ STATIC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
+ TOKEN_URL = config.INTERVALS_BASE + "/api/oauth/token"
+ AUTHORIZE_URL = config.INTERVALS_BASE + "/oauth/authorize"
+-DEFAULT_TOKEN_TTL = 3600   # seconds; used when the provider does not say how long a token lives
+ 
+ # --- in-memory store -------------------------------------------------------
+ USERS = {
+     "tok-okafor": {"id": "u_okafor", "name": "C. Okafor"},
+     "tok-rivera": {"id": "u_rivera", "name": "T. Rivera"},
+ }
+-# user_id -> {athlete_id, athlete_name, access_token, refresh_token, scope, expires_at, status}
++# user_id -> {athlete_id, athlete_name, access_token, scope, status}
+ CONNECTIONS = {}
+ LOCK = threading.Lock()
+ 
+@@ -30,21 +29,27 @@ def log(msg):
+ 
+ # --- state parameter: carries the user through the redirect -----------------
+ def sign_state(user_id):
+-    payload = f"{user_id}:{int(time.time())}"
+-    sig = hmac.new(config.APP_SECRET.encode(), payload.encode(), hashlib.sha256).hexdigest()[:32]
+-    return base64.urlsafe_b64encode(f"{payload}:{sig}".encode()).decode()
++    payload = {"sub": user_id, "purpose": "intervals_oauth", "iat": int(time.time())}
++    data = base64.urlsafe_b64encode(json.dumps(payload, separators=(",", ":")).encode()).decode().rstrip("=")
++    sig = hmac.new(config.APP_SECRET.encode(), data.encode(), hashlib.sha256).hexdigest()
++    return data + "." + sig
+ 
+ 
+ def verify_state(state, max_age=900):
+     try:
+-        user_id, ts, sig = base64.urlsafe_b64decode(state.encode()).decode().split(":")
+-    except Exception:
+-        return None
+-    payload = f"{user_id}:{ts}"
+-    good = hmac.new(config.APP_SECRET.encode(), payload.encode(), hashlib.sha256).hexdigest()[:32]
+-    if not hmac.compare_digest(good, sig) or time.time() - int(ts) > max_age:
++        data, sig = state.split(".")
++        good = hmac.new(config.APP_SECRET.encode(), data.encode(), hashlib.sha256).hexdigest()
++        if not hmac.compare_digest(good, sig):
++            return None
++        payload = json.loads(base64.urlsafe_b64decode(data + "=" * (-len(data) % 4)))
++        ts = payload["iat"]
++        if (payload.get("purpose") != "intervals_oauth" or
++                payload.get("sub") not in {u["id"] for u in USERS.values()} or
++                type(ts) is not int or not 0 <= time.time() - ts <= max_age):
++            return None
++        return payload["sub"]
++    except (ValueError, KeyError, TypeError, UnicodeDecodeError, binascii.Error):
+         return None
+-    return user_id
+ 
+ 
+ # --- Intervals.icu calls ----------------------------------------------------
+@@ -57,51 +62,24 @@ def post_form(url, fields):
+ 
+ def exchange_code(code):
+     return post_form(TOKEN_URL, {
+-        "grant_type": "authorization_code", "client_id": config.CLIENT_ID,
+-        "client_secret": config.CLIENT_SECRET, "code": code, "redirect_uri": config.REDIRECT_URI,
++        "client_id": config.CLIENT_ID, "client_secret": config.CLIENT_SECRET, "code": code,
+     })
+ 
+ 
+ def store_connection(user_id, tok):
+-    expires_in = int(tok.get("expires_in") or DEFAULT_TOKEN_TTL)
+-    refresh = tok.get("refresh_token")
+-    if not refresh:
+-        log(f"{user_id}: no refresh_token in response, scheduling expiry in {expires_in}s")
+     athlete = tok.get("athlete") or {}
++    athlete_id = athlete.get("id")
++    if not tok.get("access_token") or not athlete_id:
++        raise ValueError("token response missing access_token or athlete.id")
+     with LOCK:
++        old = CONNECTIONS.get(user_id)
++        if old and old["athlete_id"] != athlete_id:
++            raise ValueError("Intervals athlete differs from the account already connected")
+         CONNECTIONS[user_id] = {
+-            "athlete_id": athlete.get("id"), "athlete_name": athlete.get("name"),
+-            "access_token": tok["access_token"], "refresh_token": refresh,
+-            "scope": tok.get("scope"), "expires_at": time.time() + expires_in, "status": "connected",
++            "athlete_id": athlete_id, "athlete_name": athlete.get("name"),
++            "access_token": tok["access_token"], "scope": tok.get("scope"), "status": "connected",
+         }
+-    log(f"{user_id}: connected as athlete {athlete.get('id')} (expires in {expires_in}s)")
+-
+-
+-def refresh_tokens():
+-    """Background pass: renew access tokens shortly before they expire."""
+-    while True:
+-        time.sleep(config.REFRESH_INTERVAL)
+-        now = time.time()
+-        with LOCK:
+-            for uid, c in CONNECTIONS.items():
+-                if c["status"] != "connected" or c["expires_at"] - now > 300:
+-                    continue
+-                if not c["refresh_token"]:
+-                    log(f"{uid}: token expiry passed and no refresh token on file -> expired, reconnect")
+-                    c.update(status="expired, reconnect", access_token=None)
+-                    continue
+-                try:
+-                    tok = post_form(TOKEN_URL, {
+-                        "grant_type": "refresh_token", "refresh_token": c["refresh_token"],
+-                        "client_id": config.CLIENT_ID, "client_secret": config.CLIENT_SECRET,
+-                    })
+-                    c.update(access_token=tok["access_token"],
+-                             refresh_token=tok.get("refresh_token", c["refresh_token"]),
+-                             expires_at=now + int(tok["expires_in"]))
+-                    log(f"{uid}: token refreshed")
+-                except Exception as e:
+-                    log(f"{uid}: refresh failed ({e}) -> expired, reconnect")
+-                    c.update(status="expired, reconnect", access_token=None)
++    log(f"{user_id}: connected as athlete {athlete_id}")
+ 
+ 
+ def intervals_get(conn, path):
+@@ -164,8 +142,6 @@ class Handler(BaseHTTPRequestHandler):
+         if url.path == "/api/me":
+             user = self.require_user()
+             return user and self.send_json(200, user)
+-        if url.path == "/api/intervals/auth/init":
+-            return self.auth_init()
+         if url.path == "/api/intervals/callback":
+             return self.callback(q)
+         if url.path == "/api/intervals/status":
+@@ -176,6 +152,8 @@ class Handler(BaseHTTPRequestHandler):
+ 
+     def do_POST(self):
+         url = urllib.parse.urlsplit(self.path)
++        if url.path == "/api/intervals/auth/init":
++            return self.auth_init()
+         if url.path == "/api/intervals/disconnect":
+             user = self.require_user()
+             if user:
+@@ -185,14 +163,14 @@ class Handler(BaseHTTPRequestHandler):
+             return
+         self.send_json(404, {"error": "not found"})
+ 
+-    # Step 1: build the authorize URL and send the browser to Intervals.
++    # Step 1: authenticated fetch obtains the authorize URL.
+     def auth_init(self):
+         user = self.require_user()
+         if not user:
+             return
+         params = {"client_id": config.CLIENT_ID, "redirect_uri": config.REDIRECT_URI,
+                   "scope": config.SCOPES, "state": sign_state(user["id"])}
+-        self.redirect(AUTHORIZE_URL + "?" + urllib.parse.urlencode(params, safe=":,"))
++        self.send_json(200, {"authorize_url": AUTHORIZE_URL + "?" + urllib.parse.urlencode(params, safe=":,")})
+ 
+     # Step 2: Intervals redirects back here with ?code=&state=.
+     def callback(self, q):
+@@ -205,6 +183,9 @@ class Handler(BaseHTTPRequestHandler):
+         except urllib.error.HTTPError as e:
+             log(f"{user_id}: token exchange failed: HTTP {e.code} {e.read()[:200]!r}")
+             return self.send_json(502, {"error": "token exchange failed"})
++        except ValueError as e:
++            log(f"{user_id}: connection rejected: {e}")
++            return self.send_json(409, {"error": str(e)})
+         except Exception as e:
+             log(f"{user_id}: token exchange failed: {e}")
+             return self.send_json(502, {"error": "token exchange failed"})
+@@ -216,6 +197,7 @@ class Handler(BaseHTTPRequestHandler):
+             return
+         with LOCK:
+             c = CONNECTIONS.get(user["id"])
++            c = c.copy() if c else None
+         if not c or c["status"] != "connected":
+             return self.send_json(200, {"connected": False, "status": c["status"] if c else "disconnected"})
+         self.send_json(200, {"connected": True, "status": "connected", "scope": c["scope"],
+@@ -227,18 +209,24 @@ class Handler(BaseHTTPRequestHandler):
+             return
+         with LOCK:
+             c = CONNECTIONS.get(user["id"])
++            c = c.copy() if c else None
+         if not c or c["status"] != "connected":
+             return self.send_json(409, {"error": "intervals not connected"})
+         try:
+             code, data = intervals_get(c, "/wellness")
+             self.send_json(code, data)
+         except urllib.error.HTTPError as e:
++            if e.code == 401:
++                with LOCK:
++                    current = CONNECTIONS.get(user["id"])
++                    if current and current["access_token"] == c["access_token"]:
++                        current.update(status="reconnect required", access_token=None)
++                return self.send_json(409, {"error": "Intervals access revoked; reconnect required"})
+             self.send_json(e.code, {"error": f"intervals returned {e.code}"})
+         except Exception as e:
+             self.send_json(502, {"error": str(e)})
+ 
+ 
+ if __name__ == "__main__":
+-    threading.Thread(target=refresh_tokens, daemon=True).start()
+     log(f"serving on http://localhost:{config.PORT} (intervals: {config.INTERVALS_BASE})")
+     ThreadingHTTPServer(("127.0.0.1", config.PORT), Handler).serve_forever()
+diff --git a/static/app.js b/static/app.js
+index 368922e..30bb1b2 100644
+--- a/static/app.js
++++ b/static/app.js
+@@ -25,12 +25,23 @@ async function render() {
+     } else {
+       const why = st.status && st.status !== "disconnected" ? `<p class="muted">Status: ${esc(st.status)}</p>` : "";
+       card = `<div class="card">Intervals.icu is not connected.${why}
+-        <p><a class="btn" href="/api/intervals/auth/init">Connect Intervals.icu</a></p></div>`;
++        <p><button class="btn" id="connect">Connect Intervals.icu</button></p></div>`;
+     }
+     root.className = "";
+     root.innerHTML = `<p>Signed in as <b>${esc(me.name)}</b>.</p>${card}`;
+     const d = document.getElementById("disconnect");
+     if (d) d.onclick = async () => { await api("/api/intervals/disconnect", { method: "POST" }); render(); };
++    const c = document.getElementById("connect");
++    if (c) c.onclick = async () => {
++      c.disabled = true;
++      try {
++        const { authorize_url } = await api("/api/intervals/auth/init", { method: "POST" });
++        window.location.assign(authorize_url);
++      } catch (e) {
++        c.disabled = false;
++        root.insertAdjacentHTML("beforeend", `<p class="card">Error: ${esc(e.message)}</p>`);
++      }
++    };
+   } catch (e) {
+     root.innerHTML = `<p class="card">Error: ${esc(e.message)}</p>`;
+   }
+diff --git a/test_intervals.py b/test_intervals.py
+new file mode 100644
+index 0000000..092027d
+--- /dev/null
++++ b/test_intervals.py
+@@ -0,0 +1,96 @@
++"""Local HTTP checks for the Intervals connection flow; no network provider calls."""
++import http.client
++import json
++import threading
++import time
++import unittest
++import urllib.error
++import urllib.parse
++from http.server import ThreadingHTTPServer
++from unittest.mock import patch
++
++import config
++import server
++
++
++class ConnectionFlowTests(unittest.TestCase):
++    def setUp(self):
++        server.CONNECTIONS.clear()
++        self.httpd = ThreadingHTTPServer(("127.0.0.1", 0), server.Handler)
++        self.thread = threading.Thread(target=self.httpd.serve_forever, daemon=True)
++        self.thread.start()
++
++    def tearDown(self):
++        self.httpd.shutdown()
++        self.httpd.server_close()
++        self.thread.join()
++        server.CONNECTIONS.clear()
++
++    def request(self, method, path, token=None):
++        conn = http.client.HTTPConnection("127.0.0.1", self.httpd.server_port)
++        headers = {"Authorization": "Bearer " + token} if token else {}
++        conn.request(method, path, headers=headers)
++        response = conn.getresponse()
++        body = response.read()
++        result = response.status, dict(response.getheaders()), json.loads(body) if body else None
++        conn.close()
++        return result
++
++    def test_connect_persists_and_revocation_requires_reconnect(self):
++        self.assertEqual(self.request("GET", "/api/intervals/auth/init", "tok-okafor")[0], 404)
++        self.assertEqual(self.request("POST", "/api/intervals/auth/init")[0], 401)
++        code, _, body = self.request("POST", "/api/intervals/auth/init", "tok-okafor")
++        self.assertEqual(code, 200)
++        url = urllib.parse.urlsplit(body["authorize_url"])
++        params = dict(urllib.parse.parse_qsl(url.query))
++        self.assertEqual(params["scope"], "ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE")
++        self.assertEqual(server.verify_state(params["state"]), "u_okafor")
++        self.assertIsNone(server.verify_state(params["state"] + "x"))
++
++        token = {"access_token": "provider-token", "scope": params["scope"],
++                 "athlete": {"id": "i123", "name": "C. Okafor"}}
++        callback = "/api/intervals/callback?" + urllib.parse.urlencode({"code": "abc", "state": params["state"]})
++        with patch.object(server, "post_form", return_value=token) as post:
++            self.assertEqual(self.request("GET", callback)[0], 302)
++            post.assert_called_once_with(server.TOKEN_URL, {
++                "client_id": config.CLIENT_ID, "client_secret": config.CLIENT_SECRET, "code": "abc"})
++        self.assertEqual(self.request("GET", "/api/intervals/status", "tok-okafor")[2]["connected"], True)
++        self.assertNotIn("expires_at", server.CONNECTIONS["u_okafor"])
++        self.assertNotIn("refresh_token", server.CONNECTIONS["u_okafor"])
++
++        with patch.object(server, "intervals_get", return_value=(200, [{"date": "2026-10-27"}])):
++            self.assertEqual(self.request("GET", "/api/intervals/wellness", "tok-okafor")[0], 200)
++        with patch.object(server, "intervals_get", side_effect=urllib.error.HTTPError("url", 401, "", {}, None)):
++            self.assertEqual(self.request("GET", "/api/intervals/wellness", "tok-okafor")[0], 409)
++        self.assertIsNone(server.CONNECTIONS["u_okafor"]["access_token"])
++        self.assertEqual(self.request("GET", "/api/intervals/status", "tok-okafor")[2]["connected"], False)
++
++    def test_reconnect_rejects_different_athlete(self):
++        server.CONNECTIONS["u_okafor"] = {"athlete_id": "i123", "athlete_name": "C. Okafor",
++                                           "access_token": None, "scope": None, "status": "reconnect required"}
++        state = server.sign_state("u_okafor")
++        callback = "/api/intervals/callback?" + urllib.parse.urlencode({"code": "abc", "state": state})
++        token = {"access_token": "other-token", "athlete": {"id": "i999"}}
++        with patch.object(server, "post_form", return_value=token):
++            self.assertEqual(self.request("GET", callback)[0], 409)
++        self.assertEqual(server.CONNECTIONS["u_okafor"]["athlete_id"], "i123")
++
++    def test_state_expires_and_rejects_wrong_purpose(self):
++        with patch.object(server.time, "time", return_value=1000):
++            state = server.sign_state("u_okafor")
++        with patch.object(server.time, "time", return_value=1901):
++            self.assertIsNone(server.verify_state(state))
++        with patch.object(server.time, "time", return_value=1000):
++            self.assertEqual(server.verify_state(state), "u_okafor")
++        # A valid signature with a different purpose must still fail.
++        import base64
++        import hashlib
++        import hmac
++        payload = base64.urlsafe_b64encode(json.dumps({
++            "sub": "u_okafor", "purpose": "other", "iat": int(time.time())}).encode()).decode().rstrip("=")
++        sig = hmac.new(config.APP_SECRET.encode(), payload.encode(), hashlib.sha256).hexdigest()
++        self.assertIsNone(server.verify_state(payload + "." + sig))
++
++
++if __name__ == "__main__":
++    unittest.main()

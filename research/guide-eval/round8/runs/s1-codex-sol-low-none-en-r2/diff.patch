@@ -1,0 +1,26 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..76ee94c
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,7 @@
++# HR range fix
++
++Changed `gen.py` to encode each percentage of LTHR corridor with `hr.start` and `hr.end`. Intervals.icu uses `hr.value` for a single target; the generator had mixed that field with `end`, so the planned lower bound was not encoded as a range start. The watch readback shows those targets landing on its zone bands instead of the intended corridors.
++
++The plan still supplies percentages of the athlete's LTHR, so Intervals.icu can resolve both bounds to bpm using its athlete setting. For the sample plan at LTHR 172, the intended bounds are approximately 117–129, 151–160, 129–141, and 112–124 bpm.
++
++Verified locally by generating the sample event and checking all four HR targets use `start`/`end`, including the repeated steps. Watch delivery has not been retested because this task does not authorize pushing an event.
+diff --git a/gen.py b/gen.py
+index be0b3bc..4aeba5a 100755
+--- a/gen.py
++++ b/gen.py
+@@ -10,7 +10,7 @@ import sys
+ def hr_target(step):
+     """HR corridor for a step, as a percentage of the athlete's LTHR."""
+     lo, hi = step["hr_pct"]
+-    return {"units": "%lthr", "value": lo, "end": hi}
++    return {"units": "%lthr", "start": lo, "end": hi}
+ 
+ 
+ def build_step(step):

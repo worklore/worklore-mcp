@@ -1,0 +1,7 @@
+# Causes
+
+1. **Connect button always 401s.** It was a plain `<a href="/api/intervals/auth/init">`. A browser navigation cannot send the `Authorization: Bearer` header (the token lives in localStorage and is only added by the SPA's `fetch` wrapper), so `require_user` rejected everyone. Fix: the button now calls `auth/init` via `api()` with `Accept: application/json`; the server returns `{"url": ...}` and the SPA navigates to it. Plain requests still get the 302.
+2. **Authorize step returns a bare 400 (`invalid_request`).** It began when calendar sync (2026-10-02) widened the scopes to `ACTIVITY:READ`, `CALENDAR:READ`, `CALENDAR:WRITE`. Intervals answers 400 without naming the parameter. The only authorize that ever worked was with a narrower scope (the granted scope was `ACTIVITY:WRITE,WELLNESS:READ`). `config.SCOPES` is reverted to that set. **Not verified against Intervals** (no network or docs access, and I did not contact the service). Calendar features need the correct calendar scope names from the Intervals OAuth docs added back, one at a time. If the 400 persists, check `redirect_uri` registration for the client next.
+3. **"Reconnect" after an hour.** The token response has no `expires_in` or `refresh_token` (Intervals tokens are long-lived), but the code assumed a 3600s default lifetime and then expired the connection because there was no refresh token. Fix: no expiry is scheduled unless the provider states one; the refresher skips such connections.
+
+Not run end to end against the real Intervals service.

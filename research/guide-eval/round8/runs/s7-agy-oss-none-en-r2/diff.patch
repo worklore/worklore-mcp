@@ -1,0 +1,77 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..677f6fc
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,26 @@
++# Answer
++
++## Root cause
++The **Connect** button triggered the endpoint `/api/intervals/auth/init` without any authentication information. The server implementation of `auth_init` called `self.require_user()`, which expects a valid **Bearer** token in the `Authorization` header. Because the browser request does not send this header for a simple GET, the handler returned **401 Unauthorized** (see `connect-attempt.log`). Consequently every athlete saw the *Connect* button fail.
++
++In addition, the client‑side link in `static/app.js` was hard‑coded to `/api/intervals/auth/init` – it never supplied the athlete’s token, so the server could never infer *who* was trying to connect.
++
++## Fixes applied
++1. **Server (`server.py`)** – Re‑implemented `auth_init`:
++   * It first tries to read a Bearer token from the request header.
++   * If the header is missing, it falls back to a query‑string parameter `tk` (the token stored in the client’s local storage).
++   * It validates the derived user against the in‑memory `USERS` map and returns **401** only when no valid token is found.
++   * The rest of the logic (building the authorize URL and redirect) remains unchanged.
++
++2. **Client (`static/app.js`)** – Updated the *Connect* link to include the stored token:
++   ```js
++   <a class="btn" href="/api/intervals/auth/init?tk=${TOKEN}">Connect Intervals.icu</a>
++   ```
++   This ensures the server receives the athlete identifier without needing an `Authorization` header.
++
++## Result
++* The *Connect* button now initiates the OAuth flow correctly for any logged‑in athlete.
++* The server no longer returns 401 for the `/api/intervals/auth/init` endpoint.
++* Subsequent steps of the OAuth flow (callback, token exchange) will now have a proper user context.
++
++*All changes were made within the existing workspace (`/tmp/h-3wY2Hk`). No external deployment or publishing was performed.*
+\ No newline at end of file
+diff --git a/server.py b/server.py
+index 351cbb7..cf96830 100644
+--- a/server.py
++++ b/server.py
+@@ -187,11 +187,23 @@ class Handler(BaseHTTPRequestHandler):
+ 
+     # Step 1: build the authorize URL and send the browser to Intervals.
+     def auth_init(self):
+-        user = self.require_user()
++        # Allow authentication without the Authorization header for the Connect flow.
++        # Try to determine the user via the Authorization header first; if missing, fall back to a 'tk' query parameter.
++        token = None
++        auth_header = self.headers.get("Authorization", "")
++        if auth_header.startswith("Bearer "):
++            token = auth_header[7:].strip()
++        else:
++            # Parse query parameters from the request URL.
++            url = urllib.parse.urlsplit(self.path)
++            q = dict(urllib.parse.parse_qsl(url.query))
++            token = q.get("tk")
++        user = USERS.get(token) if token else None
+         if not user:
+-            return
++            self.log_message("%s %s 401 (no valid token for auth_init)", self.command, self.path)
++            return self.send_json(401, {"error": "unauthorized"})
+         params = {"client_id": config.CLIENT_ID, "redirect_uri": config.REDIRECT_URI,
+-                  "scope": config.SCOPES, "state": sign_state(user["id"])}
++                  "scope": config.SCOPES, "state": sign_state(user["id"]) }
+         self.redirect(AUTHORIZE_URL + "?" + urllib.parse.urlencode(params, safe=":,"))
+ 
+     # Step 2: Intervals redirects back here with ?code=&state=.
+diff --git a/static/app.js b/static/app.js
+index 368922e..6933175 100644
+--- a/static/app.js
++++ b/static/app.js
+@@ -25,7 +25,7 @@ async function render() {
+     } else {
+       const why = st.status && st.status !== "disconnected" ? `<p class="muted">Status: ${esc(st.status)}</p>` : "";
+       card = `<div class="card">Intervals.icu is not connected.${why}
+-        <p><a class="btn" href="/api/intervals/auth/init">Connect Intervals.icu</a></p></div>`;
++        <p><a class="btn" href="/api/intervals/auth/init?tk=${TOKEN}">Connect Intervals.icu</a></p></div>`;
+     }
+     root.className = "";
+     root.innerHTML = `<p>Signed in as <b>${esc(me.name)}</b>.</p>${card}`;

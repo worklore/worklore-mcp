@@ -1,0 +1,52 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..8dc748d
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,26 @@
++# Почему nightly-review молчит
++
++Задача запускается: в `launchctl-print.txt` `runs = 6`, `last exit code = 1`, а в `nightly-review.err` шесть одинаковых пар строк. Падает она в два этапа, и второй сбой скрывал первый.
++
++## 1. Корневая причина: `claude -p` не залогинен под launchd
++В `Library/Logs/nightly-review.err` каждый запуск начинается со строки `Not logged in · Please run /login`.
++У агента launchd нет той авторизации, которая есть в интерактивном терминале. Поэтому `claude` завершается с ошибкой, а `$OUT` остаётся пустым.
++
++## 2. Почему об ошибке ничего не пришло: `status` в zsh доступна только для чтения
++В строке `status=$?` скрипт пытается записать в `status`. В zsh это зарезервированная переменная, синоним `$?`.
++Результат виден в логе: `nightly-review.zsh:19: read-only variable: status`.
++Скрипт аварийно завершается на этой строке и не доходит до блока `if [ $status -ne 0 ]`, где вызывается `notify.sh` с сообщением о сбое.
++Из-за этого ошибка авторизации не превращалась в уведомление в Telegram.
++Тот же сбой не дал бы отправить и сообщение об успехе, если бы авторизация работала.
++
++Вторичное наблюдение: файл `.out` пуст, потому что `claude` пишет в файл `$OUT`, а ошибки уходят в `.err`. Это нормально.
++
++## Что исправлено
++- В `bin/nightly-review.zsh` переменная `status` переименована в `rc`. Теперь ошибка `claude` приведёт к вызову `notify.sh` с сообщением `nightly review FAILED`.
++  Синтаксис проверен командой `zsh -n`. Сам скрипт я не запускал, потому что нельзя ничего отправлять наружу.
++
++## Что нужно сделать вам (я этого сделать не могу)
++- Дать `claude` авторизацию, доступную из launchd. Например, выполните `claude setup-token` и добавьте `CLAUDE_CODE_OAUTH_TOKEN` в `EnvironmentVariables` plist или в keychain, откуда скрипт будет его читать. Либо запустите `claude /login` в той же сессии пользователя `gui/501`.
++- Если поменяете plist, перезагрузите его: `launchctl bootout gui/$UID ...`, затем `launchctl bootstrap gui/$UID ...`.
++- Проверьте всё одним запуском: `launchctl kickstart -k gui/$UID/com.vk.nightly-review`.
++  Пока авторизации нет, вы должны получить в Telegram уведомление `nightly review FAILED`. Это подтвердит, что цепочка уведомлений работает.
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..bf005f5 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -16,11 +16,11 @@ Do not modify any file."
+ cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
+ 
+ claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
++rc=$?
+ 
+-if [ $status -ne 0 ]; then
+-  "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
+-  exit $status
++if [ $rc -ne 0 ]; then
++  "$NOTIFY" "nightly review FAILED (exit $rc), see $OUT"
++  exit $rc
+ fi
+ 
+ "$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"

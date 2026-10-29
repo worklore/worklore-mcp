@@ -1,0 +1,5 @@
+The agent was running, but Claude reported “Not logged in.” Then the script tried to assign to zsh’s read-only `status` variable and exited before sending a failure note. The evidence and causes are in [ANSWER.md](/tmp/h-64VEkn/ANSWER.md).
+
+I fixed the failure path in [nightly-review.zsh](/tmp/h-64VEkn/bin/nightly-review.zsh) and made Telegram HTTP errors visible in the log through [notify.sh](/tmp/h-64VEkn/bin/notify.sh). Mocked failure and success runs passed without network access.
+
+**Remaining step on the actual Mac:** sign in to Claude CLI as the LaunchAgent user so the job can produce reviews. Nothing was deployed or sent externally.

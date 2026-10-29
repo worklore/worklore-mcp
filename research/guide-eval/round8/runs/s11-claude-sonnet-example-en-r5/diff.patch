@@ -1,0 +1,105 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..b34d5f0
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,34 @@
++# Second publish returns 500
++
++## Cause
++`similarity()` in `src/app.py` returns a Python `float` (`round(0.7*a + 0.3*b, 4)`).
++`publish()` stores the top matches as `similar: [{slug, score}]`. On the first
++publish the table is empty, so `similar` is `[]` and no float is written. From the
++second publish on, `similar` holds float scores. boto3 rejects floats with
++`TypeError: Float types are not supported. Use Decimal types instead.`, and the
++handler turns that into a 500 (see `logs/error.log`). The existing test only
++published into an empty table, so it never ran this path.
++
++## Fix
++- `src/app.py`: added `to_dynamo()`, which recursively converts floats to `Decimal`
++  (via `str`, so 0.4125 stays exactly 0.4125). `publish()` runs the whole item
++  through it right before `put_item`. Any float added to the item later is
++  converted too, not just `score`.
++- `tests/test_publish.py`: added two tests that publish a second story into a
++  populated table, one through `publish()` and one through `handler()` expecting 201.
++  They fail without the fix and pass with it.
++
++I kept scores as Decimals rather than changing them to integer percentages, so the
++stored values keep their precision and the reader page's format doesn't change.
++
++## Colleague's note
++Applied:
++- The diagnosis. Floats only appear once existing data produces scores.
++- Converting at the write boundary.
++- Seeding the table before testing a write.
++
++Not applied:
++- Integer percentages. I used Decimal instead.
++- The real-table double publish. Nothing outside this directory was touched, and the
++  fake table rejects floats the same way boto3 does.
++- The grep for `round(` and `/`. The repo is one file, and I read it directly.
+diff --git a/src/app.py b/src/app.py
+index db49c5e..60abfb5 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -8,6 +8,7 @@ import json
+ import logging
+ import re
+ import time
++from decimal import Decimal
+ 
+ log = logging.getLogger("stories")
+ 
+@@ -40,6 +41,17 @@ def related(story, existing):
+     return scored[:TOP_N]
+ 
+ 
++def to_dynamo(value):
++    """Recursively convert floats to Decimal; DynamoDB rejects Python floats."""
++    if isinstance(value, float):
++        return Decimal(str(value))
++    if isinstance(value, dict):
++        return {k: to_dynamo(v) for k, v in value.items()}
++    if isinstance(value, (list, tuple)):
++        return [to_dynamo(v) for v in value]
++    return value
++
++
+ def validate(story):
+     for k in ("slug", "title", "body"):
+         if not story.get(k):
+@@ -60,6 +72,7 @@ def publish(table, story):
+         "published_at": int(time.time()),
+         "similar": related(story, existing),
+     }
++    item = to_dynamo(item)  # single boundary for every DynamoDB write
+     table.put_item(Item=item)
+     log.info("publish slug=%s similar=%d stored", item["slug"], len(item["similar"]))
+     return item
+diff --git a/tests/test_publish.py b/tests/test_publish.py
+index 6c9ac44..7e5e16a 100644
+--- a/tests/test_publish.py
++++ b/tests/test_publish.py
+@@ -23,6 +23,22 @@ class PublishTest(unittest.TestCase):
+         self.assertEqual(table.get_item(Key={"slug": "why-my-cron-ran-twice"})["Item"]["title"], "Why my cron ran twice")
+         self.assertEqual(table.scan()["Count"], 1)
+ 
++    def test_second_publish_with_similar_story(self):
++        table = FakeTable()
++        first = {"slug": "cron-twice", "title": "A", "tags": ["cron", "linux"], "body": "two crontabs ran"}
++        second = {"slug": "cron-thrice", "title": "B", "tags": ["cron"], "body": "three crontabs ran"}
++        app.publish(table, first)
++        stored = app.publish(table, second)
++        self.assertEqual(stored["similar"][0]["slug"], "cron-twice")
++        self.assertEqual(table.scan()["Count"], 2)
++
++    def test_handler_second_publish_is_201(self):
++        import json
++        table = FakeTable()
++        for slug in ("story-one", "story-two"):
++            body = json.dumps({"slug": slug, "title": "T", "tags": ["x"], "body": "same words"})
++            self.assertEqual(app.handler({"body": body}, table)["statusCode"], 201)
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

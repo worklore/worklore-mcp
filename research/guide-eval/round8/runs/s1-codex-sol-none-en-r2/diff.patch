@@ -1,0 +1,26 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..c22b7e7
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,7 @@
++# HR range fix
++
++Changed `gen.py` to emit each HR corridor as `{ "units": "%lthr", "start": lower, "end": upper }`, including steps inside repeats. The previous `value` key represents a single HR target; it caused the Garmin export to use zone-based targets, matching the bands recorded in `readback/watch-notes.md`. Intervals' range form uses `start` and `end`, so the watch can receive the planned corridor.
++
++The percentages remain relative to the LTHR stored in Intervals (172 bpm for this athlete). That gives expected ranges of 117–129 bpm for warm-up, 151–160 for tempo, 129–141 for float, and 112–124 for cool-down. The watch's own LTHR and zone boundaries should not set those endpoints.
++
++Verified locally by generating the sample event and checking the HR objects in both ordinary and repeated steps. No event was pushed or watch sync performed, so the on-watch result still needs confirmation at the next authorized sync.
+diff --git a/gen.py b/gen.py
+index be0b3bc..4aeba5a 100755
+--- a/gen.py
++++ b/gen.py
+@@ -10,7 +10,7 @@ import sys
+ def hr_target(step):
+     """HR corridor for a step, as a percentage of the athlete's LTHR."""
+     lo, hi = step["hr_pct"]
+-    return {"units": "%lthr", "value": lo, "end": hi}
++    return {"units": "%lthr", "start": lo, "end": hi}
+ 
+ 
+ def build_step(step):

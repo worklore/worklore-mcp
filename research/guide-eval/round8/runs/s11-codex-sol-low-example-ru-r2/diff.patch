@@ -1,0 +1,65 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..8b0977c
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,13 @@
++# Причина
++
++Первая публикация проходит, потому что таблица пуста: `related()` возвращает пустой список. При второй публикации появляется совпадение, и `similarity()` записывала в `similar[].score` значение типа `float`. В `logs/error.log` ошибка возникает именно на `table.put_item(Item=item)`: сериализатор DynamoDB отклоняет `float` (`TypeError: Float types are not supported`). Повторные попытки завершаются тем же 500.
++
++# Исправление
++
++`similarity()` теперь возвращает целое число от 0 до 10000: прежняя оценка от 0 до 1 умножается на 10000 и округляется. Так сохраняется прежняя точность до четырех знаков, порядок похожих историй и совместимость с DynamoDB. Читателям поля `score` следует интерпретировать его как долю в единицах 1/10000.
++
++Добавлен тест, который публикует две истории через `handler()` в одну `FakeTable` и проверяет успешный ответ и сохраненный целочисленный балл. `python3 -m unittest discover tests -v`: 2 теста прошли. Проверка выполнялась локально, без обращения к AWS.
++
++# Что пригодилось из заметки коллеги
++
++Пригодились объяснение различия между пустой и заполненной таблицей, указание на запрет `float` в DynamoDB, идея целочисленного балла и тест со второй записью. Проверка `round()` и деления также подтвердила источник `float`. Рекомендацию публиковать дважды в реальную таблицу не применяли: локальный тест с валидирующей `FakeTable` воспроизводит тот же отказ, а отправка во внешний сервис запрещена условиями задачи. `Decimal` не понадобился, поскольку целочисленная шкала сохраняет нужную точность.
+diff --git a/src/app.py b/src/app.py
+index db49c5e..7d66ec9 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -22,12 +22,12 @@ def words(text):
+ 
+ 
+ def similarity(a, b):
+-    """Shared-tag ratio (Jaccard), blended with shared words of the two bodies."""
++    """Blended Jaccard similarity as an integer from 0 to 10000."""
+     ta, tb = set(a.get("tags", [])), set(b.get("tags", []))
+     tag_score = len(ta & tb) / len(ta | tb) if (ta | tb) else 0
+     wa, wb = words(a.get("body")), words(b.get("body"))
+     word_score = len(wa & wb) / len(wa | wb) if (wa | wb) else 0
+-    return round(0.7 * tag_score + 0.3 * word_score, 4)
++    return round(10000 * (0.7 * tag_score + 0.3 * word_score))
+ 
+ 
+ def related(story, existing):
+diff --git a/tests/test_publish.py b/tests/test_publish.py
+index 6c9ac44..6756bbd 100644
+--- a/tests/test_publish.py
++++ b/tests/test_publish.py
+@@ -1,4 +1,5 @@
+ import os
++import json
+ import sys
+ import unittest
+ 
+@@ -23,6 +24,16 @@ class PublishTest(unittest.TestCase):
+         self.assertEqual(table.get_item(Key={"slug": "why-my-cron-ran-twice"})["Item"]["title"], "Why my cron ran twice")
+         self.assertEqual(table.scan()["Count"], 1)
+ 
++    def test_second_publish_stores_related_score(self):
++        table = FakeTable()
++        first = {"slug": "first-story", "title": "First", "tags": ["python"], "body": "shared words"}
++        second = {"slug": "second-story", "title": "Second", "tags": ["python"], "body": "shared words"}
++        self.assertEqual(app.handler({"body": json.dumps(first)}, table)["statusCode"], 201)
++        self.assertEqual(app.handler({"body": json.dumps(second)}, table)["statusCode"], 201)
++        stored = table.get_item(Key={"slug": "second-story"})["Item"]
++        self.assertEqual(stored["similar"], [{"slug": "first-story", "score": 10000}])
++        self.assertIsInstance(stored["similar"][0]["score"], int)
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

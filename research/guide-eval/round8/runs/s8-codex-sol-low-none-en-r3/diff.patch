@@ -1,0 +1,36 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..01d8135
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,7 @@
++# Cache fix
++
++`build_system()` now sends the coaching instructions as their own cached text block, followed by an uncached athlete context block. A `save_fact` updates the context on the next API call without changing the cached instruction block. The date and other profile details also remain current.
++
++The existing keyword based tool selection is unchanged. Since Anthropic places tool definitions before the system prompt in its cache prefix, different tool selections can still create separate cache entries. This change addresses the memory write invalidation within a given tool selection.
++
++Verified locally that adding a fact leaves the cached block identical, changes the context block, and keeps the new fact visible. No API call was made, so actual cache usage after the change was not measured.
+diff --git a/__pycache__/bot.cpython-314.pyc b/__pycache__/bot.cpython-314.pyc
+new file mode 100644
+index 0000000..0a72d77
+Binary files /dev/null and b/__pycache__/bot.cpython-314.pyc differ
+diff --git a/bot.py b/bot.py
+index e2ff241..fa47bd5 100644
+--- a/bot.py
++++ b/bot.py
+@@ -128,9 +128,11 @@ def athlete_context(a, today):
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    # Cache the stable prefix; facts and the date change independently of it.
++    return [
++        {"type": "text", "text": INSTRUCTIONS, "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": athlete_context(a, today)},
++    ]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [

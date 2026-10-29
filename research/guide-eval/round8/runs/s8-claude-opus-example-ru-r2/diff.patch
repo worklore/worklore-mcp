@@ -1,0 +1,134 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..9ddf973
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,67 @@
++# Почему save_fact сбрасывал кеш и что изменено
++
++## Причина
++
++`build_system()` собирал весь system prompt в один текстовый блок с одним
++`cache_control` в конце: инструкции + профиль + дата + факты + язык. Кеш Anthropic
++работает по хешу префикса, поэтому новый факт менял хеш всего блока, и следующий
++вызов писал в кеш весь промпт заново (~1050 токенов по цене 1.25x). Это видно в
++`logs/usage.jsonl`: round 2 после каждого `save_fact` даёт `cache_read_input_tokens: 0`
++и `cache_creation_input_tokens` около 1040–1100. Сильнее всего это бьёт по вызову
++внутри того же tool-loop, потому что `a.facts` уже изменён и промпт пересобирается.
++
++## Что изменено (`bot.py`, `build_system` / `athlete_context`)
++
++System теперь состоит из отдельных блоков:
++
++1. `INSTRUCTIONS`: одинаковые для всех спортсменов и любого дня, с `cache_control`.
++2. Шапка спортсмена: имя, вид спорта, зоны, цель, **язык**, дата, заголовок «Long-term facts:».
++3. **Каждый факт в своём блоке**, в порядке добавления. `cache_control` стоит на последнем блоке.
++
++`save_fact` дописывает блок в самый конец. Помимо явных маркеров, API проверяет
++попадания на границах предыдущих блоков (до ~20 назад). Префикс до предыдущего
++последнего факта уже лежит в кеше: это ровно позиция маркера в прошлом запросе.
++Поэтому следующий вызов читает почти весь промпт из кеша, а пишет только новый
++факт (~10–20 токенов). Строка `Language:`, которая раньше шла *после* фактов,
++перенесена в шапку: всё, что стоит после фактов, сдвигалось бы при каждой записи.
++Остальная логика (загрузка всех фактов, фильтр инструментов, tool-loop) не тронута.
++В README обновлён абзац про кеширование.
++
++## Проверка
++
++Реального API-ключа нет, а внешние вызовы запрещены, поэтому проверял офлайн:
++`reply()` с фейковым LLM, который моделирует префиксный кеш (маркеры, lookback по
++границам блоков, минимум 1024 токена; токены считались грубо, как символы/4).
++Результат: round 2 после `save_fact` даёт read ≈ 1150–1200, creation 4–8. Следующее
++сообщение даёт read ≈ весь промпт. Полный промах был только в сообщении, где
++ключевое слово подключило другую группу инструментов (так и ожидалось, см. ниже).
++На реальном трафике стоит проверить по `logs/usage.jsonl`: после `save_fact`
++`cache_creation_input_tokens` должен быть порядка длины одного факта, а не ~1000.
++
++## Что пригодилось из заметки коллеги, а что нет
++
++Пригодилось:
++- Диагноз: кеш работает по хешу префикса, а запись в память меняет промпт и
++  вытесняет всё, что идёт после изменённого байта.
++- Отделить байт-стабильные инструкции (без дат и имён) от изменчивого хвоста и
++  поставить маркер на инструкции. Он у меня есть: при более длинных инструкциях
++  или на модели с меньшим порогом это даст общий префикс для всех спортсменов
++  и защиту от смены даты или профиля.
++- Не выбирать top-N фактов под сообщение: факты грузятся все и всегда.
++- Инструменты стоят выше system в префиксе, поэтому фильтрацию оставил как есть
++  (это совпадает с NOTES.md). Подключение группы `plan`/`race` по-прежнему даёт
++  один полный промах. Это осознанная цена фильтра, не баг памяти.
++- Шаг проверки через `usage`.
++
++Не подошло как есть: схема «два маркера, хвост с фактами целиком во втором
++сегменте». Здесь она бы ничего не дала. Инструкции занимают ~2500 символов
++(≈600 токенов); вместе с инструментами и служебным промптом для tools префикс до
++первого маркера около 900–950 токенов (по логам весь промпт ≈1046, хвост ≈100).
++Это ниже минимальной кешируемой длины для `claude-sonnet-4-5` (1024 токена), а
++маркер на более коротком префиксе API молча игнорирует. После `save_fact` снова
++переписывался бы весь промпт. Поэтому основное исправление другое: факты как
++append-only блоки в самом конце, плюс lookback по границам блоков. Оно не зависит
++от того, дотягивают ли инструкции до порога. Цифры токенов в заметке (780/240)
++относятся к другому боту, и их я не использовал. Пункт «упорядочить хвост от
++редко меняющегося к часто» здесь важен не для читаемости, как сказано в заметке, а
++по существу: факты должны идти последними.
+diff --git a/README.md b/README.md
+index ebd390e..3feef3f 100644
+--- a/README.md
++++ b/README.md
+@@ -12,5 +12,7 @@ Run it locally with `COACH_ANTHROPIC_KEY=sk-ant-... python3 bot.py 42` and type
+ messages on stdin (the Telegram long-polling transport, which needs
+ `COACH_TELEGRAM_TOKEN`, lives in a separate deploy repo and just calls `reply()`).
+ Requires Python 3.11+ and `pip install anthropic`. Prompt caching is on: the system
+-prompt carries a `cache_control` marker so the tool-loop rounds and follow-up
+-messages inside the 5-minute window read it from cache.
++prompt is split into blocks (static instructions, athlete header, one block per
++fact) with a `cache_control` marker on the last block, so the tool-loop rounds and
++follow-up messages inside the 5-minute window read it from cache, and a `save_fact`
++only re-caches the new fact. Keep facts last and append-only; see `build_system()`.
+diff --git a/bot.py b/bot.py
+index e2ff241..0db7215 100644
+--- a/bot.py
++++ b/bot.py
+@@ -115,22 +115,36 @@ Formatting:
+ 
+ 
+ def athlete_context(a, today):
++    """Per-athlete header: changes only when the profile is edited or the date rolls over."""
+     lines = [
+-        f"Today: {today.isoformat()} ({today.strftime('%A')})",
+         f"Athlete: {a.name} (id {a.user_id}), sport: {a.sport}",
+         "Zones: " + ", ".join(f"{k} {v}" for k, v in a.zones.items()),
+         f"Goal: {a.goal}",
++        f"Language: {a.lang}",
++        f"Today: {today.isoformat()} ({today.strftime('%A')})",
+         "Long-term facts:",
+     ]
+-    lines += [f"- {f}" for f in a.facts] or ["- (none yet)"]
+-    lines.append(f"Language: {a.lang}")
+     return "\n".join(lines)
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    # Layout matters for the prompt cache, which is a prefix hash checked at block boundaries:
++    #   [INSTRUCTIONS, cached]  byte-identical for every athlete and every day
++    #   [athlete header]        profile, language, date
++    #   [one block per fact]    append-only: save_fact adds a block at the very end
++    # The breakpoint sits on the last block. After save_fact the new last block is a miss,
++    # but the API's lookback finds the previous request's breakpoint one block earlier and
++    # reads everything up to it from cache, so only the new fact is written to cache.
++    # Nothing volatile may go after the facts, or every save_fact would move it.
++    # The marker on INSTRUCTIONS lets athletes share the static prefix; the API ignores it
++    # while tools + INSTRUCTIONS are below the model's minimum cacheable length (1024 for Sonnet 4.5).
++    blocks = [
++        {"type": "text", "text": INSTRUCTIONS, "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": athlete_context(a, today)},
++    ]
++    blocks += [{"type": "text", "text": f"- {f}"} for f in a.facts] or [{"type": "text", "text": "- (none yet)"}]
++    blocks[-1]["cache_control"] = {"type": "ephemeral"}
++    return blocks
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [

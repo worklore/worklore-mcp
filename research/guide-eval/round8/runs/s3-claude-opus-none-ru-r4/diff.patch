@@ -1,0 +1,186 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..d88204a
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,87 @@
++# Почему nightly-review молчал
++
++launchd отрабатывал как положено: в `launchctl-print.txt` видно `runs = 6`
++(6 ночей с 13 по 18 октября) и `last exit code = 1`. Задача каждую ночь
++запускалась и падала, а сообщить об этом не могла. Это видно по
++`Library/Logs/nightly-review.err` — каждый запуск оставил там две строки:
++
++```
++Not logged in · Please run /login
++/Users/vk/bin/nightly-review.zsh:19: read-only variable: status
++```
++
++## Причина 1 (из-за неё не было даже сообщения об ошибке): `status` в zsh только для чтения
++
++В zsh `$status` — это специальный параметр, синоним `$?`, и он read-only.
++Строка `status=$?` (строка 19) — фатальная ошибка: zsh сразу завершает
++скрипт с кодом 1. До веток `if [ $status -ne 0 ]` и
++`"$NOTIFY" "nightly review FAILED ..."` дело не доходит, и `notify.sh`
++не запускается ни в каком случае, ни при успехе, ни при ошибке. Проверка:
++`zsh -c 'status=1'` → `read-only variable: status`.
++
++**Исправление:** переменная переименована в `rc`. Плюс на `EXIT` поставлен
++`trap`: если скрипт умрёт на любом неожиданном месте, всё равно уйдёт
++сообщение «died unexpectedly».
++
++## Причина 2 (из-за неё не было сводок): `claude` под launchd не залогинен
++
++`claude -p` пишет `Not logged in · Please run /login` и выходит с
++ненулевым кодом. Окружение launchd совсем не похоже на окружение
++терминала: zsh, запущенный неинтерактивно, не читает `~/.zshrc` и
++`~/.zprofile` (поэтому туда не попадают, например, `ANTHROPIC_API_KEY` или
++`CLAUDE_CODE_OAUTH_TOKEN`, если они экспортированы там), а login‑keychain,
++где Claude Code хранит OAuth‑логин, в 02:30 может быть заблокирован или
++недоступен фоновому процессу. Из снимка нельзя понять, какой из двух
++вариантов твой, но лечится оба одинаково.
++
++**Исправление:** скрипт теперь подхватывает приватный env‑файл
++`~/.config/nightly-review/env`, если он есть. Что сделать руками
++(в этот снимок я ничего не устанавливал):
++
++```sh
++claude setup-token            # выдаст долгоживущий OAuth-токен
++mkdir -p ~/.config/nightly-review
++printf 'CLAUDE_CODE_OAUTH_TOKEN=%s\n' '<токен>' > ~/.config/nightly-review/env
++# по желанию сюда же TG_BOT_TOKEN=..., чтобы notify.sh не зависел от keychain
++chmod 600 ~/.config/nightly-review/env
++```
++
++Токены сознательно не положены в plist: plist лежит открыто, а
++`launchctl print` показывает переменные окружения в выводе.
++
++## Причина 3 (скрытая, сработала бы следующей): `notify.sh` мог молча терять сообщения
++
++- `: "${TG_BOT_TOKEN:=$(security ...)}"`: если `security` не может
++  прочитать keychain (под launchd — та же проблема, что в п. 2), `set -e`
++  этого **не** ловит, потому что статус команды `:` всегда 0. Токен
++  оказывается пустым, запрос уходит на `/bot/sendMessage`.
++- `curl -sS` без `-f` считает HTTP 401/404/400 от Telegram успехом, а ответ
++  с ошибкой уходил в `/dev/null`. Итог — «отправлено», хотя ничего не
++  пришло. (Руками всё работало, потому что из терминала keychain открыт.)
++- Сообщения Telegram длиннее 4096 символов отклоняются.
++
++**Исправление:** если ключ из keychain не прочитался, скрипт явно выходит
++с ошибкой; у curl добавлены `--fail-with-body` и `--max-time 30`, тело
++ответа с ошибкой пишется в stderr; текст обрезается до 4000 символов.
++В `nightly-review.zsh` ошибка `notify.sh` больше не теряется, она пишется
++в `nightly-review.err`.
++
++## Прочие улучшения в `nightly-review.zsh`
++
++- stderr от `claude` сохраняется в `nightly-review-ДАТА.err`, и его начало
++  вставляется в сообщение о сбое (раньше в сообщении было «see $OUT», а
++  `$OUT` при ошибке пустой).
++- Пустой вывод `claude` считается ошибкой.
++- Если `claude` нет в `PATH`, приходит отдельное понятное сообщение.
++
++Plist я не менял, с ним всё в порядке. Изменения в скрипте `launchctl` не
++требуют, а вот файл с токеном нужно создать, иначе следующей ночью придёт
++уже *сообщение* «claude exit 1: Not logged in». Проверить сразу, не дожидаясь
++02:30: `launchctl kickstart gui/$UID/com.vk.nightly-review`.
++
++## Как проверено
++
++Скрипт гонялся на заглушках `claude`/`notify.sh` во временном HOME. Во всех
++четырёх сценариях — claude падает с «Not logged in», успех, пустой вывод,
++нет репозитория — уведомление отправляется с нужным текстом. Реальные
++вызовы Telegram/Claude не выполнялись.
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..d023d01 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -4,8 +4,32 @@ set -u
+ 
+ REPO="$HOME/projects/shop"
+ OUT="$HOME/Library/Logs/nightly-review-$(date +%F).md"
++ERR="$HOME/Library/Logs/nightly-review-$(date +%F).err"
+ NOTIFY="$HOME/bin/notify.sh"
+ 
++# launchd does not read ~/.zshrc / ~/.zprofile, so anything the job needs
++# (CLAUDE_CODE_OAUTH_TOKEN from `claude setup-token`, optionally TG_BOT_TOKEN)
++# lives in a private env file. Keep it chmod 600.
++ENV_FILE="$HOME/.config/nightly-review/env"
++if [[ -r "$ENV_FILE" ]]; then
++  set -a; source "$ENV_FILE"; set +a
++fi
++
++notify() {
++  "$NOTIFY" "$1" || print -u2 "$(date '+%F %T') notify.sh failed (exit $?): $1"
++}
++
++# Whatever happens below, never exit silently: if the script dies before
++# reporting, send a failure note from the EXIT trap.
++reported=0
++trap '(( reported )) || notify "nightly review died unexpectedly (exit $?), see ~/Library/Logs/nightly-review.err"' EXIT
++
++fail() {
++  reported=1
++  notify "nightly review FAILED: $1"
++  exit 1
++}
++
+ SINCE=$(date -v-1d +%F)
+ PROMPT="Review the commits in this repository since $SINCE.
+ For each commit: one line on what it changes and whether anything looks risky
+@@ -13,14 +37,21 @@ For each commit: one line on what it changes and whether anything looks risky
+ End with a three-line summary I can read on my phone.
+ Do not modify any file."
+ 
+-cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
++cd "$REPO" || fail "repo $REPO missing"
++command -v claude >/dev/null || fail "claude not found in PATH ($PATH)"
+ 
+-claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
++claude -p "$PROMPT" --output-format text > "$OUT" 2> "$ERR"
++# NB: `status` is a read-only special parameter in zsh (same as $?),
++# assigning to it kills the script — use another name.
++rc=$?
++cat "$ERR" >&2
+ 
+-if [ $status -ne 0 ]; then
+-  "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
+-  exit $status
++if (( rc != 0 )); then
++  fail "claude exit $rc: $(head -c 300 "$ERR")"
++fi
++if [[ ! -s "$OUT" ]]; then
++  fail "claude returned empty output, see $ERR"
+ fi
+ 
+-"$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"
++reported=1
++notify "nightly review done: $(head -c 300 "$OUT")"
+diff --git a/bin/notify.sh b/bin/notify.sh
+index 818e531..797c93c 100755
+--- a/bin/notify.sh
++++ b/bin/notify.sh
+@@ -1,7 +1,19 @@
+ #!/bin/bash
+ # usage: notify.sh "message"  — sends a Telegram message to me.
+ set -eu
+-: "${TG_BOT_TOKEN:=$(security find-generic-password -s tg-bot -w)}"
++if [ -z "${TG_BOT_TOKEN:-}" ]; then
++  TG_BOT_TOKEN=$(security find-generic-password -s tg-bot -w) || {
++    echo "notify.sh: cannot read tg-bot token from keychain (locked? no access from launchd?)" >&2
++    exit 1
++  }
++fi
+ CHAT_ID=123456789
+-curl -sS -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
+-  -d chat_id="$CHAT_ID" --data-urlencode text="$1" > /dev/null
++# --fail-with-body: non-2xx from Telegram (bad token, chat, text too long...)
++# becomes a non-zero exit; the API's error JSON is copied to stderr.
++resp=$(curl -sS --fail-with-body --max-time 30 \
++  -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
++  -d chat_id="$CHAT_ID" --data-urlencode text="${1:0:4000}") || {
++  rc=$?
++  echo "notify.sh: Telegram send failed (curl exit $rc): $resp" >&2
++  exit "$rc"
++}

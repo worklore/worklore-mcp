@@ -1,0 +1,82 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..32ae900
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,61 @@
++# Answer: HR corridors clamped to the watch's zones
++
++## Cause
++
++`gen.py` built every HR target as `{"units": "%lthr", "value": lo, "end": hi}`.
++Per the colleague's note, Intervals exports a `value`-keyed target as a
++zone-mapped (Lap-HR) target, and the watch clamps it to its own zone bands.
++That matches `readback/watch-notes.md`: every corridor landed on a watch zone
++edge (118–137, 137–151, 151–162) and none on the planned bpm range.
++
++## Change
++
++`gen.py`, `hr_target()`: the low bound is now `start` instead of `value`:
++
++```python
++return {"units": "%lthr", "start": lo, "end": hi}
++```
++
++A comment above the line records why the key matters.
++
++## Check
++
++Regenerated `plans/tempo-run.json`. Each step's `hr` now comes out as
++`{"units": "%lthr", "start": …, "end": …}`. Expected bpm at LTHR 172:
++
++| step | % LTHR | expected bpm |
++|---|---|---|
++| Warm-up easy | 68–75 | 117–129 |
++| Tempo | 88–93 | 151–160 |
++| Float | 75–82 | 129–141 |
++| Cool-down | 65–72 | 112–124 |
++
++These match the "expected on watch" column in the watch notes.
++
++## Not verified
++
++- I did not push. The sandbox has no Intervals credentials, and pushing
++  publishes to an external service, so the watch behavior is unconfirmed.
++  The next step is to run `./push.sh event.json`, read the event back, sync
++  Garmin, and check the watch against the table above.
++- `readback/event-184233-as-sent.json` is left as it was. It records what
++  was sent before the fix, so it still shows `value`.
++
++## Colleague's note: what applied
++
++- **Applied:** `start`/`end` instead of `value`/`end` for absolute bpm
++  corridors, as the note describes. Our `hr` objects already used
++  `units: "%lthr"` and percentages, which the note also recommends.
++- **Applied, already true:** the readback shows `workout_doc.steps` populated,
++  so the parser accepts our steps.
++- **Did not apply:** the top-level `description` text grammar and its rules
++  (`m`/`mtr`, `Z<n>`, label digits). `gen.py` sends no `description`, and the
++  steps already render, so the bonus trap does not affect this repo.
++- **Did not apply:** the UI "Instant HR" toggle step. The note's method was
++  to build in the UI and read back. The API key change alone covers this case,
++  so that step was not needed. If the watch still shows the wrong values after
++  the next push, building the same step in the UI and diffing the readback
++  would be the next check.
++- **Not verified here:** the note's claims about how Intervals and the FIT
++  export treat `value` versus `start`. I took them from the note and did not
++  check them against Intervals' docs or a live push.
+diff --git a/gen.py b/gen.py
+index be0b3bc..f37cdd8 100755
+--- a/gen.py
++++ b/gen.py
+@@ -10,7 +10,9 @@ import sys
+ def hr_target(step):
+     """HR corridor for a step, as a percentage of the athlete's LTHR."""
+     lo, hi = step["hr_pct"]
+-    return {"units": "%lthr", "value": lo, "end": hi}
++    # Use "start" for the low bound, not "value": with "value" Intervals exports
++    # a zone-mapped target and the watch clamps it to its own zones.
++    return {"units": "%lthr", "start": lo, "end": hi}
+ 
+ 
+ def build_step(step):

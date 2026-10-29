@@ -1,0 +1,85 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..9431727
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,18 @@
++# Почему вторая публикация возвращает 500
++
++**Причина.** `similarity()` возвращает `float` (`round(..., 4)`), и этот score кладётся в
++`item["similar"]` как `{"slug", "score"}`. boto3 для DynamoDB не принимает `float`
++(`TypeError: Float types are not supported. Use Decimal types instead.`).
++
++Первая публикация проходит, потому что таблица пуста: `related()` возвращает `[]`, и ни одного
++float в элементе нет (`similar=0` в логе). Начиная со второй публикации в `similar` есть
++записи с float-score, и `put_item` падает; handler превращает это в 500. Тесты этого не ловили,
++так как проверяли только публикацию в пустую таблицу.
++
++**Исправление.** В `src/app.py` добавлена `to_dynamo()`, рекурсивно заменяющая все `float` на
++`Decimal(str(x))`; она применяется к элементу прямо перед `put_item`. Так любое будущее
++float-поле (не только score) тоже не сломает запись. Добавлены тесты: публикация второй
++истории в непустую таблицу и вложенное преобразование float.
++
++Примечание: `scan` не обходит страницы (лимит 1 МБ); при росте библиотеки related будет считаться
++только по первой странице. Это отдельный вопрос, здесь не менялось.
+diff --git a/src/app.py b/src/app.py
+index db49c5e..b29b0d6 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -8,6 +8,7 @@ import json
+ import logging
+ import re
+ import time
++from decimal import Decimal
+ 
+ log = logging.getLogger("stories")
+ 
+@@ -48,6 +49,17 @@ def validate(story):
+         raise ValueError("bad slug")
+ 
+ 
++def to_dynamo(value):
++    """DynamoDB (boto3) rejects float; convert every float to Decimal, recursively."""
++    if isinstance(value, float):
++        return Decimal(str(value))
++    if isinstance(value, dict):
++        return {k: to_dynamo(v) for k, v in value.items()}
++    if isinstance(value, (list, tuple)):
++        return [to_dynamo(v) for v in value]
++    return value
++
++
+ def publish(table, story):
+     """Store ``story`` with its related stories. Returns the stored item."""
+     validate(story)
+@@ -60,7 +72,7 @@ def publish(table, story):
+         "published_at": int(time.time()),
+         "similar": related(story, existing),
+     }
+-    table.put_item(Item=item)
++    table.put_item(Item=to_dynamo(item))
+     log.info("publish slug=%s similar=%d stored", item["slug"], len(item["similar"]))
+     return item
+ 
+diff --git a/tests/test_publish.py b/tests/test_publish.py
+index 6c9ac44..20a42f9 100644
+--- a/tests/test_publish.py
++++ b/tests/test_publish.py
+@@ -23,6 +23,17 @@ class PublishTest(unittest.TestCase):
+         self.assertEqual(table.get_item(Key={"slug": "why-my-cron-ran-twice"})["Item"]["title"], "Why my cron ran twice")
+         self.assertEqual(table.scan()["Count"], 1)
+ 
++    def test_second_publish_with_similar_story(self):
++        table = FakeTable()
++        app.publish(table, {"slug": "first-story", "title": "A", "tags": ["cron"], "body": "cron twice"})
++        stored = app.publish(table, {"slug": "second-story", "title": "B", "tags": ["cron"], "body": "cron once"})
++        self.assertEqual(stored["similar"][0]["slug"], "first-story")
++        self.assertEqual(table.scan()["Count"], 2)
++
++    def test_to_dynamo_converts_nested_floats(self):
++        out = app.to_dynamo({"a": [{"b": 0.35}], "c": 1})
++        self.assertEqual(str(out["a"][0]["b"]), "0.35")
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

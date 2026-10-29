@@ -1,0 +1,35 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..3030c3a
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,7 @@
++# HR range fix
++
++`gen.py` now writes each planned HR corridor as `hr: {"units": "%lthr", "start": low, "end": high}` and sets `workout_doc.target` to `"HR"`.
++
++The previous generator put the lower bound in `value`. In Intervals.icu's workout format, `value` denotes a single target; a range uses `start` and `end`. That made the planned corridor a point target, which explains why the watch displayed its own zone band around it. Explicitly selecting HR also makes the intended workout target unambiguous.
++
++I checked the generated tempo run locally: all four distinct steps retain their planned percentage bounds, and the tempo/float pair still repeats three times. I did not push a workout or verify the display on a watch, so the device result remains to be checked after the next authorized sync.
+diff --git a/gen.py b/gen.py
+index be0b3bc..a83cc68 100755
+--- a/gen.py
++++ b/gen.py
+@@ -10,7 +10,7 @@ import sys
+ def hr_target(step):
+     """HR corridor for a step, as a percentage of the athlete's LTHR."""
+     lo, hi = step["hr_pct"]
+-    return {"units": "%lthr", "value": lo, "end": hi}
++    return {"units": "%lthr", "start": lo, "end": hi}
+ 
+ 
+ def build_step(step):
+@@ -32,7 +32,7 @@ def build_doc(plan):
+             })
+         else:
+             steps.append(build_step(block))
+-    return {"steps": steps}
++    return {"target": "HR", "steps": steps}
+ 
+ 
+ def build_event(plan):

@@ -1,0 +1,98 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..450341c
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,21 @@
++# Почему задача молчала
++
++Задача **запускалась**: снимок `launchctl print` от 2026-10-18 показывает `runs = 6` и `last exit code = 1`. В `Library/Logs/nightly-review.err` для каждого запуска есть пара ошибок:
++
++1. `claude` завершался с `Not logged in · Please run /login`. В окружении launchd из снимка задан `PATH`, но нет `USER`. Для headless CLI это вероятная причина, по которой он не находит сохранённый вход в keychain. В plist добавлен `USER=vk`; подтвердить, что одного этого достаточно для реального входа, по снимку нельзя.
++2. После отказа CLI скрипт выполнял `status=$?`. В zsh `status` — переменная только для чтения. Присваивание обрывало скрипт **до** ветки с уведомлением об ошибке. Оно заменено безопасным `rc`, а уведомление вызывается непосредственно при ошибке CLI.
++
++Промпт теперь передаётся CLI через stdin. Скрипт также считает пустой результат ошибкой, записывает длительность запуска в локальный вывод и сообщает в stderr, если уведомление не удалось. `notify.sh` использует `curl -f`, чтобы HTTP-ошибка Telegram давала ненулевой код выхода. Реальная доставка Telegram и авторизация `claude` здесь не проверялись: по условию работа велась только внутри снимка, без внешних сервисов.
++
++## Что пригодилось из заметки коллеги
++
++- Проверка `launchctl print` и `StandardErrorPath`: она отделила факт запуска от результата работы и показала обе ошибки.
++- Особенность zsh с `status`: это точное совпадение с причиной отсутствия уведомления.
++- `USER` в `EnvironmentVariables`: подходит к ошибке `Not logged in` и отсутствующему `USER` в снимке окружения.
++- Передача промпта через stdin, проверка реального результата и длительности: применены как защита от тихого или ложного успеха. Сам промпт в исходном скрипте уже передавался аргументом, поэтому считать его причиной ошибки в этом случае нельзя.
++
++Совет добавлять `< /dev/null` при передаче промпта аргументом здесь не нужен: скрипт теперь передаёт промпт через stdin. Проверка `launchctl kickstart` и фактической доставки требует живой машины и внешнего сервиса; в снимке она не проводилась.
++
++## Проверка изменений
++
++`zsh -n`, `bash -n` и `plutil -lint` прошли. Локальные заглушки `claude` и уведомителя подтвердили три исхода: код 7 от агента даёт сообщение об ошибке и код 7, пустой результат даёт сообщение об ошибке и код 1, непустой результат даёт сообщение об успехе и код 0. Во всех трёх случаях промпт поступил через stdin.
+diff --git a/Library/LaunchAgents/com.vk.nightly-review.plist b/Library/LaunchAgents/com.vk.nightly-review.plist
+index c347363..d49eacf 100644
+--- a/Library/LaunchAgents/com.vk.nightly-review.plist
++++ b/Library/LaunchAgents/com.vk.nightly-review.plist
+@@ -24,6 +24,8 @@
+   <dict>
+     <key>PATH</key>
+     <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
++    <key>USER</key>
++    <string>vk</string>
+   </dict>
+ </dict>
+ </plist>
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..8fdd511 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -2,6 +2,7 @@
+ # Nightly review of yesterday's commits, summary to Telegram.
+ set -u
+ 
++START=$(date +%s)
+ REPO="$HOME/projects/shop"
+ OUT="$HOME/Library/Logs/nightly-review-$(date +%F).md"
+ NOTIFY="$HOME/bin/notify.sh"
+@@ -13,14 +14,27 @@ For each commit: one line on what it changes and whether anything looks risky
+ End with a three-line summary I can read on my phone.
+ Do not modify any file."
+ 
+-cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
++fail() {
++  local rc=$1
++  local message=$2
++  print -u2 -- "$message (elapsed $(( $(date +%s) - START ))s)"
++  "$NOTIFY" "$message" || print -u2 -- "nightly review: failure notification failed"
++  exit "$rc"
++}
+ 
+-claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
++cd "$REPO" || fail 1 "nightly review FAILED: repo missing"
+ 
+-if [ $status -ne 0 ]; then
+-  "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
+-  exit $status
++if print -r -- "$PROMPT" | claude -p --output-format text > "$OUT"; then
++  :
++else
++  rc=$?
++  fail "$rc" "nightly review FAILED (agent exit $rc), see $OUT"
+ fi
+ 
+-"$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"
++grep -q '[^[:space:]]' "$OUT" || fail 1 "nightly review FAILED: empty review, see $OUT"
++
++"$NOTIFY" "nightly review done: $(head -c 300 "$OUT")" || {
++  print -u2 -- "nightly review: success notification failed"
++  exit 1
++}
++print -- "nightly review completed (elapsed $(( $(date +%s) - START ))s): $OUT"
+diff --git a/bin/notify.sh b/bin/notify.sh
+index 818e531..bc9115f 100755
+--- a/bin/notify.sh
++++ b/bin/notify.sh
+@@ -3,5 +3,5 @@
+ set -eu
+ : "${TG_BOT_TOKEN:=$(security find-generic-password -s tg-bot -w)}"
+ CHAT_ID=123456789
+-curl -sS -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
++curl -fsS -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
+   -d chat_id="$CHAT_ID" --data-urlencode text="$1" > /dev/null

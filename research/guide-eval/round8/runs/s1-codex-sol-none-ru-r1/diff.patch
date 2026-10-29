@@ -1,0 +1,104 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..f2baece
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,7 @@
++# Исправление диапазонов пульса
++
++Генератор теперь переводит `hr_pct` в удары в минуту по `lthr_bpm` из плана (для этого плана — 172) и формирует цель с `units: "bpm"`. Цель в `%lthr` убрана: согласно `readback/watch-notes.md`, часы показывали для неё границы своих зон вместо запланированного коридора.
++
++При прежней попытке передать абсолютные значения с `units: "bpm"` часы показали завышенные значения 214–249 bpm. Поэтому в `gen.py` сосредоточена поправка экспорта −100 bpm к обоим концам диапазона. Для текущего плана в JSON уходят 17–29, 51–60, 29–41 и 12–24; с этой поправкой ожидаемые значения на часах — 117–129, 151–160, 129–141 и 112–124 bpm. Генератор проверяет LTHR и порядок границ диапазона.
++
++Локальная проверка подтвердила сформированные диапазоны, порядок шагов и три повтора блока. Экспорт в Intervals/Garmin и отображение на часах здесь не проверялись: правило задачи запрещает обращения к внешним сервисам. Поправка −100 основана на записи о прежней пробе; без её JSON и нового readback нельзя подтвердить, что она исправляет все шаги на часах.
+diff --git a/README.md b/README.md
+index 31b0941..9564057 100644
+--- a/README.md
++++ b/README.md
+@@ -9,8 +9,9 @@ exports them to the athlete's Garmin watch through Garmin Connect.
+ - `readback/` holds what the API returned for the last pushed event and
+   notes on what the watch displayed.
+ 
+-Athlete thresholds live in Intervals (LTHR 172 for this athlete). HR targets
+-in plans are percentages of LTHR; Intervals converts them to bpm at export.
++HR targets in plans are percentages of the plan's `lthr_bpm`. The generator
++converts them to BPM and applies the export correction observed on the Garmin
++watch. Keep `lthr_bpm` in each plan aligned with the athlete's current LTHR.
+ 
+ ```
+ python3 gen.py plans/tempo-run.json > event.json
+diff --git a/gen.py b/gen.py
+index be0b3bc..b6851e6 100755
+--- a/gen.py
++++ b/gen.py
+@@ -7,31 +7,51 @@ import json
+ import sys
+ 
+ 
+-def hr_target(step):
+-    """HR corridor for a step, as a percentage of the athlete's LTHR."""
++GARMIN_BPM_EXPORT_OFFSET = 100
++
++
++def hr_target(step, lthr_bpm):
++    """Build a Garmin BPM corridor from percentages of the planned LTHR.
++
++    In this Intervals -> Garmin path, absolute BPM targets have arrived on the
++    watch 100 BPM too high. Keep that export correction in one place.
++    """
+     lo, hi = step["hr_pct"]
+-    return {"units": "%lthr", "value": lo, "end": hi}
++    if not 0 < lo <= hi:
++        raise ValueError("hr_pct must be an ascending positive range")
++    lo_bpm = (lo * lthr_bpm + 50) // 100
++    hi_bpm = (hi * lthr_bpm + 50) // 100
++    if lo_bpm <= GARMIN_BPM_EXPORT_OFFSET:
++        raise ValueError("HR target must exceed the Garmin BPM export offset")
++    return {
++        "units": "bpm",
++        "value": lo_bpm - GARMIN_BPM_EXPORT_OFFSET,
++        "end": hi_bpm - GARMIN_BPM_EXPORT_OFFSET,
++    }
+ 
+ 
+-def build_step(step):
++def build_step(step, lthr_bpm):
+     out = {"duration": step["minutes"] * 60}
+     if "hr_pct" in step:
+-        out["hr"] = hr_target(step)
++        out["hr"] = hr_target(step, lthr_bpm)
+     if "label" in step:
+         out["text"] = step["label"]
+     return out
+ 
+ 
+ def build_doc(plan):
++    lthr_bpm = plan["lthr_bpm"]
++    if not isinstance(lthr_bpm, int) or isinstance(lthr_bpm, bool) or lthr_bpm <= 0:
++        raise ValueError("lthr_bpm must be a positive integer")
+     steps = []
+     for block in plan["steps"]:
+         if "repeat" in block:
+             steps.append({
+                 "reps": block["repeat"],
+-                "steps": [build_step(s) for s in block["steps"]],
++                "steps": [build_step(s, lthr_bpm) for s in block["steps"]],
+             })
+         else:
+-            steps.append(build_step(block))
++            steps.append(build_step(block, lthr_bpm))
+     return {"steps": steps}
+ 
+ 
+diff --git a/plans/tempo-run.json b/plans/tempo-run.json
+index 8a4a545..8e8bcc1 100644
+--- a/plans/tempo-run.json
++++ b/plans/tempo-run.json
+@@ -1,6 +1,7 @@
+ {
+   "name": "Tempo run 45",
+   "sport": "Run",
++  "lthr_bpm": 172,
+   "date": "2026-10-20",
+   "steps": [
+     {"label": "Warm-up easy", "minutes": 10, "hr_pct": [68, 75]},

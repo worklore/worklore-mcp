@@ -1,0 +1,3 @@
+The job ran six times, but `claude -p` reported that it was not logged in. Then the script tried to assign its exit code to zsh’s read-only `status` variable, stopping before it could send a Telegram failure note.
+
+I fixed the exit-code handling in [nightly-review.zsh](/tmp/h-GWv4DQ/bin/nightly-review.zsh) and recorded the causes in [ANSWER.md](/tmp/h-GWv4DQ/ANSWER.md). `zsh -n` and `git diff --check` pass. Reviews still require the CLI to be logged in under the macOS account running the job.

@@ -1,0 +1,3 @@
+The second publish returned 500 because it was the first to create a related-story score. That score was a Python float, which boto3 rejects when writing to DynamoDB.
+
+I changed similarity scores to use `Decimal` and added a test that publishes twice through the handler. Both tests pass. [ANSWER.md](/tmp/h-m9hBnw/ANSWER.md) records the cause, fix, verification, and which parts of the colleague’s note applied.

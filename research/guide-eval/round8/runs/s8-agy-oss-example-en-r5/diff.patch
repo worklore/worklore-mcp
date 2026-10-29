@@ -1,0 +1,33 @@
+diff --git a/bot.py b/bot.py
+index e2ff241..51cb2df 100644
+--- a/bot.py
++++ b/bot.py
+@@ -128,9 +128,25 @@ def athlete_context(a, today):
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    """Build the system prompt split into two cache‑controlled blocks.
++
++    The first block contains the static *INSTRUCTIONS* which never change
++    between users or runs. It is marked with ``cache_control: {"type": "ephemeral"}``
++    so the Claude cache can keep it hot.
++
++    The second block contains the per‑athlete context (date, profile, zones,
++    goal, facts, language). This block also uses an ``ephemeral`` marker but
++    lives in a separate list entry, so a memory write only invalidates this
++    tail block, leaving the static instructions cached.
++    """
++    # Block 1 – static instructions (byte‑stable)
++    instructions_block = {"type": "text", "text": INSTRUCTIONS, "cache_control": {"type": "ephemeral"}}
++
++    # Block 2 – volatile athlete context
++    context_text = athlete_context(a, today)
++    context_block = {"type": "text", "text": context_text, "cache_control": {"type": "ephemeral"}}
++
++    return [instructions_block, context_block]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [

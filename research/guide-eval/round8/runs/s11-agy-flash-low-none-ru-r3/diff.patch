@@ -1,0 +1,88 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..830ac3a
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,26 @@
++# Причина ошибки 500 и её исправление
++
++## 1. Причина ошибки
++
++При первой публикации таблица DynamoDB пуста (`existing = []`). Список похожих историй `similar` получается пустым (`[]`), и в элемент DynamoDB сохраняется пустой список. Ошибки не возникает, запрос завершается со статусом 201 (`similar=0 stored`).
++
++При второй (и последующих) публикациях в таблице уже есть существующие истории (`existing` не пустой). Функция `related()` вызывает функцию `similarity(a, b)`, которая возвращает вещественное число типа `float` (`round(..., 4)`):
++
++```python
++scored.append({"slug": other["slug"], "score": similarity(story, other)})
++```
++
++При попытке вызова `table.put_item(Item=item)` сериализатор типов DynamoDB (`boto3.dynamodb.types.TypeSerializer`) обходит структуру данных и проверяет типы полей. В `boto3` тип `float` не поддерживается для атрибутов чисел DynamoDB из-за потенциальных проблем с точностью представления чисел с плавающей точкой в стандарте IEEE-754. Выбрасывается исключение:
++
++```
++TypeError: Float types are not supported. Use Decimal types instead.
++```
++
++В блоке `handler` исключение перехватывается общим обработчиком `except Exception:`, логируется и клиенту возвращается статус 500.
++
++## 2. Исправление
++
++В файле `src/app.py`:
++1. Импортирован класс `Decimal` из стандартного модуля `decimal`.
++2. Функция `similarity(a, b)` возвращает объект `Decimal(str(round(0.7 * tag_score + 0.3 * word_score, 4)))` вместо значения типа `float`.
++3. В `tests/test_publish.py` добавлен тест `test_publish_second_story_calculates_similarity_without_dynamo_type_error`, проверяющий успешную публикацию второй истории при непустой таблице.
+diff --git a/src/app.py b/src/app.py
+index db49c5e..af4bb08 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -8,6 +8,7 @@ import json
+ import logging
+ import re
+ import time
++from decimal import Decimal
+ 
+ log = logging.getLogger("stories")
+ 
+@@ -27,7 +28,7 @@ def similarity(a, b):
+     tag_score = len(ta & tb) / len(ta | tb) if (ta | tb) else 0
+     wa, wb = words(a.get("body")), words(b.get("body"))
+     word_score = len(wa & wb) / len(wa | wb) if (wa | wb) else 0
+-    return round(0.7 * tag_score + 0.3 * word_score, 4)
++    return Decimal(str(round(0.7 * tag_score + 0.3 * word_score, 4)))
+ 
+ 
+ def related(story, existing):
+diff --git a/tests/test_publish.py b/tests/test_publish.py
+index 6c9ac44..486308b 100644
+--- a/tests/test_publish.py
++++ b/tests/test_publish.py
+@@ -23,6 +23,30 @@ class PublishTest(unittest.TestCase):
+         self.assertEqual(table.get_item(Key={"slug": "why-my-cron-ran-twice"})["Item"]["title"], "Why my cron ran twice")
+         self.assertEqual(table.scan()["Count"], 1)
+ 
++    def test_publish_second_story_calculates_similarity_without_dynamo_type_error(self):
++        table = FakeTable()
++        story1 = {
++            "slug": "why-my-cron-ran-twice",
++            "title": "Why my cron ran twice",
++            "tags": ["cron", "linux"],
++            "body": "Two crontabs, one for root and one for me, both had the line.",
++        }
++        story2 = {
++            "slug": "debugging-cron-jobs",
++            "title": "Debugging cron jobs",
++            "tags": ["cron", "monitoring"],
++            "body": "Check system logs when cron behaves unexpectedly.",
++        }
++        res1 = app.handler({"body": app.json.dumps(story1)}, table)
++        self.assertEqual(res1["statusCode"], 201)
++
++        res2 = app.handler({"body": app.json.dumps(story2)}, table)
++        self.assertEqual(res2["statusCode"], 201)
++
++        second_item = table.get_item(Key={"slug": "debugging-cron-jobs"})["Item"]
++        self.assertEqual(len(second_item["similar"]), 1)
++        self.assertEqual(second_item["similar"][0]["slug"], "why-my-cron-ran-twice")
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

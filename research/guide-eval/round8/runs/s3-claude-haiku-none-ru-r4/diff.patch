@@ -1,0 +1,88 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..cfdd772
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,62 @@
++# Почему ночная задача nightly-review ничего не присылала
++
++## Причина 1 (основная, исправлена): скрипт падает до отправки уведомления
++
++В `bin/nightly-review.zsh` была строка:
++
++```zsh
++status=$?
++```
++
++В zsh `status` — это read-only специальный параметр (синоним `$?`), присвоить ему нельзя. Строка 19 падает с ошибкой:
++
++```
++/Users/vk/bin/nightly-review.zsh:19: read-only variable: status
++```
++
++Скрипт завершается на этой строке, и до блока `if [ $status -ne 0 ]` / `notify.sh` он не доходит. Поэтому:
++
++- не приходит ни сообщение об успехе;
++- не приходит и сообщение `FAILED`, хотя ошибка есть;
++- это видно только в `Library/Logs/nightly-review.err`, которую никто не читает.
++
++В логе `.err` эта ошибка повторяется во всех 6 запусках (`runs = 6` в `launchctl-print.txt`), то есть задача запускается, но сразу падает.
++
++Воспроизведено локально: `zsh` с `set -u` и присваиванием `status=$?` выдаёт ту же ошибку и exit 1.
++
++**Исправление:** переменная переименована в `rc` (`bin/nightly-review.zsh`, строки 19–23). Проверено: `zsh -n` проходит; на поддельном `claude` с ошибкой скрипт отправляет `FAILED (exit 1)`, на успешном — `done: …`. Тест шёл с временным HOME внутри этой папки, он удалён.
++
++## Причина 2 (не исправлена, нужна проверка на твоей машине): `claude` в launchd-запуске не залогинен
++
++В `.err` при каждом запуске, сразу перед ошибкой zsh, написано:
++
++```
++Not logged in · Please run /login
++```
++
++То есть даже после исправления причины 1 задача будет падать, но теперь с уведомлением `FAILED (exit 1)`. Вероятные причины: launchd-агент не получает тот же доступ к учётным данным Claude Code (Keychain/OAuth), что интерактивный терминал. Здесь это проверить нельзя, поэтому не менял. Что сделать:
++
++- проверить из launchd-контекста, например временной агент с командой `claude auth status` или `claude -p "ping"`, и логи после этого;
++- если доступ через Keychain не работает — выпустить долгоживущий токен (`claude setup-token`) и передать его задаче через `EnvironmentVariables` в plist (обычно `CLAUDE_CODE_OAUTH_TOKEN`; имя переменной проверь по документации). Токен в git не класть.
++
++## Причина 3 (не проверено, возможный второй слой тишины): уведомление может падать молча
++
++`bin/notify.sh` использует `security find-generic-password -s tg-bot -w` и `set -e`. Если из launchd Keychain недоступен, скрипт выходит с ошибкой без вывода, и вызывающий скрипт этого не видит. Пока причина 2 не решена, проверить это невозможно. Проверь вручную: `launchctl asuser $(id -u) /bin/bash ~/bin/notify.sh "test"` или временный агент, который запускает `notify.sh`.
++
++## Замечание о качестве (не менял): `claude -p` без разрешений
++
++Промпт просит проанализировать коммиты, но `claude -p` без `--allowedTools` не получит права на `git log/show/diff`, и в headless-режиме эти вызовы будут отклонены. Даже при рабочем логине сводка может выйти пустой или общей. Возможное решение: `--allowedTools "Bash(git log:*) Bash(git show:*) Bash(git diff:*)"`. Это меняет поведение задачи, поэтому оставил как решение для тебя.
++
++## Что изменено
++
++- `bin/nightly-review.zsh`: `status` → `rc` (3 строки).
++- `ANSWER.md`: этот файл.
++
++Ничего не деплоил, не коммитил и никуда не отправлял. Telegram-уведомление в реальной среде не проверялось.
++
++## Чек-лист после исправления
++
++1. Перезагрузить агент: `launchctl bootout gui/$UID/com.vk.nightly-review; launchctl bootstrap gui/$UID ~/Library/LaunchAgents/com.vk.nightly-review.plist`.
++2. Запустить вручную: `launchctl kickstart -k gui/$UID/com.vk.nightly-review`.
++3. Проверить `Library/Logs/nightly-review.err`: ошибки `read-only` больше быть не должно. Если появится `Not logged in`, это причина 2.
++4. Получил ли сообщение в Telegram: `FAILED` или `done`. Если нет ни того ни другого, это причина 3.
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..bf005f5 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -16,11 +16,11 @@ Do not modify any file."
+ cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
+ 
+ claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
++rc=$?
+ 
+-if [ $status -ne 0 ]; then
+-  "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
+-  exit $status
++if [ $rc -ne 0 ]; then
++  "$NOTIFY" "nightly review FAILED (exit $rc), see $OUT"
++  exit $rc
+ fi
+ 
+ "$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"

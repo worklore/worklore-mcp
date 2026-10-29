@@ -1,0 +1,3 @@
+The job was running: the captured launchd state shows six runs. Each time, `claude` reported “Not logged in,” then zsh stopped at `status=$?` before the failure notification could run. I documented the evidence and which parts of the colleague’s note apply in [ANSWER.md](/tmp/h-7heRtN/ANSWER.md).
+
+I fixed the [wrapper](/tmp/h-7heRtN/bin/nightly-review.zsh), [plist](/tmp/h-7heRtN/Library/LaunchAgents/com.vk.nightly-review.plist), and [notifier](/tmp/h-7heRtN/bin/notify.sh). Syntax checks and local mock runs passed, including agent, empty-output, and notification failures. Nothing was deployed or sent to Telegram; a live run is still needed to confirm that `USER=vk` resolves the CLI login error.

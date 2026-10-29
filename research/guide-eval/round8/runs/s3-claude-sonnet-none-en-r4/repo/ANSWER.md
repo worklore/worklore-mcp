@@ -1,0 +1,16 @@
+# Why nightly-review never reports anything
+
+The job runs every night (`runs = 6`, `last exit code = 1`), but it fails in a way that skips the notification. Two causes stack:
+
+1. **`status` is read-only in zsh (script bug, fixed).**
+   `bin/nightly-review.zsh` does `status=$?`. In zsh `status` is a special read-only alias of `$?`, so the assignment aborts the script with
+   `read-only variable: status` (line 19 in `nightly-review.err`). The `if [ $status -ne 0 ]` branch that calls `notify.sh` with the failure note is never reached, so no failure note is sent. Fix: the variable is now `rc`.
+
+2. **`claude -p` is not logged in under launchd (the underlying failure, NOT fixed here).**
+   Every run logs `Not logged in · Please run /login`. The agent runs in a launchd context with no interactive login session, so the credentials from your terminal aren't available to it, and `claude` exits non-zero. This is why the job could never produce a summary either.
+   You need to give the job non-interactive credentials, e.g. run `claude setup-token` once and expose the result to the job as `CLAUDE_CODE_OAUTH_TOKEN` (or use `ANTHROPIC_API_KEY`). Put it in the keychain and read it in the script, or in the plist's `EnvironmentVariables`. I didn't do this because it needs your secret.
+
+## Things to be aware of
+- Until (2) is fixed, you will now get a "nightly review FAILED (exit 1)" Telegram message each night. That is the intended behaviour.
+- `notify.sh` reads the bot token via `security find-generic-password`. It works by hand, but I couldn't test it under launchd. If the keychain is locked or inaccessible there, it fails and the error goes only to `nightly-review.err`. If the failure notes still don't arrive after this fix, check that log first.
+- Failures of `notify.sh` itself are not reported anywhere else; the logs are the only trace.

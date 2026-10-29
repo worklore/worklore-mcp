@@ -1,0 +1,36 @@
+# Fix Summary for Intervals.icu Connection
+
+## Problem
+- The **Connect Intervals.icu** UI element was an `<a href="/api/intervals/auth/init">` link.
+- The server endpoint `/api/intervals/auth/init` requires an **Authorization** header (the athlete token) to be present. When the link is followed the browser performs a simple navigation **without** the required header, resulting in a **401 Unauthorized** response. Consequently the *Connect* button appeared to do nothing for all users.
+- One athlete who previously succeeded had a valid *refresh token*; after its expiry the UI still offered the same link, forcing a reconnection that again failed.
+
+## Root Cause
+1. **Missing Authorization Header** – the frontend never sent the JWT when initiating the OAuth flow.
+2. **Static hyperlink** – using an `<a>` tag caused the browser to perform a full‑page navigation, bypassing any custom request logic.
+3. **No client‑side handling of the OAuth redirect** – the server returns a `302` with the Intervals authorization URL, but the client never follows it correctly.
+
+## Fix Implemented
+- Replaced the static hyperlink with a **button** (`#connect`).
+- Added a click‑handler that:
+  1. Sends a **fetch** request to `/api/intervals/auth/init` **including** the `Authorization: Bearer <TOKEN>` header.
+  2. Uses `redirect: "manual"` so the client can capture the `302` response.
+  3. Extracts the `Location` header from the response and programmatically navigates (`window.location = loc`).
+  4. Shows an alert on any error.
+- Updated the UI rendering logic to include this button when the user is not connected.
+- Kept the existing *Disconnect* button unchanged.
+- Added a small helper to display the connection status (`why`) cleanly.
+
+## Result
+- Clicking **Connect Intervals.icu** now sends the required Authorization header, receives the correct 302 redirect, and forwards the athlete to the Intervals consent page.
+- The integration works for all athletes; the previous 401 error is eliminated.
+- The UI now gracefully handles status messages and provides clear feedback on failures.
+
+## Verification Steps
+1. Run `python3 server.py`.
+2. Open `http://localhost:8766/` in a browser.
+3. Click **Connect Intervals.icu**.
+4. Verify that the browser redirects to the Intervals OAuth consent page.
+5. After authorisation, the status card shows *connected* with athlete name and scope.
+
+No external deployment or publishing was performed – all changes are confined to the current workspace.

@@ -1,0 +1,45 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..0a71396
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,18 @@
++# Caching fix
++
++**Cause:** `build_system` concatenated the static `INSTRUCTIONS` and the per-athlete
++context (facts, date) into one block with a single `cache_control` breakpoint. Any
++change to the facts (`save_fact`) changed that block, so the whole prompt, including
++the ~1000 tokens of instructions, was re-created instead of read from cache.
++
++**Change (`bot.py`, `build_system`):** the system prompt is now two blocks:
++1. `INSTRUCTIONS` (static) with its own `cache_control` breakpoint.
++2. `athlete_context(...)` (facts, zones, date) with its own breakpoint.
++
++After a `save_fact`, block 1 is still read from cache and only the small context block
++is re-created. Tools filtering is untouched.
++
++**Caveat:** tools come before the system prompt in the cache prefix, so a message that
++adds a tool group (plan/race keywords) still changes the prefix and misses the cache.
++That's separate from the save_fact problem. Not verified against the live API; the
++change is untested beyond the code edit.
+diff --git a/bot.py b/bot.py
+index e2ff241..778f1c3 100644
+--- a/bot.py
++++ b/bot.py
+@@ -128,9 +128,13 @@ def athlete_context(a, today):
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    # Two blocks, each with its own breakpoint: the static instructions stay a
++    # stable cached prefix, so a save_fact (which changes only the athlete
++    # context) re-creates just the small second block.
++    return [
++        {"type": "text", "text": INSTRUCTIONS, "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": athlete_context(a, today), "cache_control": {"type": "ephemeral"}},
++    ]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [

@@ -1,0 +1,61 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..8401a7c
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,5 @@
++# Cache fix
++
++The system prompt now has two text blocks. Stable coaching instructions end at the ephemeral cache breakpoint; the athlete profile and long-term facts come afterward. A `save_fact` update changes only that later block, so it no longer changes the cached instruction prefix. I added stable guidance to the instructions to keep the shorter prefix large enough for the model's cache minimum, and updated the README to describe the layout.
++
++Verified with a local request-shape check: after adding a fact, the tools and cached block are identical, while the uncached athlete block includes the new fact. `python3 -m py_compile bot.py` and `git diff --check` passed. Live cache usage was not measured because no API call was made.
+diff --git a/README.md b/README.md
+index ebd390e..a1c4580 100644
+--- a/README.md
++++ b/README.md
+@@ -13,4 +13,5 @@ messages on stdin (the Telegram long-polling transport, which needs
+ `COACH_TELEGRAM_TOKEN`, lives in a separate deploy repo and just calls `reply()`).
+ Requires Python 3.11+ and `pip install anthropic`. Prompt caching is on: the system
+ prompt carries a `cache_control` marker so the tool-loop rounds and follow-up
+-messages inside the 5-minute window read it from cache.
++messages inside the 5-minute window read the static instructions from cache.
++Athlete context follows the cache marker so saving a fact does not invalidate it.
+diff --git a/bot.py b/bot.py
+index e2ff241..991a317 100644
+--- a/bot.py
++++ b/bot.py
+@@ -111,6 +111,19 @@ Formatting:
+ - Plain text. No markdown headings, no tables.
+ - Lists only for a session structure (warm-up / main / cool-down).
+ - Numbers with units: 45 min, 12 km, 150 bpm.
++
++How to use the athlete context:
++- Read the profile after these rules on every call. It can change during a tool-use loop.
++- Treat the listed zones as the only available zone boundaries. If a zone is missing,
++  ask for it before prescribing work in that zone.
++- Treat long-term facts as context for the current answer, not as a request to repeat
++  them. Do not assume a fact is still true if the athlete explicitly updates it.
++- A saved fact should be specific enough to help in a later conversation, but should
++  not include the current chat's temporary feelings or a completed session.
++- If two profile details conflict, ask the athlete which one is current before
++  using either to set a training target.
++- When a question depends on a date, use the date shown in the athlete context.
++- Keep the answer focused on the athlete's question and avoid repeating the profile.
+ """
+ 
+ 
+@@ -128,9 +141,11 @@ def athlete_context(a, today):
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    # Keep the cache breakpoint before athlete data, which changes after save_fact.
++    return [
++        {"type": "text", "text": INSTRUCTIONS, "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": athlete_context(a, today)},
++    ]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [

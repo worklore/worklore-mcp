@@ -1,0 +1,54 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..cea111a
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,17 @@
++# Why nightly-review never reported anything
++
++The job has run 6 times (`runs = 6`, `last exit code = 1`). It fails every time and the failure note never goes out, because of two stacked problems.
++
++1. **`claude -p` is not logged in when launchd runs it.** `Library/Logs/nightly-review.err` repeats `Not logged in · Please run /login`. launchd gives the job a bare environment, so it does not get the login from your interactive shell. The review itself therefore never works.
++2. **The failure handler crashes (the reason you got no failure note).** `bin/nightly-review.zsh` ran `status=$?`. In zsh `status` is a read-only special variable, so the script dies with `read-only variable: status` (line 19, also in the `.err` file). It exits with code 1 before it reaches `notify.sh`. Nothing is ever sent, and the cause only shows up in a log file nobody reads.
++
++Smaller issue: `notify.sh` used `curl -sS` without `--fail`. A Telegram HTTP error (bad token or chat id) would have exited 0 and stayed silent.
++
++## Fixed in this folder
++- `bin/nightly-review.zsh`: renamed `status` to `rc`, so the failure note is now sent when `claude` fails.
++- `bin/notify.sh`: added `--fail` to `curl`, so API errors give a non-zero exit.
++
++## Still for you to do (I can't do it from here)
++- Give the job a credential that works without your interactive session. Run `claude setup-token` and add `CLAUDE_CODE_OAUTH_TOKEN` to `EnvironmentVariables` in the plist (or read it from the keychain in the script). Alternatively, run `claude /login` and confirm the login is visible to the `gui/501` launchd domain.
++- Reload the agent: `launchctl bootout gui/$UID/com.vk.nightly-review && launchctl bootstrap gui/$UID ~/Library/LaunchAgents/com.vk.nightly-review.plist`. Test with `launchctl kickstart -k gui/$UID/com.vk.nightly-review`.
++- `notify.sh` reads the bot token from the keychain with `security find-generic-password`. That works by hand, but check that it also works from launchd. A locked keychain or a keychain prompt would make it fail there.
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..bf005f5 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -16,11 +16,11 @@ Do not modify any file."
+ cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
+ 
+ claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
++rc=$?
+ 
+-if [ $status -ne 0 ]; then
+-  "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
+-  exit $status
++if [ $rc -ne 0 ]; then
++  "$NOTIFY" "nightly review FAILED (exit $rc), see $OUT"
++  exit $rc
+ fi
+ 
+ "$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"
+diff --git a/bin/notify.sh b/bin/notify.sh
+index 818e531..2aa315a 100755
+--- a/bin/notify.sh
++++ b/bin/notify.sh
+@@ -3,5 +3,5 @@
+ set -eu
+ : "${TG_BOT_TOKEN:=$(security find-generic-password -s tg-bot -w)}"
+ CHAT_ID=123456789
+-curl -sS -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
++curl -sS --fail -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
+   -d chat_id="$CHAT_ID" --data-urlencode text="$1" > /dev/null

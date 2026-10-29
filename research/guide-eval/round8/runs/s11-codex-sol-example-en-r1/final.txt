@@ -1,0 +1,3 @@
+The second publish failed because an existing story caused `similarity()` to put a Python float in `similar[].score`, which DynamoDB rejects. The first publish had no related stories, so it never reached that path.
+
+I changed scores to `Decimal`, added a two-publish regression test, and documented the cause, fix, and applicable parts of the colleague’s note in [ANSWER.md](/tmp/h-map0tW/ANSWER.md). Both tests pass.

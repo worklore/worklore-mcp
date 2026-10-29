@@ -1,0 +1,28 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..49fa00c
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,7 @@
++# Исправление диапазонов пульса
++
++В `gen.py` цель пульса теперь содержит обе границы коридора: `start` и `end`. Поле `value` задаёт середину диапазона. Раньше в `value` попадала нижняя граница, а `start` отсутствовало, поэтому документ не задавал полный диапазон и часы показывали границы своей зоны вместо запланированного коридора.
++
++Единицы `%lthr` сохранены: план по-прежнему задаёт проценты от порогового пульса спортсмена. Добавлена проверка, что нижняя граница положительна и меньше верхней.
++
++Проверил локально вывод `python3 -B gen.py plans/tempo-run.json`: например, для Tempo получается `start: 88`, `value: 90.5`, `end: 93`. Поведение на часах требует отдельной проверки после экспорта; отправку в Intervals и Garmin не выполнял.
+diff --git a/gen.py b/gen.py
+index be0b3bc..1bc252e 100755
+--- a/gen.py
++++ b/gen.py
+@@ -10,7 +10,9 @@ import sys
+ def hr_target(step):
+     """HR corridor for a step, as a percentage of the athlete's LTHR."""
+     lo, hi = step["hr_pct"]
+-    return {"units": "%lthr", "value": lo, "end": hi}
++    if not 0 < lo < hi:
++        raise ValueError(f"Invalid HR corridor: {step['hr_pct']}")
++    return {"units": "%lthr", "value": (lo + hi) / 2, "start": lo, "end": hi}
+ 
+ 
+ def build_step(step):

@@ -1,0 +1,59 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..e161611
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,15 @@
++# Почему не приходили ночные сообщения
++
++Задача **запускалась**. В `launchctl-print.txt` указаны 6 запусков, календарный триггер на 02:30 и последний код выхода 1. Ошибка не в регистрации `LaunchAgent` или расписании.
++
++1. В `Library/Logs/nightly-review.err` после каждого запуска есть `Not logged in · Please run /login`. У `claude` не было действующей авторизации в окружении фоновой задачи, поэтому обзор не создавался. Запись этого сообщения шла в stderr, а не в пустой `nightly-review.out`.
++2. Сразу после вызова `claude` скрипт присваивал `$?` переменной `status`. В zsh `status` — специальная переменная только для чтения. Ошибка `read-only variable: status` обрывала скрипт до ветки с уведомлением о сбое. Это повторяется после каждого сообщения `Not logged in` в stderr.
++
++## Что исправлено в снимке
++
++- В `bin/nightly-review.zsh` код выхода сохраняется в `claude_exit`; ветка ошибки теперь выполняется. Если нет `ANTHROPIC_API_KEY` или `CLAUDE_CODE_OAUTH_TOKEN`, скрипт пробует взять API-ключ из локальной связки ключей macOS по имени службы `anthropic-api-key`. Если ключ отсутствует и `claude` по-прежнему не авторизован, ошибка будет отправлена через `notify.sh`.
++- В `bin/notify.sh` `curl` теперь завершается с ошибкой при HTTP 4xx/5xx, чтобы отказ Telegram был виден в stderr задачи.
++
++Для полноценной работы на исходном Mac нужно **локально** предоставить `claude` действующую авторизацию для фонового запуска: сохранить API-ключ в Keychain как generic password со службой `anthropic-api-key` либо настроить действующую авторизацию CLI для того же пользователя. Ключ не следует записывать в plist или этот снимок. Доступ `notify.sh` к существующему ключу `tg-bot` также должен сохраняться у пользователя, запускающего агент. Эти учётные данные в снимке отсутствуют, поэтому реальную доставку здесь проверить нельзя.
++
++Проверено локально: `plutil -lint` для plist, синтаксис обоих скриптов и два запуска с подставными командами без сетевых запросов. При подставной ошибке `claude` код выхода был 42 и сформировалось сообщение `FAILED`; при успехе сформировалось сообщение `done`.
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..ebf34c0 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -15,12 +15,18 @@ Do not modify any file."
+ 
+ cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
+ 
++# launchd does not inherit credentials from an interactive shell. A key stored
++# under this service name can be used for unattended runs.
++if [[ -z ${ANTHROPIC_API_KEY:-} && -z ${CLAUDE_CODE_OAUTH_TOKEN:-} ]]; then
++  api_key=$(security find-generic-password -s anthropic-api-key -w 2>/dev/null) && export ANTHROPIC_API_KEY="$api_key"
++fi
++
+ claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
++claude_exit=$?
+ 
+-if [ $status -ne 0 ]; then
+-  "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
+-  exit $status
++if [ "$claude_exit" -ne 0 ]; then
++  "$NOTIFY" "nightly review FAILED (exit $claude_exit), see $OUT and nightly-review.err"
++  exit "$claude_exit"
+ fi
+ 
+ "$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"
+diff --git a/bin/notify.sh b/bin/notify.sh
+index 818e531..bc9115f 100755
+--- a/bin/notify.sh
++++ b/bin/notify.sh
+@@ -3,5 +3,5 @@
+ set -eu
+ : "${TG_BOT_TOKEN:=$(security find-generic-password -s tg-bot -w)}"
+ CHAT_ID=123456789
+-curl -sS -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
++curl -fsS -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
+   -d chat_id="$CHAT_ID" --data-urlencode text="$1" > /dev/null

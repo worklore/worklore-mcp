@@ -1,0 +1,90 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..4c03e10
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,7 @@
++# Изменение генератора
++
++Генератор теперь берет `lthr_bpm` из плана, переводит границы `hr_pct` в целые уд/мин и записывает точный диапазон в текст каждого шага, включая шаги повтора. Для текущего плана это 117–129, 151–160, 129–141 и 112–124 уд/мин.
++
++Структурированное поле `hr` убрано: по `readback/watch-notes.md` `%lthr` превращается на часах в границы их зон, а уже опробованные `bpm` и `start_bpm`/`end_bpm` давали неправильные значения. Текст шага сохраняет запланированный диапазон без этой подмены. Ограничение: часы не дадут оповещения о выходе за диапазон, поскольку структурированной пульсовой цели больше нет. Показ текста на самих часах после изменения не проверялся: данные никуда не отправлялись.
++
++Проверка: `python3 gen.py plans/tempo-run.json` выдает ожидаемые четыре диапазона; `git diff --check` проходит.
+diff --git a/README.md b/README.md
+index 31b0941..619bfc5 100644
+--- a/README.md
++++ b/README.md
+@@ -9,8 +9,10 @@ exports them to the athlete's Garmin watch through Garmin Connect.
+ - `readback/` holds what the API returned for the last pushed event and
+   notes on what the watch displayed.
+ 
+-Athlete thresholds live in Intervals (LTHR 172 for this athlete). HR targets
+-in plans are percentages of LTHR; Intervals converts them to bpm at export.
++Plans specify LTHR in bpm and HR corridors as percentages of it. The generator
++converts each corridor to bpm in the step text. Intervals/Garmin may replace
++structured HR targets with the watch's zone boundaries, so these steps do not
++set HR alerts; the planned range remains visible in the step instruction.
+ 
+ ```
+ python3 gen.py plans/tempo-run.json > event.json
+diff --git a/gen.py b/gen.py
+index be0b3bc..e9ca210 100755
+--- a/gen.py
++++ b/gen.py
+@@ -7,31 +7,34 @@ import json
+ import sys
+ 
+ 
+-def hr_target(step):
+-    """HR corridor for a step, as a percentage of the athlete's LTHR."""
++def bpm_range(step, lthr):
++    """Convert the planned LTHR percentages to whole bpm for display."""
+     lo, hi = step["hr_pct"]
+-    return {"units": "%lthr", "value": lo, "end": hi}
++    return round(lo * lthr / 100), round(hi * lthr / 100)
+ 
+ 
+-def build_step(step):
++def build_step(step, lthr):
+     out = {"duration": step["minutes"] * 60}
++    label = step.get("label", "")
+     if "hr_pct" in step:
+-        out["hr"] = hr_target(step)
+-    if "label" in step:
+-        out["text"] = step["label"]
++        lo, hi = bpm_range(step, lthr)
++        label = f"{label} | HR {lo}-{hi} bpm" if label else f"HR {lo}-{hi} bpm"
++    if label:
++        out["text"] = label
+     return out
+ 
+ 
+ def build_doc(plan):
+     steps = []
++    lthr = plan["lthr_bpm"]
+     for block in plan["steps"]:
+         if "repeat" in block:
+             steps.append({
+                 "reps": block["repeat"],
+-                "steps": [build_step(s) for s in block["steps"]],
++                "steps": [build_step(s, lthr) for s in block["steps"]],
+             })
+         else:
+-            steps.append(build_step(block))
++            steps.append(build_step(block, lthr))
+     return {"steps": steps}
+ 
+ 
+diff --git a/plans/tempo-run.json b/plans/tempo-run.json
+index 8a4a545..baa8cdf 100644
+--- a/plans/tempo-run.json
++++ b/plans/tempo-run.json
+@@ -2,6 +2,7 @@
+   "name": "Tempo run 45",
+   "sport": "Run",
+   "date": "2026-10-20",
++  "lthr_bpm": 172,
+   "steps": [
+     {"label": "Warm-up easy", "minutes": 10, "hr_pct": [68, 75]},
+     {"repeat": 3, "steps": [

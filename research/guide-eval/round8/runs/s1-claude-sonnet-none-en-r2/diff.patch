@@ -1,0 +1,41 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..b307994
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,22 @@
++# Change
++
++`gen.py` `hr_target()` now emits `{"units": "%lthr", "start": lo, "end": hi}`
++instead of `{"units": "%lthr", "value": lo, "end": hi}`.
++
++# Why (hypothesis, NOT verified)
++
++The old body used `value` + `end`. In Intervals.icu's workout_doc a range target
++is `start`/`end`; `value` is the single-point form. With `value` set, the range
++appears not to be treated as a custom corridor, and the Garmin export falls back
++to the watch's zone bands, which matches readback/watch-notes.md (every step shows
++a zone edge pair, and changing the watch's LTHR only moved the bands). The API
++accepting the event (steps populated) doesn't show the range was understood.
++
++# Not verified
++
++I couldn't confirm the field names from Intervals docs (the forum page I fetched
++only covers the text syntax) and didn't push anything (no external calls). Please
++regenerate, push, and re-read the event and the watch. Expected: Tempo 151–160,
++Float 129–141, etc. If the watch still shows zones, the next thing to try is the
++documented text syntax (e.g. `- 8m 88-93% LTHR`) in the event `description`,
++which Intervals parses itself.
+diff --git a/gen.py b/gen.py
+index be0b3bc..4aeba5a 100755
+--- a/gen.py
++++ b/gen.py
+@@ -10,7 +10,7 @@ import sys
+ def hr_target(step):
+     """HR corridor for a step, as a percentage of the athlete's LTHR."""
+     lo, hi = step["hr_pct"]
+-    return {"units": "%lthr", "value": lo, "end": hi}
++    return {"units": "%lthr", "start": lo, "end": hi}
+ 
+ 
+ def build_step(step):

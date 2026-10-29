@@ -1,0 +1,51 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..397ec5f
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,32 @@
++# Ответ: исправление генератора пульсовых диапазонов
++
++## Что изменили
++В файле [`gen.py`](file:///tmp/h-GipLxJ/gen.py) в функции `hr_target(step)` ключ `"value"` заменён на `"start"`:
++
++```python
++def hr_target(step):
++    """HR corridor for a step, as a percentage of the athlete's LTHR."""
++    lo, hi = step["hr_pct"]
++    return {"units": "%lthr", "start": lo, "end": hi}
++```
++
++## Почему
++В Intervals.icu формат объекта целевого пульса в `workout_doc.steps` определяет логику экспорта в FIT-файл для Garmin:
++- При использовании ключа `"value"` (`{"units": "%lthr", "value": lo, "end": hi}`) тренировка экспортируется как цель по зонам / Lap-HR. В этом режиме часы Garmin мапят диапазон на свои локальные (часто автоопределённые или неактуальные) зоны пульса и обрезают коридор под их границы (что и наблюдалось в `readback/watch-notes.md`).
++- При использовании ключа `"start"` (`{"units": "%lthr", "start": lo, "end": hi}`) Intervals.icu трактует цель как коридор Instant-HR. При экспорте в FIT Intervals сам рассчитывает абсолютные границы в bpm на основе сохранённого у него LTHR атлета (172 bpm) и передаёт их как сырые bpm. В результате Garmin отображает точный запланированный коридор без привязки к локальным зонам часов.
++
++## Какие части заметки коллеги пригодились
++
++### Пригодилось:
++- **Различие между `start` и `value` при формировании пульсовой цели:**
++  Описание механизма экспорта в FIT (`{value, end}` -> цель по зонам с обрезкой часами; `{start, end}` -> Instant-HR с точными bpm из Intervals).
++- **Схема целевого объекта:**
++  Подтверждение корректного формата `{"units": "%lthr", "start": <низ>, "end": <верх>}` (использование процентов `%lthr`, а не абсолютных bpm или других ключей).
++
++### Не пригодилось / пропущено:
++- **Неудачные попытки 1–3:**
++  Эксперименты с `units: "bpm"`, `start_bpm`/`end_bpm` и выпадающим списком в UI — не требовались для реализации, так как правильный ключ был найден.
++- **Грамматика текстового описания `description`:**
++  Замечания про текстовый парсер Intervals (`m` vs `mtr`/`km`, `Nx`, голые `Z2` и т.д.) не относились к данной проблеме, поскольку проект генерирует структурированный `workout_doc` через JSON, а не текстовое поле `description`.
++- **Инструкции по настройке окружения и отправке через API:**
++  Создание API-ключей, OAuth, POST-запросы к живому API Intervals и синхронизация с часами пропущены согласно правилу работать только локально.
+diff --git a/gen.py b/gen.py
+index be0b3bc..4aeba5a 100755
+--- a/gen.py
++++ b/gen.py
+@@ -10,7 +10,7 @@ import sys
+ def hr_target(step):
+     """HR corridor for a step, as a percentage of the athlete's LTHR."""
+     lo, hi = step["hr_pct"]
+-    return {"units": "%lthr", "value": lo, "end": hi}
++    return {"units": "%lthr", "start": lo, "end": hi}
+ 
+ 
+ def build_step(step):

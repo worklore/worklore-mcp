@@ -1,0 +1,191 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..5752b01
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,53 @@
++# Registration and offers analytics
++
++Implemented the six events from `docs/EVENTS.md` on the two screens, using
++`Analytics.capture` from `lib/analytics.dart`. Names and property keys match the
++doc exactly.
++
++## Changes
++
++### `lib/screens/registration_screen.dart`
++
++| Event | Where | Properties |
++|---|---|---|
++| `registration_email_started` | Email `onChanged`, first time the field becomes non-empty | — |
++| `registration_phone_started` | Phone `onChanged`, first time the field becomes non-empty | — |
++| `loan_amount_changed` | Slider `onChangeEnd` | `amount` (int) |
++| `terms_accepted` | Checkbox `onChanged`, only when ticked (not unticked) | — |
++| `registration_continue_tapped` | Continue button `onPressed`, before navigating | `amount` (int), `terms` (bool) |
++
++### `lib/screens/offer_screen.dart`
++
++| Event | Where | Properties |
++|---|---|---|
++| `offers_scrolled` | `NotificationListener<ScrollEndNotification>` around the list | `offset` (double, `metrics.pixels`) |
++
++## Decisions I made (not specified in the doc)
++
++- **`loan_amount_changed` fires on slider release, not on every drag tick.**
++  The doc says "the chosen amount", so I used `onChangeEnd`. Using `onChanged`
++  would send dozens of events per drag and skew the funnel.
++- **"Started typing" = first non-empty value, once per screen visit.** Tracked
++  with `_emailStarted` / `_phoneStarted` flags, so each fires at most once.
++- **`terms_accepted` fires only on tick.** Unticking does not send an event.
++- **`offers_scrolled` fires once per finished scroll**, not per frame. The list
++  has no programmatic scrolling, so every `ScrollEndNotification` is user-driven.
++- **No PII.** The email and phone values are never passed to any event.
++
++## Verification
++
++- `flutter analyze`: no issues found.
++- `dart format`: the touched files are formatted.
++- I did not run the app or send any events. Nothing was deployed or reported
++  to PostHog or any other service.
++
++## Things I noticed but did not change
++
++- `lib/analytics.dart` still has the placeholder key `phc_REPLACE_ME_IN_CI`.
++  Events will not reach PostHog until that is replaced (CI or config).
++- `README.md` says the screens "do not send any of them yet". That is now
++  out of date and could be updated.
++- `flutter pub get` rewrote `analysis_options.yaml` (it added an `analyzer:
++  exclude` block). I reverted that, along with the generated `.dart_tool/` and
++  `pubspec.lock`, so the diff contains only the two screen files and this
++  file.
+diff --git a/lib/screens/offer_screen.dart b/lib/screens/offer_screen.dart
+index 921ee59..1a9e02d 100644
+--- a/lib/screens/offer_screen.dart
++++ b/lib/screens/offer_screen.dart
+@@ -1,5 +1,7 @@
+ import 'package:flutter/material.dart';
+ 
++import '../analytics.dart';
++
+ class Offer {
+   const Offer(this.bank, this.months, this.rate);
+   final String bank;
+@@ -27,18 +29,25 @@ class OfferScreen extends StatelessWidget {
+   Widget build(BuildContext context) {
+     return Scaffold(
+       appBar: AppBar(title: const Text('Offers')),
+-      body: ListView.builder(
+-        itemCount: _offers.length,
+-        itemBuilder: (context, i) {
+-          final o = _offers[i];
+-          return ListTile(
+-            leading: const Icon(Icons.account_balance),
+-            title: Text('${o.bank}, ${o.months} months'),
+-            subtitle: Text('${o.rate.toStringAsFixed(1)}% APR'),
+-            trailing: const Icon(Icons.chevron_right),
+-            onTap: () {},
+-          );
++      // Sent once per finished scroll, not on every scroll frame.
++      body: NotificationListener<ScrollEndNotification>(
++        onNotification: (n) {
++          Analytics.capture('offers_scrolled', {'offset': n.metrics.pixels});
++          return false;
+         },
++        child: ListView.builder(
++          itemCount: _offers.length,
++          itemBuilder: (context, i) {
++            final o = _offers[i];
++            return ListTile(
++              leading: const Icon(Icons.account_balance),
++              title: Text('${o.bank}, ${o.months} months'),
++              subtitle: Text('${o.rate.toStringAsFixed(1)}% APR'),
++              trailing: const Icon(Icons.chevron_right),
++              onTap: () {},
++            );
++          },
++        ),
+       ),
+     );
+   }
+diff --git a/lib/screens/registration_screen.dart b/lib/screens/registration_screen.dart
+index 059a250..f9feb97 100644
+--- a/lib/screens/registration_screen.dart
++++ b/lib/screens/registration_screen.dart
+@@ -1,5 +1,7 @@
+ import 'package:flutter/material.dart';
+ 
++import '../analytics.dart';
++
+ class RegistrationScreen extends StatefulWidget {
+   const RegistrationScreen({super.key});
+ 
+@@ -12,6 +14,8 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
+   final _phone = TextEditingController();
+   double _amount = 50000;
+   bool _terms = false;
++  bool _emailStarted = false;
++  bool _phoneStarted = false;
+ 
+   @override
+   void dispose() {
+@@ -36,14 +40,26 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
+               controller: _email,
+               keyboardType: TextInputType.emailAddress,
+               decoration: const InputDecoration(labelText: 'Email'),
+-              onChanged: (_) => setState(() {}),
++              onChanged: (v) {
++                if (!_emailStarted && v.isNotEmpty) {
++                  _emailStarted = true;
++                  Analytics.capture('registration_email_started');
++                }
++                setState(() {});
++              },
+             ),
+             const SizedBox(height: 12),
+             TextField(
+               controller: _phone,
+               keyboardType: TextInputType.phone,
+               decoration: const InputDecoration(labelText: 'Phone'),
+-              onChanged: (_) => setState(() {}),
++              onChanged: (v) {
++                if (!_phoneStarted && v.isNotEmpty) {
++                  _phoneStarted = true;
++                  Analytics.capture('registration_phone_started');
++                }
++                setState(() {});
++              },
+             ),
+             const SizedBox(height: 24),
+             Text('Loan amount: ${_amount.round()}'),
+@@ -54,17 +70,30 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
+               value: _amount,
+               label: _amount.round().toString(),
+               onChanged: (v) => setState(() => _amount = v),
++              // Only the final value is sent; onChanged fires on every drag tick.
++              onChangeEnd: (v) => Analytics.capture('loan_amount_changed', {
++                'amount': v.round(),
++              }),
+             ),
+             CheckboxListTile(
+               value: _terms,
+               title: const Text('I accept the terms and conditions'),
+               controlAffinity: ListTileControlAffinity.leading,
+-              onChanged: (v) => setState(() => _terms = v ?? false),
++              onChanged: (v) {
++                setState(() => _terms = v ?? false);
++                if (_terms) Analytics.capture('terms_accepted');
++              },
+             ),
+             const Spacer(),
+             FilledButton(
+               onPressed: _canContinue
+-                  ? () => Navigator.of(context).pushNamed('/offers')
++                  ? () {
++                      Analytics.capture('registration_continue_tapped', {
++                        'amount': _amount.round(),
++                        'terms': _terms,
++                      });
++                      Navigator.of(context).pushNamed('/offers');
++                    }
+                   : null,
+               child: const Text('Continue'),
+             ),

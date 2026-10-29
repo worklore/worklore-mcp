@@ -1,0 +1,77 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..0ec13c8
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,22 @@
++# Why the second publish returns 500
++
++## Cause
++`similarity()` in `src/app.py` returned a Python `float` (`round(0.7*tag + 0.3*word, 4)`).
++`publish()` stores those scores in `item["similar"]`, and boto3's DynamoDB
++serializer rejects floats (`TypeError: Float types are not supported. Use Decimal types instead.`,
++see `logs/error.log`). The first publish scans an empty table, so `related()`
++returns `[]` and no float is ever written. From the second publish on, there are
++existing stories, scores exist, and `put_item` fails. `handler()` catches the
++exception and returns 500.
++
++## Fix
++- `similarity()` now returns `Decimal(str(round(..., 4)))`, so the score keeps its
++  4-decimal precision and is storable. (The note's integer percentage would also work; Decimal avoids changing the stored scale.)
++- Added tests that exercise the populated-table path (second and third publish via
++  `publish()` and `handler()`). The fake table rejects floats like boto3 does, so this
++  regression now fails in tests (I confirmed the logic by reasoning; the new tests pass with the fix).
++
++## Colleague's note: what applied
++- Applied: root cause (floats from computed similarity scores, only hit when the table is non-empty), converting at the boundary, and the seeded/second-write test.
++- Not applied: the integer-percentage fix (chose Decimal instead); the "publish twice against a real table" step, since I may not touch external services.
++- Not addressed: `scan()` is unpaginated (1 MB per page on a real table), so `related()` only sees the first page of stories at scale. Separate issue, not part of this 500.
+diff --git a/src/app.py b/src/app.py
+index db49c5e..9626735 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -8,6 +8,7 @@ import json
+ import logging
+ import re
+ import time
++from decimal import Decimal
+ 
+ log = logging.getLogger("stories")
+ 
+@@ -27,7 +28,8 @@ def similarity(a, b):
+     tag_score = len(ta & tb) / len(ta | tb) if (ta | tb) else 0
+     wa, wb = words(a.get("body")), words(b.get("body"))
+     word_score = len(wa & wb) / len(wa | wb) if (wa | wb) else 0
+-    return round(0.7 * tag_score + 0.3 * word_score, 4)
++    # Decimal, not float: DynamoDB (boto3) rejects floats on write.
++    return Decimal(str(round(0.7 * tag_score + 0.3 * word_score, 4)))
+ 
+ 
+ def related(story, existing):
+diff --git a/tests/test_publish.py b/tests/test_publish.py
+index 6c9ac44..e8ca9ce 100644
+--- a/tests/test_publish.py
++++ b/tests/test_publish.py
+@@ -23,6 +23,22 @@ class PublishTest(unittest.TestCase):
+         self.assertEqual(table.get_item(Key={"slug": "why-my-cron-ran-twice"})["Item"]["title"], "Why my cron ran twice")
+         self.assertEqual(table.scan()["Count"], 1)
+ 
++    def test_second_publish_with_existing_stories(self):
++        # The populated-table path computes similarity scores; first-write
++        # tests on an empty table never reach it.
++        table = FakeTable()
++        app.publish(table, {"slug": "first-story", "title": "A", "tags": ["cron", "linux"], "body": "two crontabs ran"})
++        stored = app.publish(table, {"slug": "second-story", "title": "B", "tags": ["cron"], "body": "one crontab ran"})
++        self.assertEqual(table.scan()["Count"], 2)
++        self.assertEqual(stored["similar"][0]["slug"], "first-story")
++        self.assertGreater(stored["similar"][0]["score"], 0)
++
++    def test_handler_second_publish_returns_201(self):
++        table = FakeTable()
++        for slug in ("story-one", "story-two", "story-three"):
++            body = '{"slug": "%s", "title": "T", "tags": ["a"], "body": "some text"}' % slug
++            self.assertEqual(app.handler({"body": body}, table)["statusCode"], 201)
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

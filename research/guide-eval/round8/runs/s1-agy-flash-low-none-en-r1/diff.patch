@@ -1,0 +1,36 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..14fa8a4
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,17 @@
++# Changes to Workout Generator
++
++## What Changed
++In [`gen.py`](file:///tmp/h-yOvQWk/gen.py), in function [`hr_target`](file:///tmp/h-yOvQWk/gen.py#L10-L13), changed the lower-bound dictionary key for the HR target object from `"value"` to `"start"`:
++
++```diff
++ def hr_target(step):
++     """HR corridor for a step, as a percentage of the athlete's LTHR."""
++     lo, hi = step["hr_pct"]
++-    return {"units": "%lthr", "value": lo, "end": hi}
+++    return {"units": "%lthr", "start": lo, "end": hi}
++```
++
++## Why
++When Intervals.icu generates a Garmin workout FIT export from a `workout_doc`:
++- An HR target specifying `{"value": lo, "end": hi}` is treated by the export generator as a lap-HR / zone-mapped target. As observed in `readback/watch-notes.md`, Garmin then clamps or snaps the target corridor to the watch's own locally configured zones rather than the intended custom range.
++- Specifying `{"start": lo, "end": hi}` instructs Intervals.icu to export the step target as an instant-HR corridor. Garmin devices interpret `{start, end}` as explicit lower and upper bounds, preserving the exact planned threshold percentage range rather than clamping to local watch zones.
+diff --git a/gen.py b/gen.py
+index be0b3bc..4aeba5a 100755
+--- a/gen.py
++++ b/gen.py
+@@ -10,7 +10,7 @@ import sys
+ def hr_target(step):
+     """HR corridor for a step, as a percentage of the athlete's LTHR."""
+     lo, hi = step["hr_pct"]
+-    return {"units": "%lthr", "value": lo, "end": hi}
++    return {"units": "%lthr", "start": lo, "end": hi}
+ 
+ 
+ def build_step(step):

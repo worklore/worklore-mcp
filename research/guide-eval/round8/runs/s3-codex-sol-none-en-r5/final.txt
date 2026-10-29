@@ -1,0 +1,5 @@
+The job **did run**, but `claude` reported “Not logged in.” The script then tried to assign its exit code to zsh’s read-only `status` parameter, stopping before it could send a failure message.
+
+I fixed the exit-code handling in [nightly-review.zsh](/tmp/h-lgm7fm/bin/nightly-review.zsh) and documented both causes in [ANSWER.md](/tmp/h-lgm7fm/ANSWER.md). Local stub tests confirmed the failure and success notification paths; no external service was contacted.
+
+The job can now report the Claude failure. To receive review summaries, `claude` still needs authentication that this LaunchAgent can use.

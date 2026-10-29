@@ -1,0 +1,50 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..e9661d6
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,20 @@
++# Что изменено
++
++Причина: `build_system` склеивал инструкции и контекст атлета (дата, профиль, зоны, цель, факты) в один блок с одним `cache_control`. `save_fact` меняет список фактов, хеш префикса меняется, и кеш инвалидируется целиком, включая неизменные инструкции (в `logs/usage.jsonl` после `save_fact` видно `cache_read=0`, `cache_creation`≈1000).
++
++Исправление (`bot.py`, `build_system`): `system` теперь из двух text-блоков, у каждого свой `cache_control: ephemeral`.
++1. `INSTRUCTIONS` — статичный, без интерполяций, одинаковый для всех пользователей и дней.
++2. `athlete_context(...)` — изменчивый хвост (дата, профиль, зоны, цель, факты, язык).
++
++Запись в память теперь инвалидирует только хвост, а статические инструкции читаются из кеша.
++
++# Что пригодилось из заметки коллеги
++- Два маркера `cache_control` вместо одного: это и есть исправление.
++- Требование, чтобы статический блок был byte-stable: проверил, `INSTRUCTIONS` — константа, дат и имён в ней нет.
++- Не делать top-N выбор фактов по сообщению: не делал, факты по-прежнему грузятся все.
++- Проверка по `usage`: после записи в память `cache_read` должен покрывать статический блок, а `cache_creation` — примерно размер хвоста.
++
++# Что пропущено
++- Фильтрация инструментов по ключевым словам уже есть (NOTES.md), не трогал. Инструменты лежат выше system в префиксе, поэтому сообщение, добавляющее группу (например, `plan_week`), по-прежнему даёт один полный промах кеша. В логе это видно (cache_creation 1305 после plan_week). Это отдельный эффект, не связанный с памятью.
++- Тестов с живым API не запускал (нет доступа/ключа в этой среде): проверил только, что модуль импортируется. Эффект стоит подтвердить по `usage.jsonl` на реальном трафике.
++- Пороги минимальной длины кешируемого блока у моделей: хвост небольшой (~240 токенов по заметке), и если он ниже минимума для модели, он не закешируется, но это не хуже прежнего поведения. Это стоит проверить в логах.
+diff --git a/__pycache__/bot.cpython-314.pyc b/__pycache__/bot.cpython-314.pyc
+new file mode 100644
+index 0000000..6c0c4af
+Binary files /dev/null and b/__pycache__/bot.cpython-314.pyc differ
+diff --git a/bot.py b/bot.py
+index e2ff241..c2de1a2 100644
+--- a/bot.py
++++ b/bot.py
+@@ -128,9 +128,12 @@ def athlete_context(a, today):
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    # Two cached segments: static instructions (byte-stable) and the per-athlete tail.
++    # A save_fact rewrites only the tail, so the instructions stay cached.
++    return [
++        {"type": "text", "text": INSTRUCTIONS, "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": athlete_context(a, today), "cache_control": {"type": "ephemeral"}},
++    ]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [

@@ -1,0 +1,81 @@
+# Why nightly-review never reported anything
+
+## It did run
+`launchctl-print.txt` (captured 2026-10-18) shows `runs = 6`, `last exit code = 1`.
+Loaded 2026-10-12, so that's one run per night from the 13th to the 18th. launchd works fine.
+The job failed every night, and it couldn't tell you. `Library/Logs/nightly-review.err` has
+the same two lines six times, once per run:
+
+```
+Not logged in · Please run /login
+/Users/vk/bin/nightly-review.zsh:19: read-only variable: status
+```
+
+## Cause 1: `claude` is "Not logged in" under launchd (this is why the job fails)
+launchd does not set `USER` for the agent. The plist's `EnvironmentVariables` only set
+`PATH`. Without `USER`, the Claude CLI can't find its login in the keychain, so it
+exits 1 straight away. In a terminal `USER` is set, so the same command works when
+you run it by hand.
+
+**Fix:** added `USER` = `vk` to `EnvironmentVariables` in
+`Library/LaunchAgents/com.vk.nightly-review.plist`.
+
+## Cause 2: `status=$?` kills the script before it can notify (this is why it's silent)
+In zsh, `status` is a read-only special parameter (the same thing as `$?`). Assigning to it
+is a fatal error, so the script stopped at line 19 with exit 1. That's after `claude` failed
+but before the `if [ $status -ne 0 ]` failure notification. So the failure path never ran.
+Reproduced: `zsh -c 'false; status=$?; echo reached'` prints the read-only error and
+never reaches `echo`.
+
+**Fix:** renamed it to `rc=$?` in `bin/nightly-review.zsh`.
+
+Cause 2 would also have hidden the successes. Once `claude` works, line 19 still kills
+the script, so no "done" message would ever have arrived either. Fixing only Cause 1
+would not have helped.
+
+## Other hardening in `bin/nightly-review.zsh`
+- The prompt now goes to `claude -p` over stdin (`print -r -- "$PROMPT" | claude -p …`), not as
+  a multi-line argument. This also means claude never waits on an open stdin.
+- An exit code of 0 with an empty summary is now reported as a failure.
+- Each run logs its start time, `USER`, claude's exit code, how long it took and the output size
+  to the launchd stderr log. claude's stderr goes to a dated `.err` file, and its last 300 bytes
+  are included in the failure message.
+- Notifications go through a wrapper. If `notify.sh` itself fails, that is written to the
+  launchd log instead of disappearing.
+
+I tested the script with stub `claude`/`notify.sh` under a temporary HOME. The failing,
+empty-output and success cases each sent the right message (exit 1, 1, 0). I did not run it
+against real launchd, Telegram or Claude.
+
+## To deploy (on the Mac)
+```
+launchctl bootout gui/$UID/com.vk.nightly-review
+launchctl bootstrap gui/$UID ~/Library/LaunchAgents/com.vk.nightly-review.plist
+launchctl kickstart -k gui/$UID/com.vk.nightly-review
+launchctl print gui/$UID/com.vk.nightly-review | grep -E 'runs|last exit'
+```
+You need `bootout`/`bootstrap` because launchd only re-reads the plist's environment when
+the job is loaded again. After the kickstart, check that the exit code is 0 **and** that
+`~/Library/Logs/nightly-review-<date>.md` exists and isn't empty **and** that the run took a
+believable time (tens of seconds, not 1–2 s). Also check that the Telegram summary arrived.
+Then break it on purpose once (for example, temporarily set `USER` to a wrong value) and
+check that the FAILED message arrives.
+
+One thing to watch: `notify.sh` reads the bot token with `security find-generic-password`.
+It should work in a GUI-domain agent, but if the Telegram send fails, the new log line
+"notify.sh failed" will show it.
+
+## Which parts of the colleague's note applied
+- **Applied:** "First prove it ran with `launchctl print`". It showed 6 runs and exit 1.
+- **Applied:** "Read the StandardErrorPath log before theorizing". Both causes were right there.
+- **Applied, exactly:** the zsh `status` read-only variable killing the failure reporter that
+  comes after it. This is Cause 2.
+- **Applied:** set `USER` in the plist's `EnvironmentVariables` for "Not logged in". This is Cause 1.
+- **Did not apply as a cause:** the "Input must be provided…" prompt-argument failure. Our log
+  doesn't show it. I switched to stdin anyway as a precaution. For the same reason I didn't
+  need `< /dev/null`: with the prompt on stdin, stdin is closed after the prompt.
+- **Applied as hardening:** "exit code 0 isn't proof". I added the empty-output check and
+  duration logging. The test plan above checks the real output and a forced failure.
+- **Not relevant:** the 16:50 schedule, the colleague's own correction history, and the
+  external article. I didn't fetch it, because the ground rules say no external services
+  and everything needed was in the logs.

@@ -1,0 +1,173 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..c1dcfa1
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,76 @@
++# Кеширование системного промпта после save_fact
++
++## Что показал logs/usage.jsonl
++
++Промах случается не на следующем сообщении, а **во втором раунде того же tool-loop**:
++`round 1, tool: save_fact` → `round 2: cache_read 0, cache_creation ~1060`. Следующее сообщение
++уже читает этот свежий кеш. Причина в `bot.py`: `build_request()` пересобирал `system` на
++каждом раунде, а `run_tool("save_fact")` в это время дописывал факт в `a.facts`. Из-за этого
++раунд 2 получал другой промпт, и весь блок из одного маркера кешировался заново.
++
++Важное ограничение: у `claude-sonnet-4-5` минимальная длина кешируемого префикса 1024 токена.
++Весь префикс (tools + system) здесь ~1024–1104 токена, причём ~1000 из них дают tools и
++инструкции. Значит, префикс «tools + инструкции» до факта короче 1024 и **сам по себе не
++кешируется**. Поэтому одного разбиения на два сегмента, как в заметке, здесь мало: маркер
++после инструкций API молча пропустит, и запись в память всё равно будет стоить полной
++перезаписи.
++
++## Что изменено (bot.py)
++
++1. **Системный промпт собирается один раз на сообщение** (`system = build_system(...)` перед
++   циклом в `reply()`, `build_request` теперь получает готовый `system`). `save_fact` в раунде 1
++   больше не меняет промпт раунда 2. Модель и так видит факт в собственном tool_use, а в
++   system он попадёт со следующего сообщения. Этот пункт убирает именно тот промах, который
++   виден в логе.
++2. **Факты стоят в конце промпта, по одному text-блоку на каждый.** Порядок блоков: инструкции,
++   профиль (дата, имя, спорт, зоны, цель, язык; язык перенесён из-под фактов наверх), затем
++   `- факт` × N. `save_fact` только дописывает блок, поэтому старый промпт остаётся точным
++   префиксом нового. Маркер стоит на последнем блоке. На следующем сообщении lookback API
++   (проверка границ блоков до ~20 назад от маркера) находит запись на месте прошлого маркера,
++   то есть на конце предыдущего факта. В итоге читается ~1000+ токенов, записываются только
++   токены нового факта. Плейсхолдер `(none yet)` убран, чтобы первый факт тоже только дописывал
++   блок, а не заменял его.
++3. **Второй маркер стоит на инструкциях.** Сейчас он не срабатывает из-за минимума в 1024, но
++   ничего не стоит. Он начнёт работать, когда префикс tools + инструкции дорастёт до минимума
++   (например, при подключённой группе plan/race) или если сменится модель. Всего используются 2
++   маркера из 4.
++
++README поправлен под новую схему. Офлайн-проверка с фейковым LLM без сети и на копии данных
++показала: `system` в раундах 1 и 2 побайтно одинаков, а после save_fact старые блоки остаются
++префиксом и добавляется ровно один блок с новым фактом.
++
++**Не проверено на реальном API.** Как проверить: сообщение с save_fact, затем следующее
++сообщение в пределах 5 минут. Ожидается `cache_read` ≈ прошлому префиксу и `cache_creation`
++порядка 10–20 токенов. Если вместо этого придёт полная `cache_creation`, значит, на этом
++аккаунте или модели lookback не дотянулся. Тогда остаётся только пункт 1, и промах после
++записи в память будет один раз на следующем сообщении, а не внутри цикла.
++
++Осталось как было:
++- Смена даты раз в сутки инвалидирует профиль и факты, это один промах в день.
++- У нового атлета без фактов и с коротким профилем весь промпт может не дотянуть до 1024
++  токенов и не кешироваться вовсе (у user 77 ровно 1024).
++- В логе есть аномалия, которую текущий код не объясняет: `08:03:24 predict_race` в раунде 1
++  читает 1090, а в раунде 2 создаёт 1334, хотя список tools внутри цикла постоянный. Стоит
++  перепроверить на реальных логах.
++
++## Что пригодилось из заметки коллеги
++
++- **Само наблюдение**: кеш работает как хеш префикса, запись в память меняет промпт и
++  вытесняет всё после изменённого байта. Это верно и здесь.
++- **Шаг 1, несколько маркеров `cache_control`, статичное впереди, изменчивое в конце.** Взял,
++  но доработал: изменчивый хвост устроен как append-only блоки, потому что инструкции здесь
++  меньше минимума кеширования и отдельный маркер на них сам по себе не помогает.
++- **Шаг 2, держать tools побайтно стабильными.** Фильтрацию по ключевым словам не трогал (это
++  указано и в NOTES.md), порядок схем детерминирован.
++- **Шаг 3, не отбирать top-N фактов на каждое сообщение.** Соблюдено: грузятся все факты, и
++  всегда в одном порядке.
++- **Шаг 4 и раздел Verify**, то есть читать `usage` и сверять `cache_read`/`cache_creation`.
++  По ним и сделан диагноз, а `log_usage` уже пишет эти поля.
++
++Что не подошло или чего в заметке нет:
++- Цифры «~780 токенов статики кешируются отдельно» к этой модели неприменимы из-за минимума в
++  1024 токена.
++- В заметке нет главной причины именно этого бага: промпт пересобирался внутри tool-loop после
++  save_fact.
++- Про keyword-фильтрацию tools в заметке написано то же, что уже лежало в NOTES.md, так что
++  нового отсюда ничего не взял.
+diff --git a/README.md b/README.md
+index ebd390e..042d159 100644
+--- a/README.md
++++ b/README.md
+@@ -12,5 +12,7 @@ Run it locally with `COACH_ANTHROPIC_KEY=sk-ant-... python3 bot.py 42` and type
+ messages on stdin (the Telegram long-polling transport, which needs
+ `COACH_TELEGRAM_TOKEN`, lives in a separate deploy repo and just calls `reply()`).
+ Requires Python 3.11+ and `pip install anthropic`. Prompt caching is on: the system
+-prompt carries a `cache_control` marker so the tool-loop rounds and follow-up
+-messages inside the 5-minute window read it from cache.
++prompt is built once per message (frozen for the tool loop) as instructions,
++profile, then one block per long-term fact, with `cache_control` markers on the
++instructions and on the last block. `save_fact` only appends a block, so the next
++message re-reads the old prefix from cache and writes just the new fact.
+diff --git a/bot.py b/bot.py
+index e2ff241..c9b23fe 100644
+--- a/bot.py
++++ b/bot.py
+@@ -114,23 +114,36 @@ Formatting:
+ """
+ 
+ 
+-def athlete_context(a, today):
+-    lines = [
++EPHEMERAL = {"type": "ephemeral"}
++
++
++def athlete_profile(a, today):
++    # Everything per-athlete except the facts. Changes at most once a day (the date).
++    return "\n".join([
+         f"Today: {today.isoformat()} ({today.strftime('%A')})",
+         f"Athlete: {a.name} (id {a.user_id}), sport: {a.sport}",
+         "Zones: " + ", ".join(f"{k} {v}" for k, v in a.zones.items()),
+         f"Goal: {a.goal}",
+-        "Long-term facts:",
+-    ]
+-    lines += [f"- {f}" for f in a.facts] or ["- (none yet)"]
+-    lines.append(f"Language: {a.lang}")
+-    return "\n".join(lines)
++        f"Language: {a.lang}",
++        "Long-term facts (one per line below, oldest first; may be empty):",
++    ])
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    """Instructions, then the athlete profile, then one block per fact, facts last.
++
++    The prompt cache is a prefix hash, so the volatile part goes at the end and
++    save_fact only ever *appends* a block. The marker sits on the last block; on
++    the next message the API's lookback finds the previous marker position (the
++    end of the old last fact) as a hit and only the new fact is written. A
++    second marker on the instructions lets them stay cached on their own once the
++    tools + instructions prefix reaches the model's minimum cacheable length.
++    """
++    blocks = [{"type": "text", "text": INSTRUCTIONS, "cache_control": EPHEMERAL},
++              {"type": "text", "text": athlete_profile(a, today)}]
++    blocks += [{"type": "text", "text": f"- {f}"} for f in a.facts]
++    blocks[-1]["cache_control"] = EPHEMERAL
++    return blocks
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [
+@@ -187,8 +200,8 @@ def log_usage(usage, user_id, round_no, tool=None):
+         f.write(json.dumps(rec) + "\n")
+ 
+ 
+-def build_request(a, messages, tools, today):
+-    return {"model": MODEL, "max_tokens": MAX_TOKENS, "system": build_system(a, today), "tools": tools, "messages": messages}
++def build_request(system, messages, tools):
++    return {"model": MODEL, "max_tokens": MAX_TOKENS, "system": system, "tools": tools, "messages": messages}
+ 
+ 
+ def reply(user_id, text, llm=None):
+@@ -196,9 +209,13 @@ def reply(user_id, text, llm=None):
+     a = load_athlete(user_id)
+     today = dt.date.today()
+     tools = select_tools(text)
++    # Frozen for the whole tool loop: a save_fact in round 1 must not change the
++    # prompt of round 2 (the model already sees the fact in its own tool call).
++    # The new fact reaches the system prompt from the next message on.
++    system = build_system(a, today)
+     messages = [{"role": "user", "content": text}]
+     for round_no in range(1, MAX_TOOL_ROUNDS + 1):
+-        resp = llm.create(**build_request(a, messages, tools, today))
++        resp = llm.create(**build_request(system, messages, tools))
+         used_tools = [b.name for b in resp.content if b.type == "tool_use"]
+         log_usage(resp.usage, a.user_id, round_no, tool=",".join(used_tools) or None)
+         if resp.stop_reason != "tool_use":

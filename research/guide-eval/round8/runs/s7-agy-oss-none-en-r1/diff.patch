@@ -1,0 +1,54 @@
+diff --git a/server.py b/server.py
+index 351cbb7..38e8398 100644
+--- a/server.py
++++ b/server.py
+@@ -142,10 +142,20 @@ class Handler(BaseHTTPRequestHandler):
+         self.end_headers()
+ 
+     def current_user(self):
++        # First try Authorization header
+         auth = self.headers.get("Authorization", "")
+-        if not auth.startswith("Bearer "):
+-            return None
+-        return USERS.get(auth[7:].strip())
++        if auth.startswith("Bearer "):
++            token = auth[7:].strip()
++            user = USERS.get(token)
++            if user:
++                return user
++        # Fallback: token in query string (e.g., after auth flow)
++        parsed = urllib.parse.urlsplit(self.path)
++        q = dict(urllib.parse.parse_qsl(parsed.query))
++        token = q.get("token")
++        if token:
++            return USERS.get(token)
++        return None
+ 
+     def require_user(self):
+         user = self.current_user()
+@@ -187,8 +197,11 @@ class Handler(BaseHTTPRequestHandler):
+ 
+     # Step 1: build the authorize URL and send the browser to Intervals.
+     def auth_init(self):
+-        user = self.require_user()
++        user = self.current_user()
+         if not user:
++            # No user identified; return unauthorized
++            self.log_message("%s %s 401 (no token)" % (self.command, self.path))
++            self.send_json(401, {"error": "unauthorized"})
+             return
+         params = {"client_id": config.CLIENT_ID, "redirect_uri": config.REDIRECT_URI,
+                   "scope": config.SCOPES, "state": sign_state(user["id"])}
+diff --git a/static/app.js b/static/app.js
+index 368922e..d450d38 100644
+--- a/static/app.js
++++ b/static/app.js
+@@ -25,7 +25,7 @@ async function render() {
+     } else {
+       const why = st.status && st.status !== "disconnected" ? `<p class="muted">Status: ${esc(st.status)}</p>` : "";
+       card = `<div class="card">Intervals.icu is not connected.${why}
+-        <p><a class="btn" href="/api/intervals/auth/init">Connect Intervals.icu</a></p></div>`;
++        <p><a class="btn" href="/api/intervals/auth/init?token=${encodeURIComponent(TOKEN)}">Connect Intervals.icu</a></p></div>`;
+     }
+     root.className = "";
+     root.innerHTML = `<p>Signed in as <b>${esc(me.name)}</b>.</p>${card}`;

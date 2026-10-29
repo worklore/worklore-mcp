@@ -1,0 +1,84 @@
+diff --git a/config.py b/config.py
+index 54a8144..7a58586 100644
+--- a/config.py
++++ b/config.py
+@@ -8,6 +8,6 @@ INTERVALS_BASE = os.environ.get("INTERVALS_BASE", "https://intervals.icu")
+ CLIENT_ID = "tricoach-dev"
+ CLIENT_SECRET = "s3cr3t-placeholder-0000"
+ REDIRECT_URI = f"http://localhost:{PORT}/api/intervals/callback"
+-SCOPES = "ACTIVITY:READ,ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:READ,CALENDAR:WRITE"
++SCOPES = "ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:READ,CALENDAR:WRITE"
+ 
+ REFRESH_INTERVAL = 60      # seconds between passes of the token refresher
+diff --git a/server.py b/server.py
+index 351cbb7..e581f9c 100644
+--- a/server.py
++++ b/server.py
+@@ -63,10 +63,14 @@ def exchange_code(code):
+ 
+ 
+ def store_connection(user_id, tok):
++    # Intervals token does not expire and may lack a refresh_token.
++    # Use a far-future expiry if no refresh_token is provided.
+     expires_in = int(tok.get("expires_in") or DEFAULT_TOKEN_TTL)
+     refresh = tok.get("refresh_token")
+     if not refresh:
+-        log(f"{user_id}: no refresh_token in response, scheduling expiry in {expires_in}s")
++        # Set expiry to 10 years to effectively treat as never expiring.
++        expires_in = 10 * 365 * 24 * 60 * 60
++        log(f"{user_id}: no refresh_token in response, setting long expiry ({expires_in}s)")
+     athlete = tok.get("athlete") or {}
+     with LOCK:
+         CONNECTIONS[user_id] = {
+@@ -164,15 +168,16 @@ class Handler(BaseHTTPRequestHandler):
+         if url.path == "/api/me":
+             user = self.require_user()
+             return user and self.send_json(200, user)
+-        if url.path == "/api/intervals/auth/init":
+-            return self.auth_init()
++        # auth init handled via POST
+         if url.path == "/api/intervals/callback":
+             return self.callback(q)
+         if url.path == "/api/intervals/status":
+             return self.status()
+         if url.path == "/api/intervals/wellness":
+             return self.wellness()
+-        self.send_json(404, {"error": "not found"})
++        # Removed GET init handling; POST endpoint is used.
++        # if url.path == "/api/intervals/auth/init":
++        #     return self.auth_init()
+ 
+     def do_POST(self):
+         url = urllib.parse.urlsplit(self.path)
+@@ -183,16 +188,27 @@ class Handler(BaseHTTPRequestHandler):
+                     CONNECTIONS.pop(user["id"], None)
+                 self.send_json(200, {"ok": True})
+             return
+-        self.send_json(404, {"error": "not found"})
++        # Removed GET init handling; POST endpoint is used.
++        # if url.path == "/api/intervals/auth/init":
++        #     return self.auth_init()
+ 
+     # Step 1: build the authorize URL and send the browser to Intervals.
+     def auth_init(self):
++        # Convert init endpoint to POST and return JSON with authorize URL.
++        # This endpoint is called via XHR/fetch, so we can access the logged-in user
++        # via the Authorization header and avoid losing it on a full-page navigation.
+         user = self.require_user()
+         if not user:
+             return
+-        params = {"client_id": config.CLIENT_ID, "redirect_uri": config.REDIRECT_URI,
+-                  "scope": config.SCOPES, "state": sign_state(user["id"])}
+-        self.redirect(AUTHORIZE_URL + "?" + urllib.parse.urlencode(params, safe=":,"))
++        params = {
++            "client_id": config.CLIENT_ID,
++            "redirect_uri": config.REDIRECT_URI,
++            "scope": config.SCOPES,
++            "state": sign_state(user["id"]),
++        }
++        authorize_url = AUTHORIZE_URL + "?" + urllib.parse.urlencode(params, safe=":,")
++        # Return JSON so the frontend can perform window.location.assign(authorize_url)
++        self.send_json(200, {"authorize_url": authorize_url})
+ 
+     # Step 2: Intervals redirects back here with ?code=&state=.
+     def callback(self, q):

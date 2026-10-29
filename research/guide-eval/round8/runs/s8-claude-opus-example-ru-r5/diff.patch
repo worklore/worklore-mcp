@@ -1,0 +1,164 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..3f3a5a7
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,63 @@
++# Почему save_fact сбрасывал кеш и что изменено
++
++## Причина
++Весь системный промпт был одним блоком с одним маркером `cache_control`, и факты стояли
++внутри этого блока. Кеш у Anthropic работает по префиксу: `save_fact` дописывает факт →
++меняется текст блока → со следующего вызова (обычно это round 2 того же tool-loop)
++весь префикс (~1050 токенов) пишется в кеш заново по цене 1.25×, а не читается за 0.1×.
++В `logs/usage.jsonl` это видно: после каждого `save_fact` идёт `cache_read_input_tokens: 0`
++и `cache_creation_input_tokens` ≈ 1046–1104.
++
++## Почему не подошло «два маркера: инструкции | хвост» из заметки
++У `claude-sonnet-4-5` минимальная длина кешируемого префикса 1024 токена. Префикс до
++первого маркера включает tools и инструкции. По логу (1046 токенов на ~3200 символов)
++tools + INSTRUCTIONS ≈ 950 токенов, а с профилем без фактов ≈ 1000. Это ниже порога.
++Маркер на таком блоке API молча проигнорирует: статический сегмент так и не попадёт
++в кеш, и после `save_fact` снова будет полный промах. Факты в нашем случае и выводят
++кешируемый блок за порог, поэтому вынести их целиком из кешируемого блока нельзя.
++(Оценка сделана по логу, не через count_tokens: внешние вызовы запрещены.)
++
++## Что сделано (bot.py)
++- Системный промпт теперь из двух блоков:
++  1. **кешируемый блок** (`cache_control`): инструкции, дата, профиль, язык и факты,
++     которые были известны на начало дня (`facts[:pinned_facts]`);
++  2. **хвост без маркера**: факты, сохранённые сегодня. Его нет, пока таких фактов нет.
++- `save_fact` дописывает только во второй блок, кешируемый блок остаётся побайтово тем же.
++  Поэтому round 2 после `save_fact` и следующие сообщения читают ~1050 токенов из кеша.
++  Новый факт стоит ~15 токенов по полной цене на каждый вызов. Раньше было ~1050 × 1.25
++  на перезапись кеша, так что выигрыш остаётся, пока в день не набираются десятки вызовов
++  на каждый факт.
++- `pin_facts()`: при первом сообщении за день все факты переносятся в кешируемый блок.
++  Этот блок и так меняется раз в день (в нём дата), а кеш живёт 5 минут, так что первое
++  сообщение дня всё равно пишет кеш заново. Перенос в этот момент ничего не стоит.
++- В `Athlete` добавлены поля `pinned_facts` / `pinned_on` со значениями по умолчанию,
++  поэтому старые записи в `athletes.json` загружаются как есть. `Language` переехал
++  выше списка фактов, текст INSTRUCTIONS не менялся.
++- Фильтрацию tools по ключевым словам не трогал (так сказано в NOTES.md).
++- README: дописано одно предложение о том, как кешируются факты.
++
++Проверка: прогнал `reply()` с фейковым LLM на копии `athletes.json` во временной папке.
++Сценарий: сообщение → сообщение с `save_fact` (2 раунда) → сообщение. Текст кешируемого
++блока во всех четырёх вызовах одинаковый, новый факт есть только в хвосте. На «следующий
++день» `pin_facts` переносит его в кешируемый блок. С настоящим API не проверял.
++Проверка на проде: после `save_fact` в round 2 должно быть `cache_read_input_tokens` ≈ 1050
++и `cache_creation_input_tokens` = 0.
++
++## Какие части заметки коллеги пригодились
++- **Пригодилось:** главная мысль, что кеш — это хеш префикса, и запись в память не должна
++  менять кешируемую часть. Также: изменчивое ставить в самый конец, не выбирать «top-N
++  релевантных фактов» на каждое сообщение (я тоже загружаю все факты, без отбора), не трогать
++  стабильность и фильтрацию tools, проверять результат по `cache_creation`/`cache_read` в usage.
++- **Не подошло:** сам рецепт «инструкции под отдельным маркером». Сегмент ~780 токенов
++  меньше минимума в 1024 токена для Sonnet, так что здесь маркер на нём ни на что
++  не влияет. Заметка этот порог не упоминает.
++- **Не понадобилось:** второй маркер на хвосте. Хвост из сегодняшних фактов — десятки
++  токенов, кешировать его нечем (ниже минимума) и незачем.
++
++## Что осталось
++- Если сообщение подтягивает группу tools `plan`/`race`, меняется префикс, и это всё ещё
++  полный промах (видно в логе на 06:44 и 08:04). Это компромисс фильтрации tools, NOTES.md
++  велит её оставить.
++- У нового атлета без фактов кешируемый блок ≈ 1000 токенов, это ниже порога, и он не
++  кешируется (так было и до правки). Если инструкции вырастут выше ~1024 токенов вместе с
++  tools, стоит поставить на них отдельный маркер, тогда кеш станет общим для всех атлетов.
+diff --git a/README.md b/README.md
+index ebd390e..426801f 100644
+--- a/README.md
++++ b/README.md
+@@ -13,4 +13,6 @@ messages on stdin (the Telegram long-polling transport, which needs
+ `COACH_TELEGRAM_TOKEN`, lives in a separate deploy repo and just calls `reply()`).
+ Requires Python 3.11+ and `pip install anthropic`. Prompt caching is on: the system
+ prompt carries a `cache_control` marker so the tool-loop rounds and follow-up
+-messages inside the 5-minute window read it from cache.
++messages inside the 5-minute window read it from cache. Facts saved during the day
++go into a small uncached block after that marker and are folded into the cached
++block on the first message of the next day, so `save_fact` never invalidates it.
+diff --git a/bot.py b/bot.py
+index e2ff241..ebd02b8 100644
+--- a/bot.py
++++ b/bot.py
+@@ -46,6 +46,10 @@ class Athlete:
+     goal: str = "finish a half marathon"
+     zones: dict = field(default_factory=lambda: {"Z1": "<135", "Z2": "135-150", "Z3": "150-162", "Z4": "162-172", "Z5": ">172"})
+     facts: list = field(default_factory=list)   # long-term memory, grows via save_fact
++    # Cache bookkeeping: facts[:pinned_facts] go into the cached system block, the rest
++    # (saved since pinned_on) into an uncached tail. Re-pinned once a day, see pin_facts().
++    pinned_facts: int = 0
++    pinned_on: str = ""
+ 
+ 
+ def _load_all():
+@@ -115,22 +119,53 @@ Formatting:
+ 
+ 
+ def athlete_context(a, today):
++    """Per-athlete part of the cached block: stable for the whole day."""
+     lines = [
+         f"Today: {today.isoformat()} ({today.strftime('%A')})",
+         f"Athlete: {a.name} (id {a.user_id}), sport: {a.sport}",
+         "Zones: " + ", ".join(f"{k} {v}" for k, v in a.zones.items()),
+         f"Goal: {a.goal}",
++        f"Language: {a.lang}",
+         "Long-term facts:",
+     ]
+-    lines += [f"- {f}" for f in a.facts] or ["- (none yet)"]
+-    lines.append(f"Language: {a.lang}")
++    lines += [f"- {f}" for f in a.facts[:a.pinned_facts]] or ["- (none yet)"]
+     return "\n".join(lines)
+ 
+ 
++def recent_facts(a):
++    """Facts saved since the last pin: outside the cached block, so save_fact doesn't invalidate it."""
++    new = a.facts[a.pinned_facts:]
++    if not new:
++        return None
++    return "\n".join(["Long-term facts saved today (same list, continued):"] + [f"- {f}" for f in new])
++
++
++def pin_facts(a, today):
++    """Move all facts into the cached block once per day.
++
++    The cached block already changes daily (it carries the date) and the cache lives 5 minutes,
++    so the first message of the day pays a full cache write anyway; folding the facts in at that
++    moment is free. During the day save_fact only grows the uncached tail.
++    Returns True if the record changed and must be saved.
++    """
++    if a.pinned_on == today.isoformat() and a.pinned_facts <= len(a.facts):
++        return False
++    a.pinned_on, a.pinned_facts = today.isoformat(), len(a.facts)
++    return True
++
++
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    # Block 1 is cached: instructions + profile + facts known at the start of the day. It has to be
++    # one block: on claude-sonnet-4-5 a cache breakpoint needs >= 1024 tokens of prefix, and tools +
++    # instructions alone (~950) are below that, so a separate marker on the instructions is a no-op.
++    # Block 2 (facts saved today) sits after the breakpoint: a few full-price tokens instead of a
++    # ~1000-token cache rewrite per save_fact.
++    blocks = [{"type": "text", "text": INSTRUCTIONS + "\n\n" + athlete_context(a, today),
++               "cache_control": {"type": "ephemeral"}}]
++    tail = recent_facts(a)
++    if tail:
++        blocks.append({"type": "text", "text": tail})
++    return blocks
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [
+@@ -195,6 +230,8 @@ def reply(user_id, text, llm=None):
+     llm = llm or LLM()
+     a = load_athlete(user_id)
+     today = dt.date.today()
++    if pin_facts(a, today):
++        save_athlete(a)
+     tools = select_tools(text)
+     messages = [{"role": "user", "content": text}]
+     for round_no in range(1, MAX_TOOL_ROUNDS + 1):

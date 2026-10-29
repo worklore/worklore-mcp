@@ -1,0 +1,97 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..2a035b4
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,22 @@
++# Почему задача молчала
++
++Снимок `launchctl print` от 2026-10-18 показывает `runs = 6` и `last exit code = 1`: launchd запускал задачу. В `Library/Logs/nightly-review.err` шесть раз повторяется одна цепочка ошибок:
++
++1. `claude` завершался с `Not logged in · Please run /login`. В окружении задачи из plist был только `PATH`; `USER` отсутствовал. Для headless CLI это мешает найти авторизацию в keychain. В plist добавлен `USER=vk`. Вывод о роли `USER` основан на сочетании конфигурации и ошибки; подтвердить успешную авторизацию можно только после установки исправления в настоящей домашней директории.
++2. Сразу после неудачного запуска скрипт делал `status=$?`. В zsh `status` — переменная только для чтения. Эта ошибка обрывала скрипт до вызова `notify.sh`, поэтому сообщение о неудаче не отправлялось. Переменная заменена на `rc`.
++
++Скрипт теперь закрывает stdin у `claude`, проверяет его код выхода и непустой файл обзора, пишет длительность запуска и сообщает об ошибках. У `curl` включён `-f`, чтобы HTTP-ошибка Telegram не считалась успешной отправкой. При неудаче самого уведомления ошибка остаётся в stderr задачи.
++
++## Что пригодилось из заметки коллеги
++
++- Проверка `launchctl print` и чтение `StandardErrorPath` выявили реальные запуски и последовательность отказов.
++- Предупреждение о переменной zsh `status` точно совпало с ошибкой в скрипте.
++- Совет задать `USER` в plist подходит к `Not logged in` и отсутствующему `USER` в снимке окружения.
++- Проверка реального результата, длительности и обоих путей уведомления помогла усилить контроль выполнения.
++- Совет закрыть stdin применён, поскольку этот скрипт передаёт промпт аргументом. Перенос промпта в stdin не требовался: в логе нет ошибки разбора промпта, а непосредственный отказ связан с авторизацией.
++
++## Проверка
++
++`zsh -n`, `plutil -lint` и `git diff --check` прошли. Локальный прогон с заглушками `claude` и уведомителя подтвердил: успех даёт код 0 и сообщение с обзором; ошибка `claude` даёт его код 7 и сообщение об ошибке; пустой ответ с кодом 0 превращается в ошибку с уведомлением. Внешние сервисы не вызывались.
++
++Это снимок, поэтому живой `launchctl kickstart`, доступ к keychain и доставка Telegram здесь не проверялись. Для настоящего исправления нужно перенести изменённые файлы в соответствующие пути домашней директории и перезагрузить LaunchAgent; затем проверить свежий обзор, stderr и доставку сообщений при успехе и намеренной ошибке.
+diff --git a/Library/LaunchAgents/com.vk.nightly-review.plist b/Library/LaunchAgents/com.vk.nightly-review.plist
+index c347363..d49eacf 100644
+--- a/Library/LaunchAgents/com.vk.nightly-review.plist
++++ b/Library/LaunchAgents/com.vk.nightly-review.plist
+@@ -24,6 +24,8 @@
+   <dict>
+     <key>PATH</key>
+     <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
++    <key>USER</key>
++    <string>vk</string>
+   </dict>
+ </dict>
+ </plist>
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..e51c610 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -5,6 +5,16 @@ set -u
+ REPO="$HOME/projects/shop"
+ OUT="$HOME/Library/Logs/nightly-review-$(date +%F).md"
+ NOTIFY="$HOME/bin/notify.sh"
++STARTED=$(date +%s)
++
++fail() {
++  local rc=$1
++  local message=$2
++  printf 'nightly review FAILED: %s (exit %s, duration %ss)\n' "$message" "$rc" "$(($(date +%s) - STARTED))" >&2
++  "$NOTIFY" "nightly review FAILED: $message (exit $rc), see $OUT" || \
++    printf 'nightly review: failure notification also failed\n' >&2
++  exit "$rc"
++}
+ 
+ SINCE=$(date -v-1d +%F)
+ PROMPT="Review the commits in this repository since $SINCE.
+@@ -13,14 +23,16 @@ For each commit: one line on what it changes and whether anything looks risky
+ End with a three-line summary I can read on my phone.
+ Do not modify any file."
+ 
+-cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
++printf 'nightly review started at %s\n' "$(date '+%Y-%m-%d %H:%M:%S')"
++cd "$REPO" || fail 1 "repo missing: $REPO"
+ 
+-claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
++claude -p "$PROMPT" --output-format text < /dev/null > "$OUT"
++rc=$?
+ 
+-if [ $status -ne 0 ]; then
+-  "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
+-  exit $status
++if (( rc != 0 )); then
++  fail "$rc" "claude failed"
+ fi
++[[ -s "$OUT" ]] || fail 1 "claude produced no review"
+ 
+-"$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"
++"$NOTIFY" "nightly review done: $(head -c 300 "$OUT")" || fail 1 "success notification failed"
++printf 'nightly review completed (duration %ss, output %s)\n' "$(($(date +%s) - STARTED))" "$OUT"
+diff --git a/bin/notify.sh b/bin/notify.sh
+index 818e531..bc9115f 100755
+--- a/bin/notify.sh
++++ b/bin/notify.sh
+@@ -3,5 +3,5 @@
+ set -eu
+ : "${TG_BOT_TOKEN:=$(security find-generic-password -s tg-bot -w)}"
+ CHAT_ID=123456789
+-curl -sS -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
++curl -fsS -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
+   -d chat_id="$CHAT_ID" --data-urlencode text="$1" > /dev/null

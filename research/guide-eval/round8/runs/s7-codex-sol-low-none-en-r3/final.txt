@@ -1,0 +1,3 @@
+Fixed the Intervals.icu connection flow and documented the causes in [ANSWER.md](/tmp/h-oWE7so/ANSWER.md).
+
+Connect now uses the app’s authenticated API request. The OAuth scopes no longer repeat resources, and the server no longer invents a one-hour expiry for Intervals.icu tokens. Local checks passed for the authorize URL, authentication, and stored connection status. Live authorization remains untested because this repository has placeholder OAuth credentials.

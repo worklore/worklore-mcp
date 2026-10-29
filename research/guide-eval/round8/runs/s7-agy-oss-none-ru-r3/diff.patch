@@ -1,0 +1,38 @@
+diff --git a/server.py b/server.py
+index 351cbb7..62c2e33 100644
+--- a/server.py
++++ b/server.py
+@@ -187,11 +187,16 @@ class Handler(BaseHTTPRequestHandler):
+ 
+     # Step 1: build the authorize URL and send the browser to Intervals.
+     def auth_init(self):
+-        user = self.require_user()
+-        if not user:
+-            return
++        url = urllib.parse.urlsplit(self.path)
++        q = dict(urllib.parse.parse_qsl(url.query))
++        uid = q.get('uid')
++        if not uid:
++            user = self.require_user()
++            if not user:
++                return
++            uid = user['id']
+         params = {"client_id": config.CLIENT_ID, "redirect_uri": config.REDIRECT_URI,
+-                  "scope": config.SCOPES, "state": sign_state(user["id"])}
++                  "scope": config.SCOPES, "state": sign_state(uid)}
+         self.redirect(AUTHORIZE_URL + "?" + urllib.parse.urlencode(params, safe=":,"))
+ 
+     # Step 2: Intervals redirects back here with ?code=&state=.
+diff --git a/static/app.js b/static/app.js
+index 368922e..32f2139 100644
+--- a/static/app.js
++++ b/static/app.js
+@@ -25,7 +25,7 @@ async function render() {
+     } else {
+       const why = st.status && st.status !== "disconnected" ? `<p class="muted">Status: ${esc(st.status)}</p>` : "";
+       card = `<div class="card">Intervals.icu is not connected.${why}
+-        <p><a class="btn" href="/api/intervals/auth/init">Connect Intervals.icu</a></p></div>`;
++        <p><a class="btn" href="/api/intervals/auth/init?uid=${me.id}">Connect Intervals.icu</a></p></div>`;
+     }
+     root.className = "";
+     root.innerHTML = `<p>Signed in as <b>${esc(me.name)}</b>.</p>${card}`;

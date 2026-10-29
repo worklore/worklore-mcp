@@ -1,0 +1,49 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..5d9ed74
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,10 @@
++# Почему не приходили сообщения
++
++`launchd` запускал задачу: снимок `launchctl print` показывает 6 запусков и последний код выхода 1. В `nightly-review.err` для каждого запуска повторяются две ошибки.
++
++1. `claude -p` завершался с `Not logged in · Please run /login`. У фонового процесса нет доступной авторизации Claude. Вход, работающий в интерактивном терминале, нужно отдельно проверить для той же учетной записи и окружения, в которых запускается LaunchAgent; сам снимок не содержит данных для восстановления авторизации.
++2. Сразу после этого скрипт пытался выполнить `status=$?`. В zsh `status` — специальная переменная только для чтения. Ошибка прерывала скрипт до вызова `notify.sh`, поэтому не приходило даже сообщение о неудаче.
++
++В `bin/nightly-review.zsh` переменная заменена на `review_exit`. Вывод и ошибки Claude теперь сохраняются в файле результата, а при неудаче первые 300 байт ошибки включаются в уведомление. В `bin/notify.sh` добавлен `curl -f`, чтобы HTTP-ошибка Telegram приводила к ненулевому коду выхода, а не выглядела как успешная отправка.
++
++Для успешного обзора необходимо восстановить авторизацию Claude в окружении фонового запуска. После этого можно проверить задачу на своем Mac. Содержимое этого снимка не позволяет выполнить такую проверку без обращения к внешним сервисам; здесь ничего не отправлялось и LaunchAgent не перезагружался.
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..aa09a6f 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -15,12 +15,12 @@ Do not modify any file."
+ 
+ cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
+ 
+-claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
++claude -p "$PROMPT" --output-format text > "$OUT" 2>&1
++review_exit=$?
+ 
+-if [ $status -ne 0 ]; then
+-  "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
+-  exit $status
++if [ "$review_exit" -ne 0 ]; then
++  "$NOTIFY" "nightly review FAILED (exit $review_exit): $(head -c 300 "$OUT")"
++  exit "$review_exit"
+ fi
+ 
+ "$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"
+diff --git a/bin/notify.sh b/bin/notify.sh
+index 818e531..bc9115f 100755
+--- a/bin/notify.sh
++++ b/bin/notify.sh
+@@ -3,5 +3,5 @@
+ set -eu
+ : "${TG_BOT_TOKEN:=$(security find-generic-password -s tg-bot -w)}"
+ CHAT_ID=123456789
+-curl -sS -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
++curl -fsS -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
+   -d chat_id="$CHAT_ID" --data-urlencode text="$1" > /dev/null

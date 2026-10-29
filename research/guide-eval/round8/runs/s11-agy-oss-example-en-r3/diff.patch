@@ -1,0 +1,22 @@
+diff --git a/src/app.py b/src/app.py
+index db49c5e..f6ade92 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -22,12 +22,15 @@ def words(text):
+ 
+ 
+ def similarity(a, b):
+-    """Shared-tag ratio (Jaccard), blended with shared words of the two bodies."""
++    """Shared‑tag ratio (Jaccard), blended with shared words of the two bodies.
++    Returns an integer percentage (0‑100) to satisfy DynamoDB type constraints.
++    """
+     ta, tb = set(a.get("tags", [])), set(b.get("tags", []))
+     tag_score = len(ta & tb) / len(ta | tb) if (ta | tb) else 0
+     wa, wb = words(a.get("body")), words(b.get("body"))
+     word_score = len(wa & wb) / len(wa | wb) if (wa | wb) else 0
+-    return round(0.7 * tag_score + 0.3 * word_score, 4)
++    # Convert the combined score to an integer percentage.
++    return int(round((0.7 * tag_score + 0.3 * word_score) * 100))
+ 
+ 
+ def related(story, existing):

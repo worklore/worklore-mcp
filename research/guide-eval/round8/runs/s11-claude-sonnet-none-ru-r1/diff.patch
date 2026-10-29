@@ -1,0 +1,77 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..4236db9
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,20 @@
++# Почему вторая публикация возвращает 500
++
++**Причина.** `publish()` кладёт в элемент поле `similar` со `score`, а `similarity()`
++возвращала `float` (`round(..., 4)`). boto3 не умеет сериализовать `float` в DynamoDB
++(`TypeError: Float types are not supported. Use Decimal types instead.`).
++Первая публикация проходит, потому что библиотека пуста, `similar == []` и floats нет.
++Со второй публикации появляются похожие истории со `score`-float, и `put_item` падает,
++а `handler` превращает исключение в 500. Любая следующая публикация падает так же.
++
++**Исправление** (`src/app.py`):
++- `similarity()` возвращает `Decimal(str(round(..., 4)))` — значение, которое принимает DynamoDB.
++- Убран `TableName=` из `table.scan()`: у ресурса `Table` имя уже задано, boto3 отклонил бы
++  этот аргумент как дубликат (следующая бы ошибка на той же ветке).
++
++**Чтобы не повторилось:** добавлен тест `test_second_publish_stores_similar_scores`
++(две публикации подряд; `FakeTable` отвергает float так же, как boto3). Раньше тест
++публиковал только одну историю и этот путь не покрывал.
++
++**Не исправлено, на заметку:** `scan()` не обходит страницы (`LastEvaluatedKey`), поэтому
++при росте библиотеки (>1 МБ) похожие истории будут считаться по неполному набору.
+diff --git a/src/app.py b/src/app.py
+index db49c5e..ff568e4 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -8,6 +8,7 @@ import json
+ import logging
+ import re
+ import time
++from decimal import Decimal
+ 
+ log = logging.getLogger("stories")
+ 
+@@ -27,7 +28,8 @@ def similarity(a, b):
+     tag_score = len(ta & tb) / len(ta | tb) if (ta | tb) else 0
+     wa, wb = words(a.get("body")), words(b.get("body"))
+     word_score = len(wa & wb) / len(wa | wb) if (wa | wb) else 0
+-    return round(0.7 * tag_score + 0.3 * word_score, 4)
++    # DynamoDB (boto3) rejects float; Decimal built from str keeps the exact value.
++    return Decimal(str(round(0.7 * tag_score + 0.3 * word_score, 4)))
+ 
+ 
+ def related(story, existing):
+@@ -51,7 +53,8 @@ def validate(story):
+ def publish(table, story):
+     """Store ``story`` with its related stories. Returns the stored item."""
+     validate(story)
+-    existing = table.scan(TableName=TABLE_NAME).get("Items", [])
++    # The Table resource is already bound to its table: no TableName argument.
++    existing = table.scan().get("Items", [])
+     item = {
+         "slug": story["slug"],
+         "title": story["title"],
+diff --git a/tests/test_publish.py b/tests/test_publish.py
+index 6c9ac44..0d37a33 100644
+--- a/tests/test_publish.py
++++ b/tests/test_publish.py
+@@ -23,6 +23,14 @@ class PublishTest(unittest.TestCase):
+         self.assertEqual(table.get_item(Key={"slug": "why-my-cron-ran-twice"})["Item"]["title"], "Why my cron ran twice")
+         self.assertEqual(table.scan()["Count"], 1)
+ 
++    def test_second_publish_stores_similar_scores(self):
++        table = FakeTable()
++        base = {"title": "T", "tags": ["cron", "linux"], "body": "two crontabs ran"}
++        app.publish(table, dict(base, slug="first-story"))
++        stored = app.publish(table, dict(base, slug="second-story", tags=["cron"]))
++        self.assertEqual(stored["similar"][0]["slug"], "first-story")
++        self.assertEqual(table.scan()["Count"], 2)
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

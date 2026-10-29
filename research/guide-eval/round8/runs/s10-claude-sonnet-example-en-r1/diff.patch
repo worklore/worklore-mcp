@@ -1,0 +1,137 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..7a09b75
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,12 @@
++# Analytics events
++
++Implemented all six events from `docs/EVENTS.md` using `Analytics.capture`, with the exact names and properties. No email or phone values are sent.
++
++- `registration_email_started` / `registration_phone_started`: fire in `onChanged`, but only on the first edit per screen visit (`_emailStartedFired`, `_phoneStartedFired`).
++- `loan_amount_changed`: fires from the slider's `onChangeEnd`, once per drag, with `amount`. `onChanged` only updates the UI.
++- `terms_accepted`: fires when the box is ticked (not when unticked).
++- `registration_continue_tapped`: fires when Continue is tapped, with `amount` and `terms`, before navigating.
++- `offers_scrolled`: fires from a `NotificationListener<ScrollEndNotification>` (top-level list only), with `offset` = scroll pixels. It fires once per completed scroll, not per scroll update. A user who scrolls many times sends many events. If that is too many, add a once-per-visit flag.
++
++## Colleague's note
++Applied: the per-keystroke / per-slider-step / per-scroll-update quota problem, which is the same hazard here (the spec's events map onto `onChanged` and scroll). I used the once-per-visit flag, `onChangeEnd` and `ScrollEndNotification` fixes. Not applied: the focus-lost variant (no event needs the final value), `FocusNode` tap events, and the debug-log verification (not run; no Flutter build was done here). Nothing was compiled or run.
+diff --git a/lib/screens/offer_screen.dart b/lib/screens/offer_screen.dart
+index 921ee59..ca81e26 100644
+--- a/lib/screens/offer_screen.dart
++++ b/lib/screens/offer_screen.dart
+@@ -1,5 +1,7 @@
+ import 'package:flutter/material.dart';
+ 
++import '../analytics.dart';
++
+ class Offer {
+   const Offer(this.bank, this.months, this.rate);
+   final String bank;
+@@ -27,7 +29,15 @@ class OfferScreen extends StatelessWidget {
+   Widget build(BuildContext context) {
+     return Scaffold(
+       appBar: AppBar(title: const Text('Offers')),
+-      body: ListView.builder(
++      body: NotificationListener<ScrollEndNotification>(
++        // Fire when a scroll settles, never on every scroll update.
++        onNotification: (n) {
++          if (n.depth == 0) {
++            Analytics.capture('offers_scrolled', {'offset': n.metrics.pixels});
++          }
++          return false;
++        },
++        child: ListView.builder(
+         itemCount: _offers.length,
+         itemBuilder: (context, i) {
+           final o = _offers[i];
+@@ -39,6 +49,7 @@ class OfferScreen extends StatelessWidget {
+             onTap: () {},
+           );
+         },
++        ),
+       ),
+     );
+   }
+diff --git a/lib/screens/registration_screen.dart b/lib/screens/registration_screen.dart
+index 059a250..b5602e2 100644
+--- a/lib/screens/registration_screen.dart
++++ b/lib/screens/registration_screen.dart
+@@ -1,5 +1,7 @@
+ import 'package:flutter/material.dart';
+ 
++import '../analytics.dart';
++
+ class RegistrationScreen extends StatefulWidget {
+   const RegistrationScreen({super.key});
+ 
+@@ -12,6 +14,8 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
+   final _phone = TextEditingController();
+   double _amount = 50000;
+   bool _terms = false;
++  bool _emailStartedFired = false;
++  bool _phoneStartedFired = false;
+ 
+   @override
+   void dispose() {
+@@ -36,14 +40,26 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
+               controller: _email,
+               keyboardType: TextInputType.emailAddress,
+               decoration: const InputDecoration(labelText: 'Email'),
+-              onChanged: (_) => setState(() {}),
++              onChanged: (_) {
++                if (!_emailStartedFired) {
++                  _emailStartedFired = true;
++                  Analytics.capture('registration_email_started');
++                }
++                setState(() {});
++              },
+             ),
+             const SizedBox(height: 12),
+             TextField(
+               controller: _phone,
+               keyboardType: TextInputType.phone,
+               decoration: const InputDecoration(labelText: 'Phone'),
+-              onChanged: (_) => setState(() {}),
++              onChanged: (_) {
++                if (!_phoneStartedFired) {
++                  _phoneStartedFired = true;
++                  Analytics.capture('registration_phone_started');
++                }
++                setState(() {});
++              },
+             ),
+             const SizedBox(height: 24),
+             Text('Loan amount: ${_amount.round()}'),
+@@ -54,17 +70,29 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
+               value: _amount,
+               label: _amount.round().toString(),
+               onChanged: (v) => setState(() => _amount = v),
++              // Once per drag, not per step.
++              onChangeEnd: (v) =>
++                  Analytics.capture('loan_amount_changed', {'amount': v.round()}),
+             ),
+             CheckboxListTile(
+               value: _terms,
+               title: const Text('I accept the terms and conditions'),
+               controlAffinity: ListTileControlAffinity.leading,
+-              onChanged: (v) => setState(() => _terms = v ?? false),
++              onChanged: (v) {
++                setState(() => _terms = v ?? false);
++                if (v == true) Analytics.capture('terms_accepted');
++              },
+             ),
+             const Spacer(),
+             FilledButton(
+               onPressed: _canContinue
+-                  ? () => Navigator.of(context).pushNamed('/offers')
++                  ? () {
++                      Analytics.capture('registration_continue_tapped', {
++                        'amount': _amount.round(),
++                        'terms': _terms,
++                      });
++                      Navigator.of(context).pushNamed('/offers');
++                    }
+                   : null,
+               child: const Text('Continue'),
+             ),

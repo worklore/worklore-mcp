@@ -1,0 +1,74 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..81e1f68
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,18 @@
++# Why the nightly job was silent
++
++Evidence: `launchctl-print.txt` shows `runs = 6`, `last exit code = 1`, so the job fires on schedule. The `.err` log shows two stacked failures, repeated every run.
++
++1. **`claude -p` fails with "Not logged in"** under launchd. The plist's environment has no `USER`, so the CLI can't find its login in the keychain. The agent exits non-zero and does no work.
++2. **`status=$?` kills the script** (`read-only variable: status`, zsh). This sits between the agent call and the failure notification, so the failure reporter dies before sending anything. That is why nothing ever arrived on Telegram.
++
++## Fixes
++- `bin/nightly-review.zsh`: `status` -> `rc`; `< /dev/null` on the agent call; run duration logged to stderr; an empty output file now counts as failure (exit 0 isn't proof of work); the notify wrapper logs to stderr if Telegram delivery itself fails.
++- `Library/LaunchAgents/com.vk.nightly-review.plist`: added `USER=vk` under `EnvironmentVariables`.
++
++After copying these to your home dir, reload the job (`launchctl bootout` then `bootstrap gui/$UID ...`; the plist is only read at load). Then run `launchctl kickstart -k gui/$UID/com.vk.nightly-review`. Check the exit code, a fresh non-empty `nightly-review-<date>.md`, a plausible duration, and the Telegram message. Then force a failure once to test the failure path. I could not run any of this here (no launchd, claude or Telegram in the sandbox). Only `zsh -n` syntax was checked.
++
++## Colleague's note: what applied
++- Applied: `launchctl print` first (the runs and exit code were already in your capture); read the stderr log; `status` read-only in zsh; `USER` in the plist; `< /dev/null`; duration logging; the exit-0-isn't-success caveat.
++- Not applied: the "prompt not received, pipe via stdin" bug. Your log shows no such error, and your prompt is passed as an argument with stdin closed, which the note says is fine.
++- Not applicable: the note's 16:50 schedule. Yours is 02:30, and I left it alone. README says 02:30, and the plist agrees.
++- Unverified: `notify.sh` reads its token from the keychain. It works by hand but may need the login keychain unlocked when run unattended. If failure notes still don't arrive, check the "notify failed" line in the `.err` log.
+diff --git a/Library/LaunchAgents/com.vk.nightly-review.plist b/Library/LaunchAgents/com.vk.nightly-review.plist
+index c347363..d49eacf 100644
+--- a/Library/LaunchAgents/com.vk.nightly-review.plist
++++ b/Library/LaunchAgents/com.vk.nightly-review.plist
+@@ -24,6 +24,8 @@
+   <dict>
+     <key>PATH</key>
+     <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
++    <key>USER</key>
++    <string>vk</string>
+   </dict>
+ </dict>
+ </plist>
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..be86eb4 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -13,14 +13,25 @@ For each commit: one line on what it changes and whether anything looks risky
+ End with a three-line summary I can read on my phone.
+ Do not modify any file."
+ 
+-cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
++notify() { "$NOTIFY" "$1" || print -u2 -- "notify failed: $1"; }
++cd "$REPO" || { notify "nightly review: repo missing"; exit 1; }
+ 
+-claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
++# Never assign to `status` in zsh (read-only); use rc. Closed stdin so the CLI
++# does not wait on it.
++START=$SECONDS
++claude -p "$PROMPT" --output-format text > "$OUT" < /dev/null
++rc=$?
++print -u2 -- "$(date '+%F %T') run took $((SECONDS - START))s, rc=$rc"
+ 
+-if [ $status -ne 0 ]; then
+-  "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
+-  exit $status
++if [ $rc -ne 0 ]; then
++  notify "nightly review FAILED (exit $rc), see $OUT"
++  exit $rc
+ fi
+ 
+-"$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"
++# Exit 0 is not proof of work: require real output.
++if [ ! -s "$OUT" ]; then
++  notify "nightly review FAILED: empty output in $OUT"
++  exit 1
++fi
++
++notify "nightly review done: $(head -c 300 "$OUT")"

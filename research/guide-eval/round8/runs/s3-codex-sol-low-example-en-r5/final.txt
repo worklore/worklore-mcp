@@ -1,0 +1,5 @@
+The job was running: the captured `launchctl` output shows six runs, all exiting with code 1. The error log shows `claude` could not find its login in the launchd environment. Then the wrapper assigned to zsh’s read-only `status` variable and stopped before sending a failure notification.
+
+I added `USER=vk` to the plist, changed the wrapper to use `rc`, closed stdin for the argument-based prompt, and made empty output and Telegram HTTP errors fail the job. [ANSWER.md](/tmp/h-zhL6Mn/ANSWER.md) records the causes and which parts of the colleague’s note applied.
+
+Both scripts passed syntax checks, and the plist passed `plutil -lint`. This snapshot cannot verify a live keychain login or Telegram delivery; I did not run the job or contact external services.

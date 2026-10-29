@@ -1,0 +1,99 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..5f5fc7c
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,19 @@
++# Why the nightly review was silent
++
++The job **did run**. The saved `launchctl print` shows six runs and `last exit code = 1`. Each run's stderr contains `Not logged in · Please run /login`, followed by `read-only variable: status` at line 19 of the wrapper. The empty stdout log does not mean launchd failed to start it.
++
++There were two stacked causes:
++
++1. `claude` could not use its login in the launchd environment. The saved launchd environment has a `PATH` entry but no `USER`; the wrapper also relies on `HOME`. The exact reason the CLI rejected its login cannot be proven from this snapshot alone, but the missing identity variables are the relevant launchd configuration defect. The plist now supplies `USER=vk` and `HOME=/Users/vk`.
++2. After `claude` failed, the wrapper tried `status=$?`. In zsh, `status` is read only. That assignment terminated the script before its failure notification. The wrapper now saves the exit code in `rc` and immediately reports agent failures.
++
++The wrapper now closes the agent's stdin when passing the prompt as a quoted argument, rejects an empty summary, logs run duration and outcome, and treats a failed notification as a job failure. The notifier now fails on HTTP errors and has connection and total timeouts.
++
++## Which parts of the colleague's note applied
++
++- **Applied:** use `launchctl print` and stderr to establish that launchd ran the job; avoid assigning to zsh's `status`; set `USER` for the headless CLI; close stdin when the prompt is an argument; check the actual output and log elapsed time; exercise both notification paths.
++- **Did not apply:** this wrapper already passed its multiline prompt as one quoted `-p` argument. The log reports a login error, not “Input must be provided,” so changing to a stdin prompt is not indicated here. The note's particular run count, schedule, and log location are from a different job.
++
++## Verification and limit
++
++The plist passes `plutil -lint`; both scripts pass shell syntax checks. With local stubs, the wrapper produced the expected notification on success, agent failure, empty output, and missing repo. A local `curl` stub confirmed the notifier propagates HTTP-style failures. These checks made no network calls. This is a snapshot, so the loaded agent was not reloaded or kicked off, and live CLI authentication and Telegram delivery remain to be confirmed in the real home directory.
+diff --git a/Library/LaunchAgents/com.vk.nightly-review.plist b/Library/LaunchAgents/com.vk.nightly-review.plist
+index c347363..c54a16a 100644
+--- a/Library/LaunchAgents/com.vk.nightly-review.plist
++++ b/Library/LaunchAgents/com.vk.nightly-review.plist
+@@ -22,6 +22,10 @@
+   <string>/Users/vk/Library/Logs/nightly-review.err</string>
+   <key>EnvironmentVariables</key>
+   <dict>
++    <key>HOME</key>
++    <string>/Users/vk</string>
++    <key>USER</key>
++    <string>vk</string>
+     <key>PATH</key>
+     <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+   </dict>
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..b90b033 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -2,10 +2,18 @@
+ # Nightly review of yesterday's commits, summary to Telegram.
+ set -u
+ 
++STARTED_AT=$(date +%s)
+ REPO="$HOME/projects/shop"
+ OUT="$HOME/Library/Logs/nightly-review-$(date +%F).md"
+ NOTIFY="$HOME/bin/notify.sh"
+ 
++fail() {
++  local rc=$1 message=$2
++  print -u2 -- "$message (after $(($(date +%s) - STARTED_AT))s)"
++  "$NOTIFY" "$message" || print -u2 -- "nightly review: failure notification failed"
++  exit "$rc"
++}
++
+ SINCE=$(date -v-1d +%F)
+ PROMPT="Review the commits in this repository since $SINCE.
+ For each commit: one line on what it changes and whether anything looks risky
+@@ -13,14 +21,16 @@ For each commit: one line on what it changes and whether anything looks risky
+ End with a three-line summary I can read on my phone.
+ Do not modify any file."
+ 
+-cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
++cd "$REPO" || fail 1 "nightly review FAILED: repo missing ($REPO)"
+ 
+-claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
++claude -p "$PROMPT" --output-format text < /dev/null > "$OUT"
++rc=$?
+ 
+-if [ $status -ne 0 ]; then
+-  "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
+-  exit $status
+-fi
++(( rc == 0 )) || fail "$rc" "nightly review FAILED (exit $rc), see $OUT"
++[[ -s "$OUT" ]] || fail 1 "nightly review FAILED: empty summary, see $OUT"
+ 
+-"$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"
++"$NOTIFY" "nightly review done: $(head -c 300 "$OUT")" || {
++  print -u2 -- "nightly review: success notification failed"
++  exit 1
++}
++print -u2 -- "nightly review succeeded in $(($(date +%s) - STARTED_AT))s; summary: $OUT"
+diff --git a/bin/notify.sh b/bin/notify.sh
+index 818e531..fdc35f9 100755
+--- a/bin/notify.sh
++++ b/bin/notify.sh
+@@ -3,5 +3,5 @@
+ set -eu
+ : "${TG_BOT_TOKEN:=$(security find-generic-password -s tg-bot -w)}"
+ CHAT_ID=123456789
+-curl -sS -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
++curl -fsS --connect-timeout 10 --max-time 30 -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
+   -d chat_id="$CHAT_ID" --data-urlencode text="$1" > /dev/null

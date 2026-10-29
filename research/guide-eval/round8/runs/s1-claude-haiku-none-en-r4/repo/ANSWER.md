@@ -1,0 +1,51 @@
+# HR targets clamped to the watch's zones
+
+## What was wrong
+
+`gen.py` wrote every HR corridor as
+
+```json
+{"units": "%lthr", "value": 88, "end": 93}
+```
+
+The likely cause: Intervals.icu expects `start` as the lower bound of a range
+(`value` is for a single target). I inferred this from the power example in the
+API forum thread; I did not confirm it against the official schema. With `value`
+as the lower bound and `end` as the upper bound, the range is probably not read
+as a corridor. The export then falls back to a single target and Garmin snaps it
+to the nearest of its own zone bands. That matches the readback: the 151–160 corridor came out as the Z4 band 151–162, and
+the other corridors also landed on zone edges.
+
+The readback also rules out two other causes. Using `units: "bpm"` with
+absolute values made the watch show 214–249 bpm, so the units were not the
+problem. `start_bpm`/`end_bpm` produced a constant 101, which means the export
+did not handle those keys as ranges either.
+
+## What changed
+
+`gen.py`, `hr_target()`: `"value"` → `"start"`. The `end` key and the `%lthr`
+units are unchanged. Output for `plans/tempo-run.json` now contains, for example:
+
+```json
+{"units": "%lthr", "start": 88, "end": 93}
+```
+
+Every step with an `hr_pct` range is affected, including the repeated Tempo and
+Float steps.
+
+## What was not verified
+
+I could not check this against a live push or the watch. Pushing to Intervals.icu
+is outside this task, and the web search did not turn up the official
+`workout_doc` schema. The `start`/`end` convention is inferred from the power
+example in the forum thread and from the readback. Confirm it by:
+
+1. Running `./push.sh event.json` with the regenerated file, then
+2. Checking that `GET /api/v1/athlete/{id}/events/{eventId}` or the `download`
+   endpoint shows `start`/`end` on the HR targets, and that the watch displays
+   151–160 for Tempo, 129–141 for Float, 117–129 for Warm-up, and 112–124 for
+   Cool-down after re-sync.
+
+If the watch still shows zone bands after that, the next thing to check is the
+athlete's zone configuration in Intervals.icu, and whether the export uses zone
+targets for HR rather than custom ranges.

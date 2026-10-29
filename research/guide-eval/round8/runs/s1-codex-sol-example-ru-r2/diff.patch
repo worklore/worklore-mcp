@@ -1,0 +1,26 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..7924e74
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,7 @@
++# Исправление пульсовых диапазонов
++
++В `gen.py` нижняя граница каждого HR-диапазона теперь записывается как `start`, а не `value`: `{"units": "%lthr", "start": <нижняя>, "end": <верхняя>}`. Согласно предоставленной заметке, пара `value`/`end` экспортируется как цель, привязанная к зонам часов, а `start`/`end` — как точный коридор Instant HR. Это соответствует наблюдению в `readback/watch-notes.md`: часы показывали границы собственных зон вместо запланированных процентов от LTHR 172.
++
++Из заметки коллеги пригодились различие между `start`/`end` и `value`/`end` и рекомендация оставлять единицы `%lthr`, чтобы Intervals переводил проценты в удары в минуту по своему LTHR. Эксперименты с `bpm` и `start_bpm`/`end_bpm` согласуются с уже записанными неудачными попытками, поэтому эти форматы не использованы. Правила для текстового `description` не понадобились: в нашем API readback `workout_doc.steps` уже заполнен, а задача касается диапазонов на часах.
++
++Локально проверен JSON для `plans/tempo-run.json`: все четыре HR-шага содержат ожидаемые `start`/`end` и `%lthr`; длительности, подписи и число повторов сохранены. Синхронизация с Garmin и проверка экрана часов не проводились, поскольку они требуют обращения к внешним сервисам.
+diff --git a/gen.py b/gen.py
+index be0b3bc..4aeba5a 100755
+--- a/gen.py
++++ b/gen.py
+@@ -10,7 +10,7 @@ import sys
+ def hr_target(step):
+     """HR corridor for a step, as a percentage of the athlete's LTHR."""
+     lo, hi = step["hr_pct"]
+-    return {"units": "%lthr", "value": lo, "end": hi}
++    return {"units": "%lthr", "start": lo, "end": hi}
+ 
+ 
+ def build_step(step):

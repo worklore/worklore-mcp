@@ -1,0 +1,106 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..9d8d980
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,18 @@
++# Cause and Fix for Second Publish Failure
++
++## Cause
++When the first story is published, the DynamoDB table is empty (`existing` items count is 0). As a result, `related(story, existing)` returns an empty list `[]`, and `similar` contains no items.
++
++When a second story is published:
++1. `publish()` queries existing stories using `table.scan()`, finding the first published story.
++2. `related()` computes the similarity between the new story and existing stories using `similarity()`.
++3. `similarity()` computes and returns a Python standard `float` value (`round(0.7 * tag_score + 0.3 * word_score, 4)`).
++4. `item["similar"]` is populated with a dict containing `"score": <float>`.
++5. When `table.put_item(Item=item)` is executed, `boto3`'s `TypeSerializer` validates the data types. DynamoDB does not support native Python `float` types and requires `decimal.Decimal` instead, raising `TypeError: Float types are not supported. Use Decimal types instead.`.
++6. `handler()` catches the unhandled `TypeError` under `except Exception:`, logs `publish failed`, and returns HTTP status code 500.
++
++## Fix
++In `src/app.py`:
++1. Imported `Decimal` from the standard `decimal` library.
++2. In `similarity()`, converted the calculated float score to `Decimal(str(score))`.
++3. Added unit tests in `tests/test_publish.py` covering publishing multiple stories and verifying that `app.publish` and `app.handler` succeed when similar stories are calculated and stored.
+diff --git a/src/app.py b/src/app.py
+index db49c5e..0be884a 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -8,6 +8,7 @@ import json
+ import logging
+ import re
+ import time
++from decimal import Decimal
+ 
+ log = logging.getLogger("stories")
+ 
+@@ -27,7 +28,8 @@ def similarity(a, b):
+     tag_score = len(ta & tb) / len(ta | tb) if (ta | tb) else 0
+     wa, wb = words(a.get("body")), words(b.get("body"))
+     word_score = len(wa & wb) / len(wa | wb) if (wa | wb) else 0
+-    return round(0.7 * tag_score + 0.3 * word_score, 4)
++    score = round(0.7 * tag_score + 0.3 * word_score, 4)
++    return Decimal(str(score))
+ 
+ 
+ def related(story, existing):
+diff --git a/tests/test_publish.py b/tests/test_publish.py
+index 6c9ac44..1927df6 100644
+--- a/tests/test_publish.py
++++ b/tests/test_publish.py
+@@ -1,3 +1,4 @@
++import json
+ import os
+ import sys
+ import unittest
+@@ -23,6 +24,50 @@ class PublishTest(unittest.TestCase):
+         self.assertEqual(table.get_item(Key={"slug": "why-my-cron-ran-twice"})["Item"]["title"], "Why my cron ran twice")
+         self.assertEqual(table.scan()["Count"], 1)
+ 
++    def test_publish_second_story_succeeds_with_similarity(self):
++        table = FakeTable()
++        story1 = {
++            "slug": "why-my-cron-ran-twice",
++            "title": "Why my cron ran twice",
++            "tags": ["cron", "linux"],
++            "body": "Two crontabs, one for root and one for me, both had the line.",
++        }
++        story2 = {
++            "slug": "debugging-cron-jobs",
++            "title": "Debugging Cron Jobs",
++            "tags": ["cron"],
++            "body": "Crontab debugging is tricky when environment variables differ.",
++        }
++        app.publish(table, story1)
++        stored2 = app.publish(table, story2)
++        self.assertEqual(stored2["slug"], "debugging-cron-jobs")
++        self.assertEqual(len(stored2["similar"]), 1)
++        self.assertEqual(stored2["similar"][0]["slug"], "why-my-cron-ran-twice")
++        self.assertGreater(stored2["similar"][0]["score"], 0)
++
++    def test_handler_second_publish(self):
++        table = FakeTable()
++        event1 = {
++            "body": json.dumps({
++                "slug": "why-my-cron-ran-twice",
++                "title": "Why my cron ran twice",
++                "tags": ["cron", "linux"],
++                "body": "Two crontabs, one for root and one for me, both had the line.",
++            })
++        }
++        event2 = {
++            "body": json.dumps({
++                "slug": "debugging-cron-jobs",
++                "title": "Debugging Cron Jobs",
++                "tags": ["cron"],
++                "body": "Crontab debugging is tricky when environment variables differ.",
++            })
++        }
++        res1 = app.handler(event1, table)
++        self.assertEqual(res1["statusCode"], 201)
++        res2 = app.handler(event2, table)
++        self.assertEqual(res2["statusCode"], 201)
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

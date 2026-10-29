@@ -1,0 +1,56 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..fc5e39d
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,30 @@
++# Root Cause Analysis and Fix
++
++## Why the job never reported anything
++
++Even though `claude` failed with exit code 1 (`Not logged in · Please run /login`), no failure notification was ever delivered to Telegram because of a fatal shell error on line 19 of `bin/nightly-review.zsh`:
++
++```zsh
++claude -p "$PROMPT" --output-format text > "$OUT"
++status=$?
++```
++
++In `zsh`, `status` is a special built-in read-only parameter (an alias for `$?`). Attempting an assignment like `status=$?` causes a fatal execution error:
++```
++zsh: read-only variable: status
++```
++
++Because `status=$?` triggers a fatal error, `zsh` aborts the execution of `bin/nightly-review.zsh` immediately at line 19. The subsequent lines (lines 21–24), which handle non-zero exit codes and call `bin/notify.sh "nightly review FAILED..."`, were never reached.
++
++As recorded in `Library/Logs/nightly-review.err`:
++```
++Not logged in · Please run /login
++/Users/vk/bin/nightly-review.zsh:19: read-only variable: status
++```
++
++## Fix
++
++In `bin/nightly-review.zsh`, renamed the variable `status` to `exit_code`:
++- Changed `status=$?` to `exit_code=$?`
++- Updated the check `if [ $exit_code -ne 0 ]; then`
++- Updated the notification and exit statements to use `$exit_code`
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..f9f7692 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -16,11 +16,11 @@ Do not modify any file."
+ cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
+ 
+ claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
++exit_code=$?
+ 
+-if [ $status -ne 0 ]; then
+-  "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
+-  exit $status
++if [ $exit_code -ne 0 ]; then
++  "$NOTIFY" "nightly review FAILED (exit $exit_code), see $OUT"
++  exit $exit_code
+ fi
+ 
+ "$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"

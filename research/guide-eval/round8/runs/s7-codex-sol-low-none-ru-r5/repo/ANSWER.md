@@ -1,0 +1,7 @@
+# Intervals.icu connection failures
+
+1. The Connect control was a normal link to `/api/intervals/auth/init`. Browser navigation does not include the `Authorization: Bearer` header that the SPA adds to `fetch` requests. The endpoint therefore returned 401 for every athlete. Connect now calls the endpoint through the authenticated API wrapper, receives an authorize URL, and navigates to it.
+2. The authorize URL included `CALENDAR:READ` and `CALENDAR:WRITE`, added for calendar sync. The captured request received `invalid_request` before consent; those new scopes are the relevant change from the previously successful authorization. The requested scopes now contain only `ACTIVITY:READ`, `ACTIVITY:WRITE`, and `WELLNESS:READ`. Calendar access through this OAuth request was removed; any separate calendar sync capability must use scopes supported by Intervals.icu.
+3. Rivera's token response contained neither `expires_in` nor `refresh_token`. The backend invented a one hour lifetime and then marked the connection expired when it could not refresh it. A missing `expires_in` now means no known expiry; the refresher skips that connection. Tokens with an explicit expiry retain the refresh behavior.
+
+Verification: `python3 -m unittest test_integration.py` checks authenticated authorization URL creation and storage of a token without an expiry. The provider authorization and token exchange were not called during verification.

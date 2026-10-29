@@ -1,0 +1,28 @@
+#!/bin/zsh
+# Nightly review of yesterday's commits, summary to Telegram.
+set -u
+
+REPO="$HOME/projects/shop"
+OUT="$HOME/Library/Logs/nightly-review-$(date +%F).md"
+NOTIFY="$HOME/bin/notify.sh"
+
+SINCE=$(date -v-1d +%F)
+PROMPT="Review the commits in this repository since $SINCE.
+For each commit: one line on what it changes and whether anything looks risky
+(migrations, auth, payments, deleted tests).
+End with a three-line summary I can read on my phone.
+Do not modify any file."
+
+cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
+
+T0=$SECONDS
+claude -p "$PROMPT" --output-format text < /dev/null > "$OUT"
+rc=$?   # never assign to `status`: read-only in zsh
+print -r -- "$(date +%FT%T) claude exit=$rc duration=$((SECONDS-T0))s" >&2
+
+if [ $rc -ne 0 ] || [ ! -s "$OUT" ]; then
+  "$NOTIFY" "nightly review FAILED (exit $rc, $((SECONDS-T0))s), see $OUT and nightly-review.err"
+  exit $(( rc ? rc : 1 ))
+fi
+
+"$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"

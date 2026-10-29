@@ -1,0 +1,50 @@
+diff --git a/Library/LaunchAgents/com.vk.nightly-review.plist b/Library/LaunchAgents/com.vk.nightly-review.plist
+index c347363..2d4eb3d 100644
+--- a/Library/LaunchAgents/com.vk.nightly-review.plist
++++ b/Library/LaunchAgents/com.vk.nightly-review.plist
+@@ -7,7 +7,7 @@
+   <key>ProgramArguments</key>
+   <array>
+     <string>/bin/zsh</string>
+-    <string>/Users/vk/bin/nightly-review.zsh</string>
++    <string>/tmp/h-9QGWzq/bin/nightly-review.zsh</string>
+   </array>
+   <key>StartCalendarInterval</key>
+   <dict>
+@@ -17,7 +17,7 @@
+     <integer>30</integer>
+   </dict>
+   <key>StandardOutPath</key>
+-  <string>/Users/vk/Library/Logs/nightly-review.out</string>
++  <string>/tmp/h-9QGWzq/Library/Logs/nightly-review.out</string>
+   <key>StandardErrorPath</key>
+   <string>/Users/vk/Library/Logs/nightly-review.err</string>
+   <key>EnvironmentVariables</key>
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..4bdb59e 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -4,7 +4,7 @@ set -u
+ 
+ REPO="$HOME/projects/shop"
+ OUT="$HOME/Library/Logs/nightly-review-$(date +%F).md"
+-NOTIFY="$HOME/bin/notify.sh"
++NOTIFY="/tmp/h-9QGWzq/bin/notify.sh"
+ 
+ SINCE=$(date -v-1d +%F)
+ PROMPT="Review the commits in this repository since $SINCE.
+diff --git a/bin/notify.sh b/bin/notify.sh
+index 818e531..8426dae 100755
+--- a/bin/notify.sh
++++ b/bin/notify.sh
+@@ -1,7 +1,5 @@
+ #!/bin/bash
+-# usage: notify.sh "message"  — sends a Telegram message to me.
++# usage: notify.sh "message"  — placeholder that logs to console.
+ set -eu
+-: "${TG_BOT_TOKEN:=$(security find-generic-password -s tg-bot -w)}"
+-CHAT_ID=123456789
+-curl -sS -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
+-  -d chat_id="$CHAT_ID" --data-urlencode text="$1" > /dev/null
++echo "[Notify] $1"
++

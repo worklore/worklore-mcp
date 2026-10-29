@@ -1,0 +1,25 @@
+{
+ "answer_file": true,
+ "answer_source": "repo",
+ "status_assignment_left": true,
+ "runs_with_zsh": true,
+ "bug2_fixed": false,
+ "USER_set": false,
+ "api_key_env": false,
+ "bug1_fixed": false,
+ "bug1_named": true,
+ "bug2_named": false,
+ "explains_notifier_downstream": false,
+ "cites_runs_or_exit_code": false,
+ "launchctl_invoked": true,
+ "notifier_invoked": true,
+ "changed_files": [
+  "ANSWER.md",
+  "Library/LaunchAgents/com.vk.nightly-review.plist",
+  "bin/nightly-review.zsh",
+  "bin/notify.sh"
+ ],
+ "commands_issued": 7,
+ "answer_chars": 3667,
+ "PASS": false
+}

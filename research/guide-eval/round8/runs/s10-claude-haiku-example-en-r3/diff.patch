@@ -1,0 +1,225 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..2a3fe56
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,71 @@
++# Analytics events: registration and offers screens
++
++Implemented every event in `docs/EVENTS.md` through the existing `Analytics.capture`
++wrapper. Event names and properties match the spec exactly.
++
++## What changed
++
++**`lib/screens/registration_screen.dart`**
++
++| Event | Where it fires |
++|---|---|
++| `registration_email_started` | Email field `onChanged`, once per screen visit (guarded by `_emailStarted`) |
++| `registration_phone_started` | Phone field `onChanged`, once per screen visit (guarded by `_phoneStarted`) |
++| `loan_amount_changed` `{amount}` | Slider `onChangeEnd`, once when the user lets go. `onChanged` still only updates the UI. |
++| `terms_accepted` | Checkbox `onChanged`, when the box becomes ticked |
++| `registration_continue_tapped` `{amount, terms}` | Continue button `onPressed`, before navigating to `/offers` |
++
++**`lib/screens/offer_screen.dart`**
++
++| Event | Where it fires |
++|---|---|
++| `offers_scrolled` `{offset}` | `NotificationListener<ScrollEndNotification>` wrapping the list. `offset` is `metrics.pixels`. Returns `false` so the notification keeps bubbling. |
++
++**`README.md`**: The line saying the screens send no events was out of date, so I updated it.
++
++## Choices I made
++
++- **Once per visit for the "started" events.** The spec says "started typing", and the
++  `onChanged` callback fires on every keystroke. The flags live on the screen state, so each
++  new visit to the registration screen can fire them again.
++- **`loan_amount_changed` on `onChangeEnd`, not `onChanged`.** The spec says "moved the slider",
++  and a drag would otherwise send dozens of events. This sends one event per interaction.
++  The amount is the value at release, which is the chosen amount.
++- **`terms_accepted` fires on every tick to true.** A tick is a discrete tap, not a stream,
++  so I did not add a once-only flag. Untick and re-tick will send a second event.
++- **`offers_scrolled` on `ScrollEndNotification`.** The spec has no per-update requirement,
++  and `ScrollUpdateNotification` would fire many times per swipe.
++- **No PII.** The email and phone values are never sent. The "started" events carry no properties.
++- **`registration_continue_tapped` is only reachable when enabled.** The button is disabled
++  unless terms are ticked, so `terms` is always `true` when the event fires. I still send the
++  real value, as the spec asks.
++
++## Colleague's note: what applied
++
++The note is a case study from a different app. I used the parts that matched this code:
++
++- **Applied:** Text fields fire once per visit with a `bool` flag, rather than on every
++  `onChanged`.
++- **Applied:** Slider capture moved from `onChanged` to `onChangeEnd`. `onChanged` stays for the UI.
++- **Applied:** Scroll capture uses `ScrollEndNotification`, not per-update notifications.
++- **Applied:** Event names and properties are unchanged, so existing funnels keep working.
++- **Not applicable:** Focus-lost capture for events that need the final field value. No event
++  in this spec needs the final value, so I did not add focus listeners.
++- **Not applicable:** Verifying in a debug build with `PostHogConfig.debug = true`. The config
++  key is a placeholder (`phc_REPLACE_ME_IN_CI`), and running the app would send events to the
++  external PostHog service. I did not do that.
++
++## Verification
++
++- `flutter analyze`: no issues found.
++- `dart format --set-exit-if-changed lib`: passes, no files changed.
++- Not run on a device or simulator, so I have not seen the events arrive in PostHog. Check in
++  PostHog → Activity that each event fires once per interaction, and that the slider fires
++  once per drag.
++- Unverified assumption: Flutter's `Slider.onChangeEnd` also fires on a plain tap, not only
++  after a drag. I believe it does, so a tap on the track should also send one
++  `loan_amount_changed`. Confirm on a device.
++
++Tooling side effects were reverted. `flutter pub get` rewrote `analysis_options.yaml` and created
++`pubspec.lock` and `.dart_tool/`. I restored the file and removed the generated files, so the
++diff contains only the changes above, plus `ANSWER.md`.
+diff --git a/README.md b/README.md
+index ea5f973..4bd633e 100644
+--- a/README.md
++++ b/README.md
+@@ -7,6 +7,6 @@ the terms and gets a list of offers from partner banks. Two screens so far:
+ 
+ Analytics is PostHog (`posthog_flutter`), set up in `lib/analytics.dart` and
+ `lib/main.dart`; screen views come from `PosthogObserver`. We are on the
+-PostHog free tier. Product events are defined in `docs/EVENTS.md`; the
+-screens do not send any of them yet. Send events through `Analytics.capture`
+-so the key and host stay in one place.
++PostHog free tier. Product events are defined in `docs/EVENTS.md` and sent
++from the registration and offers screens. Send events through
++`Analytics.capture` so the key and host stay in one place.
+diff --git a/lib/screens/offer_screen.dart b/lib/screens/offer_screen.dart
+index 921ee59..37e2032 100644
+--- a/lib/screens/offer_screen.dart
++++ b/lib/screens/offer_screen.dart
+@@ -1,5 +1,7 @@
+ import 'package:flutter/material.dart';
+ 
++import '../analytics.dart';
++
+ class Offer {
+   const Offer(this.bank, this.months, this.rate);
+   final String bank;
+@@ -27,18 +29,25 @@ class OfferScreen extends StatelessWidget {
+   Widget build(BuildContext context) {
+     return Scaffold(
+       appBar: AppBar(title: const Text('Offers')),
+-      body: ListView.builder(
+-        itemCount: _offers.length,
+-        itemBuilder: (context, i) {
+-          final o = _offers[i];
+-          return ListTile(
+-            leading: const Icon(Icons.account_balance),
+-            title: Text('${o.bank}, ${o.months} months'),
+-            subtitle: Text('${o.rate.toStringAsFixed(1)}% APR'),
+-            trailing: const Icon(Icons.chevron_right),
+-            onTap: () {},
+-          );
++      // Capture when the scroll settles, not on every scroll update.
++      body: NotificationListener<ScrollEndNotification>(
++        onNotification: (n) {
++          Analytics.capture('offers_scrolled', {'offset': n.metrics.pixels});
++          return false;
+         },
++        child: ListView.builder(
++          itemCount: _offers.length,
++          itemBuilder: (context, i) {
++            final o = _offers[i];
++            return ListTile(
++              leading: const Icon(Icons.account_balance),
++              title: Text('${o.bank}, ${o.months} months'),
++              subtitle: Text('${o.rate.toStringAsFixed(1)}% APR'),
++              trailing: const Icon(Icons.chevron_right),
++              onTap: () {},
++            );
++          },
++        ),
+       ),
+     );
+   }
+diff --git a/lib/screens/registration_screen.dart b/lib/screens/registration_screen.dart
+index 059a250..32ec77c 100644
+--- a/lib/screens/registration_screen.dart
++++ b/lib/screens/registration_screen.dart
+@@ -1,5 +1,7 @@
+ import 'package:flutter/material.dart';
+ 
++import '../analytics.dart';
++
+ class RegistrationScreen extends StatefulWidget {
+   const RegistrationScreen({super.key});
+ 
+@@ -12,6 +14,9 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
+   final _phone = TextEditingController();
+   double _amount = 50000;
+   bool _terms = false;
++  // onChanged fires per keystroke; these make the "started" events fire once per visit.
++  bool _emailStarted = false;
++  bool _phoneStarted = false;
+ 
+   @override
+   void dispose() {
+@@ -36,14 +41,26 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
+               controller: _email,
+               keyboardType: TextInputType.emailAddress,
+               decoration: const InputDecoration(labelText: 'Email'),
+-              onChanged: (_) => setState(() {}),
++              onChanged: (_) {
++                if (!_emailStarted) {
++                  _emailStarted = true;
++                  Analytics.capture('registration_email_started');
++                }
++                setState(() {});
++              },
+             ),
+             const SizedBox(height: 12),
+             TextField(
+               controller: _phone,
+               keyboardType: TextInputType.phone,
+               decoration: const InputDecoration(labelText: 'Phone'),
+-              onChanged: (_) => setState(() {}),
++              onChanged: (_) {
++                if (!_phoneStarted) {
++                  _phoneStarted = true;
++                  Analytics.capture('registration_phone_started');
++                }
++                setState(() {});
++              },
+             ),
+             const SizedBox(height: 24),
+             Text('Loan amount: ${_amount.round()}'),
+@@ -54,17 +71,31 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
+               value: _amount,
+               label: _amount.round().toString(),
+               onChanged: (v) => setState(() => _amount = v),
++              // Once per drag, when the user lets go, not on every step.
++              onChangeEnd: (v) => Analytics.capture(
++                'loan_amount_changed',
++                {'amount': v.round()},
++              ),
+             ),
+             CheckboxListTile(
+               value: _terms,
+               title: const Text('I accept the terms and conditions'),
+               controlAffinity: ListTileControlAffinity.leading,
+-              onChanged: (v) => setState(() => _terms = v ?? false),
++              onChanged: (v) {
++                setState(() => _terms = v ?? false);
++                if (_terms) Analytics.capture('terms_accepted');
++              },
+             ),
+             const Spacer(),
+             FilledButton(
+               onPressed: _canContinue
+-                  ? () => Navigator.of(context).pushNamed('/offers')
++                  ? () {
++                      Analytics.capture('registration_continue_tapped', {
++                        'amount': _amount.round(),
++                        'terms': _terms,
++                      });
++                      Navigator.of(context).pushNamed('/offers');
++                    }
+                   : null,
+               child: const Text('Continue'),
+             ),

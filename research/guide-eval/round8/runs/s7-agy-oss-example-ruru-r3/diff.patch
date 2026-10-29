@@ -1,0 +1,88 @@
+diff --git a/config.py b/config.py
+index 54a8144..7a58586 100644
+--- a/config.py
++++ b/config.py
+@@ -8,6 +8,6 @@ INTERVALS_BASE = os.environ.get("INTERVALS_BASE", "https://intervals.icu")
+ CLIENT_ID = "tricoach-dev"
+ CLIENT_SECRET = "s3cr3t-placeholder-0000"
+ REDIRECT_URI = f"http://localhost:{PORT}/api/intervals/callback"
+-SCOPES = "ACTIVITY:READ,ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:READ,CALENDAR:WRITE"
++SCOPES = "ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:READ,CALENDAR:WRITE"
+ 
+ REFRESH_INTERVAL = 60      # seconds between passes of the token refresher
+diff --git a/server.py b/server.py
+index 351cbb7..4f07f02 100644
+--- a/server.py
++++ b/server.py
+@@ -165,13 +165,17 @@ class Handler(BaseHTTPRequestHandler):
+             user = self.require_user()
+             return user and self.send_json(200, user)
+         if url.path == "/api/intervals/auth/init":
+-            return self.auth_init()
++            # For GET, respond with method not allowed; use POST for auth init
++            self.send_json(405, {"error": "Method Not Allowed. Use POST."})
++            return
+         if url.path == "/api/intervals/callback":
+             return self.callback(q)
+         if url.path == "/api/intervals/status":
+             return self.status()
+         if url.path == "/api/intervals/wellness":
+             return self.wellness()
++        if url.path == "/api/intervals/auth/init":
++            return self.auth_init_post()
+         self.send_json(404, {"error": "not found"})
+ 
+     def do_POST(self):
+@@ -183,10 +187,13 @@ class Handler(BaseHTTPRequestHandler):
+                     CONNECTIONS.pop(user["id"], None)
+                 self.send_json(200, {"ok": True})
+             return
++        if url.path == "/api/intervals/auth/init":
++            return self.auth_init_post()
+         self.send_json(404, {"error": "not found"})
+ 
+     # Step 1: build the authorize URL and send the browser to Intervals.
+     def auth_init(self):
++        # Deprecated GET endpoint; keep for backward compatibility if needed.
+         user = self.require_user()
+         if not user:
+             return
+@@ -194,6 +201,17 @@ class Handler(BaseHTTPRequestHandler):
+                   "scope": config.SCOPES, "state": sign_state(user["id"])}
+         self.redirect(AUTHORIZE_URL + "?" + urllib.parse.urlencode(params, safe=":,"))
+ 
++    # New POST endpoint: returns authorize_url as JSON
++    def auth_init_post(self):
++        user = self.require_user()
++        if not user:
++            return
++        params = {"client_id": config.CLIENT_ID, "redirect_uri": config.REDIRECT_URI,
++                  "scope": config.SCOPES, "state": sign_state(user["id"])}
++        url = AUTHORIZE_URL + "?" + urllib.parse.urlencode(params, safe=":,")
++        self.send_json(200, {"authorize_url": url})
++
++
+     # Step 2: Intervals redirects back here with ?code=&state=.
+     def callback(self, q):
+         user_id = verify_state(q.get("state", ""))
+diff --git a/static/app.js b/static/app.js
+index 368922e..fb627cd 100644
+--- a/static/app.js
++++ b/static/app.js
+@@ -31,6 +31,16 @@ async function render() {
+     root.innerHTML = `<p>Signed in as <b>${esc(me.name)}</b>.</p>${card}`;
+     const d = document.getElementById("disconnect");
+     if (d) d.onclick = async () => { await api("/api/intervals/disconnect", { method: "POST" }); render(); };
++      // intercept connect link (GET) to use POST auth init
++      const connectLink = document.querySelector('a[href="/api/intervals/auth/init"]');
++      if (connectLink) {
++        connectLink.addEventListener('click', async (e) => {
++          e.preventDefault();
++          const resp = await fetch('/api/intervals/auth/init', {method: 'POST'});
++          const data = await resp.json();
++          if (data.authorize_url) window.location.assign(data.authorize_url);
++        });
++      }
+   } catch (e) {
+     root.innerHTML = `<p class="card">Error: ${esc(e.message)}</p>`;
+   }

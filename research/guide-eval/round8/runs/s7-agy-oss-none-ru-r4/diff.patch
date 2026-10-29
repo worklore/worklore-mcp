@@ -1,0 +1,51 @@
+diff --git a/server.py b/server.py
+index 351cbb7..dbe4838 100644
+--- a/server.py
++++ b/server.py
+@@ -187,12 +187,22 @@ class Handler(BaseHTTPRequestHandler):
+ 
+     # Step 1: build the authorize URL and send the browser to Intervals.
+     def auth_init(self):
+-        user = self.require_user()
++        # Allow authentication initiation without requiring the Authorization header.
++        # The client provides the token as a query parameter "token".
++        token = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).get('token', [None])[0]
++        user = None
++        if token:
++            user = USERS.get(token)
++        if not user:
++            # Fallback to standard auth header if present.
++            user = self.require_user()
+         if not user:
++            self.send_json(401, {"error": "unauthorized"})
+             return
+         params = {"client_id": config.CLIENT_ID, "redirect_uri": config.REDIRECT_URI,
+                   "scope": config.SCOPES, "state": sign_state(user["id"])}
+-        self.redirect(AUTHORIZE_URL + "?" + urllib.parse.urlencode(params, safe=":,"))
++        # Respond with JSON containing the authorize URL for the client to redirect.
++        self.send_json(200, {"url": AUTHORIZE_URL + "?" + urllib.parse.urlencode(params, safe=":," )})
+ 
+     # Step 2: Intervals redirects back here with ?code=&state=.
+     def callback(self, q):
+diff --git a/static/app.js b/static/app.js
+index 368922e..caecd75 100644
+--- a/static/app.js
++++ b/static/app.js
+@@ -25,7 +25,16 @@ async function render() {
+     } else {
+       const why = st.status && st.status !== "disconnected" ? `<p class="muted">Status: ${esc(st.status)}</p>` : "";
+       card = `<div class="card">Intervals.icu is not connected.${why}
+-        <p><a class="btn" href="/api/intervals/auth/init">Connect Intervals.icu</a></p></div>`;
++        <p><button class="btn" id="connect">Connect Intervals.icu</button></p></div>`;
++    const c = document.getElementById("connect");
++    if (c) c.onclick = async () => {
++      const data = await api("/api/intervals/auth/init");
++      if (data.url) {
++        window.location = data.url;
++      } else {
++        throw new Error("Failed to get auth URL");
++      }
++    };
+     }
+     root.className = "";
+     root.innerHTML = `<p>Signed in as <b>${esc(me.name)}</b>.</p>${card}`;

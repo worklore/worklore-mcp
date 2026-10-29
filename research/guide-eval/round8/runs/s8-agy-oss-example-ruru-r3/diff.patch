@@ -1,0 +1,19 @@
+diff --git a/bot.py b/bot.py
+index e2ff241..d9b0d3c 100644
+--- a/bot.py
++++ b/bot.py
+@@ -128,9 +128,11 @@ def athlete_context(a, today):
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    # Split into two cacheable segments: static instructions and dynamic athlete context.
++    instr_block = {"type": "text", "text": INSTRUCTIONS, "cache_control": {"type": "ephemeral"}}
++    ctx_text = athlete_context(a, today)
++    ctx_block = {"type": "text", "text": ctx_text, "cache_control": {"type": "ephemeral"}}
++    return [instr_block, ctx_block]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [

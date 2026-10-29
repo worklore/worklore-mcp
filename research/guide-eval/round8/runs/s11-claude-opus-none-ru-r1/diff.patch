@@ -1,0 +1,166 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..c722c30
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,45 @@
++# Почему вторая публикация возвращает 500
++
++## Причина
++
++`publish()` сохраняет вместе с историей список `similar: [{slug, score}]`.
++`score` считает `similarity()` — это `round(0.7 * tag_score + 0.3 * word_score, 4)`,
++то есть **Python `float`**. Сериализатор DynamoDB в boto3 float не принимает:
++
++```
++TypeError: Float types are not supported. Use Decimal types instead.
++```
++
++(`logs/error.log`, `src/app.py:63` → `table.put_item(Item=item)`), и `handler()`
++превращает это исключение в 500.
++
++Почему первая публикация проходит: таблица пуста, `scan` ничего не возвращает,
++`similar == []`, и в item нет ни одного float (`published_at` — `int`). Как только
++в библиотеке появляется хотя бы одна история, у каждой следующей в `similar` есть
++`score: float`, поэтому падает **каждая** публикация, начиная со второй (в логе — две
++подряд). Существующий тест публиковал историю только в пустую таблицу, поэтому
++этот путь ни разу не выполнялся.
++
++## Исправление (`src/app.py`)
++
++1. Добавлена функция `to_dynamo()`: рекурсивно проходит по item и заменяет каждый
++   `float` на `Decimal(repr(value))` (через `repr`, чтобы `0.7` стало `Decimal('0.7')`,
++   а не `0.6999999999…`). NaN/Infinity отвергаются как `ValueError` → 400.
++   `publish()` пропускает через неё **весь** item перед `put_item`, а не только поле
++   `score` — так любое числовое поле, добавленное позже, тоже не сломает запись.
++2. `validate()` теперь требует, чтобы `tags` был списком строк. Раньше клиент мог
++   прислать, например, `"tags": [1.5]` (float) или смешанные типы (`sorted()` падает
++   с `TypeError`) и получить 500 вместо 400.
++
++## Чтобы не повторилось (`tests/test_publish.py`)
++
++- `test_second_publish_stores_scores` — три публикации подряд через `handler()`:
++  все должны вернуть 201, у второй в `similar` хранится `score` типа `Decimal > 0`.
++  На старом коде тест падает с `500 != 201`, т.е. воспроизводит баг из лога.
++- `test_non_string_tags_rejected` — некорректные теги дают 400, а не 500.
++
++`python3 -m unittest discover tests` — все 3 теста проходят.
++
++Замечание вне рамок этой ошибки: `table.scan()` читает только первую страницу
++(до 1 МБ) и не обрабатывает `LastEvaluatedKey`, так что при большой библиотеке
++«похожие» будут считаться не по всем историям.
+diff --git a/src/app.py b/src/app.py
+index db49c5e..8b7f4e7 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -7,7 +7,9 @@ stories already in the library (``similar``), so the reader page can show
+ import json
+ import logging
+ import re
++import math
+ import time
++from decimal import Decimal
+ 
+ log = logging.getLogger("stories")
+ 
+@@ -40,26 +42,48 @@ def related(story, existing):
+     return scored[:TOP_N]
+ 
+ 
++def to_dynamo(value):
++    """Return ``value`` with every float replaced by a Decimal.
++
++    boto3's DynamoDB serializer rejects floats outright, so every item goes
++    through this before ``put_item``.
++    """
++    if isinstance(value, bool):
++        return value
++    if isinstance(value, float):
++        if not math.isfinite(value):
++            raise ValueError(f"cannot store non-finite number: {value!r}")
++        return Decimal(repr(value))
++    if isinstance(value, dict):
++        return {k: to_dynamo(v) for k, v in value.items()}
++    if isinstance(value, (list, tuple)):
++        return [to_dynamo(v) for v in value]
++    return value
++
++
+ def validate(story):
+     for k in ("slug", "title", "body"):
+         if not story.get(k):
+             raise ValueError(f"missing field: {k}")
+     if not re.fullmatch(r"[a-z0-9-]{3,80}", story["slug"]):
+         raise ValueError("bad slug")
++    tags = story.get("tags", [])
++    if not isinstance(tags, list) or not all(isinstance(t, str) for t in tags):
++        raise ValueError("tags must be a list of strings")
+ 
+ 
+ def publish(table, story):
+     """Store ``story`` with its related stories. Returns the stored item."""
+     validate(story)
+     existing = table.scan(TableName=TABLE_NAME).get("Items", [])
+-    item = {
++    item = to_dynamo({
+         "slug": story["slug"],
+         "title": story["title"],
+         "tags": sorted(set(story.get("tags", []))),
+         "body": story["body"],
+         "published_at": int(time.time()),
+         "similar": related(story, existing),
+-    }
++    })
+     table.put_item(Item=item)
+     log.info("publish slug=%s similar=%d stored", item["slug"], len(item["similar"]))
+     return item
+diff --git a/tests/test_publish.py b/tests/test_publish.py
+index 6c9ac44..c14e08c 100644
+--- a/tests/test_publish.py
++++ b/tests/test_publish.py
+@@ -1,6 +1,8 @@
++import json
+ import os
+ import sys
+ import unittest
++from decimal import Decimal
+ 
+ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+ sys.path.insert(0, os.path.dirname(__file__))
+@@ -23,6 +25,36 @@ class PublishTest(unittest.TestCase):
+         self.assertEqual(table.get_item(Key={"slug": "why-my-cron-ran-twice"})["Item"]["title"], "Why my cron ran twice")
+         self.assertEqual(table.scan()["Count"], 1)
+ 
++    def test_second_publish_stores_scores(self):
++        # The first publish has nothing to compare against, so ``similar`` is
++        # empty; only from the second one on do (float) scores reach the table.
++        table = FakeTable()
++        first = {
++            "slug": "why-my-cron-ran-twice",
++            "title": "Why my cron ran twice",
++            "tags": ["cron", "linux"],
++            "body": "Two crontabs, one for root and one for me, both had the line.",
++        }
++        second = {
++            "slug": "cron-and-timezones",
++            "title": "Cron and timezones",
++            "tags": ["cron"],
++            "body": "The server ran in UTC, the crontab line assumed local time.",
++        }
++        third = {"slug": "no-overlap", "title": "No overlap", "body": "Nothing shared."}
++        for story in (first, second, third):
++            resp = app.handler({"body": json.dumps(story)}, table)
++            self.assertEqual(resp["statusCode"], 201, resp)
++        similar = table.get_item(Key={"slug": "cron-and-timezones"})["Item"]["similar"]
++        self.assertEqual([s["slug"] for s in similar], ["why-my-cron-ran-twice"])
++        self.assertIsInstance(similar[0]["score"], Decimal)
++        self.assertGreater(similar[0]["score"], 0)
++        self.assertEqual(table.scan()["Count"], 3)
++
++    def test_non_string_tags_rejected(self):
++        resp = app.handler({"body": json.dumps({"slug": "abc", "title": "t", "body": "b", "tags": [1.5]})}, FakeTable())
++        self.assertEqual(resp["statusCode"], 400)
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

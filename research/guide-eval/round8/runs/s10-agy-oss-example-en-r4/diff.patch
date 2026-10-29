@@ -1,0 +1,147 @@
+diff --git a/lib/screens/offer_screen.dart b/lib/screens/offer_screen.dart
+index 921ee59..da963d2 100644
+--- a/lib/screens/offer_screen.dart
++++ b/lib/screens/offer_screen.dart
+@@ -1,4 +1,6 @@
++// Offer screen with analytics for scrolling
+ import 'package:flutter/material.dart';
++import '../analytics.dart';
+ 
+ class Offer {
+   const Offer(this.bank, this.months, this.rate);
+@@ -27,18 +29,25 @@ class OfferScreen extends StatelessWidget {
+   Widget build(BuildContext context) {
+     return Scaffold(
+       appBar: AppBar(title: const Text('Offers')),
+-      body: ListView.builder(
+-        itemCount: _offers.length,
+-        itemBuilder: (context, i) {
+-          final o = _offers[i];
+-          return ListTile(
+-            leading: const Icon(Icons.account_balance),
+-            title: Text('${o.bank}, ${o.months} months'),
+-            subtitle: Text('${o.rate.toStringAsFixed(1)}% APR'),
+-            trailing: const Icon(Icons.chevron_right),
+-            onTap: () {},
+-          );
++      body: NotificationListener<ScrollEndNotification>(
++        onNotification: (notification) {
++          final offset = notification.metrics.pixels;
++          Analytics.capture('offers_scrolled', {'offset': offset});
++          return true;
+         },
++        child: ListView.builder(
++          itemCount: _offers.length,
++          itemBuilder: (context, i) {
++            final o = _offers[i];
++            return ListTile(
++              leading: const Icon(Icons.account_balance),
++              title: Text('\${o.bank}, \${o.months} months'),
++              subtitle: Text('\${o.rate.toStringAsFixed(1)}% APR'),
++              trailing: const Icon(Icons.chevron_right),
++              onTap: () {},
++            );
++          },
++        ),
+       ),
+     );
+   }
+diff --git a/lib/screens/registration_screen.dart b/lib/screens/registration_screen.dart
+index 059a250..e84a024 100644
+--- a/lib/screens/registration_screen.dart
++++ b/lib/screens/registration_screen.dart
+@@ -1,4 +1,6 @@
++// Registration screen with analytics events
+ import 'package:flutter/material.dart';
++import '../analytics.dart';
+ 
+ class RegistrationScreen extends StatefulWidget {
+   const RegistrationScreen({super.key});
+@@ -8,6 +10,11 @@ class RegistrationScreen extends StatefulWidget {
+ }
+ 
+ class _RegistrationScreenState extends State<RegistrationScreen> {
++  // Flags to ensure events fire only once per screen visit
++  bool _emailStartedFired = false;
++  bool _phoneStartedFired = false;
++  bool _termsAcceptedFired = false;
++
+   final _email = TextEditingController();
+   final _phone = TextEditingController();
+   double _amount = 50000;
+@@ -32,20 +39,35 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
+         child: Column(
+           crossAxisAlignment: CrossAxisAlignment.stretch,
+           children: [
++            // Email field – fire once on first edit
+             TextField(
+               controller: _email,
+               keyboardType: TextInputType.emailAddress,
+               decoration: const InputDecoration(labelText: 'Email'),
+-              onChanged: (_) => setState(() {}),
++              onChanged: (value) {
++                if (!_emailStartedFired) {
++                  _emailStartedFired = true;
++                  Analytics.capture('registration_email_started');
++                }
++                setState(() {});
++              },
+             ),
+             const SizedBox(height: 12),
++            // Phone field – fire once on first edit
+             TextField(
+               controller: _phone,
+               keyboardType: TextInputType.phone,
+               decoration: const InputDecoration(labelText: 'Phone'),
+-              onChanged: (_) => setState(() {}),
++              onChanged: (value) {
++                if (!_phoneStartedFired) {
++                  _phoneStartedFired = true;
++                  Analytics.capture('registration_phone_started');
++                }
++                setState(() {});
++              },
+             ),
+             const SizedBox(height: 24),
++            // Loan amount slider – fire on drag end
+             Text('Loan amount: ${_amount.round()}'),
+             Slider(
+               min: 10000,
+@@ -54,17 +76,35 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
+               value: _amount,
+               label: _amount.round().toString(),
+               onChanged: (v) => setState(() => _amount = v),
++              onChangeEnd: (v) {
++                Analytics.capture('loan_amount_changed', {'amount': v.round()});
++              },
+             ),
++            // Terms checkbox – fire once when checked
+             CheckboxListTile(
+               value: _terms,
+               title: const Text('I accept the terms and conditions'),
+               controlAffinity: ListTileControlAffinity.leading,
+-              onChanged: (v) => setState(() => _terms = v ?? false),
++              onChanged: (v) {
++                final newVal = v ?? false;
++                setState(() => _terms = newVal);
++                if (newVal && !_termsAcceptedFired) {
++                  _termsAcceptedFired = true;
++                  Analytics.capture('terms_accepted');
++                }
++              },
+             ),
+             const Spacer(),
++            // Continue button – fire with properties then navigate
+             FilledButton(
+               onPressed: _canContinue
+-                  ? () => Navigator.of(context).pushNamed('/offers')
++                  ? () {
++                      Analytics.capture('registration_continue_tapped', {
++                        'amount': _amount.round(),
++                        'terms': _terms,
++                      });
++                      Navigator.of(context).pushNamed('/offers');
++                    }
+                   : null,
+               child: const Text('Continue'),
+             ),

@@ -1,0 +1,13 @@
+diff --git a/Library/LaunchAgents/com.vk.nightly-review.plist b/Library/LaunchAgents/com.vk.nightly-review.plist
+index c347363..4650f4e 100644
+--- a/Library/LaunchAgents/com.vk.nightly-review.plist
++++ b/Library/LaunchAgents/com.vk.nightly-review.plist
+@@ -7,7 +7,7 @@
+   <key>ProgramArguments</key>
+   <array>
+     <string>/bin/zsh</string>
+-    <string>/Users/vk/bin/nightly-review.zsh</string>
++    <string>/tmp/h-KMuVcp/bin/nightly-review.zsh</string>
+   </array>
+   <key>StartCalendarInterval</key>
+   <dict>

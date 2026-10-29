@@ -1,0 +1,98 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..8cc239b
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,7 @@
++# Second publish failure
++
++The first publish has no existing stories, so its `similar` list is empty. On the second publish, `related()` adds a score from `similarity()`. That score is a Python `float`, and boto3's DynamoDB Table resource rejects floats when serializing the item (`TypeError: Float types are not supported. Use Decimal types instead.`). The exception reached the handler's generic error path, producing the 500 in `logs/error.log`.
++
++`publish()` now converts all nested floats in the item to `Decimal` immediately before `put_item`. This covers similarity scores and any future numeric fields added to the item. It rejects non-finite floats, which DynamoDB cannot store. A regression test publishes three stories through the handler, checks that each request returns 201, and checks that stored similarity scores are `Decimal` values.
++
++Verification: `python3 -m unittest discover tests` passes (2 tests).
+diff --git a/src/app.py b/src/app.py
+index db49c5e..28c474f 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -6,8 +6,10 @@ stories already in the library (``similar``), so the reader page can show
+ """
+ import json
+ import logging
++import math
+ import re
+ import time
++from decimal import Decimal
+ 
+ log = logging.getLogger("stories")
+ 
+@@ -48,6 +50,23 @@ def validate(story):
+         raise ValueError("bad slug")
+ 
+ 
++def dynamodb_item(value):
++    """Convert nested Python floats to numbers accepted by boto3's Table resource."""
++    if isinstance(value, float):
++        if not math.isfinite(value):
++            raise ValueError("non-finite number in story item")
++        return Decimal(str(value))
++    if isinstance(value, dict):
++        return {key: dynamodb_item(part) for key, part in value.items()}
++    if isinstance(value, list):
++        return [dynamodb_item(part) for part in value]
++    if isinstance(value, tuple):
++        return tuple(dynamodb_item(part) for part in value)
++    if isinstance(value, (set, frozenset)):
++        return type(value)(dynamodb_item(part) for part in value)
++    return value
++
++
+ def publish(table, story):
+     """Store ``story`` with its related stories. Returns the stored item."""
+     validate(story)
+@@ -60,6 +79,7 @@ def publish(table, story):
+         "published_at": int(time.time()),
+         "similar": related(story, existing),
+     }
++    item = dynamodb_item(item)
+     table.put_item(Item=item)
+     log.info("publish slug=%s similar=%d stored", item["slug"], len(item["similar"]))
+     return item
+diff --git a/tests/test_publish.py b/tests/test_publish.py
+index 6c9ac44..455c06a 100644
+--- a/tests/test_publish.py
++++ b/tests/test_publish.py
+@@ -1,6 +1,8 @@
+ import os
+ import sys
+ import unittest
++import json
++from decimal import Decimal
+ 
+ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+ sys.path.insert(0, os.path.dirname(__file__))
+@@ -23,6 +25,24 @@ class PublishTest(unittest.TestCase):
+         self.assertEqual(table.get_item(Key={"slug": "why-my-cron-ran-twice"})["Item"]["title"], "Why my cron ran twice")
+         self.assertEqual(table.scan()["Count"], 1)
+ 
++    def test_consecutive_publishes_store_decimal_similarity_scores(self):
++        table = FakeTable()
++        stories = [
++            {"slug": "first-story", "title": "First", "tags": ["python"], "body": "python tests"},
++            {"slug": "second-story", "title": "Second", "tags": ["python"], "body": "python code"},
++            {"slug": "third-story", "title": "Third", "tags": ["python"], "body": "python tests"},
++        ]
++        for story in stories:
++            response = app.handler({"body": json.dumps(story)}, table)
++            self.assertEqual(response["statusCode"], 201)
++
++        self.assertEqual(table.scan()["Count"], 3)
++        for slug in ("second-story", "third-story"):
++            similar = table.get_item(Key={"slug": slug})["Item"]["similar"]
++            self.assertTrue(similar)
++            self.assertTrue(all(isinstance(entry["score"], Decimal) for entry in similar))
++            self.assertTrue(any(entry["score"] > 0 for entry in similar))
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

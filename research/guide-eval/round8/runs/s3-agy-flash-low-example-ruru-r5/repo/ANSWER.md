@@ -1,0 +1,66 @@
+# Анализ и исправление ночной задачи launchd (`com.vk.nightly-review`)
+
+## 1. Причины молчания задачи
+
+Анализ логов (`Library/Logs/nightly-review.err`) и конфигурации (`launchctl-print.txt`, `Library/LaunchAgents/com.vk.nightly-review.plist`, `bin/nightly-review.zsh`) выявил две ключевые причины, из-за которых задача ни разу ничего не сообщила:
+
+1. **Ошибка авторизации Claude CLI из-за отсутствия переменной `USER` в launchd:**
+   - В `Library/Logs/nightly-review.err` зафиксирована повторяющаяся ошибка:
+     ```
+     Not logged in · Please run /login
+     ```
+   - Процессы, запускаемые через `launchd`, выполняются в минимальном окружении, где переменная окружения `USER` по умолчанию не выставлена (в plist в `EnvironmentVariables` был задан только `PATH`). Без переменной `USER` утилита `claude` не может найти учетные данные в macOS Keychain и завершается с ошибкой «Not logged in».
+
+2. **Аварийное завершение скрипта до вызова уведомления из-за `status=$?` в `zsh`:**
+   - В `bin/nightly-review.zsh` на строке 19 сразу после вызова `claude` следовало присваивание `status=$?`.
+   - В шелле `zsh` переменная `status` является встроенной и предназначена только для чтения (`read-only variable`).
+   - Попытка записи в неё приводила к мгновенному падению скрипта с ошибкой:
+     ```
+     /Users/vk/bin/nightly-review.zsh:19: read-only variable: status
+     ```
+   - Из-за этого выполнение скрипта прерывалось до блока `if [ $status -ne 0 ]`, и команда `bin/notify.sh` для отправки уведомления об ошибке в Telegram ни разу не вызывалась.
+
+3. **Потенциальная проблема с ожиданием stdin:**
+   - При запуске `claude -p` в неинтерактивном окружении headless-агент может зависнуть в ожидании ввода со стандартного потока ввода (stdin). Добавление явного перенаправления ввода из `/dev/null` предотвращает подобное поведение.
+
+---
+
+## 2. Внесённые исправления
+
+1. **[Library/LaunchAgents/com.vk.nightly-review.plist](file:///Library/LaunchAgents/com.vk.nightly-review.plist):**
+   - В словарь `EnvironmentVariables` добавлена переменная `USER` со значением `vk`:
+     ```xml
+     <key>EnvironmentVariables</key>
+     <dict>
+       <key>PATH</key>
+       <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+       <key>USER</key>
+       <string>vk</string>
+     </dict>
+     ```
+
+2. **[bin/nightly-review.zsh](file:///bin/nightly-review.zsh):**
+   - Переменная `status` заменена на стандартную пользовательскую переменную `rc`:
+     ```zsh
+     claude -p "$PROMPT" --output-format text < /dev/null > "$OUT"
+     rc=$?
+
+     if [ $rc -ne 0 ]; then
+       "$NOTIFY" "nightly review FAILED (exit $rc), see $OUT"
+       exit $rc
+     fi
+     ```
+   - Добавлено перенаправление `< /dev/null` при вызове `claude -p`, чтобы исключить зависания при чтении из `stdin`.
+
+---
+
+## 3. Какие части заметки коллеги пригодились
+
+Из предложенной заметки коллеги пригодились следующие пункты:
+- **Анализ логов (`Library/Logs/nightly-review.err`) и `launchctl print`:** подтвердили, что задача регулярно запускалась (в `launchctl-print.txt` зафиксировано `runs = 6, last exit code = 1`), а не висела без запуска.
+- **Ловушка с `status=$?` в `zsh`:** подтвердилось, что присваивание `status` в `zsh` фатально роняет скрипт и глушит «гонца» перед отправкой ошибки. Замена на `rc=$?` устраняет сбой.
+- **Переменная `USER` в `EnvironmentVariables` plist-файла:** именно её отсутствие приводило к ошибке «Not logged in · Please run /login» при попытке доступа `claude` к Keychain.
+- **Закрытие stdin (`< /dev/null`) при вызове `claude -p`:** полезная мера предосторожности при запуске headless CLI под launchd.
+
+**Что не пригодилось / пропущено:**
+- Передача промпта строго через stdin (`print -r -- "$PROMPT" | claude -p ...`) с отказом от аргументов: в текущем скрипте промпт передавался через аргумент `$PROMPT`, а основной причиной падения команды была аутентификация в keychain (`USER`) и последующий краш на `status=$?`.

@@ -1,0 +1,100 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..6b3cbef
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,7 @@
++# Причина и исправление
++
++Первая публикация проходит, потому что в пустой библиотеке поле `similar` равно `[]`. При второй публикации `related()` добавляет туда оценку сходства. Раньше `similarity()` вычисляла её через обычное деление и возвращала `float`. При `put_item` сериализатор boto3 отклоняет `float` (`Float types are not supported. Use Decimal types instead.`), поэтому обработчик возвращал 500. Это совпадает с трассировкой в `logs/error.log`.
++
++Теперь `similarity()` считает доли и веса через `Decimal` и округляет результат до четырёх знаков. Следовательно, оценки в `similar` совместимы с DynamoDB при любой последующей публикации. Входные поля также проверяются до записи: `slug`, `title` и `body` должны быть непустыми строками, а `tags` — списком строк. Это не даёт клиентскому числу с плавающей точкой попасть в сохраняемый элемент; некорректный запрос получает 400.
++
++Проверка: `python3 -m unittest discover tests -v` — 3 теста прошли, включая три последовательные публикации и отклонение дробного числа в `tags`.
+diff --git a/src/app.py b/src/app.py
+index db49c5e..3d391a3 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -8,6 +8,7 @@ import json
+ import logging
+ import re
+ import time
++from decimal import Decimal
+ 
+ log = logging.getLogger("stories")
+ 
+@@ -24,10 +25,10 @@ def words(text):
+ def similarity(a, b):
+     """Shared-tag ratio (Jaccard), blended with shared words of the two bodies."""
+     ta, tb = set(a.get("tags", [])), set(b.get("tags", []))
+-    tag_score = len(ta & tb) / len(ta | tb) if (ta | tb) else 0
++    tag_score = Decimal(len(ta & tb)) / Decimal(len(ta | tb)) if (ta | tb) else Decimal(0)
+     wa, wb = words(a.get("body")), words(b.get("body"))
+-    word_score = len(wa & wb) / len(wa | wb) if (wa | wb) else 0
+-    return round(0.7 * tag_score + 0.3 * word_score, 4)
++    word_score = Decimal(len(wa & wb)) / Decimal(len(wa | wb)) if (wa | wb) else Decimal(0)
++    return (Decimal("0.7") * tag_score + Decimal("0.3") * word_score).quantize(Decimal("0.0001"))
+ 
+ 
+ def related(story, existing):
+@@ -41,11 +42,16 @@ def related(story, existing):
+ 
+ 
+ def validate(story):
++    if not isinstance(story, dict):
++        raise ValueError("story must be an object")
+     for k in ("slug", "title", "body"):
+-        if not story.get(k):
++        if not isinstance(story.get(k), str) or not story[k]:
+             raise ValueError(f"missing field: {k}")
+     if not re.fullmatch(r"[a-z0-9-]{3,80}", story["slug"]):
+         raise ValueError("bad slug")
++    tags = story.get("tags", [])
++    if not isinstance(tags, list) or any(not isinstance(tag, str) for tag in tags):
++        raise ValueError("tags must be a list of strings")
+ 
+ 
+ def publish(table, story):
+diff --git a/tests/test_publish.py b/tests/test_publish.py
+index 6c9ac44..10b8313 100644
+--- a/tests/test_publish.py
++++ b/tests/test_publish.py
+@@ -1,6 +1,8 @@
++import json
+ import os
+ import sys
+ import unittest
++from decimal import Decimal
+ 
+ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+ sys.path.insert(0, os.path.dirname(__file__))
+@@ -23,6 +25,29 @@ class PublishTest(unittest.TestCase):
+         self.assertEqual(table.get_item(Key={"slug": "why-my-cron-ran-twice"})["Item"]["title"], "Why my cron ran twice")
+         self.assertEqual(table.scan()["Count"], 1)
+ 
++    def test_sequential_publishes_store_decimal_scores(self):
++        table = FakeTable()
++        stories = [
++            {"slug": "first-story", "title": "First", "tags": ["cron"], "body": "cron ran twice"},
++            {"slug": "second-story", "title": "Second", "tags": ["cron"], "body": "cron ran again"},
++            {"slug": "third-story", "title": "Third", "tags": ["linux"], "body": "cron ran twice"},
++        ]
++        for story in stories:
++            response = app.handler({"body": json.dumps(story)}, table)
++            self.assertEqual(response["statusCode"], 201)
++
++        self.assertEqual(table.scan()["Count"], 3)
++        second = table.get_item(Key={"slug": "second-story"})["Item"]
++        self.assertEqual(second["similar"], [{"slug": "first-story", "score": Decimal("0.8500")}])
++        third = table.get_item(Key={"slug": "third-story"})["Item"]
++        self.assertTrue(all(isinstance(entry["score"], Decimal) for entry in third["similar"]))
++
++    def test_invalid_tags_return_400_before_dynamodb(self):
++        table = FakeTable()
++        response = app.handler({"body": '{"slug":"bad-tags","title":"Title","body":"Body","tags":[1.2]}'}, table)
++        self.assertEqual(response["statusCode"], 400)
++        self.assertEqual(table.scan()["Count"], 0)
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

@@ -1,0 +1,128 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..029f516
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,82 @@
++# Answer: stop `save_fact` from evicting the static system prompt
++
++## Cause
++
++`build_system` (bot.py) returned one text block with `cache_control`, containing
++`INSTRUCTIONS + athlete_context(...)`. The cache is a prefix hash, so any change
++in the athlete tail (a new fact, a new date) invalidated the whole cached block,
++including the instructions that never change. `logs/usage.jsonl` shows this: each
++round right after `save_fact` has `cache_read_input_tokens: 0` and
++`cache_creation_input_tokens` near the full prefix (about 1,000–1,100).
++
++## Change
++
++`bot.py`, `build_system`: the system prompt is now two text blocks, each with
++`cache_control: {"type": "ephemeral"}`:
++
++1. `INSTRUCTIONS`, a module constant. Byte-identical for every athlete and day.
++2. `athlete_context(a, today)`: date, profile, zones, goal, facts, language.
++
++A memory write now changes only block two. `README.md`: the caching paragraph is
++updated to describe the two blocks.
++
++Nothing else changed. The tool list is still filtered by keyword (see below).
++
++## Verification done
++
++- Offline check (no API call): block one is identical across two athletes, two
++  dates, and after appending a fact. Block two differs in each case. `bot.py`
++  compiles.
++- Not done: a live API run. There is no key here, and the usage fields can only be
++  read from real responses.
++
++## Colleague's note: what applied
++
++- **Applied:** two `cache_control` markers, static instructions first and a
++  per-user tail second (step 1).
++- **Applied (already true):** the instructions contain no interpolated date,
++  name or counter. `INSTRUCTIONS` is a constant.
++- **Applied (already true):** no per-message top-N fact selection. All facts
++  are always in the tail.
++- **Applied as a check:** the verify steps. After deploy, read
++  `cache_creation_input_tokens` and `cache_read_input_tokens` in
++  `logs/usage.jsonl` (see below).
++- **Not applied:** the colleague's tool-filter-stability advice. Keyword tool
++  filtering stays, because NOTES.md records it as a clear win. The cost is
++  below.
++- **Not applicable:** their token counts (~780 static, ~240 tail). Ours differ;
++  see the risk below.
++
++## Risk to check first: the 1,024-token minimum
++
++Anthropic's docs list a minimum cacheable prefix of 1,024 tokens for Sonnet models
++(the bot uses `claude-sonnet-4-5`). The docs I found do not list Sonnet 4.5
++explicitly, so verify it. The instructions are about 2,484 characters. That is
++roughly 600–700 tokens, a rough estimate. The core-tool request totals about 1,050
++cached tokens, and that includes the tail. So block one alone may be under the
++minimum on core-tool messages. If so, the marker on block one is silently ignored.
++
++Check in `logs/usage.jsonl` after the next `save_fact`:
++
++- Good: `cache_read_input_tokens` covers the static block (the 1,000+ prefix
++  minus the tail), and `cache_creation_input_tokens` is only about the tail (around
++  100–250).
++- Bad: `cache_creation_input_tokens` is still near the full prefix. The static
++  block is below the minimum, so the fix does not take effect on core-tool
++  messages.
++
++If it is bad, the honest options are (not done here):
++- Put real static content into block one to clear 1,024 tokens. Do not pad it
++  with filler.
++- Or keep all tools in every request (drop the keyword filter for cache
++  purposes). This makes the static prefix larger and stable. It removes the
++  tool-group eviction described below, but gives up the filter's token saving,
++  which NOTES.md calls a win. That is a product decision, so I did not make it.
++
++## Remaining cost not fixed
++
++`tools` sits above `system` in the cache prefix. A message that adds a tool group
++(`plan_week`, `predict_race`) changes the tool list, which evicts the whole prefix.
++The log shows this: those rounds write about 1,300 tokens. This is a separate
++eviction from `save_fact`, and I left it because removing the filter is a trade-off
++for you to decide.
+diff --git a/README.md b/README.md
+index ebd390e..c6a9c6f 100644
+--- a/README.md
++++ b/README.md
+@@ -12,5 +12,7 @@ Run it locally with `COACH_ANTHROPIC_KEY=sk-ant-... python3 bot.py 42` and type
+ messages on stdin (the Telegram long-polling transport, which needs
+ `COACH_TELEGRAM_TOKEN`, lives in a separate deploy repo and just calls `reply()`).
+ Requires Python 3.11+ and `pip install anthropic`. Prompt caching is on: the system
+-prompt carries a `cache_control` marker so the tool-loop rounds and follow-up
+-messages inside the 5-minute window read it from cache.
++prompt is two blocks, each with a `cache_control` marker. The static coaching
++rules come first and never change, so a `save_fact` write only re-caches the
++per-athlete tail. Tool-loop rounds and follow-up messages inside the 5-minute
++window read both from cache.
+diff --git a/__pycache__/bot.cpython-314.pyc b/__pycache__/bot.cpython-314.pyc
+new file mode 100644
+index 0000000..664c18b
+Binary files /dev/null and b/__pycache__/bot.cpython-314.pyc differ
+diff --git a/bot.py b/bot.py
+index e2ff241..8077054 100644
+--- a/bot.py
++++ b/bot.py
+@@ -128,9 +128,14 @@ def athlete_context(a, today):
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    # Two cached segments. The prompt cache is a prefix hash, so a change in an
++    # earlier block evicts everything after it. Block one (INSTRUCTIONS) must stay
++    # byte-identical for every athlete and day; block two holds the volatile tail
++    # (date, profile, facts), so a save_fact re-caches only the tail.
++    return [
++        {"type": "text", "text": INSTRUCTIONS, "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": athlete_context(a, today), "cache_control": {"type": "ephemeral"}},
++    ]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [

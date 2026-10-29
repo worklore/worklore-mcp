@@ -1,0 +1,3 @@
+Fixed the generator so HR corridors use Intervals’ `start`/`end` range fields, including in repeated steps. The reason and expected bpm ranges are in [ANSWER.md](/tmp/h-cJ4GJu/ANSWER.md). Intervals’ [workout format](https://forum.intervals.icu/t/downloading-planned-workouts-from-the-api/93737) supports those fields.
+
+I verified the generated sample event locally. I did not push it or sync a watch, so the on-watch result remains unverified.

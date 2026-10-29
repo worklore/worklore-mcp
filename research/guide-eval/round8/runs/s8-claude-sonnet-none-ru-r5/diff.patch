@@ -1,0 +1,108 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..462da42
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,29 @@
++# Fix: save_fact no longer invalidates the whole system prompt cache
++
++## Cause
++`build_system` put instructions, profile and facts into ONE text block with ONE
++`cache_control`. A cache hit needs an identical prefix, so any new fact changed the block
++and the whole prompt (~1000 tokens) was re-written at full price. The system prompt was
++also rebuilt on every tool round, so round 2 after `save_fact` always missed (see the
++`cache_creation_input_tokens ~1000` rows in logs/usage.jsonl).
++
++## Changes (bot.py)
++- `athlete_context` split into `athlete_profile` (name, zones, goal, language: rarely
++  changes) and `athlete_memory` (today's date + facts: the volatile part).
++- `build_system` returns two blocks, ordered stable -> volatile:
++  1. INSTRUCTIONS + profile, with a cache breakpoint;
++  2. date + facts, with its own breakpoint.
++  A new fact now only invalidates block 2. The date also moved there, so the daily date change no longer busts the instructions.
++- `reply()` builds the system prompt once per message and passes it to `build_request`,
++  so a `save_fact` inside the tool loop does not change the prefix between rounds.
++
++## Caveats (not verified: no API access here, nothing was run against the API)
++- Minimum cacheable prefix on Sonnet 4.5 is 1024 tokens. From the log, tools + instructions
++  are ~950 tokens by my estimate; with the profile (~70) the first breakpoint sits right at
++  ~1020. If it falls below 1024 it is silently not cached and the savings disappear.
++  Check logs/usage.jsonl after deploying: `cache_read_input_tokens` should stay > 0 on the
++  call after a `save_fact`. If not, add a little static content (e.g. a few examples) to block 1.
++- Tools come BEFORE system in the cache prefix. The keyword-based tool selection
++  (plan_week / predict_race) changes the tool list between messages and busts the cache
++  too (the 1305/1334 creation rows). I left it alone as NOTES.md asks; a fix would be
++  to always send all tools (with a breakpoint on the last one), at the cost of the token saving.
+diff --git a/__pycache__/bot.cpython-314.pyc b/__pycache__/bot.cpython-314.pyc
+new file mode 100644
+index 0000000..1162a08
+Binary files /dev/null and b/__pycache__/bot.cpython-314.pyc differ
+diff --git a/bot.py b/bot.py
+index e2ff241..1fbf1c6 100644
+--- a/bot.py
++++ b/bot.py
+@@ -114,23 +114,32 @@ Formatting:
+ """
+ 
+ 
+-def athlete_context(a, today):
+-    lines = [
+-        f"Today: {today.isoformat()} ({today.strftime('%A')})",
++def athlete_profile(a):
++    """Slow-changing part of the context: identity, zones, goal, language."""
++    return "\n".join([
+         f"Athlete: {a.name} (id {a.user_id}), sport: {a.sport}",
+         "Zones: " + ", ".join(f"{k} {v}" for k, v in a.zones.items()),
+         f"Goal: {a.goal}",
+-        "Long-term facts:",
+-    ]
++        f"Language: {a.lang}",
++    ])
++
++
++def athlete_memory(a, today):
++    """Fast-changing part: today's date and the long-term facts (grows via save_fact)."""
++    lines = [f"Today: {today.isoformat()} ({today.strftime('%A')})", "Long-term facts:"]
+     lines += [f"- {f}" for f in a.facts] or ["- (none yet)"]
+-    lines.append(f"Language: {a.lang}")
+     return "\n".join(lines)
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    # Ordered stable -> volatile so a new fact only invalidates the tail:
++    #   instructions + profile  (breakpoint 1: survives save_fact and date changes)
++    #   date + facts            (breakpoint 2: caches the whole prompt for the tool loop)
++    eph = {"type": "ephemeral"}
++    return [
++        {"type": "text", "text": INSTRUCTIONS + "\n\n" + athlete_profile(a), "cache_control": eph},
++        {"type": "text", "text": athlete_memory(a, today), "cache_control": eph},
++    ]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [
+@@ -187,8 +196,8 @@ def log_usage(usage, user_id, round_no, tool=None):
+         f.write(json.dumps(rec) + "\n")
+ 
+ 
+-def build_request(a, messages, tools, today):
+-    return {"model": MODEL, "max_tokens": MAX_TOKENS, "system": build_system(a, today), "tools": tools, "messages": messages}
++def build_request(system, messages, tools):
++    return {"model": MODEL, "max_tokens": MAX_TOKENS, "system": system, "tools": tools, "messages": messages}
+ 
+ 
+ def reply(user_id, text, llm=None):
+@@ -196,9 +205,10 @@ def reply(user_id, text, llm=None):
+     a = load_athlete(user_id)
+     today = dt.date.today()
+     tools = select_tools(text)
++    system = build_system(a, today)  # built once: a save_fact mid-loop must not change the cached prefix
+     messages = [{"role": "user", "content": text}]
+     for round_no in range(1, MAX_TOOL_ROUNDS + 1):
+-        resp = llm.create(**build_request(a, messages, tools, today))
++        resp = llm.create(**build_request(system, messages, tools))
+         used_tools = [b.name for b in resp.content if b.type == "tool_use"]
+         log_usage(resp.usage, a.user_id, round_no, tool=",".join(used_tools) or None)
+         if resp.stop_reason != "tool_use":

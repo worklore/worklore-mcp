@@ -1,0 +1,63 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..4a19c84
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,22 @@
++# Почему nightly-review молчал
++
++Задача запускалась (`runs = 6`, `last exit code = 1`, лог-файлы существуют) — молчание создали два бага один поверх другого. Диагноз по `Library/Logs/nightly-review.err`.
++
++## Причины
++
++1. **`Not logged in · Please run /login`** — headless-агент `claude` под launchd не находил логин. В plist в `EnvironmentVariables` был только `PATH`, без `USER`, поэтому CLI не мог достать учётные данные из keychain. Агент падал сразу, `$OUT` оставался пустым.
++2. **`read-only variable: status`** (`nightly-review.zsh:19`) — в zsh `status` встроенная переменная только для чтения. Присваивание `status=$?` убивало скрипт сразу после падения агента, до вызова `notify.sh` с сообщением об ошибке. Поэтому не пришло даже уведомление о сбое. Код выхода 1 — от этого падения.
++
++`notify.sh` исправен (работает вручную), он просто ни разу не был вызван.
++
++## Исправления
++
++- `bin/nightly-review.zsh`: `status=$?` → `rc=$?`, везде использован `$rc`. Заодно `claude -p ... < /dev/null`, чтобы агент не ждал stdin при промпте аргументом.
++- `Library/LaunchAgents/com.vk.nightly-review.plist`: в `EnvironmentVariables` добавлен `USER` = `vk`.
++
++Проверено только `zsh -n` и `plutil -lint`; реальный запуск и вход в keychain здесь проверить нельзя. После копирования файлов в домашнюю директорию нужно перезагрузить агент (`launchctl bootout` + `bootstrap` — plist изменился) и сделать `launchctl kickstart -k gui/$UID/com.vk.nightly-review`. Проверьте, что пришло уведомление, `$OUT` свежий и непустой, запуск длился не секунды. Если после этого всё ещё «Not logged in», выполните `claude /login` в обычном терминале.
++
++## Что пригодилось из заметки коллеги
++
++- Пригодилось: проверять запуски через `launchctl print` и читать stderr-лог до теорий; `status` read-only в zsh → `rc=$?` (точное совпадение); `USER` в `EnvironmentVariables` против «Not logged in» (точное совпадение); `< /dev/null` при промпте аргументом; совет проверять реальный результат, а не только код выхода.
++- Не пригодилось: передача промпта через stdin — ошибки «Input must be provided…» в моих логах нет, промпт доходит аргументом; описанное расписание 16:50 (у вас 02:30); логирование длительности и намеренный тест уведомления об ошибке — не внедрял, только рекомендация выше.
+diff --git a/Library/LaunchAgents/com.vk.nightly-review.plist b/Library/LaunchAgents/com.vk.nightly-review.plist
+index c347363..d49eacf 100644
+--- a/Library/LaunchAgents/com.vk.nightly-review.plist
++++ b/Library/LaunchAgents/com.vk.nightly-review.plist
+@@ -24,6 +24,8 @@
+   <dict>
+     <key>PATH</key>
+     <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
++    <key>USER</key>
++    <string>vk</string>
+   </dict>
+ </dict>
+ </plist>
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..cbcd5e7 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -15,12 +15,12 @@ Do not modify any file."
+ 
+ cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
+ 
+-claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
++claude -p "$PROMPT" --output-format text < /dev/null > "$OUT"
++rc=$?
+ 
+-if [ $status -ne 0 ]; then
+-  "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
+-  exit $status
++if [ $rc -ne 0 ]; then
++  "$NOTIFY" "nightly review FAILED (exit $rc), see $OUT"
++  exit $rc
+ fi
+ 
+ "$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"

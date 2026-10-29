@@ -1,0 +1,3 @@
+Fixed [gen.py](/tmp/h-TPbjGa/gen.py) to encode each HR corridor with `start` and `end`. The generator had used `value`, which Intervals.icu uses for a single target. I documented the cause and change in [ANSWER.md](/tmp/h-TPbjGa/ANSWER.md).
+
+I verified the generated event contains all four planned ranges, including the repeated steps. Watch delivery remains unverified; I did not push an event. The [Intervals.icu workout example](https://forum.intervals.icu/t/workout-builder/1163?page=55) shows the same `start`/`end` format for LTHR ranges.

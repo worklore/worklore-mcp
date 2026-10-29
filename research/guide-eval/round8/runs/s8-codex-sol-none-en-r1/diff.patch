@@ -1,0 +1,148 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..86d4a63
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,7 @@
++# Prompt cache fix
++
++`save_fact` used to change the only cached system block because that block held both the coaching rules and the athlete's long-term facts. The next API call therefore created the whole prefix again.
++
++I split the system prompt at the cache breakpoint. The coaching rules and stable athlete profile are in the cached block; the date and long-term facts are in a later, uncached block. A saved fact is still visible on the next tool round and on later messages, but it no longer changes the cached prefix. I added a short, relevant context-handling section to keep the cached prefix above the model's minimum size for the small athlete profiles shown in `logs/usage.jsonl`. Keyword-based tool selection remains in place.
++
++Verification: `python3 -m unittest -v test_bot.py` passes. The regression test saves a fact with a fake LLM, checks that the next request sees it, and checks that the cached block is identical during the tool loop and on the following day. No API call was made, so provider cache usage was not measured; a change in selected tools can still produce a separate cache prefix.
+diff --git a/README.md b/README.md
+index ebd390e..d79a83c 100644
+--- a/README.md
++++ b/README.md
+@@ -11,6 +11,8 @@ its system prompt. Every API call appends its `usage` object to `logs/usage.json
+ Run it locally with `COACH_ANTHROPIC_KEY=sk-ant-... python3 bot.py 42` and type
+ messages on stdin (the Telegram long-polling transport, which needs
+ `COACH_TELEGRAM_TOKEN`, lives in a separate deploy repo and just calls `reply()`).
+-Requires Python 3.11+ and `pip install anthropic`. Prompt caching is on: the system
+-prompt carries a `cache_control` marker so the tool-loop rounds and follow-up
+-messages inside the 5-minute window read it from cache.
++Requires Python 3.11+ and `pip install anthropic`. Prompt caching is on: the
++coaching rules and stable athlete profile carry a `cache_control` marker. The
++date and long-term facts come afterward, so saving a fact does not invalidate
++that cached prefix. Tool-loop rounds and follow-up messages within the cache
++window can reuse it when the selected tools stay the same.
+diff --git a/bot.py b/bot.py
+index e2ff241..e9180dd 100644
+--- a/bot.py
++++ b/bot.py
+@@ -111,26 +111,39 @@ Formatting:
+ - Plain text. No markdown headings, no tables.
+ - Lists only for a session structure (warm-up / main / cool-down).
+ - Numbers with units: 45 min, 12 km, 150 bpm.
++
++Context handling:
++- The athlete profile is authoritative for language, goal, sport, and zone boundaries.
++- The date and long-term facts follow the profile and can change between requests or tool rounds.
++- Use a newly saved fact in the current conversation when relevant.
++- A successful tool result confirms the action; then answer the athlete's original request.
++- Do not repeat the full profile or fact list unless the athlete asks for it.
+ """
+ 
+ 
+-def athlete_context(a, today):
++def athlete_profile(a):
+     lines = [
+-        f"Today: {today.isoformat()} ({today.strftime('%A')})",
+         f"Athlete: {a.name} (id {a.user_id}), sport: {a.sport}",
+         "Zones: " + ", ".join(f"{k} {v}" for k, v in a.zones.items()),
+         f"Goal: {a.goal}",
+-        "Long-term facts:",
++        f"Language: {a.lang}",
+     ]
++    return "\n".join(lines)
++
++
++def athlete_context(a, today):
++    lines = [f"Today: {today.isoformat()} ({today.strftime('%A')})", "Long-term facts:"]
+     lines += [f"- {f}" for f in a.facts] or ["- (none yet)"]
+-    lines.append(f"Language: {a.lang}")
+     return "\n".join(lines)
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    # Keep the changing date and facts after the cache breakpoint.
++    stable = INSTRUCTIONS + "\n\n" + athlete_profile(a)
++    return [
++        {"type": "text", "text": stable, "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": athlete_context(a, today)},
++    ]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [
+diff --git a/test_bot.py b/test_bot.py
+new file mode 100644
+index 0000000..2b0b97c
+--- /dev/null
++++ b/test_bot.py
+@@ -0,0 +1,62 @@
++"""Regression checks for the system prompt cache boundary."""
++
++import datetime as dt
++import shutil
++import tempfile
++import unittest
++from pathlib import Path
++from types import SimpleNamespace
++from unittest.mock import patch
++
++import bot
++
++
++class FakeToolUse:
++    type = "tool_use"
++    name = "save_fact"
++    id = "tool-1"
++    input = {"fact": "Prefers Saturday long rides"}
++
++    def model_dump(self):
++        return {"type": self.type, "name": self.name, "id": self.id, "input": self.input}
++
++
++class FakeLLM:
++    def __init__(self):
++        self.requests = []
++
++    def create(self, **request):
++        self.requests.append(request)
++        content = [FakeToolUse()] if len(self.requests) == 1 else [SimpleNamespace(type="text", text="Done")]
++        return SimpleNamespace(
++            content=content,
++            stop_reason="tool_use" if len(self.requests) == 1 else "end_turn",
++            usage=SimpleNamespace(input_tokens=1, cache_creation_input_tokens=0,
++                                  cache_read_input_tokens=0, output_tokens=1),
++        )
++
++
++class PromptCacheTest(unittest.TestCase):
++    def test_save_fact_does_not_change_cached_prefix(self):
++        with tempfile.TemporaryDirectory() as directory:
++            athletes_file = Path(directory) / "athletes.json"
++            shutil.copyfile(bot.ATHLETES_FILE, athletes_file)
++            with patch.object(bot, "ATHLETES_FILE", str(athletes_file)), \
++                 patch.object(bot, "USAGE_LOG", str(Path(directory) / "usage.jsonl")):
++                llm = FakeLLM()
++                self.assertEqual(bot.reply("77", "I prefer Saturday long rides", llm), "Done")
++                first, after_save = (r["system"] for r in llm.requests)
++                self.assertEqual(first[0], after_save[0])
++                self.assertEqual(first[0]["cache_control"], {"type": "ephemeral"})
++                self.assertNotIn("cache_control", after_save[1])
++                self.assertNotIn("Prefers Saturday long rides", first[1]["text"])
++                self.assertIn("Prefers Saturday long rides", after_save[1]["text"])
++
++                next_request = bot.build_request(bot.load_athlete("77"), [], bot.CORE_TOOLS,
++                                                 dt.date.today() + dt.timedelta(days=1))
++                self.assertEqual(first[0], next_request["system"][0])
++                self.assertIn("Prefers Saturday long rides", next_request["system"][1]["text"])
++
++
++if __name__ == "__main__":
++    unittest.main()

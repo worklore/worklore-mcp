@@ -1,0 +1,69 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..bb243f9
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,5 @@
++# Cause and fix
++
++The first publish has no existing stories, so its `similar` list is empty and DynamoDB accepts the item. On the second publish, `similarity()` produces a Python `float` for a related story. `related()` placed that float in `similar[].score`, and boto3's DynamoDB serializer rejected the item with `TypeError: Float types are not supported. Use Decimal types instead.` The handler caught the error and returned 500.
++
++`related()` now converts each rounded similarity score to `Decimal` before it becomes part of the stored item. Using `Decimal(str(score))` preserves the calculated decimal value without carrying over binary float representation artifacts. A regression test publishes three stories through the handler, checks each returns 201, and verifies stored related scores are `Decimal` values.
+diff --git a/src/app.py b/src/app.py
+index db49c5e..d3d8129 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -8,6 +8,7 @@ import json
+ import logging
+ import re
+ import time
++from decimal import Decimal
+ 
+ log = logging.getLogger("stories")
+ 
+@@ -35,7 +36,7 @@ def related(story, existing):
+     for other in existing:
+         if other["slug"] == story["slug"]:
+             continue
+-        scored.append({"slug": other["slug"], "score": similarity(story, other)})
++        scored.append({"slug": other["slug"], "score": Decimal(str(similarity(story, other)))})
+     scored.sort(key=lambda s: s["score"], reverse=True)
+     return scored[:TOP_N]
+ 
+diff --git a/tests/test_publish.py b/tests/test_publish.py
+index 6c9ac44..688c8f3 100644
+--- a/tests/test_publish.py
++++ b/tests/test_publish.py
+@@ -1,6 +1,8 @@
++import json
+ import os
+ import sys
+ import unittest
++from decimal import Decimal
+ 
+ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+ sys.path.insert(0, os.path.dirname(__file__))
+@@ -23,6 +25,23 @@ class PublishTest(unittest.TestCase):
+         self.assertEqual(table.get_item(Key={"slug": "why-my-cron-ran-twice"})["Item"]["title"], "Why my cron ran twice")
+         self.assertEqual(table.scan()["Count"], 1)
+ 
++    def test_successive_publishes_store_dynamo_compatible_scores(self):
++        table = FakeTable()
++        stories = [
++            {"slug": "first-story", "title": "First", "tags": ["python"], "body": "A shared story"},
++            {"slug": "second-story", "title": "Second", "tags": ["python"], "body": "A shared story"},
++            {"slug": "third-story", "title": "Third", "tags": ["other"], "body": "Different"},
++        ]
++        for story in stories:
++            response = app.handler({"body": json.dumps(story)}, table)
++            self.assertEqual(response["statusCode"], 201)
++
++        self.assertEqual(table.scan()["Count"], 3)
++        second = table.get_item(Key={"slug": "second-story"})["Item"]
++        self.assertEqual(second["similar"], [{"slug": "first-story", "score": Decimal("1.0")}])
++        third = table.get_item(Key={"slug": "third-story"})["Item"]
++        self.assertTrue(all(isinstance(entry["score"], Decimal) for entry in third["similar"]))
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

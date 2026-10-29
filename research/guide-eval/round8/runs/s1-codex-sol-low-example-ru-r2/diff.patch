@@ -1,0 +1,26 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..9fcf764
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,7 @@
++# Исправление пульсовых диапазонов
++
++В `gen.py` нижняя граница цели ЧСС теперь записывается как `start`: `{"units": "%lthr", "start": low, "end": high}`. Раньше генератор использовал `value`. Согласно предоставленной заметке коллеги, пара `value`/`end` экспортируется как цель, привязанная к зонам часов, а `start`/`end` — как точный коридор ЧСС. Это согласуется с `readback/watch-notes.md`: все четыре прежних диапазона на часах совпали с границами их зон.
++
++Из заметки пригодились различие между `start` и `value` и рекомендация сохранить единицы `%lthr`: Intervals вычисляет удары в минуту по своему LTHR при экспорте. Сведения о `description` и текстовом синтаксисе шагов здесь не применял: readback уже содержит заполненный `workout_doc.steps`, а задача касается диапазонов на часах. Повторять опыты с `bpm` и `start_bpm`/`end_bpm` тоже не нужно: их неудачные результаты уже записаны в `watch-notes.md`.
++
++Локально запустил генератор на `plans/tempo-run.json` и проверил все шаги, включая повтор: он выдаёт 68–75, 88–93, 75–82 и 65–72 `%lthr` с ключами `start`/`end`, без `value`. Экспорт и отображение на часах здесь не проверялись; для этого понадобилась бы отправка события во внешний сервис, запрещённая условиями задачи.
+diff --git a/gen.py b/gen.py
+index be0b3bc..4aeba5a 100755
+--- a/gen.py
++++ b/gen.py
+@@ -10,7 +10,7 @@ import sys
+ def hr_target(step):
+     """HR corridor for a step, as a percentage of the athlete's LTHR."""
+     lo, hi = step["hr_pct"]
+-    return {"units": "%lthr", "value": lo, "end": hi}
++    return {"units": "%lthr", "start": lo, "end": hi}
+ 
+ 
+ def build_step(step):

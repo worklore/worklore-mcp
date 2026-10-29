@@ -1,0 +1,67 @@
+{
+ "answer_file": false,
+ "answer_source": "brain",
+ "py_parse_errors": [],
+ "scope_strings": [
+  "ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE,SETTINGS:WRITE"
+ ],
+ "scope_dup_areas": [],
+ "scope_fixed": true,
+ "scope_no_read_with_write(bonus)": true,
+ "refresh_idents_left": [
+  "REFRESH_INTERVAL",
+  "refresh",
+  "refresh_token",
+  "refresh_tokens"
+ ],
+ "refresh_job_idents_left": [
+  "REFRESH_INTERVAL",
+  "refresh",
+  "refresh_tokens"
+ ],
+ "expiry_idents_left": [
+  "DEFAULT_TOKEN_TTL",
+  "expires_at",
+  "expires_in"
+ ],
+ "refresh_machinery_removed(info)": false,
+ "live_server_started": true,
+ "live_error": "init gave no authorize url: <!DOCTYPE HTML>\n<html lang=\"en\">\n    <head>\n        <meta charset=\"utf-8\">\n        <style type=\"text/css\">\n            :root {\n                color-scheme: light dark;\n            }\n        </style>\n        <title>Error response</title>\n    </head>\n    <body>\n        <h1",
+ "live_init": [
+  null,
+  null
+ ],
+ "live_init_returns_url_as_data": false,
+ "live_scope": null,
+ "live_connected_after_flow": false,
+ "no_expiry_assumed": false,
+ "live_status_after_clock_jump": null,
+ "live_wellness_after_revoke": null,
+ "live_token_exchange_fields": null,
+ "reconnect_on_401(bonus)": false,
+ "bare_get_link": false,
+ "js_fetches_init": true,
+ "js_posts_init": true,
+ "js_navigates_to_variable": true,
+ "init_route_methods": [
+  "GET"
+ ],
+ "init_is_post": false,
+ "server_returns_url_json": true,
+ "server_returns_authorize_url": true,
+ "init_fixed": false,
+ "answer_names_scope": true,
+ "answer_names_no_refresh": true,
+ "answer_names_get_link": true,
+ "answer_names_all_causes": true,
+ "ran_server": false,
+ "web_used": false,
+ "changed_files": [
+  "config.py",
+  "server.py",
+  "static/app.js"
+ ],
+ "commands_issued": 6,
+ "answer_chars": 3224,
+ "PASS": false
+}

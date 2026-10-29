@@ -1,0 +1,104 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..623fce8
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,45 @@
++# Почему save_fact сбрасывал кеш и что изменено
++
++## Причина
++`build_system()` склеивал инструкции и контекст атлета (дата, профиль, факты) в **один**
++текстовый блок с `cache_control`. Кеш промптов матчится по точному префиксу на границах
++блоков, поэтому любой новый факт менял байты этого единственного блока → промах и полная
++перезапись (~1000+ токенов) на следующем же вызове (раунд 2 цикла после `save_fact` в
++`logs/usage.jsonl`: `cache_read_input_tokens: 0`, `cache_creation_input_tokens` ≈ весь промпт).
++
++Важная деталь: просто «вынести инструкции в отдельный блок с breakpoint» не помогло бы.
++У пользователя 77 весь промпт (tools + инструкции + контекст с двумя фактами) — ровно 1024
++токена, т.е. минимум кешируемого префикса для Sonnet 4.5. Статическая часть сама по себе
++короче 1024 токенов и молча не кешировалась бы вовсе.
++
++## Что изменено (`bot.py`, `build_system`)
++Системный промпт теперь — список блоков, от самого стабильного к самому изменчивому:
++
++1. `INSTRUCTIONS` — статические правила;
++2. профиль атлета (имя, спорт, зоны, цель, язык) — `athlete_profile()`;
++3. по **одному блоку на каждый факт**, в порядке добавления; `cache_control` стоит на последнем
++   (если фактов нет — на профиле);
++4. `Today: ...` — **после** breakpoint, не кешируется (раньше дата стояла в начале
++   контекста и ежедневно инвалидировала всё, что после неё).
++
++Факты только дописываются в конец, поэтому после `save_fact` закешированный префикс
++предыдущего запроса (заканчивался на факте N) остаётся точным префиксом нового запроса.
++API находит его через lookback по границам блоков (до 20 блоков назад), читает из кеша
++инструкции + профиль + старые факты и записывает в кеш только новый факт (~10–20 токенов)
++вместо всего промпта. Breakpoint по-прежнему один, весь кешируемый префикс ≥ 1024 токенов,
++как и раньше.
++
++`athlete_context()` заменён на `athlete_profile()`; "Language" перенесён в профиль, строка
++"(none yet)" убрана (она бы заменялась первым фактом и ломала префикс) — заголовок списка
++фактов сам говорит, что список может быть пуст.
++
++Проверка (офлайн, SDK не установлен): для атлета 42 блоки до breakpoint запроса до
++`save_fact` побайтно совпадают с началом блоков запроса после него.
++
++## Ограничения / что не трогал
++- Предположение: факты append-only. Если когда-нибудь появится удаление/редактирование
++  фактов, изменение в середине списка даст один промах (как сейчас при каждом сохранении).
++- Фильтрация tools по ключевым словам оставлена (см. NOTES.md). Tools идут в кеше раньше
++  system, поэтому сообщение с другим набором инструментов (plan/race) по-прежнему
++  промахивается — это отдельная, уже известная цена, к save_fact не относится.
++- Ничего не деплоилось и не отправлялось; изменения только в `bot.py` и этом файле.
+diff --git a/bot.py b/bot.py
+index e2ff241..a4c410e 100644
+--- a/bot.py
++++ b/bot.py
+@@ -114,23 +114,40 @@ Formatting:
+ """
+ 
+ 
+-def athlete_context(a, today):
++def athlete_profile(a):
++    # Stable per athlete: changes only when the profile itself is edited.
+     lines = [
+-        f"Today: {today.isoformat()} ({today.strftime('%A')})",
+         f"Athlete: {a.name} (id {a.user_id}), sport: {a.sport}",
+         "Zones: " + ", ".join(f"{k} {v}" for k, v in a.zones.items()),
+         f"Goal: {a.goal}",
+-        "Long-term facts:",
++        f"Language: {a.lang}",
++        "Long-term facts (one per line below; none yet if the list is empty):",
+     ]
+-    lines += [f"- {f}" for f in a.facts] or ["- (none yet)"]
+-    lines.append(f"Language: {a.lang}")
+     return "\n".join(lines)
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    """Cache-friendly layout, ordered from most to least stable.
++
++    [instructions][profile][fact 1]...[fact N]  <- cache breakpoint on the last of these
++    [today]                                      <- after the breakpoint, never cached
++
++    Facts are append-only and each one is its own block, so after save_fact the
++    previous request's cached prefix (which ended at fact N) is still an exact
++    prefix of the new one: the API's block-boundary lookback finds it and only
++    the new fact is written to cache. The date changes daily, so it sits after
++    the breakpoint. The previous single-block layout changed the bytes of the one
++    cached block on every save_fact and re-wrote the whole prompt.
++    Note the static part alone (tools + instructions + profile) is below the
++    model's 1024-token minimum, which is why the breakpoint must sit at the end
++    of the facts rather than right after the instructions.
++    """
++    blocks = [{"type": "text", "text": INSTRUCTIONS},
++              {"type": "text", "text": athlete_profile(a)}]
++    blocks += [{"type": "text", "text": f"- {f}"} for f in a.facts]
++    blocks[-1]["cache_control"] = {"type": "ephemeral"}
++    blocks.append({"type": "text", "text": f"Today: {today.isoformat()} ({today.strftime('%A')})"})
++    return blocks
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [

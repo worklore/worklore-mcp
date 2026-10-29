@@ -1,0 +1,49 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..9877c8f
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,10 @@
++# Почему задача молчала
++
++`launchctl-print.txt` показывает `runs = 6` и `last exit code = 1`: launchd запускал задачу. В `Library/Logs/nightly-review.err` для каждого запуска записаны `Not logged in · Please run /login` и затем `read-only variable: status`. Значит, проблема была после запуска, а не в расписании.
++
++1. В окружении launchd не было `USER` (это видно в `launchctl-print.txt`). `claude` не находил вход в учётную запись и завершался с ошибкой. В plist добавлено `USER=vk` для учётной записи из путей задания. Это устраняет причину, указанную сообщением CLI, но реальную авторизацию можно подтвердить только на исходном Mac.
++2. Скрипт присваивал код выхода переменной `status`, которая в zsh доступна только для чтения. Ошибка обрывала скрипт до ветки с Telegram уведомлением о сбое. Переменная переименована в `rc`; при ошибке `claude` скрипт теперь доходит до вызова `notify.sh` и возвращает исходный код ошибки.
++
++Из заметки коллеги пригодились проверка счётчика запусков и stderr, замечание о специальной переменной zsh `status` и совет задать `USER` в plist. Совет передавать prompt через stdin здесь не применялся: stderr показывает ошибку авторизации, а не отсутствие prompt; текущий вызов уже передаёт prompt аргументом. Проверка `last exit code` сама по себе не подтверждает доставку сообщения.
++
++Локально проверены синтаксис zsh и bash, чтение plist и отсутствие ошибок в diff. Задание и уведомитель не запускались: для окончательной проверки на исходном Mac нужно заново загрузить изменённый plist, запустить задание и убедиться по свежим логам и сообщению в Telegram, что результат доставлен. После этого полезно проверить ветку ошибки с контролируемым отказом `claude`.
+diff --git a/Library/LaunchAgents/com.vk.nightly-review.plist b/Library/LaunchAgents/com.vk.nightly-review.plist
+index c347363..f371054 100644
+--- a/Library/LaunchAgents/com.vk.nightly-review.plist
++++ b/Library/LaunchAgents/com.vk.nightly-review.plist
+@@ -22,6 +22,8 @@
+   <string>/Users/vk/Library/Logs/nightly-review.err</string>
+   <key>EnvironmentVariables</key>
+   <dict>
++    <key>USER</key>
++    <string>vk</string>
+     <key>PATH</key>
+     <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+   </dict>
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..9e88fe9 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -16,11 +16,11 @@ Do not modify any file."
+ cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
+ 
+ claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
++rc=$?
+ 
+-if [ $status -ne 0 ]; then
+-  "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
+-  exit $status
++if [ "$rc" -ne 0 ]; then
++  "$NOTIFY" "nightly review FAILED (exit $rc), see $OUT"
++  exit "$rc"
+ fi
+ 
+ "$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"

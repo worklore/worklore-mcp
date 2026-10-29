@@ -1,0 +1,3 @@
+The first publish stored no related stories, so it stored no similarity score. The second computed a Python float, which DynamoDB rejected and the handler returned as a 500.
+
+I changed similarity scoring to use `Decimal` throughout and added a two-publish regression test. [ANSWER.md](/tmp/h-wTDOao/ANSWER.md) records the cause, fix, and which parts of the colleague’s note applied. Both tests pass with `python3 -m unittest discover tests`.

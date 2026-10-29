@@ -1,0 +1,126 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..9027a20
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,49 @@
++# Причина сбоя и внесенные исправления
++
++## 1. Почему первая публикация работала, а вторая возвращала 500
++
++В [logs/error.log](file:///tmp/h-KKYQk7/logs/error.log) зафиксирована ошибка:
++```
++TypeError: Float types are not supported. Use Decimal types instead.
++```
++возникающая при вызове `table.put_item(Item=item)` в [src/app.py](file:///tmp/h-KKYQk7/src/app.py#L63).
++
++### Механизм возникновения ошибки:
++1. DynamoDB / Boto3 (`TypeSerializer`) не поддерживает стандартный тип Python `float`. Числа с плавающей точкой должны быть представлены типом `decimal.Decimal` или целыми числами (`int`).
++2. При вызове функции `publish(table, story)` вычисляется список похожих публикаций: `item["similar"] = related(story, existing)`.
++3. Для каждой существующей публикации вычисляется оценка сходства через функцию `similarity(a, b)`, возвращавшую `float`:
++   ```python
++   round(0.7 * tag_score + 0.3 * word_score, 4)
++   ```
++4. **Первая публикация**: таблица DynamoDB была пуста (`existing == []`). Цикл в `related()` ни разу не выполнился, список `item["similar"]` остался пустым (`[]`), и в сохраняемый `item` значения `float` не попали.
++5. **Вторая публикация**: в таблице уже была сохранена одна публикация (`len(existing) > 0`). Функция `related()` вычислила сходство со старой записью и добавила в `similar` объект с ключом `score` типа `float`. При сериализации `put_item` boto3 выбросил исключение `TypeError`, что привело к ответу 500 Internal Server Error.
++
++---
++
++## 2. Что было исправлено, чтобы это не могло повториться
++
++1. **Исправлен тип возвращаемого значения в [src/app.py](file:///tmp/h-KKYQk7/src/app.py#L31)**:
++   - Импортирован класс `Decimal` из модуля `decimal`.
++   - В функции `similarity()` результат преобразуется в `Decimal(str(round(...)))`:
++     ```python
++     return Decimal(str(round(0.7 * tag_score + 0.3 * word_score, 4)))
++     ```
++   - Это гарантирует полную совместимость с DynamoDB / boto3 и сохраняет точность до 4 знаков.
++
++2. **Добавлены регрессионные тесты в [tests/test_publish.py](file:///tmp/h-KKYQk7/tests/test_publish.py)**:
++   - `test_publish_second_story_succeeds`: проверяет публикацию второй статьи в уже непустую таблицу (заполненную первой статьей) и корректное вычисление и сохранение похожих статей (`similar`).
++   - `test_handler_second_publish_returns_201`: проверяет полный путь запроса через `handler()` при повторной публикации и возвращение кода ответа 201.
++
++---
++
++## 3. Какие части заметки коллеги пригодились
++
++### Что пригодилось:
++- **Диагноз ошибки**: объяснение того, почему DynamoDB падает именно на второй записи (`TypeError: Float types are not supported. Use Decimal types instead.`) из-за вычисления оценок сходства (`similarity scores`), когда база перестает быть пустой.
++- **Подход к исправлению типа**: использование `Decimal` на границе записи в DynamoDB.
++- **Подход к тестированию**: рекомендация создавать тесты, которые тестируют путь записи при уже непустой базе (seed table with one record before testing the write), так как код, зависящий от состояния (scoring, related items), выполняется только при наличии данных.
++
++### Что было пропущено / не понадобилось:
++- Преобразование оценки в целочисленные проценты (в текущем сервисе сохранен исходный масштаб с точностью до 4 знаков через `Decimal`).
++- Рекомендации по поиску через grep по всем местам кодовой базы (проект компактный, место вычисления `round` было одно — в функции `similarity`).
++- Шаги, относящиеся к AWS Lambda / внешним окружениям и реальным развертываниям DynamoDB.
+diff --git a/src/app.py b/src/app.py
+index db49c5e..5931a84 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -4,6 +4,7 @@ Each story is stored in one DynamoDB item together with the three most similar
+ stories already in the library (``similar``), so the reader page can show
+ "related" without a query at read time.
+ """
++from decimal import Decimal
+ import json
+ import logging
+ import re
+@@ -27,7 +28,7 @@ def similarity(a, b):
+     tag_score = len(ta & tb) / len(ta | tb) if (ta | tb) else 0
+     wa, wb = words(a.get("body")), words(b.get("body"))
+     word_score = len(wa & wb) / len(wa | wb) if (wa | wb) else 0
+-    return round(0.7 * tag_score + 0.3 * word_score, 4)
++    return Decimal(str(round(0.7 * tag_score + 0.3 * word_score, 4)))
+ 
+ 
+ def related(story, existing):
+diff --git a/tests/test_publish.py b/tests/test_publish.py
+index 6c9ac44..2de96bd 100644
+--- a/tests/test_publish.py
++++ b/tests/test_publish.py
+@@ -23,6 +23,45 @@ class PublishTest(unittest.TestCase):
+         self.assertEqual(table.get_item(Key={"slug": "why-my-cron-ran-twice"})["Item"]["title"], "Why my cron ran twice")
+         self.assertEqual(table.scan()["Count"], 1)
+ 
++    def test_publish_second_story_succeeds(self):
++        table = FakeTable()
++        story1 = {
++            "slug": "why-my-cron-ran-twice",
++            "title": "Why my cron ran twice",
++            "tags": ["cron", "linux"],
++            "body": "Two crontabs, one for root and one for me, both had the line.",
++        }
++        story2 = {
++            "slug": "dynamodb-crash-second-write",
++            "title": "DynamoDB crash on second write",
++            "tags": ["dynamodb", "cron"],
++            "body": "The first write survived, but the second one failed due to float similarity scores.",
++        }
++        app.publish(table, story1)
++        stored2 = app.publish(table, story2)
++        self.assertEqual(len(stored2["similar"]), 1)
++        self.assertEqual(stored2["similar"][0]["slug"], "why-my-cron-ran-twice")
++        self.assertEqual(table.scan()["Count"], 2)
++
++    def test_handler_second_publish_returns_201(self):
++        table = FakeTable()
++        story1 = {
++            "slug": "first-story",
++            "title": "First Story",
++            "tags": ["test"],
++            "body": "Hello world",
++        }
++        story2 = {
++            "slug": "second-story",
++            "title": "Second Story",
++            "tags": ["test"],
++            "body": "Hello world again",
++        }
++        res1 = app.handler({"body": app.json.dumps(story1)}, table)
++        self.assertEqual(res1["statusCode"], 201)
++        res2 = app.handler({"body": app.json.dumps(story2)}, table)
++        self.assertEqual(res2["statusCode"], 201)
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

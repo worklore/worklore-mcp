@@ -1,0 +1,174 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..54c2d8d
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,51 @@
++# Why `save_fact` made the next call pay full price, and what changed
++
++## Cause
++`build_system()` joined the static coaching rules (~600 tokens) and the athlete
++context, including the long-term facts, into **one** system block with **one**
++`cache_control` breakpoint. The cache is a prefix match ending at a breakpoint, so when
++the facts list changed (one new line), the whole block stopped matching: tools, rules and
++everything else were written again (`cache_read 0`, `cache_creation ~1000+`). On top of
++that, `reply()` rebuilt the system prompt on every tool round from the athlete object
++that `save_fact` had just changed. So the miss came on round 2 of the same message,
++which is exactly the "call right after a save_fact" in `logs/usage.jsonl`.
++
++## Changes (bot.py)
++1. **The system prompt is now split by how often each part changes.** It has three blocks,
++   each with its own breakpoint:
++   `INSTRUCTIONS` (static, the same for every athlete) → `athlete_profile()` (name,
++   sport, zones, goal, language; edited by hand) → `athlete_memory()` (long-term facts +
++   today's date). A new fact only invalidates the last block. The next call reads tools +
++   rules + profile from cache and writes only the facts block (tens of tokens instead of
++   ~1100). The "Today" line moved into the last block too, so the date changing at
++   midnight no longer evicts the rules either.
++2. **The system prompt is built once per message**, not once per tool round. The model
++   already sees the saved fact in its own tool call, and the fact appears in the system
++   prompt from the next message (as the README describes).
++3. **The always-sent tools (`save_fact`, `log_session`) have real descriptions.** These
++   are the usual 2–4 sentences with parameter descriptions. They say when to save a fact
++   or log a session, which also helps the model choose correctly. This was needed for
++   caching too. Sonnet 4.5 only caches a prefix of **at least 1024 tokens** and skips a
++   breakpoint below that **without any error**. From the logs, Jonas's whole prompt with
++   2 facts was exactly 1024 tokens, which puts tools + rules at ~930 and tools + rules +
++   profile at ~990. Splitting the blocks alone would have cached nothing static, and every
++   fact would still have re-written everything. The longer descriptions add ~190 tokens,
++   bringing tools + rules to roughly 1100. That is an estimate from character counts. I
++   could not measure it without calling the API.
++4. **There is now a warning on stderr** whenever a call neither reads nor writes cache.
++   That means the prefix is under the minimum, so a future trim of the rules or tools
++   won't quietly turn caching off.
++
++The keyword-based tool filtering is unchanged, as NOTES.md asks. Tools come before the
++system prompt in the cache prefix, so each tool set (core / +plan / +race / both) still
++has its own cache entry. That cost was already there and has nothing to do with memory.
++
++README.md: updated the sentence about caching.
++
++## How to check
++Run a few messages including one that triggers `save_fact`. In `logs/usage.jsonl`, the
++call after the fact should show `cache_read_input_tokens` of about 1100+ and only a small
++`cache_creation_input_tokens`, not `0 / ~1100`. If a call shows both as 0 (and the stderr
++warning prints), the static prefix fell under 1024 tokens. I checked locally with a fake
++client that the system prompt stays the same within a message and that only the facts
++block changes after `save_fact`. I did not make any real API calls.
+diff --git a/README.md b/README.md
+index ebd390e..51e7510 100644
+--- a/README.md
++++ b/README.md
+@@ -12,5 +12,6 @@ Run it locally with `COACH_ANTHROPIC_KEY=sk-ant-... python3 bot.py 42` and type
+ messages on stdin (the Telegram long-polling transport, which needs
+ `COACH_TELEGRAM_TOKEN`, lives in a separate deploy repo and just calls `reply()`).
+ Requires Python 3.11+ and `pip install anthropic`. Prompt caching is on: the system
+-prompt carries a `cache_control` marker so the tool-loop rounds and follow-up
+-messages inside the 5-minute window read it from cache.
++prompt is three blocks (coaching rules, athlete profile, long-term facts + date),
++each with a `cache_control` marker, so a `save_fact` only re-writes the small facts
++block and the rules and tools keep being read from cache.
+diff --git a/bot.py b/bot.py
+index e2ff241..62e46d6 100644
+--- a/bot.py
++++ b/bot.py
+@@ -114,31 +114,55 @@ Formatting:
+ """
+ 
+ 
+-def athlete_context(a, today):
+-    lines = [
+-        f"Today: {today.isoformat()} ({today.strftime('%A')})",
++def athlete_profile(a):
++    """The slow-changing part of the athlete record (edited by hand, not by the bot)."""
++    return "\n".join([
+         f"Athlete: {a.name} (id {a.user_id}), sport: {a.sport}",
+         "Zones: " + ", ".join(f"{k} {v}" for k, v in a.zones.items()),
+         f"Goal: {a.goal}",
+-        "Long-term facts:",
+-    ]
++        f"Language: {a.lang}",
++    ])
++
++
++def athlete_memory(a, today):
++    """The fast-changing part: long-term facts (grow via save_fact) and today's date."""
++    lines = ["Long-term facts:"]
+     lines += [f"- {f}" for f in a.facts] or ["- (none yet)"]
+-    lines.append(f"Language: {a.lang}")
++    lines.append(f"Today: {today.isoformat()} ({today.strftime('%A')})")
+     return "\n".join(lines)
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    # Three blocks, most stable first, each with its own cache breakpoint. The cache is a prefix
++    # match (tools -> system -> messages), so a save_fact only invalidates the last block: the next
++    # call reads tools + instructions + profile from cache and writes just the few facts tokens.
++    # Breakpoint 1 is shared by every athlete with the same tool set; Sonnet 4.5 only caches a
++    # prefix of >= 1024 tokens, so if tools + instructions are below that it is skipped silently
++    # and breakpoint 2 (instructions + profile) carries the static part instead.
++    return [
++        {"type": "text", "text": INSTRUCTIONS, "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": athlete_profile(a), "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": athlete_memory(a, today), "cache_control": {"type": "ephemeral"}},
++    ]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [
+-    {"name": "save_fact", "description": "Remember one durable fact about the athlete.",
+-     "input_schema": {"type": "object", "properties": {"fact": {"type": "string"}}, "required": ["fact"]}},
+-    {"name": "log_session", "description": "Record a completed workout.",
+-     "input_schema": {"type": "object", "properties": {"minutes": {"type": "integer"}, "rpe": {"type": "integer"},
+-                                                       "note": {"type": "string"}}, "required": ["minutes"]}},
++    {"name": "save_fact",
++     "description": "Remember one durable fact about the athlete in their long-term memory. The fact appears in the "
++                    "'Long-term facts' list of the system prompt from the next message on. Use it for things that stay "
++                    "true for weeks: injury history, weekly schedule, preferences, equipment, races booked. Do not use it "
++                    "for moods, one-off plans or anything already in the list. Call it at most once per message.",
++     "input_schema": {"type": "object", "properties": {
++         "fact": {"type": "string", "description": "One short third-person sentence, e.g. 'Runs before work, 06:30, Mon/Wed/Fri'."}},
++         "required": ["fact"]}},
++    {"name": "log_session",
++     "description": "Record a workout the athlete reports as completed (not a planned one). Fill in what they said; "
++                    "do not guess missing values. After logging, comment briefly on the session against their zones and goal.",
++     "input_schema": {"type": "object", "properties": {
++         "minutes": {"type": "integer", "description": "Total duration in minutes."},
++         "rpe": {"type": "integer", "description": "Rating of perceived exertion, 1-10, only if the athlete gave one."},
++         "note": {"type": "string", "description": "Session type and anything notable, e.g. 'Z2 run, left calf tight'."}},
++         "required": ["minutes"]}},
+ ]
+ TOOL_GROUPS = {
+     "plan": (("plan", "week", "schedule", "taper", "build"), [
+@@ -187,8 +211,8 @@ def log_usage(usage, user_id, round_no, tool=None):
+         f.write(json.dumps(rec) + "\n")
+ 
+ 
+-def build_request(a, messages, tools, today):
+-    return {"model": MODEL, "max_tokens": MAX_TOKENS, "system": build_system(a, today), "tools": tools, "messages": messages}
++def build_request(system, messages, tools):
++    return {"model": MODEL, "max_tokens": MAX_TOKENS, "system": system, "tools": tools, "messages": messages}
+ 
+ 
+ def reply(user_id, text, llm=None):
+@@ -196,11 +220,17 @@ def reply(user_id, text, llm=None):
+     a = load_athlete(user_id)
+     today = dt.date.today()
+     tools = select_tools(text)
++    # Built once per message: a fact saved in round 1 must not rewrite the prompt for round 2
++    # (the model already sees it in the tool call); it shows up in the system prompt next message.
++    system = build_system(a, today)
+     messages = [{"role": "user", "content": text}]
+     for round_no in range(1, MAX_TOOL_ROUNDS + 1):
+-        resp = llm.create(**build_request(a, messages, tools, today))
++        resp = llm.create(**build_request(system, messages, tools))
+         used_tools = [b.name for b in resp.content if b.type == "tool_use"]
+         log_usage(resp.usage, a.user_id, round_no, tool=",".join(used_tools) or None)
++        if not (resp.usage.cache_read_input_tokens or resp.usage.cache_creation_input_tokens):
++            # Below the model's minimum cacheable prefix (1024 tokens on Sonnet 4.5) nothing is cached.
++            print("warning: prompt not cached, prefix is below the minimum cacheable length", file=sys.stderr)
+         if resp.stop_reason != "tool_use":
+             return "".join(b.text for b in resp.content if b.type == "text")
+         messages.append({"role": "assistant", "content": [b.model_dump() for b in resp.content]})

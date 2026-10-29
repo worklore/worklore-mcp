@@ -1,0 +1,3 @@
+Fixed [gen.py](/tmp/h-iil5Ho/gen.py:10) to encode HR corridors with `start` and `end`. The previous `value` and `end` mix did not represent a range. I recorded the change and reason in [ANSWER.md](/tmp/h-iil5Ho/ANSWER.md).
+
+Local verification confirms all four generated targets, including the repeated steps, use the corrected format. Watch behavior still needs a sync to confirm.

@@ -1,0 +1,114 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..752d08f
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,59 @@
++# Кеширование: save_fact больше не сбрасывает системный промпт
++
++## Причина
++
++`build_system` клал инструкции, профиль спортсмена и список фактов в один блок с
++`cache_control`. `save_fact` меняет список фактов, поэтому префикс перестаёт совпадать
++с кешем, и следующий вызов заново записывает весь блок. В `logs/usage.jsonl` это
++видно так: после `save_fact` стоит `cache_read_input_tokens: 0` и
++`cache_creation_input_tokens` около 1000.
++
++## Что изменено (только `bot.py`)
++
++- `athlete_context` разделён на две функции:
++  - `athlete_profile(a)`: имя, id, спорт, зоны, цель, язык. Меняется только при
++    редактировании профиля.
++  - `athlete_memory(a, today)`: дата и факты. Меняется при `save_fact` и при смене дня.
++- `build_system` возвращает два текстовых блока:
++  1. `INSTRUCTIONS` + профиль, с `cache_control`. Это стабильная часть, которую читаем из кеша.
++  2. дата + факты, без `cache_control`. Этот блок переписывается при `save_fact`, но
++     уже не затрагивает кешированный префикс.
++
++Проверено локально (без записи в `data/` и `logs/`, с подменённым LLM):
++- байты первого блока не меняются после `save_fact` и при смене даты;
++- факты видны модели во втором блоке, в том числе во втором раунде инструмента;
++- `cache_control` стоит только на первом блоке.
++
++## Риски, которые нужно проверить до деплоя
++
++1. **Минимальный размер кешируемого префикса.** Sonnet 4.5 кеширует только префиксы
++   от 1024 токенов, и префикс считается вместе с описаниями инструментов. По оценке
++   (около 3,2 символа на токен) стабильная часть весит примерно 900–950 токенов, то есть
++   ниже минимума. Сейчас факты добавляют несколько десятков токенов и поэтому кеш работает.
++   После разделения кеш может молча не включаться, и обычные сообщения подорожают.
++   Я не проверял это через API: у меня нет ключа, и отправлять что-либо во внешний
++   сервис по правилам нельзя. Проверка после деплоя: в первом вызове диалога
++   `cache_creation_input_tokens` должен быть больше 0 и больше 1024, а следующий
++   вызов после `save_fact` должен показывать `cache_read_input_tokens` около
++   стабильной части. Если `cache_creation_input_tokens` стабильно 0, стабильный блок
++   короче минимума. Тогда нужно добавить в него стабильного содержания примерно на
++   100–200 токенов или пересмотреть подход.
++
++2. **Выбор инструментов по ключевым словам тоже сбрасывает кеш.** `tools` стоят в
++   префиксе перед `system`, поэтому сообщение с «plan» или «race» меняет список
++   инструментов и вместе с ним сбрасывает кеш системного промпта. Это не относится
++   к `save_fact`, и я это не трогал. Сохранил решение из `NOTES.md` про фильтрацию
++   по ключевым словам. Если захочется убрать и этот сброс, нужно выбрать между
++   постоянным набором инструментов (больше токенов в каждом вызове) и сохранением
++   фильтра.
++
++3. **Дата в стабильной части больше не стоит.** Раньше кеш сбрасывался раз в сутки
++   из-за строки «Today». Теперь эта строка во втором блоке, поэтому полуночи больше
++   не сбрасывают кеш.
++
++## Что не сделано
++
++- Не деплоил, не коммитил, не отправлял ничего во внешние сервисы.
++- `NOTES.md` и `README.md` не обновлял. `README.md` описывает кеш как «системный
++  промпт с `cache_control`», и это по-прежнему верно, но теперь кеш стоит на
++  стабильном блоке, а не на всём промпте.
+diff --git a/__pycache__/bot.cpython-314.pyc b/__pycache__/bot.cpython-314.pyc
+new file mode 100644
+index 0000000..a1439c4
+Binary files /dev/null and b/__pycache__/bot.cpython-314.pyc differ
+diff --git a/bot.py b/bot.py
+index e2ff241..bc63b7c 100644
+--- a/bot.py
++++ b/bot.py
+@@ -114,23 +114,31 @@ Formatting:
+ """
+ 
+ 
+-def athlete_context(a, today):
+-    lines = [
+-        f"Today: {today.isoformat()} ({today.strftime('%A')})",
++def athlete_profile(a):
++    # Changes only when the profile is edited, never on save_fact.
++    return "\n".join([
+         f"Athlete: {a.name} (id {a.user_id}), sport: {a.sport}",
+         "Zones: " + ", ".join(f"{k} {v}" for k, v in a.zones.items()),
+         f"Goal: {a.goal}",
+-        "Long-term facts:",
+-    ]
++        f"Language: {a.lang}",
++    ])
++
++
++def athlete_memory(a, today):
++    # Changes on save_fact and at midnight; kept out of the cached prefix.
++    lines = [f"Today: {today.isoformat()} ({today.strftime('%A')})", "Long-term facts:"]
+     lines += [f"- {f}" for f in a.facts] or ["- (none yet)"]
+-    lines.append(f"Language: {a.lang}")
+     return "\n".join(lines)
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    # Two blocks. The cache breakpoint sits on the stable one, so a new fact or a new day
++    # only rewrites the small uncached block after it instead of the whole prompt.
++    static = INSTRUCTIONS + "\n\n" + athlete_profile(a)
++    return [
++        {"type": "text", "text": static, "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": athlete_memory(a, today)},
++    ]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [

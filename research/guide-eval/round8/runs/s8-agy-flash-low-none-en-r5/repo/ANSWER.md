@@ -1,0 +1,29 @@
+# Fix Caching Eviction on Fact Writes
+
+## Root Cause
+Previously, `build_system(a, today)` concatenated the static coaching instructions (`INSTRUCTIONS`) and the athlete-specific dynamic context (`athlete_context(a, today)`) into a single system text block with `cache_control: {"type": "ephemeral"}`:
+
+```python
+def build_system(a, today):
+    # One block, cached as a whole: instructions + per-athlete context.
+    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
+```
+
+Whenever `save_fact` was called, a new fact was appended to `a.facts`. On the subsequent call (whether in round 2 of the same tool loop or in subsequent messages), `athlete_context` changed. Because the static instructions and the dynamic athlete context were combined in a single cached block, this mutation altered the prefix and invalidated the cache for the entire ~1000 token system prompt, forcing `cache_read_input_tokens: 0` and incurring a full cache creation write penalty.
+
+## Changes Made
+In `bot.py`, `build_system(a, today)` was updated to split the system prompt into two separate text content blocks:
+1. **Static Coaching Instructions**: Contains `INSTRUCTIONS` with `cache_control: {"type": "ephemeral"}`.
+2. **Dynamic Athlete Context**: Contains `athlete_context(a, today)` without `cache_control`.
+
+```python
+def build_system(a, today):
+    # Two blocks: static instructions (cached) + dynamic per-athlete context.
+    return [
+        {"type": "text", "text": INSTRUCTIONS, "cache_control": {"type": "ephemeral"}},
+        {"type": "text", "text": athlete_context(a, today)},
+    ]
+```
+
+With this change, the stable prefix containing `INSTRUCTIONS` remains unchanged across fact saves and across athletes, allowing Claude's prompt cache to be read reliably without being evicted when facts are updated.

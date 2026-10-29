@@ -1,0 +1,67 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..9db0369
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,10 @@
++# Why the nightly job reported nothing
++
++The launch agent **did run**. `launchctl-print.txt` shows six runs, a calendar trigger at 02:30, and a last exit code of 1. The six matching entries in `Library/Logs/nightly-review.err` show what happened on each run:
++
++1. `claude -p` failed with `Not logged in · Please run /login`. The headless launchd process does not have usable Claude authentication, so it cannot produce a review. The snapshot contains no credentials to restore that access. Authenticate the CLI for the same user and environment in which the agent runs, or provide its supported noninteractive credentials securely, then verify a headless `claude -p` invocation succeeds.
++2. Immediately after that failure, `nightly-review.zsh` assigned the exit code to `status`. In zsh, `status` is a read-only special parameter. The resulting error terminated the script before it could call `notify.sh`, so even the failure note was never sent. The script now captures the exit code in `claude_status` and sends the failure note. It also treats an empty CLI response as a failure.
++
++`nightly-review.out` being empty is expected here: the CLI output is redirected to a dated `nightly-review-YYYY-MM-DD.md` file, and the errors went to `nightly-review.err`. The configured PATH includes the usual Homebrew locations; the log shows the CLI was found and ran.
++
++`notify.sh` now reports a missing keychain token and makes `curl` return an error for HTTP failures. Its working when called manually does not prove that the 02:30 launchd process can access the keychain. Once Claude authentication is fixed, verify that the job can read the `tg-bot` item and deliver a test message in its launchd context. No job was launched and no external message was sent from this snapshot.
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..b6243f4 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -15,12 +15,17 @@ Do not modify any file."
+ 
+ cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
+ 
+-claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
+-
+-if [ $status -ne 0 ]; then
+-  "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
+-  exit $status
++if claude -p "$PROMPT" --output-format text > "$OUT"; then
++  if [[ ! -s "$OUT" ]]; then
++    print -u2 -- "nightly review: claude produced no summary"
++    "$NOTIFY" "nightly review FAILED: claude produced no summary, see $OUT"
++    exit 1
++  fi
++else
++  claude_status=$?
++  print -u2 -- "nightly review: claude failed (exit $claude_status)"
++  "$NOTIFY" "nightly review FAILED (exit $claude_status), see $OUT"
++  exit $claude_status
+ fi
+ 
+ "$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"
+diff --git a/bin/notify.sh b/bin/notify.sh
+index 818e531..60b451a 100755
+--- a/bin/notify.sh
++++ b/bin/notify.sh
+@@ -1,7 +1,16 @@
+ #!/bin/bash
+ # usage: notify.sh "message"  — sends a Telegram message to me.
+ set -eu
+-: "${TG_BOT_TOKEN:=$(security find-generic-password -s tg-bot -w)}"
++if [ -z "${TG_BOT_TOKEN:-}" ]; then
++  TG_BOT_TOKEN=$(security find-generic-password -s tg-bot -w) || {
++    printf '%s\n' 'notify: could not read tg-bot token from keychain' >&2
++    exit 1
++  }
++fi
++if [ -z "$TG_BOT_TOKEN" ]; then
++  printf '%s\n' 'notify: tg-bot token is empty' >&2
++  exit 1
++fi
+ CHAT_ID=123456789
+-curl -sS -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
++curl -fsS -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
+   -d chat_id="$CHAT_ID" --data-urlencode text="$1" > /dev/null

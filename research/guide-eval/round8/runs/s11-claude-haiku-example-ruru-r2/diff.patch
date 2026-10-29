@@ -1,0 +1,168 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..a299928
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,59 @@
++# Почему вторая публикация возвращает 500
++
++## Причина
++
++`similarity()` в `src/app.py` возвращает `round(..., 4)`, то есть Python `float`.
++`related()` кладёт это значение в `similar[].score`, а `publish()` передаёт
++элемент в `table.put_item()`. boto3 отвергает float:
++`TypeError: Float types are not supported. Use Decimal types instead.`
++
++Первая публикация проходит, потому что таблица пуста: `related()` ничего не
++сравнивает, `similar` = `[]`, и float в элементе нет. Вторая публикация уже
++находит существующую историю, считает оценку и падает. Лог
++`logs/error.log` это подтверждает: `similar=0 stored` при первой записи, затем
++два `500` с этим `TypeError`.
++
++Ошибка воспроизводится без AWS: `FakeTable` из `tests/fake_dynamo.py` с одной
++засеянной историей даёт тот же `TypeError` при второй публикации.
++
++## Исправление
++
++1. `src/app.py`: добавлена `to_dynamo(value)`. Она рекурсивно заменяет каждый
++   `float` на `Decimal(str(value))` (словари и списки обходятся). `publish()`
++   теперь пишет `table.put_item(Item=to_dynamo(item))`. Оценка остаётся дробной
++   (`Decimal("0.4786")`), поэтому сортировка и порог похожести не меняются.
++2. `tests/test_publish.py`: добавлены тесты пути с заполненной таблицей:
++   - вторая публикация с одной похожей историей (проверяется, что в таблице
++     `score` имеет тип `Decimal`);
++   - публикация при пяти существующих историях (`similar` ровно `TOP_N`);
++   - два вызова `handler()` подряд (статус 201 оба раза);
++   - `to_dynamo` для вложенных float.
++
++Проверка:
++- Новые тесты на старом `app.py`: 4 падают (3 ошибки, 1 провал).
++- На исправленном коде: `python3 -m unittest discover tests` — 5 тестов, OK.
++- Тот же сценарий из `/tmp/repro_seed.py` (засеянная таблица) — `OK`.
++
++Что защищает от повторения: любое будущее вычисляемое поле, которое окажется
++float, будет сконвертировано в `to_dynamo` перед записью, а тесты заполненной
++таблицы запускают код оценок при каждом прогоне.
++
++## Что не сделано
++
++- Публикация в реальную таблицу DynamoDB не выполнялась: в этом окружении нет
++  доступа к AWS, и правила задачи запрещают публиковать и деплоить.
++- `FakeTable` — заглушка. Она проверяет типы так же, как boto3, но не повторяет
++  всё поведение реального сервиса (лимиты, пустые строки в ключах и т. д.).
++
++## Что пригодилось из заметки коллеги
++
++- **Пригодилось:** главный урок. Тест записи должен сначала засеять таблицу
++  одной записью и только потом проверять вторую. Путь с пустой таблицей в
++  продакшене случается один раз. Этот урок лёг в основу новых тестов.
++- **Пригодилось в виде идеи:** поиск `round(` и вычислений, которые попадают в
++  элементы. Здесь это один вызов `round` в `similarity()`.
++- **Не пригодилось:** исправление «оценки в целых процентах». Оно сработало бы у
++  автора, но здесь меняет смысл поля `score` и может сломать порядок при
++  равных значениях. `Decimal` решает ту же проблему без потери точности.
++- **Не пригодилось:** «опубликовать дважды в реальную таблицу». Нет доступа, и
++  публикация запрещена правилами этой задачи.
+diff --git a/src/app.py b/src/app.py
+index db49c5e..acf5635 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -8,6 +8,7 @@ import json
+ import logging
+ import re
+ import time
++from decimal import Decimal
+ 
+ log = logging.getLogger("stories")
+ 
+@@ -30,6 +31,21 @@ def similarity(a, b):
+     return round(0.7 * tag_score + 0.3 * word_score, 4)
+ 
+ 
++def to_dynamo(value):
++    """Return ``value`` with every float replaced by ``Decimal``.
++
++    DynamoDB rejects Python floats, and similarity scores are floats. Converting
++    them here, at the write boundary, means no computed value can break a put.
++    """
++    if isinstance(value, float):
++        return Decimal(str(value))
++    if isinstance(value, dict):
++        return {k: to_dynamo(v) for k, v in value.items()}
++    if isinstance(value, (list, tuple)):
++        return [to_dynamo(v) for v in value]
++    return value
++
++
+ def related(story, existing):
+     scored = []
+     for other in existing:
+@@ -60,7 +76,7 @@ def publish(table, story):
+         "published_at": int(time.time()),
+         "similar": related(story, existing),
+     }
+-    table.put_item(Item=item)
++    table.put_item(Item=to_dynamo(item))
+     log.info("publish slug=%s similar=%d stored", item["slug"], len(item["similar"]))
+     return item
+ 
+diff --git a/tests/test_publish.py b/tests/test_publish.py
+index 6c9ac44..32b79f2 100644
+--- a/tests/test_publish.py
++++ b/tests/test_publish.py
+@@ -1,6 +1,8 @@
++import json
+ import os
+ import sys
+ import unittest
++from decimal import Decimal
+ 
+ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+ sys.path.insert(0, os.path.dirname(__file__))
+@@ -9,6 +11,10 @@ import app  # noqa: E402
+ from fake_dynamo import FakeTable  # noqa: E402
+ 
+ 
++def _story(slug, tags, body):
++    return {"slug": slug, "title": slug.replace("-", " "), "tags": tags, "body": body}
++
++
+ class PublishTest(unittest.TestCase):
+     def test_publish_stores_story(self):
+         table = FakeTable()
+@@ -23,6 +29,35 @@ class PublishTest(unittest.TestCase):
+         self.assertEqual(table.get_item(Key={"slug": "why-my-cron-ran-twice"})["Item"]["title"], "Why my cron ran twice")
+         self.assertEqual(table.scan()["Count"], 1)
+ 
++    def test_second_publish_with_similar_stories_stores(self):
++        # The first publish runs against an empty table and never scores anything,
++        # so the scored path only runs when the table already holds stories.
++        table = FakeTable()
++        app.publish(table, _story("first-story", ["cron", "linux"], "cron runs jobs on linux"))
++        stored = app.publish(table, _story("second-story", ["cron"], "cron jobs and linux boxes"))
++        self.assertEqual([s["slug"] for s in stored["similar"]], ["first-story"])
++        saved = table.get_item(Key={"slug": "second-story"})["Item"]
++        self.assertIsInstance(saved["similar"][0]["score"], Decimal)
++
++    def test_publish_with_many_existing_stories(self):
++        table = FakeTable()
++        for i in range(5):
++            app.publish(table, _story(f"story-{i}", ["cron", f"t{i}"], f"cron body {i} shared words"))
++        stored = app.publish(table, _story("late-story", ["cron", "t1"], "cron body shared words"))
++        self.assertEqual(len(stored["similar"]), app.TOP_N)
++        self.assertEqual(table.scan()["Count"], 6)
++
++    def test_handler_publishes_twice(self):
++        table = FakeTable()
++        body = json.dumps(_story("repeat-story", ["cron"], "cron body"))
++        other = json.dumps(_story("other-story", ["cron"], "cron body text"))
++        self.assertEqual(app.handler({"body": body}, table)["statusCode"], 201)
++        self.assertEqual(app.handler({"body": other}, table)["statusCode"], 201)
++
++    def test_to_dynamo_converts_nested_floats(self):
++        out = app.to_dynamo({"a": 0.5, "b": [{"c": 0.25}], "d": 3})
++        self.assertEqual(out, {"a": Decimal("0.5"), "b": [{"c": Decimal("0.25")}], "d": 3})
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

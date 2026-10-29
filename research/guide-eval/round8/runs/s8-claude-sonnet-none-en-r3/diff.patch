@@ -1,0 +1,32 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..90ce9e8
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,7 @@
++# Cache fix
++
++**Cause:** `build_system` put the static instructions and the per-athlete context (including the facts list) in one block with a single `cache_control` breakpoint. `save_fact` changes the facts, so the block text changed and the whole ~1000-token prefix was re-created on the next call.
++
++**Change (`bot.py`, `build_system`):** the system prompt is now two blocks. The static `INSTRUCTIONS` has its own breakpoint. The athlete context is a second block with its own breakpoint. After a `save_fact`, the instructions are still read from cache and only the small context block is re-written.
++
++Not changed: keyword tool filtering. Tools come before the system prompt in the cache prefix, so a message that adds a tool group still invalidates the cache. That's a separate trade-off, and NOTES.md says to leave it. I haven't run this against the API, so check `logs/usage.jsonl` after deploying.
+diff --git a/bot.py b/bot.py
+index e2ff241..49d25af 100644
+--- a/bot.py
++++ b/bot.py
+@@ -128,9 +128,11 @@ def athlete_context(a, today):
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    # Two blocks: static instructions get their own breakpoint so a save_fact
++    # (which changes only the athlete context) doesn't evict them.
++    eph = {"type": "ephemeral"}
++    return [{"type": "text", "text": INSTRUCTIONS, "cache_control": eph},
++            {"type": "text", "text": athlete_context(a, today), "cache_control": eph}]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [

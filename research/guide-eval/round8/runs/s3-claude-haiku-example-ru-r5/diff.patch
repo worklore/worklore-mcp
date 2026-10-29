@@ -1,0 +1,177 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..560ea7c
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,94 @@
++# Почему nightly-review ничего не сообщал
++
++## Что показали файлы
++
++- `launchctl-print.txt`: `runs = 6`, `last exit code = 1`. Задание запускалось
++  по расписанию шесть раз, значит launchd работает. Проблема не в расписании.
++- `Library/Logs/nightly-review.err`: шесть одинаковых пар строк. Первая:
++  `Not logged in · Please run /login`. Вторая:
++  `/Users/vk/bin/nightly-review.zsh:19: read-only variable: status`.
++- `Library/Logs/nightly-review.out`: пустой, скрипт ничего не печатал.
++- `README.md`: с момента загрузки (2026-10-12) не пришло ни одного сообщения,
++  ни успеха, ни ошибки.
++
++## Причины
++
++Их две, и они наложились друг на друга.
++
++1. **Запуск `claude` не был авторизован.** Строка `Not logged in` в `.err`
++   означает, что CLI в контексте launchd не нашёл логин. Вероятная причина:
++   в окружении задания нет `USER` (и `HOME` не задан явно), а CLI по нему
++   ищет учётные данные в keychain. Это гипотеза, на этой машине я её не
++   проверял: в снимке нет ни самого `claude`, ни доступа к keychain.
++2. **Скрипт убивал себя до отправки уведомления.** `status=$?` в zsh
++   присваивает значение read-only параметру `status`, и скрипт завершается
++   на месте. Строка 19 стоит между вызовом `claude` и блоком уведомления
++   об ошибке. Поэтому задание падало, а сообщение о падении не отправлялось.
++   Это воспроизведено: в скратче с заглушкой `claude`, которая возвращает
++   1, скрипт вывел `read-only variable: status`, код 1, и уведомление не
++   вызвалось.
++
++Третья причина нашлась при проверке, хотя в логах её не было видно:
++**`notify.sh` тоже мог молчать.** Если `security` не отдаёт токен, переменная
++остаётся пустой, `curl` без `-f` получает 404 от Telegram и выходит с кодом 0.
++Проверено заглушками: без `-f` скрипт выходил с 0, с `-f` и при отсутствии
++токена выходит с ненулевым кодом.
++
++## Что изменено
++
++- `bin/nightly-review.zsh`
++  - `status=$?` заменён на `rc=$?`.
++  - Вызов уведомления вынесен в функцию `fail()`, которая пишет в stderr,
++    шлёт уведомление и выходит с кодом 1. Если уведомление тоже не ушло,
++    это пишется в stderr.
++  - Пустой вывод при коде 0 считается ошибкой.
++  - В stdout пишутся время старта, код выхода `claude`, длительность и
++    итог, поэтому `.out` теперь показывает, что реально произошло.
++- `bin/notify.sh`
++  - Если токена нет, скрипт выходит с кодом 1 и сообщением в stderr.
++  - `curl` запущен с `-f`, HTTP-ошибки больше не проглатываются.
++- `Library/LaunchAgents/com.vk.nightly-review.plist`: в `EnvironmentVariables`
++  добавлены `USER=vk` и `HOME=/Users/vk`.
++
++## Что проверено
++
++- `zsh -n`, `bash -n`, `plutil -lint`: синтаксис в порядке.
++- Скрипт в скратче с заглушками `claude` и `notify.sh`, пять сценариев:
++  сбой `claude` (уведомление FAILED, код 1), успех (уведомление done, код 0),
++  код 0 с пустым файлом (FAILED), отсутствующий репозиторий (FAILED), сбой
++  самого уведомления на успешном пути (код 1, сообщение в stderr).
++- `notify.sh` с заглушками `security` и `curl`: без токена код 1, при 404 код 22.
++- Настоящий Telegram, настоящий `claude` и launchd не запускались. Скратч
++  удалён. Ничего не загружено, не опубликовано и не отправлено.
++
++## Что из заметки коллеги пригодилось
++
++- **Пригодилось:** сначала смотреть `launchctl print` и `.err`, а не
++  гадать; `rc=$?` вместо `status`; `USER` в `EnvironmentVariables`;
++  уведомление о сбое как можно выше в пути сбоя; засечь длительность; проверка
++  на зелёный код с пустым результатом; проверка на принудительном сбое.
++- **Не пригодилось:** передача промпта через stdin. Здесь промпт передаётся
++  аргументом в кавычках, и ошибки «Input must be provided» в логах нет.
++  Launchd по умолчанию даёт заданию stdin `/dev/null`, поэтому `< /dev/null` не
++  добавлял. Если появится зависание на stdin, это первое, что стоит добавить.
++- **Ограничение:** строка `runs = 6` сама по себе не доказывает, что работа
++  выполнена. Здесь она подтверждает запуск, а причина видна в `.err`.
++
++## Что сделать вам
++
++Файлы в этой папке снимка, в `~/bin` и `~/Library` ничего не менялось.
++Чтобы применить исправления:
++
++1. Скопировать `bin/*` в `~/bin/` и обновить plist в `~/Library/LaunchAgents/`.
++2. Перезагрузить задание:
++   `launchctl bootout gui/$UID ~/Library/LaunchAgents/com.vk.nightly-review.plist`
++   и затем `launchctl bootstrap gui/$UID ~/Library/LaunchAgents/com.vk.nightly-review.plist`.
++3. Запустить вручную: `launchctl kickstart -k gui/$UID/com.vk.nightly-review`.
++   Это отправит настоящее сообщение в Telegram, поэтому запускаете вы.
++4. Проверить: `last exit code = 0`, `nightly-review-<дата>.md` существует и не пуст,
++   в `.out` есть время и длительность, в Telegram пришло сообщение о результате.
++   Если `last exit code` снова 1 и в `.err` есть `Not logged in`, гипотеза
++   про `USER`/keychain неверна, и причину надо искать дальше (доступ к keychain
++   из launchd, путь к `claude` из PATH).
++5. Для проверки ветки ошибки временно сломать скрипт (например, указать
++   несуществующий путь в `REPO`) и убедиться, что пришло сообщение FAILED.
+diff --git a/Library/LaunchAgents/com.vk.nightly-review.plist b/Library/LaunchAgents/com.vk.nightly-review.plist
+index c347363..563be5d 100644
+--- a/Library/LaunchAgents/com.vk.nightly-review.plist
++++ b/Library/LaunchAgents/com.vk.nightly-review.plist
+@@ -24,6 +24,10 @@
+   <dict>
+     <key>PATH</key>
+     <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
++    <key>USER</key>
++    <string>vk</string>
++    <key>HOME</key>
++    <string>/Users/vk</string>
+   </dict>
+ </dict>
+ </plist>
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..e968c71 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -13,14 +13,32 @@ For each commit: one line on what it changes and whether anything looks risky
+ End with a three-line summary I can read on my phone.
+ Do not modify any file."
+ 
+-cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
++# Anything that goes wrong below must still reach the phone, so report first, then exit.
++fail() {
++  echo "$(date '+%F %T') FAILED: $1" >&2
++  "$NOTIFY" "nightly review FAILED: $1" || echo "$(date '+%F %T') notify also failed" >&2
++  exit 1
++}
+ 
++echo "$(date '+%F %T') start, since $SINCE"
++started=$(date +%s)
++
++cd "$REPO" || fail "repo missing ($REPO)"
++
++# Not `status`: that is a read-only special parameter in zsh, and assigning to it kills the script.
+ claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
++rc=$?
++
++echo "$(date '+%F %T') claude exit=$rc after $(( $(date +%s) - started ))s"
++
++if [ $rc -ne 0 ]; then
++  fail "claude exit $rc, see $OUT"
++fi
+ 
+-if [ $status -ne 0 ]; then
+-  "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
+-  exit $status
++# Exit 0 with no output means nothing was reviewed.
++if [ ! -s "$OUT" ]; then
++  fail "claude exit 0 but $OUT is empty"
+ fi
+ 
+-"$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"
++"$NOTIFY" "nightly review done: $(head -c 300 "$OUT")" || fail "notify.sh failed after a successful review, see $OUT"
++echo "$(date '+%F %T') done"
+diff --git a/bin/notify.sh b/bin/notify.sh
+index 818e531..272204d 100755
+--- a/bin/notify.sh
++++ b/bin/notify.sh
+@@ -1,7 +1,12 @@
+ #!/bin/bash
+ # usage: notify.sh "message"  — sends a Telegram message to me.
+ set -eu
+-: "${TG_BOT_TOKEN:=$(security find-generic-password -s tg-bot -w)}"
++: "${TG_BOT_TOKEN:=$(security find-generic-password -s tg-bot -w 2>/dev/null || true)}"
++if [ -z "$TG_BOT_TOKEN" ]; then
++  echo "notify.sh: no bot token (keychain item tg-bot not readable)" >&2
++  exit 1
++fi
+ CHAT_ID=123456789
+-curl -sS -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
++# -f: an HTTP error (bad token, 404, ...) must fail here instead of being swallowed.
++curl -sS -f -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
+   -d chat_id="$CHAT_ID" --data-urlencode text="$1" > /dev/null

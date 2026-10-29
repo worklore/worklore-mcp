@@ -1,0 +1,128 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..74779ed
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,7 @@
++# Исправление кеширования
++
++В `bot.py` разделил системный промпт на два текстовых блока. Постоянные инструкции стоят первыми и помечены `cache_control: ephemeral`; профиль, дата и долговременные факты идут следом без метки. Поэтому `save_fact` обновляет доступный модели контекст в следующем раунде, но не меняет кешируемый префикс. Добавил постоянные пояснения к существующим правилам, чтобы этот префикс оставался достаточно большим для кеширования.
++
++Набор инструментов по ключевым словам не менял. Если набор выбранных инструментов меняется между сообщениями, кеш для нового префикса инструментов всё ещё создаётся заново.
++
++Обновил описание в `README.md`. Добавил локальные проверки: неизменность кешируемого блока после `save_fact`, появление нового факта в следующем раунде и независимость кешируемого блока от даты и фактов. `python3 -m unittest -v test_bot` — 2 проверки прошли. Внешний API не вызывал; фактические счётчики `usage` после исправления локально не измерялись.
+diff --git a/README.md b/README.md
+index ebd390e..b4ad62a 100644
+--- a/README.md
++++ b/README.md
+@@ -11,6 +11,6 @@ its system prompt. Every API call appends its `usage` object to `logs/usage.json
+ Run it locally with `COACH_ANTHROPIC_KEY=sk-ant-... python3 bot.py 42` and type
+ messages on stdin (the Telegram long-polling transport, which needs
+ `COACH_TELEGRAM_TOKEN`, lives in a separate deploy repo and just calls `reply()`).
+-Requires Python 3.11+ and `pip install anthropic`. Prompt caching is on: the system
+-prompt carries a `cache_control` marker so the tool-loop rounds and follow-up
+-messages inside the 5-minute window read it from cache.
++Requires Python 3.11+ and `pip install anthropic`. Prompt caching marks the static
++coaching instructions; the athlete profile and long-term facts follow in a separate
++uncached block so saving a fact does not change the cached instructions.
+diff --git a/bot.py b/bot.py
+index e2ff241..ecc121c 100644
+--- a/bot.py
++++ b/bot.py
+@@ -111,6 +111,18 @@ Formatting:
+ - Plain text. No markdown headings, no tables.
+ - Lists only for a session structure (warm-up / main / cool-down).
+ - Numbers with units: 45 min, 12 km, 150 bpm.
++
++Applying the coaching rules:
++- Treat the profile and long-term facts in the following block as the athlete's current record. Use
++  that record when deciding what advice fits, and do not infer missing training history from a goal.
++- For a workout request, give the requested session in the athlete's own zones or by RPE. Keep
++  recovery work within Z1/Z2, and avoid adding a hard session without enough training context.
++- For a weekly request, use plan_week before describing the week. Respect the existing rest days,
++  the hard-session limit, and the limit on increases in weekly volume.
++- When a completed workout is reported, record it with log_session before commenting. When a
++  durable personal detail is new, save that detail once; a tool result confirms the save.
++- If symptoms meet the safety rules above, put that guidance ahead of training suggestions. If
++  a needed number is absent from the record or message, ask for it before giving a numeric estimate.
+ """
+ 
+ 
+@@ -128,9 +140,11 @@ def athlete_context(a, today):
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    # Keep the cache boundary before athlete data, which can change during a tool loop.
++    return [
++        {"type": "text", "text": INSTRUCTIONS, "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": athlete_context(a, today)},
++    ]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [
+diff --git a/test_bot.py b/test_bot.py
+new file mode 100644
+index 0000000..3565bf0
+--- /dev/null
++++ b/test_bot.py
+@@ -0,0 +1,57 @@
++"""Local regression checks for prompt caching and memory updates."""
++import datetime as dt
++import unittest
++from types import SimpleNamespace
++from unittest.mock import patch
++
++import bot
++
++
++class PromptCacheTests(unittest.TestCase):
++    def test_save_fact_keeps_cached_prefix_and_updates_context(self):
++        athlete = bot.Athlete(user_id="42", name="Marta", facts=["Runs before work"])
++        requests = []
++
++        class FakeLLM:
++            def create(self, **request):
++                requests.append(request)
++                if len(requests) == 1:
++                    tool_use = SimpleNamespace(
++                        type="tool_use", name="save_fact", id="call-1",
++                        input={"fact": "Owns a Garmin 255"},
++                        model_dump=lambda: {"type": "tool_use", "name": "save_fact", "id": "call-1", "input": {"fact": "Owns a Garmin 255"}},
++                    )
++                    return SimpleNamespace(content=[tool_use], stop_reason="tool_use", usage=None)
++                return SimpleNamespace(
++                    content=[SimpleNamespace(type="text", text="Got it.")],
++                    stop_reason="end_turn", usage=None,
++                )
++
++        with patch.object(bot, "load_athlete", return_value=athlete), \
++             patch.object(bot, "save_athlete"), \
++             patch.object(bot, "log_usage"):
++            self.assertEqual(bot.reply("42", "I own a Garmin 255", llm=FakeLLM()), "Got it.")
++
++        first, second = (request["system"] for request in requests)
++        self.assertEqual(first[0], second[0])
++        self.assertEqual(first[0]["text"], bot.INSTRUCTIONS)
++        self.assertEqual(first[0]["cache_control"], {"type": "ephemeral"})
++        self.assertNotIn("cache_control", first[1])
++        self.assertNotIn("cache_control", second[1])
++        self.assertNotIn("Owns a Garmin 255", first[1]["text"])
++        self.assertIn("Owns a Garmin 255", second[1]["text"])
++        self.assertEqual(requests[0]["tools"], requests[1]["tools"])
++
++    def test_context_changes_do_not_change_cached_block(self):
++        athlete = bot.Athlete(user_id="42", name="Marta")
++        day = dt.date(2026, 4, 18)
++        first = bot.build_system(athlete, day)
++        athlete.facts.append("Runs before work")
++        second = bot.build_system(athlete, day + dt.timedelta(days=1))
++
++        self.assertEqual(first[0], second[0])
++        self.assertNotEqual(first[1], second[1])
++
++
++if __name__ == "__main__":
++    unittest.main()

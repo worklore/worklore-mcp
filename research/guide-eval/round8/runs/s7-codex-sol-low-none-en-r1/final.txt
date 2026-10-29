@@ -1,0 +1,3 @@
+Fixed the Intervals.icu integration. The Connect button now starts OAuth through the app’s authenticated fetch request, the scope list no longer contains duplicate read and write permissions, and tokens without an expiry are no longer discarded after an hour.
+
+The causes are documented in [ANSWER.md](/tmp/h-jz2N3b/ANSWER.md). Local checks passed for the start request, generated scopes, state, and connection status. Live consent remains untested because this checkout has placeholder OAuth credentials.

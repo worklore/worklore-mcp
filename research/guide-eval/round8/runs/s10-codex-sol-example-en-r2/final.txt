@@ -1,0 +1,3 @@
+Implemented all six events in [EVENTS.md](/tmp/h-EG0V74/docs/EVENTS.md) through the existing `Analytics.capture` wrapper on the [registration](/tmp/h-EG0V74/lib/screens/registration_screen.dart) and [offers](/tmp/h-EG0V74/lib/screens/offer_screen.dart) screens. Text-start events fire once per screen instance; slider and scroll events fire when the interaction ends.
+
+[ANSWER.md](/tmp/h-EG0V74/ANSWER.md) documents the changes and which parts of the colleague’s note applied. `flutter analyze` and `git diff --check` passed. Live PostHog delivery was not verified because the configured key is a CI placeholder.

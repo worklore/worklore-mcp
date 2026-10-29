@@ -1,0 +1,74 @@
+# HR corridors clamped to the watch's zones — fix
+
+## What changed
+
+`gen.py`, `hr_target()`: the lower bound of the HR target is now sent as
+`start` instead of `value`.
+
+```diff
+-    return {"units": "%lthr", "value": lo, "end": hi}
++    return {"units": "%lthr", "start": lo, "end": hi}
+```
+
+Units stay `%lthr`, so Intervals still converts to bpm at FIT-export time
+using its own stored LTHR (172). Nothing else changed. I regenerated
+`plans/tempo-run.json` and checked the output: every HR step now has
+`start`/`end`, and no `value` key is left.
+
+## Why
+
+`readback/event-184233-as-sent.json` shows every step as
+`{"units": "%lthr", "value": lo, "end": hi}`. Intervals' FIT export treats
+`{value, end}` as a lap-HR / zone-mapped target. That kind of target makes the
+watch snap the range to its own zone bands. `{start, end}` exports as an
+instant-HR corridor in absolute bpm, which the watch displays as given. This
+matches `readback/watch-notes.md` exactly:
+
+- Every displayed range is one of the Forerunner's zone bands (118–137,
+  151–162, 137–151), never the planned range.
+- Changing the watch's LTHR moved the bands but they stayed zone edges.
+
+So this wasn't an LTHR mismatch between Intervals (172) and the watch (168).
+The watch was being told to use its zones.
+
+## Expected result after re-push (not yet verified on the watch)
+
+I did not push anything. Per the ground rules this was a local change only.
+To confirm, run `python3 gen.py plans/tempo-run.json > event.json &&
+./push.sh event.json`, read the event back, sync Garmin, and check:
+
+| step | % LTHR | should show (× 172) |
+|---|---|---|
+| Warm-up easy | 68–75 | 117–129 |
+| Tempo | 88–93 | 151–160 |
+| Float | 75–82 | 129–141 |
+| Cool-down | 65–72 | 112–124 |
+
+Because the watch's LTHR (168) differs from Intervals' (172), seeing these
+×172 values proves the corridor comes from Intervals and not from the watch.
+
+## Which parts of the colleague's note applied
+
+**Applied:**
+- The main finding: use `start` for the lower bound, not `value`, because
+  that key decides whether the export is lap-HR/zone-mapped or an instant-HR
+  corridor. This is the whole fix.
+- Keep `%lthr` percentages and don't send absolute bpm. Our notes show the
+  same failures they hit: `units: "bpm"` gave 214–249, and
+  `start_bpm`/`end_bpm` gave a constant 101. Both are ruled out.
+- The verification method: compare against ×172 while the watch is at 168.
+
+**Did not apply / ignored:**
+- The "bonus trap" about the top-level `description` text grammar (`m` =
+  minutes, `mtr`/`km`, bare `Z2` meaning power, digits at the start of
+  labels). Our issue is about the watch, and our readback says
+  `workout_doc.steps` is populated. Nobody reported the steps missing in the
+  web UI. I did not add a `description`. A malformed one can make Intervals
+  wipe both representations, so adding it untested would be a risk with no
+  reported problem to fix. If you later want the steps chart in the web UI,
+  follow the note's grammar rules and check `steps` isn't `[]` on readback.
+- The reproduce steps that create/delete live events and sync the watch: I
+  didn't do any of these, because of the no-external-services rule. They're
+  left as the verification step above.
+- The narrative parts (weeks of misdiagnosis, surveying the UI dropdown) are
+  background only.

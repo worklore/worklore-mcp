@@ -1,0 +1,30 @@
+{
+ "answer_file": false,
+ "answer_source": "brain",
+ "events": {
+  "registration_email_started": "capture",
+  "registration_phone_started": "missing",
+  "loan_amount_changed": "capture",
+  "terms_accepted": "missing",
+  "registration_continue_tapped": "missing",
+  "offers_scrolled": "missing"
+ },
+ "all_events_implemented": false,
+ "trap_hits": [
+  "lib/screens/registration_screen.dart:70 Slider.onChanged: capture on every slider step at lib/screens/registration_screen.dart:72 (use onChangeEnd)"
+ ],
+ "on_change_end_used": false,
+ "once_flag_used": true,
+ "focus_lost_used": false,
+ "submit_or_editing_complete_used": false,
+ "scroll_end_used": false,
+ "scroll_update_mentioned": false,
+ "answer_mentions_keystroke_quota_once": false,
+ "flutter_or_dart_executed": false,
+ "changed_files": [
+  "lib/screens/registration_screen.dart"
+ ],
+ "commands_issued": 1,
+ "answer_chars": 750,
+ "PASS": false
+}

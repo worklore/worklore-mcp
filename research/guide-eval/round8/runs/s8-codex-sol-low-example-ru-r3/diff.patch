@@ -1,0 +1,32 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..7e3067e
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,7 @@
++# Исправление кеширования
++
++В `bot.py` функция `build_system` теперь передаёт два текстовых блока с `cache_control: ephemeral`: сначала неизменные `INSTRUCTIONS`, затем контекст спортсмена с датой, профилем и долговременными фактами. После `save_fact` меняется только второй блок, поэтому кешированный префикс с инструкциями может использоваться снова. Новый факт по-прежнему попадает в следующий запрос, в том числе в следующий раунд вызова инструментов.
++
++Из заметки коллеги пригодились разделение стабильной и изменяемой частей двумя маркерами и проверка неизменности первой части после записи факта. Выбор инструментов по ключевым словам уже существовал; его не менял. Отбор отдельных фактов по сообщению не добавлял, чтобы состав контекста не менялся без записи в память.
++
++Локальная проверка с `python3 -B` подтвердила, что оба блока имеют маркеры, первый блок остаётся идентичным после добавления факта, а второй меняется и содержит новый факт. Реальные показатели `cache_read_input_tokens` и `cache_creation_input_tokens` после изменения не измерялись: для этого потребовался бы вызов внешнего API. При изменении набора инструментов кешированный префикс также может перестроиться.
+diff --git a/bot.py b/bot.py
+index e2ff241..3499259 100644
+--- a/bot.py
++++ b/bot.py
+@@ -128,9 +128,11 @@ def athlete_context(a, today):
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    # Keep the shared instructions cached when a memory write changes the athlete context.
++    return [
++        {"type": "text", "text": INSTRUCTIONS, "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": athlete_context(a, today), "cache_control": {"type": "ephemeral"}},
++    ]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [

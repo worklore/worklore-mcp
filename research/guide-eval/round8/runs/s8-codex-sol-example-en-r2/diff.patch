@@ -1,0 +1,60 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..308479e
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,19 @@
++# Prompt cache fix
++
++`build_system` now sends two text blocks with `cache_control: ephemeral`: the
++unchanging coaching instructions first, then the date and athlete context,
++including long-term facts. A `save_fact` write changes only the second block, so
++the instructions remain an identical cache prefix. The tool list remains fixed
++through each message's tool loop.
++
++The colleague's two-marker split applies directly. Its advice to keep tools
++stable within a loop also applies; the existing `reply` code already does that.
++The note's tool filtering and top-N fact selection changes do not apply here:
++tool filtering already exists, and all facts are already included. The existing
++`logs/usage.jsonl` records cache creation and read tokens, so no new logging was
++needed. Keyword-selected tool sets can still change the prefix between messages.
++
++Verified locally with a simulated `save_fact` tool call: the second request kept
++the first marked block byte-identical, changed the second marked block, and
++kept the tool list identical. No live Anthropic call was made, so cache token
++counts after the change are not yet measured.
+diff --git a/README.md b/README.md
+index ebd390e..ed7f8e2 100644
+--- a/README.md
++++ b/README.md
+@@ -11,6 +11,7 @@ its system prompt. Every API call appends its `usage` object to `logs/usage.json
+ Run it locally with `COACH_ANTHROPIC_KEY=sk-ant-... python3 bot.py 42` and type
+ messages on stdin (the Telegram long-polling transport, which needs
+ `COACH_TELEGRAM_TOKEN`, lives in a separate deploy repo and just calls `reply()`).
+-Requires Python 3.11+ and `pip install anthropic`. Prompt caching is on: the system
+-prompt carries a `cache_control` marker so the tool-loop rounds and follow-up
+-messages inside the 5-minute window read it from cache.
++Requires Python 3.11+ and `pip install anthropic`. Prompt caching uses separate
++`cache_control` markers for the stable coaching rules and the athlete context.
++Within the cache window, a `save_fact` write changes the athlete context while
++the coaching rules remain an identical cached prefix.
+diff --git a/bot.py b/bot.py
+index e2ff241..43390f4 100644
+--- a/bot.py
++++ b/bot.py
+@@ -128,9 +128,12 @@ def athlete_context(a, today):
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    # Cache the invariant prefix separately so a fact write only changes the
++    # per-athlete tail. Keep the instructions byte-identical across requests.
++    return [
++        {"type": "text", "text": INSTRUCTIONS, "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": athlete_context(a, today), "cache_control": {"type": "ephemeral"}},
++    ]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [

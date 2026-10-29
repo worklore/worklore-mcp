@@ -1,0 +1,32 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..044c8f4
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,7 @@
++# Исправление кеширования
++
++В `bot.py` функция `build_system` теперь возвращает два текстовых блока с отдельными `cache_control: ephemeral`: неизменные инструкции и контекст спортсмена. После `save_fact` меняется только второй блок, поэтому первый остаётся тем же кешируемым префиксом. Порядок и состав инструментов не менял.
++
++Локально проверил построение запроса до и после добавления факта: первый блок и инструменты совпадают, новый факт появляется только во втором блоке. Внешний API не вызывал, поэтому фактические значения `cache_read_input_tokens` и `cache_creation_input_tokens` после изменения не измерены.
++
++Из заметки коллеги пригодились разделение статической и изменяемой частей двумя маркерами, сохранение стабильного списка инструментов в пределах сообщения и проверка счётчиков usage. Отбор фактов по релевантности и изменения фильтрации инструментов не применял: здесь они не нужны для исправления причины сброса кеша.
+diff --git a/bot.py b/bot.py
+index e2ff241..60a0ba4 100644
+--- a/bot.py
++++ b/bot.py
+@@ -128,9 +128,11 @@ def athlete_context(a, today):
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    # Keep the invariant prefix cached when save_fact changes the athlete context.
++    return [
++        {"type": "text", "text": INSTRUCTIONS, "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": athlete_context(a, today), "cache_control": {"type": "ephemeral"}},
++    ]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [

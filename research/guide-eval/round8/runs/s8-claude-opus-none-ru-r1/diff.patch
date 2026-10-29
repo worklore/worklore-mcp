@@ -1,0 +1,176 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..b009401
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,65 @@
++# Почему после save_fact кеш промахивался и что изменено
++
++## Причина
++
++Системный промпт был **одним блоком** с `cache_control`: `INSTRUCTIONS` + профиль
++атлета + список фактов. Кеш промпта префиксный (порядок: tools → system → messages),
++поэтому изменение любого байта внутри блока даёт новый ключ кеша для всего блока.
++
++`save_fact` дописывает факт в `a.facts`, а `reply()` пересобирает system **на каждом
++раунде** tool-loop. Поэтому уже следующий вызов (round 2 того же сообщения) получал
++другой текст → `cache_read_input_tokens: 0`, `cache_creation_input_tokens` ~1050
++(по цене 1.25× от обычного input). В `logs/usage.jsonl` так выглядит каждая строка
++после `save_fact`. Длина фактов и их количество роли не играют — промах вызывает сам
++факт изменения, поэтому попытки из NOTES.md ничего не дали.
++
++## Что изменено (`bot.py`)
++
++1. **System разбит на три блока** (`build_system`):
++   - `INSTRUCTIONS`: статичен, одинаков для всех атлетов, есть breakpoint `cache_control`;
++   - `athlete_context(a)`: имя, вид спорта, зоны, цель, язык и факты, уже
++     «вшитые» в промпт (`facts[:facts_in_prompt]`), есть breakpoint;
++   - `volatile_context(a, today)`: **без** `cache_control`. Здесь факты, сохранённые
++     в текущей «тёплой» сессии (`facts[facts_in_prompt:]`), и дата. Текст
++     продолжает список «Long-term facts:», так что модель видит один общий список.
++     Дату я тоже унёс сюда, чтобы смена суток не сбрасывала кешированный профиль.
++2. **Факты переносятся в кешируемый блок лениво** (`fold_facts`). В записи атлета
++   появились поля `facts_in_prompt` и `last_call`. Новые факты переходят в кешируемый
++   блок только когда с последнего вызова прошло ≥ 5 минут (`CACHE_TTL`), то есть
++   когда кеш всё равно уже истёк. Пока сессия тёплая, всё, что стоит до последнего
++   breakpoint, остаётся побайтно одинаковым, и `save_fact` его не трогает.
++   `last_call` обновляется после каждого API-вызова.
++
++Почему не ограничился одним разбиением «инструкции | профиль+факты». У Sonnet 4.5
++минимальная длина кешируемого префикса 1024 токена. По логу весь промпт с тремя
++фактами занимает ~1046 токенов, значит tools + инструкции дают около 950. Breakpoint
++сразу после `INSTRUCTIONS` оказался бы ниже минимума и молча не сработал бы. Ленивый
++перенос не зависит от этого порога. Breakpoint на инструкциях оставлен как бонус: если
++инструкции вырастут выше порога, их общий кеш будут использовать все атлеты.
++
++Ожидаемый эффект: вызовы после `save_fact` (round 2 и следующее сообщение в течение
++5 минут) читают из кеша тот же префикс, что и до записи. Новые факты добавляют лишь
++~15 некешированных токенов каждый. Полная запись кеша происходит только на «холодном»
++вызове, где она была бы и так.
++
++## Проверка
++
++Реального API-ключа нет, и наружу я ничего не отправлял. Проверял на фейковом LLM,
++который моделирует префиксный кеш по breakpoint'ам. Сценарий: log_session →
++вопрос → save_fact → вопрос → save_fact → вопрос. Все вызовы после `save_fact`
++дали полный cache read и нулевой cache creation. Единственная запись — на сообщении
++со словом «race»: оно подключает `predict_race`, а это другой набор tools. Ещё
++проверил, что после 6 минут простоя факты переносятся в кешируемый блок.
++После деплоя в `usage.jsonl` строки после `save_fact` должны показывать
++`cache_read_input_tokens` ≈ как у предыдущего вызова.
++
++## Что не трогал / на что обратить внимание
++
++- Фильтрацию tools по ключевым словам не трогал (как просит NOTES.md). Но tools
++  стоят в префиксе раньше system, поэтому сообщение с plan/race-ключевыми словами
++  по-прежнему пишет свою отдельную запись кеша. Это отдельный, давний компромисс.
++- `reply()` теперь сохраняет запись атлета после каждого вызова (ради `last_call`).
++  Для нового пользователя запись создаётся с первого сообщения, а не с первого `save_fact`.
++  Старые записи без новых полей загружаются нормально (у полей есть дефолты).
++- Порог 5 минут считается по пользователю, а не по конкретному префиксу. Если запись
++  кеша вытеснят раньше TTL, будет один промах, как и раньше.
+diff --git a/README.md b/README.md
+index ebd390e..1774ebe 100644
+--- a/README.md
++++ b/README.md
+@@ -12,5 +12,5 @@ Run it locally with `COACH_ANTHROPIC_KEY=sk-ant-... python3 bot.py 42` and type
+ messages on stdin (the Telegram long-polling transport, which needs
+ `COACH_TELEGRAM_TOKEN`, lives in a separate deploy repo and just calls `reply()`).
+ Requires Python 3.11+ and `pip install anthropic`. Prompt caching is on: the system
+-prompt carries a `cache_control` marker so the tool-loop rounds and follow-up
+-messages inside the 5-minute window read it from cache.
++prompt is three blocks (static instructions, athlete profile + folded facts, an
++uncached tail with facts saved during a warm session and the date); see ANSWER.md.
+diff --git a/__pycache__/bot.cpython-314.pyc b/__pycache__/bot.cpython-314.pyc
+new file mode 100644
+index 0000000..426c9c9
+Binary files /dev/null and b/__pycache__/bot.cpython-314.pyc differ
+diff --git a/bot.py b/bot.py
+index e2ff241..507de96 100644
+--- a/bot.py
++++ b/bot.py
+@@ -14,6 +14,7 @@ from dataclasses import dataclass, field, asdict
+ MODEL = "claude-sonnet-4-5"
+ MAX_TOKENS = 700
+ MAX_TOOL_ROUNDS = 5
++CACHE_TTL = dt.timedelta(minutes=5)   # ephemeral prompt cache lifetime, refreshed on every hit
+ ATHLETES_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "athletes.json")
+ USAGE_LOG = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs", "usage.jsonl")
+ 
+@@ -46,6 +47,8 @@ class Athlete:
+     goal: str = "finish a half marathon"
+     zones: dict = field(default_factory=lambda: {"Z1": "<135", "Z2": "135-150", "Z3": "150-162", "Z4": "162-172", "Z5": ">172"})
+     facts: list = field(default_factory=list)   # long-term memory, grows via save_fact
++    facts_in_prompt: int = 0   # how many of `facts` are baked into the cached system block
++    last_call: str = ""        # ISO time of the last API call, to know whether the cache is still warm
+ 
+ 
+ def _load_all():
+@@ -114,23 +117,44 @@ Formatting:
+ """
+ 
+ 
+-def athlete_context(a, today):
++def athlete_context(a):
++    """Per-athlete part that only changes when the cache is cold anyway (see fold_facts)."""
+     lines = [
+-        f"Today: {today.isoformat()} ({today.strftime('%A')})",
+         f"Athlete: {a.name} (id {a.user_id}), sport: {a.sport}",
+         "Zones: " + ", ".join(f"{k} {v}" for k, v in a.zones.items()),
+         f"Goal: {a.goal}",
++        f"Language: {a.lang}",
+         "Long-term facts:",
+     ]
+-    lines += [f"- {f}" for f in a.facts] or ["- (none yet)"]
+-    lines.append(f"Language: {a.lang}")
++    lines += [f"- {f}" for f in a.facts[:a.facts_in_prompt]] or ["- (none yet)"]
+     return "\n".join(lines)
+ 
+ 
++def volatile_context(a, today):
++    """Uncached tail: facts saved while the cache is warm, and the date."""
++    lines = [f"- {f}" for f in a.facts[a.facts_in_prompt:]]
++    lines.append(f"\nToday: {today.isoformat()} ({today.strftime('%A')})")
++    return "\n".join(lines)
++
++
++def fold_facts(a, now):
++    """Move facts saved since the last fold into the cached block, but only when the cache
++    has expired anyway, so a save_fact never forces a rewrite of a warm cache entry."""
++    last = dt.datetime.fromisoformat(a.last_call) if a.last_call else None
++    if last is None or now - last >= CACHE_TTL:
++        a.facts_in_prompt = len(a.facts)
++    a.facts_in_prompt = min(a.facts_in_prompt, len(a.facts))
++
++
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    # Cache order is tools -> system -> messages; a change in any block invalidates every
++    # breakpoint after it. So: static instructions first (shared by all athletes), then the
++    # slow-changing athlete profile, then an uncached tail with whatever changes mid-session.
++    return [
++        {"type": "text", "text": INSTRUCTIONS, "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": athlete_context(a), "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": volatile_context(a, today)},
++    ]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [
+@@ -194,11 +218,15 @@ def build_request(a, messages, tools, today):
+ def reply(user_id, text, llm=None):
+     llm = llm or LLM()
+     a = load_athlete(user_id)
++    now = dt.datetime.now(dt.timezone.utc)
+     today = dt.date.today()
++    fold_facts(a, now)
+     tools = select_tools(text)
+     messages = [{"role": "user", "content": text}]
+     for round_no in range(1, MAX_TOOL_ROUNDS + 1):
+         resp = llm.create(**build_request(a, messages, tools, today))
++        a.last_call = dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")
++        save_athlete(a)
+         used_tools = [b.name for b in resp.content if b.type == "tool_use"]
+         log_usage(resp.usage, a.user_id, round_no, tool=",".join(used_tools) or None)
+         if resp.stop_reason != "tool_use":

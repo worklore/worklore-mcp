@@ -1,0 +1,83 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..17f0676
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,56 @@
++# HR corridors clamped to the watch's zones — fix
++
++## Cause
++
++`gen.py` built every HR target as `{"units": "%lthr", "value": lo, "end": hi}`.
++The readback of event 184233 (`readback/event-184233-as-sent.json`) shows those
++keys exactly as sent, so the API did not change them. The watch then displayed
++each corridor as one of its own zone bands (118–137, 151–162, …), which matches
++a lap-HR / zone-mapped target rather than an instant-HR corridor.
++
++## Change
++
++`gen.py`, `hr_target()`: the lower bound key is now `start` instead of `value`:
++
++```python
++return {"units": "%lthr", "start": lo, "end": hi}
++```
++
++A docstring explains the choice. Nothing else in the generator changed.
++
++Check: regenerating `plans/tempo-run.json` now yields `start`/`end` pairs with
++the planned percentages (68/75, 88/93, 75/82, 65/72) and no `value` keys.
++
++## Which parts of the colleague's note applied
++
++- **Applied: `start` instead of `value` for the corridor's lower bound, with
++  `%lthr` percentages.** Our readback points to the same problem (zone-clamped
++  display with `value`/`end`), and the note's shape matches our intent of
++  percentages converted by Intervals from its stored LTHR.
++- **Not applied: a top-level `description` in Intervals' text grammar.** Our
++  readback shows `workout_doc.steps` populated, so the parser already accepts
++  the event. The note's description trick is for web-UI step rendering, which is
++  not the reported problem. Adding it would be a separate change.
++- **Not applied: the `m` / `mtr` / `Z<n>` / label-digit rules.** They only
++  matter for the `description` text, which we do not send.
++- **Not applied: the "Instant HR" UI round-trip.** That was the colleague's
++  route to the key name. Here, the `start` key comes from the note itself.
++
++## Not verified
++
++I could not check the watch or the Intervals export from here, and the ground
++rules bar pushing or reporting anything externally, so I did not run `push.sh`.
++The `start` routing is the colleague's finding applied to our code, not something
++I observed. To confirm:
++
++1. Regenerate with `python3 gen.py plans/tempo-run.json > event.json`.
++2. Push with `./push.sh event.json`, then `GET` the event and confirm `start`
++   is kept.
++3. Sync through Garmin Connect and check that the Tempo step shows about
++   151–160 bpm (88–93% × 172), not 151–162 or any zone edge. Float should show
++   about 129–141.
++
++If the watch still shows zone bands, the next thing to check is whether
++Intervals' export needs the event's type or units changed. Note that the
++colleague's `start` finding was reported on a different setup, so it may not
++carry over.
+diff --git a/gen.py b/gen.py
+index be0b3bc..39ea9da 100755
+--- a/gen.py
++++ b/gen.py
+@@ -8,9 +8,14 @@ import sys
+ 
+ 
+ def hr_target(step):
+-    """HR corridor for a step, as a percentage of the athlete's LTHR."""
++    """HR corridor for a step, as a percentage of the athlete's LTHR.
++
++    Uses `start`, not `value`: with `value` Intervals exports a lap-HR target
++    that the watch clamps to its own zones; `start` gives the instant-HR
++    corridor computed from the LTHR stored in Intervals.
++    """
+     lo, hi = step["hr_pct"]
+-    return {"units": "%lthr", "value": lo, "end": hi}
++    return {"units": "%lthr", "start": lo, "end": hi}
+ 
+ 
+ def build_step(step):

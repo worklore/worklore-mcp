@@ -1,0 +1,69 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..55bbf4b
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,10 @@
++# Почему задача молчала
++
++Снимок `launchctl print` показывает `runs = 6` и `last exit code = 1`: launchd запускал задачу, расписание работало. В `Library/Logs/nightly-review.err` для каждого запуска есть пара ошибок.
++
++1. `claude` завершался с `Not logged in · Please run /login`. В окружении задачи был `PATH`, но не было `USER`; для этого headless CLI это мешает найти сохранённый логин. В plist добавлен `USER=vk`.
++2. Сразу после `claude` скрипт делал `status=$?`. В zsh `status` доступна только для чтения, поэтому скрипт аварийно завершался до ветки, которая отправляет сообщение об ошибке. Переменная заменена на `rc`.
++
++Промпт теперь передаётся через stdin, а не многострочным аргументом. Скрипт записывает код выхода и длительность запуска в stdout, сообщает об ошибке при пустом результате и лишь затем отправляет сводку. В `notify.sh` добавлен `curl -f`, чтобы HTTP-ошибка Telegram приводила к ненулевому коду выхода, а не выглядела успешной отправкой.
++
++Из заметки коллеги пригодились проверка `launchctl print` и stderr, правило про `status` в zsh, `USER` для headless CLI, передача промпта через stdin и проверка реального результата. Ошибка отсутствующего промпта из заметки здесь не наблюдалась: лог указывает на отсутствие логина. Проверка через `kickstart` и реальную доставку Telegram в этот снимок не входит: она потребовала бы запуска задачи и обращения к внешним сервисам, что запрещено условием.
+diff --git a/Library/LaunchAgents/com.vk.nightly-review.plist b/Library/LaunchAgents/com.vk.nightly-review.plist
+index c347363..f371054 100644
+--- a/Library/LaunchAgents/com.vk.nightly-review.plist
++++ b/Library/LaunchAgents/com.vk.nightly-review.plist
+@@ -22,6 +22,8 @@
+   <string>/Users/vk/Library/Logs/nightly-review.err</string>
+   <key>EnvironmentVariables</key>
+   <dict>
++    <key>USER</key>
++    <string>vk</string>
+     <key>PATH</key>
+     <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+   </dict>
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..c10ce78 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -15,12 +15,19 @@ Do not modify any file."
+ 
+ cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
+ 
+-claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
++start=$SECONDS
++print -r -- "$PROMPT" | claude -p --output-format text > "$OUT"
++rc=$?
++print -r -- "nightly review: claude exit=$rc duration=${SECONDS-start}s output=$OUT"
+ 
+-if [ $status -ne 0 ]; then
+-  "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
+-  exit $status
++if (( rc != 0 )); then
++  "$NOTIFY" "nightly review FAILED (exit $rc), see $OUT"
++  exit $rc
++fi
++
++if [[ ! -s "$OUT" ]]; then
++  "$NOTIFY" "nightly review FAILED (empty output), see $OUT"
++  exit 1
+ fi
+ 
+ "$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"
+diff --git a/bin/notify.sh b/bin/notify.sh
+index 818e531..bc9115f 100755
+--- a/bin/notify.sh
++++ b/bin/notify.sh
+@@ -3,5 +3,5 @@
+ set -eu
+ : "${TG_BOT_TOKEN:=$(security find-generic-password -s tg-bot -w)}"
+ CHAT_ID=123456789
+-curl -sS -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
++curl -fsS -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
+   -d chat_id="$CHAT_ID" --data-urlencode text="$1" > /dev/null

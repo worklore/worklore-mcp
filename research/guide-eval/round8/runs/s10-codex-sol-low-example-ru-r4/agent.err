@@ -1,0 +1,5 @@
+Reading additional input from stdin...
+2026-10-27T08:07:41.151969Z ERROR codex_core::tools::router: error=apply_patch verification failed: Failed to find expected lines in /tmp/h-BgZ4tc/lib/screens/offer_screen.dart:
+          if (notification.depth == 0 &&
+              notification.metrics.pixels > 0) {
+2026-10-27T08:07:50.654704Z ERROR codex_core::tools::router: error=exec_command failed: CreateProcess { message: "Rejected(\"`/bin/zsh -lc 'git show HEAD:analysis_options.yaml > analysis_options.yaml; rm -rf .dart_tool pubspec.lock; dart format lib/screens/offer_screen.dart; git status --short'` rejected: rm -f style commands are not permitted. Use a safer approach\")" }

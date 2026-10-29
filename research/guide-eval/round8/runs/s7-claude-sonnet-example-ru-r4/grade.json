@@ -1,0 +1,70 @@
+{
+ "answer_file": true,
+ "answer_source": "repo",
+ "py_parse_errors": [],
+ "scope_strings": [
+  "ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE"
+ ],
+ "scope_dup_areas": [],
+ "scope_fixed": true,
+ "scope_no_read_with_write(bonus)": true,
+ "refresh_idents_left": [],
+ "refresh_job_idents_left": [],
+ "expiry_idents_left": [],
+ "refresh_machinery_removed(info)": true,
+ "live_server_started": true,
+ "live_error": "",
+ "live_init": [
+  "POST",
+  200
+ ],
+ "live_init_returns_url_as_data": true,
+ "live_scope": "ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE",
+ "live_connected_after_flow": true,
+ "no_expiry_assumed": true,
+ "live_status_after_clock_jump": {
+  "connected": true,
+  "status": "connected",
+  "scope": "ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE",
+  "athlete": {
+   "id": "i12345",
+   "name": "T. Rivera"
+  }
+ },
+ "live_wellness_after_revoke": 401,
+ "live_token_exchange_fields": [
+  "client_id",
+  "client_secret",
+  "code",
+  "grant_type",
+  "redirect_uri"
+ ],
+ "reconnect_on_401(bonus)": true,
+ "bare_get_link": false,
+ "js_fetches_init": true,
+ "js_posts_init": true,
+ "js_navigates_to_variable": true,
+ "init_route_methods": [
+  "POST"
+ ],
+ "init_is_post": true,
+ "server_returns_url_json": true,
+ "server_returns_authorize_url": true,
+ "init_fixed": true,
+ "answer_names_scope": true,
+ "answer_names_no_refresh": true,
+ "answer_names_get_link": true,
+ "answer_names_all_causes": true,
+ "ran_server": true,
+ "web_used": true,
+ "changed_files": [
+  "ANSWER.md",
+  "__pycache__/config.cpython-314.pyc",
+  "config.py",
+  "server.py",
+  "static/app.js"
+ ],
+ "commands_issued": 4,
+ "answer_chars": 2090,
+ "PASS": true
+}

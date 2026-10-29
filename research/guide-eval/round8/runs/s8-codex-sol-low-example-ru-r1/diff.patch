@@ -1,0 +1,32 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..c8e2a1c
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,7 @@
++# Исправление кеширования
++
++В `bot.py` функция `build_system` теперь отправляет два текстовых блока с `cache_control: ephemeral`: сначала неизменные `INSTRUCTIONS`, затем контекст спортсмена с датой, профилем и долговременными фактами. После `save_fact` меняется только второй блок; первый сохраняет тот же текст и может читаться из кеша. Состав и порядок инструментов не менялись.
++
++В `logs/usage.jsonl` прежние вызовы после `save_fact` имеют `cache_read_input_tokens: 0` и повторно создают кеш примерно на 1000 токенов. Локальная проверка подтвердила, что добавление факта меняет только второй блок запроса, оба блока имеют маркер кеширования, а выбор инструментов остается прежним. Синтаксис Python также проверен. Фактическую экономию по API не измерял: внешние вызовы запрещены условиями задачи.
++
++Из заметки коллеги пригодились разделение статических инструкций и изменяемого контекста на два кешируемых блока и проверка счетчиков `cache_creation_input_tokens` / `cache_read_input_tokens`. Идеи о выборе top-N фактов и изменении фильтрации инструментов не применялись: здесь факты уже передаются целиком, а существующую фильтрацию сохраняем.
+diff --git a/bot.py b/bot.py
+index e2ff241..870f8ae 100644
+--- a/bot.py
++++ b/bot.py
+@@ -128,9 +128,11 @@ def athlete_context(a, today):
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    # Cache stable instructions separately so a memory write changes only the tail.
++    return [
++        {"type": "text", "text": INSTRUCTIONS, "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": athlete_context(a, today), "cache_control": {"type": "ephemeral"}},
++    ]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [

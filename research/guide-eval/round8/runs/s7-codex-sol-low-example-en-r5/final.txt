@@ -1,0 +1,3 @@
+Fixed the Intervals.icu connection flow. The Connect button now starts OAuth through an authenticated POST, the requested scopes no longer duplicate areas, and the app no longer expires tokens after an invented one-hour lifetime. An Intervals API 401 now clears the token and prompts reconnection.
+
+The causes, which parts of the colleague’s note applied, and verification limits are in [ANSWER.md](/tmp/h-imCQJL/ANSWER.md). Local syntax, diff, state, and connection checks passed. A live OAuth and revocation test was not possible without configured client credentials and an athlete account.

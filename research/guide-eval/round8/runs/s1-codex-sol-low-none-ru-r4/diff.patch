@@ -1,0 +1,94 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..5b1f103
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,7 @@
++# Исправление диапазонов пульса
++
++Генератор теперь переводит `hr_pct` в конкретные границы пульса по `lthr_bpm` из плана и передаёт их как `bpm`. Для наблюдавшегося пути Intervals → Garmin из обеих границ вычитается 100: в предыдущей попытке с абсолютными значениями часы показывали примерно на 100 уд/мин больше. Процентные цели попадали на часы как целые зоны, поэтому они больше не используются в выходном `workout_doc`.
++
++Для LTHR 172 план даёт 117–129, 151–160, 129–141 и 112–124 уд/мин. В отправляемом JSON это соответственно 17–29, 51–60, 29–41 и 12–24: смещение компенсируется при экспорте. В план добавлен `lthr_bpm: 172`; его нужно обновлять при изменении порога спортсмена.
++
++Локально проверены генерация JSON, синтаксис Python и `git diff --check`. Экспорт и показания часов повторно не проверялись, поскольку это потребовало бы обращения к внешним сервисам.
+diff --git a/README.md b/README.md
+index 31b0941..12625b7 100644
+--- a/README.md
++++ b/README.md
+@@ -9,8 +9,10 @@ exports them to the athlete's Garmin watch through Garmin Connect.
+ - `readback/` holds what the API returned for the last pushed event and
+   notes on what the watch displayed.
+ 
+-Athlete thresholds live in Intervals (LTHR 172 for this athlete). HR targets
+-in plans are percentages of LTHR; Intervals converts them to bpm at export.
++Set `lthr_bpm` in each plan to the athlete's current LTHR. HR targets in plans
++are percentages of that value. The generator converts them to bpm and applies
++the 100 bpm offset observed in the Intervals-to-Garmin export; update the plan
++when the athlete's LTHR changes.
+ 
+ ```
+ python3 gen.py plans/tempo-run.json > event.json
+diff --git a/gen.py b/gen.py
+index be0b3bc..421badb 100755
+--- a/gen.py
++++ b/gen.py
+@@ -7,31 +7,40 @@ import json
+ import sys
+ 
+ 
+-def hr_target(step):
+-    """HR corridor for a step, as a percentage of the athlete's LTHR."""
++def hr_target(step, lthr):
++    """Encode a custom Garmin bpm corridor through Intervals' FIT export.
++
++    Garmin's FIT heart-rate target values use a 100 bpm offset. The observed
++    Intervals export passes custom bpm endpoints through without that offset.
++    """
+     lo, hi = step["hr_pct"]
+-    return {"units": "%lthr", "value": lo, "end": hi}
++    low_bpm = round(lo * lthr / 100)
++    high_bpm = round(hi * lthr / 100)
++    if not 100 < low_bpm < high_bpm:
++        raise ValueError("HR corridor must have ordered endpoints above 100 bpm")
++    return {"units": "bpm", "value": low_bpm - 100, "end": high_bpm - 100}
+ 
+ 
+-def build_step(step):
++def build_step(step, lthr):
+     out = {"duration": step["minutes"] * 60}
+     if "hr_pct" in step:
+-        out["hr"] = hr_target(step)
++        out["hr"] = hr_target(step, lthr)
+     if "label" in step:
+         out["text"] = step["label"]
+     return out
+ 
+ 
+ def build_doc(plan):
++    lthr = plan["lthr_bpm"]
+     steps = []
+     for block in plan["steps"]:
+         if "repeat" in block:
+             steps.append({
+                 "reps": block["repeat"],
+-                "steps": [build_step(s) for s in block["steps"]],
++                "steps": [build_step(s, lthr) for s in block["steps"]],
+             })
+         else:
+-            steps.append(build_step(block))
++            steps.append(build_step(block, lthr))
+     return {"steps": steps}
+ 
+ 
+diff --git a/plans/tempo-run.json b/plans/tempo-run.json
+index 8a4a545..baa8cdf 100644
+--- a/plans/tempo-run.json
++++ b/plans/tempo-run.json
+@@ -2,6 +2,7 @@
+   "name": "Tempo run 45",
+   "sport": "Run",
+   "date": "2026-10-20",
++  "lthr_bpm": 172,
+   "steps": [
+     {"label": "Warm-up easy", "minutes": 10, "hr_pct": [68, 75]},
+     {"repeat": 3, "steps": [

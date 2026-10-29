@@ -1,0 +1,26 @@
+diff --git a/bot.py b/bot.py
+index e2ff241..a73fe0b 100644
+--- a/bot.py
++++ b/bot.py
+@@ -128,9 +128,18 @@ def athlete_context(a, today):
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    """Build the system prompt with proper caching.
++
++    The static coaching instructions are cached across requests using a
++    ``static`` cache control type. The per‑athlete context (which includes the
++    mutable ``facts`` list) is provided in a second system message without any
++    caching so it is refreshed whenever the athlete's memory changes.
++    """
++    # Static part – cached forever.
++    static_msg = {"type": "text", "text": INSTRUCTIONS, "cache_control": {"type": "static"}}
++    # Dynamic part – includes mutable athlete data and is not cached.
++    dynamic_msg = {"type": "text", "text": athlete_context(a, today)}
++    return [static_msg, dynamic_msg]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [

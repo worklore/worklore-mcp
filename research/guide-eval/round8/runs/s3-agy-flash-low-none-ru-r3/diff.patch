@@ -1,0 +1,50 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..d6ce127
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,24 @@
++# Причины проблемы
++
++1. **Ошибка аутентификации Claude CLI в среде launchd (`Not logged in · Please run /login`)**:
++   - При запуске через `launchd` процесс выполняется в минимальном изолированном окружении, в котором переменные окружения `$HOME` и `$USER` не передаются по умолчанию (в `plist` была задана только переменная `PATH`).
++   - Утилита `claude` ищет конфигурацию и сессионные токены пользователя в каталоге `~/.claude/` (т.е. `$HOME/.claude`). В отсутствие `$HOME` утилита не может обнаружить сохранённую авторизацию пользователя и падает с сообщением `Not logged in · Please run /login` (код возврата 1).
++
++2. **Аварийное завершение скрипта из-за попытки записи в `status` в `zsh`**:
++   - В командном интерпретаторе `zsh` переменная `status` является специальным read-only псевдонимом для переменной `$?` (кода возврата последней команды).
++   - В строке 19 файла `bin/nightly-review.zsh` выполнялось присваивание:
++     ```zsh
++     status=$?
++     ```
++   - При попытке переопределить встроенную переменную оболочка `zsh` завершает выполнение скрипта с фатальной ошибкой:
++     ```
++     /Users/vk/bin/nightly-review.zsh:19: read-only variable: status
++     ```
++   - Из-за этого интерпретатор `zsh` аварийно прерывал выполнение скрипта до строк 21–24, где расположен вызов `bin/notify.sh` для отправки уведомления об ошибке (`nightly review FAILED...`). В результате Telegram-сообщение об ошибке даже не успевало отправиться.
++
++---
++
++# Внесённые исправления
++
++1. **Исправлен скрипт `bin/nightly-review.zsh`**:
++   - Переменная `status` заменена на `exit_code`, что предотвращает фатальную ошибку `read-only variable: status` и позволяет блоку обработки ошибок корректно вызывать `$NOTIFY` при ненулевом коде завершения.
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..f9f7692 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -16,11 +16,11 @@ Do not modify any file."
+ cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
+ 
+ claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
++exit_code=$?
+ 
+-if [ $status -ne 0 ]; then
+-  "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
+-  exit $status
++if [ $exit_code -ne 0 ]; then
++  "$NOTIFY" "nightly review FAILED (exit $exit_code), see $OUT"
++  exit $exit_code
+ fi
+ 
+ "$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"

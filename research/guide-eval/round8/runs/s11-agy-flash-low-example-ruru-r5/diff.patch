@@ -1,0 +1,127 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..07847da
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,49 @@
++# Анализ и исправление ошибки публикации в DynamoDB
++
++## Причина сбоя (logs/error.log)
++
++В журнале `logs/error.log` зафиксирована ошибка при втором вызове `publish`:
++```text
++TypeError: Float types are not supported. Use Decimal types instead.
++```
++
++### Почему первая публикация работала, а вторая завершалась ошибкой 500:
++1. При первой публикации таблица `stories` в DynamoDB была пуста (`table.scan(...)` возвращал пустой список элементов).
++2. Функция `related(story, existing)` не находила существующих историй для сравнения, поэтому список `similar` оставался пустым (`[]`).
++3. При второй публикации в базе уже присутствовала первая история. Функция `related()` вызвала `similarity(story, other)`, которая вычисляет оценку близости:
++   ```python
++   round(0.7 * tag_score + 0.3 * word_score, 4)
++   ```
++   Результатом этого выражения является число с плавающей точкой (`float`).
++4. Поле `similar` во второй записи содержало структуру вида `[{"slug": "...", "score": 0.xxxx}]`.
++5. Библиотека `boto3` (и сериализатор DynamoDB) не поддерживает стандартный тип `float` в Python и требует использования `decimal.Decimal` (или целых чисел `int`), что привело к исключению `TypeError` в методе `table.put_item(Item=item)` и возврату HTTP 500.
++
++---
++
++## Исправление
++
++1. В файле [`src/app.py`](file:///tmp/h-XDtHZZ/src/app.py):
++   - Импортирован класс `Decimal` из модуля `decimal`.
++   - В функции `similarity()` возвращаемое значение преобразовано в `Decimal(str(round(...)))`:
++     ```python
++     return Decimal(str(round(0.7 * tag_score + 0.3 * word_score, 4)))
++     ```
++     Это гарантирует корректную сериализацию значений оценок для DynamoDB.
++
++2. В файле [`tests/test_publish.py`](file:///tmp/h-XDtHZZ/tests/test_publish.py):
++   - Добавлен тест `test_publish_second_story_succeeds_with_similarity_scores`, проверяющий сохранение второй записи при непустой базе, когда заполняется массив `similar` со значениями `score`.
++   - Добавлен тест `test_handler_second_publish_status_code_201`, проверяющий обработку запроса через `handler` и возврат статуса 201 на обеих публикациях.
++
++---
++
++## Какие части заметки коллеги пригодились
++
++1. **Точная диагностика корневой причины (`float` в DynamoDB)**: 
++   - Заметка точно указала, что DynamoDB не принимает питоновский `float`, а ошибка проявляется только при наличии данных в базе (когда начинают вычисляться оценки похожести).
++2. **Паттерн исправления**:
++   - Преобразование вычисленного `float` на границе сохранения в `Decimal` (через `from decimal import Decimal`).
++3. **Рекомендация по тестированию**:
++   - Заметка подчеркнула проблему тестов, проверяющих только пустую базу, и необходимость добавления тестов, где в таблицу предварительно сажается запись и проверяется поведение второй публикации при непустом состоянии.
++
++### Что было пропущено / адаптировано:
++- В заметке упоминался вариант перевода оценок в целые проценты (`int`). Для сохранения существующей точности до 4 знаков после запятой (как было задумано в `round(..., 4)`) использован `Decimal(str(...))`.
+diff --git a/src/app.py b/src/app.py
+index db49c5e..5931a84 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -4,6 +4,7 @@ Each story is stored in one DynamoDB item together with the three most similar
+ stories already in the library (``similar``), so the reader page can show
+ "related" without a query at read time.
+ """
++from decimal import Decimal
+ import json
+ import logging
+ import re
+@@ -27,7 +28,7 @@ def similarity(a, b):
+     tag_score = len(ta & tb) / len(ta | tb) if (ta | tb) else 0
+     wa, wb = words(a.get("body")), words(b.get("body"))
+     word_score = len(wa & wb) / len(wa | wb) if (wa | wb) else 0
+-    return round(0.7 * tag_score + 0.3 * word_score, 4)
++    return Decimal(str(round(0.7 * tag_score + 0.3 * word_score, 4)))
+ 
+ 
+ def related(story, existing):
+diff --git a/tests/test_publish.py b/tests/test_publish.py
+index 6c9ac44..51527c4 100644
+--- a/tests/test_publish.py
++++ b/tests/test_publish.py
+@@ -23,6 +23,46 @@ class PublishTest(unittest.TestCase):
+         self.assertEqual(table.get_item(Key={"slug": "why-my-cron-ran-twice"})["Item"]["title"], "Why my cron ran twice")
+         self.assertEqual(table.scan()["Count"], 1)
+ 
++    def test_publish_second_story_succeeds_with_similarity_scores(self):
++        table = FakeTable()
++        story1 = {
++            "slug": "why-my-cron-ran-twice",
++            "title": "Why my cron ran twice",
++            "tags": ["cron", "linux"],
++            "body": "Two crontabs, one for root and one for me, both had the line.",
++        }
++        story2 = {
++            "slug": "debugging-systemd-timers",
++            "title": "Debugging systemd timers",
++            "tags": ["linux", "systemd"],
++            "body": "Systemd timers are often used instead of cron.",
++        }
++        app.publish(table, story1)
++        stored2 = app.publish(table, story2)
++        self.assertEqual(stored2["slug"], "debugging-systemd-timers")
++        self.assertEqual(len(stored2["similar"]), 1)
++        self.assertEqual(stored2["similar"][0]["slug"], "why-my-cron-ran-twice")
++        self.assertEqual(table.scan()["Count"], 2)
++
++    def test_handler_second_publish_status_code_201(self):
++        table = FakeTable()
++        story1 = {
++            "slug": "first-story",
++            "title": "First Story",
++            "tags": ["test"],
++            "body": "Body text",
++        }
++        story2 = {
++            "slug": "second-story",
++            "title": "Second Story",
++            "tags": ["test"],
++            "body": "Body text",
++        }
++        resp1 = app.handler({"body": __import__("json").dumps(story1)}, table)
++        self.assertEqual(resp1["statusCode"], 201)
++        resp2 = app.handler({"body": __import__("json").dumps(story2)}, table)
++        self.assertEqual(resp2["statusCode"], 201)
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

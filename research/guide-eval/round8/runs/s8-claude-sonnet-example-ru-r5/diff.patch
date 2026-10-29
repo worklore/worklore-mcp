@@ -1,0 +1,46 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..676cd09
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,20 @@
++# Fix: save_fact no longer evicts the static instructions from the cache
++
++## Cause
++`build_system` (bot.py) joined `INSTRUCTIONS` and `athlete_context` (date, profile, zones, goal, facts, language) into one text block with a single `cache_control` marker. `save_fact` changes the facts, so the prefix hash changed and the next call re-created the whole ~1000-token prompt. This matches `logs/usage.jsonl`: after each `save_fact`, `cache_read_input_tokens` is 0 and `cache_creation_input_tokens` is about 1000.
++
++## Change
++`build_system` now returns two text blocks, each with `cache_control: ephemeral`:
++1. `INSTRUCTIONS` alone. It has no interpolated values, so it is byte-stable across users and days.
++2. `athlete_context(...)`, the volatile per-athlete tail.
++
++A memory write now invalidates only the tail. Nothing else in the code changed. I didn't run the bot or call the API, so this is unverified.
++
++## What I took from the colleague's note
++- **Used:** the two-marker split, and keeping the instructions byte-stable.
++- **Used:** keeping all facts in the tail rather than selecting top-N per message. The code already does that, and I left it.
++- **Used:** leaving the keyword-based tool filtering alone. Tools sit above the system prompt in the cached prefix, but NOTES.md already says to leave the filtering, and the default core tools cover most messages.
++- **Skipped:** the numbers (~780/~240 tokens). They are from the colleague's bot, not this one.
++
++## How to verify
++Against the real API, send two messages within 5 minutes. The second should show `cache_read` covering the whole prompt. Then trigger a `save_fact` and send a third message. `cache_read` should still cover the instructions, and `cache_creation` should be only the size of the tail. If `cache_creation` is the size of the whole prompt, something in the instructions is not stable.
+diff --git a/bot.py b/bot.py
+index e2ff241..0daeeb2 100644
+--- a/bot.py
++++ b/bot.py
+@@ -128,9 +128,12 @@ def athlete_context(a, today):
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    # Two cached segments: static instructions (byte-stable) and the per-athlete tail.
++    # A save_fact only changes the tail, so the instructions stay a cache hit.
++    return [
++        {"type": "text", "text": INSTRUCTIONS, "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": athlete_context(a, today), "cache_control": {"type": "ephemeral"}},
++    ]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [

@@ -1,0 +1,7 @@
+# HR corridor fix
+
+Changed `gen.py` so every HR target uses `{"units": "%lthr", "start": low, "end": high}`. The previous `value` lower bound was accepted by the API, but the watch displayed its own HR zone bands for every step. The colleague's note identifies `start`/`end` as the Instant HR corridor shape; keeping `%lthr` lets Intervals calculate bpm from its stored LTHR (172 for this athlete). This applies to steps inside repeat blocks too, because they share `hr_target()`.
+
+Applicable parts of the note: the `start` rather than `value` key, percentage-of-LTHR units, and the warning that API acceptance alone does not prove the watch target is right. The failed `bpm` and `start_bpm`/`end_bpm` forms also match the local watch notes and are not used.
+
+The note's top-level `description` guidance concerns whether steps appear in the Intervals web UI. The readback already has populated `workout_doc.steps`, and no UI visibility problem was reported, so this change does not add Intervals text grammar. Its advice to create, sync, and delete a test event was not used because this task prohibits external service calls. The watch result for the new payload remains unverified locally.

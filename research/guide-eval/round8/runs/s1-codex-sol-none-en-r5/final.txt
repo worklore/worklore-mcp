@@ -1,0 +1,3 @@
+Fixed [gen.py](/tmp/h-zq82zW/gen.py) to generate Intervals workout text with the planned `% LTHR` ranges and repeats. The old `workout_doc` was accepted by the API, but the watch showed zone bands; Intervals [documents `description` as a workout upload format](https://forum.intervals.icu/t/uploading-planned-workouts-to-intervals-icu/63624).
+
+I updated [README.md](/tmp/h-zq82zW/README.md) and recorded the change and reasoning in [ANSWER.md](/tmp/h-zq82zW/ANSWER.md). Local checks passed for all four ranges and the repeat block. Nothing was posted, so the watch result still needs verification with a fresh sync.

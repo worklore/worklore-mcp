@@ -1,0 +1,36 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..2355ff2
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,7 @@
++# Исправление кеширования
++
++В `bot.py` функция `build_system` теперь отправляет два текстовых блока с отдельными `cache_control: ephemeral`. Первый содержит неизменные инструкции `INSTRUCTIONS`, второй — дату и данные спортсмена, включая долговременные факты. После `save_fact` меняется только второй блок, поэтому статический префикс может читаться из кеша.
++
++В `logs/usage.jsonl` до исправления после `save_fact` видно `cache_read_input_tokens: 0` и повторное создание примерно 1000 токенов. Это подтверждает причину, но в репозитории нет нового вызова Anthropic API для измерения эффекта после правки. Локальная проверка подтвердила два маркера и неизменность первого блока при добавлении факта.
++
++Из заметки коллеги пригодились разделение стабильных инструкций и изменчивого контекста на два кешируемых блока, а также проверка по `cache_creation_input_tokens` и `cache_read_input_tokens`. Идеи об отборе top-N фактов и изменении фильтрации инструментов не применял: такого отбора здесь нет, а существующую фильтрацию `NOTES.md` просит сохранить. Смена набора инструментов по теме сообщения всё ещё может вызвать отдельный промах кеша, как уже видно в журнале для `plan_week` и `predict_race`.
+diff --git a/__pycache__/bot.cpython-314.pyc b/__pycache__/bot.cpython-314.pyc
+new file mode 100644
+index 0000000..2889d28
+Binary files /dev/null and b/__pycache__/bot.cpython-314.pyc differ
+diff --git a/bot.py b/bot.py
+index e2ff241..079a8fa 100644
+--- a/bot.py
++++ b/bot.py
+@@ -128,9 +128,11 @@ def athlete_context(a, today):
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    # Keep the shared instructions cached when an athlete's context changes.
++    return [
++        {"type": "text", "text": INSTRUCTIONS, "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": "\n\n" + athlete_context(a, today), "cache_control": {"type": "ephemeral"}},
++    ]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [

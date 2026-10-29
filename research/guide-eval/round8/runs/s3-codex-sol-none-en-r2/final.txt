@@ -1,0 +1,5 @@
+The job ran six times, but `claude` reported “Not logged in.” Then the script tried to assign its exit code to zsh’s read-only `status` parameter and stopped before sending a failure note.
+
+I fixed the failure path in [nightly-review.zsh](/tmp/h-Q2hvNw/bin/nightly-review.zsh), made Telegram HTTP errors visible in [notify.sh](/tmp/h-Q2hvNw/bin/notify.sh), and documented the causes in [ANSWER.md](/tmp/h-Q2hvNw/ANSWER.md). Local stub checks covered failed, successful, and empty reviews; no external request was made.
+
+The actual Mac still needs a usable Claude login or supported noninteractive credential for the `vk` account before reviews can succeed.

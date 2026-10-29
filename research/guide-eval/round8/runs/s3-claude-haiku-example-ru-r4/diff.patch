@@ -1,0 +1,130 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..9b4240e
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,83 @@
++# Почему ночная задача nightly-review молчала
++
++## Что показали факты
++
++- `launchctl-print.txt`: `runs = 6`, `last exit code = 1`. Задача запускалась
++  по расписанию каждую ночь, то есть launchd работал. Проблема в скрипте.
++- `Library/Logs/nightly-review.err`: шесть запусков, в каждом две строки:
++  1. `Not logged in · Please run /login` — от `claude -p`.
++  2. `/Users/vk/bin/nightly-review.zsh:19: read-only variable: status` — от zsh.
++- `nightly-review.out` пустой, уведомлений в Telegram не было.
++
++## Две ошибки, одна за другой
++
++1. **`claude` не видит логин в launchd-окружении.** В плисте нет `USER`, и
++   CLI не находит вход в связку ключей (keychain). Выход: `exit 1`, пустой
++   `$OUT`.
++2. **Уведомитель о сбое не выполняется.** В zsh `status` — read-only
++   переменная. Присвоение `status=$?` убивает скрипт на строке 19, до вызова
++   `notify.sh`. Сбой случился, а сообщить о нём было некому. Поэтому тишина
++   полная.
++
++Вторая ошибка скрыла первую: при каждом запуске `Not logged in` видно только
++в `.err`, и никто его не читал.
++
++## Что изменено
++
++- `bin/nightly-review.zsh`
++  - `status=$?` заменён на `rc=$?`. Теперь уведомление о сбое выполняется.
++  - `claude` получает `< /dev/null`, чтобы не ждать stdin.
++  - Логируются код выхода и длительность запуска (в `.out`).
++  - Пустой результат при коде 0 считается сбоем. Раньше такой запуск
++    отправлял бы «done» с пустой сводкой.
++- `Library/LaunchAgents/com.vk.nightly-review.plist`
++  - Добавлен `EnvironmentVariables` → `USER` = `vk`.
++
++## Проверено здесь и не проверено
++
++Проверено локально (zsh 5.9, заглушки `claude` и `notify.sh`, `HOME` в
++scratch-папке, scratch удалён после проверки):
++
++- исходный скрипт воспроизводит `read-only variable: status` и не
++  уведомляет;
++- `claude` с `exit 1` → уведомление «FAILED (exit 1, ...)», код скрипта 1;
++- `claude` с выводом и кодом 0 → уведомление «done», код 0;
++- `claude` с кодом 0 и пустым выводом → уведомление «FAILED», код 1;
++- `plutil -lint` плиста — OK, `zsh -n` скрипта — OK.
++
++Не проверено (нужен твой Mac, это не сделать в этой папке):
++
++- Что `USER=vk` действительно решает «Not logged in». Это гипотеза из заметки
++  коллеги, на практике её не проверяли. Значение `vk` взято из путей
++  (`/Users/vk/...`) в `launchctl print` и README. Сверь с `id -un` на Mac и
++  при необходимости поправь.
++- Настоящая отправка в Telegram из launchd (keychain-токен `tg-bot`).
++- Полный цикл: `launchctl kickstart -k gui/$UID/com.vk.nightly-review`, затем
++  проверка `last exit code = 0`, свежего файла в `~/Library/Logs/` и
++  уведомления. Плист не скопирован в `~/Library/LaunchAgents` и не
++  перезагружен: это действие вне этой папки.
++
++## Что из заметки коллеги пригодилось
++
++- **Сначала проверить, что запуск был.** `launchctl print` дал `runs` и код
++  выхода. Здесь это показало, что скрипт падал, а не что launchd не
++  стартовал.
++- **Читать лог до теорий.** `.err` содержал обе ошибки.
++- **`rc=$?` вместо `status`.** Прямой ответ на первую поломку.
++- **`< /dev/null` для `claude -p` с промптом-аргументом.** Добавлено.
++- **`USER` в `EnvironmentVariables`.** Добавлено. Эффект не проверен.
++- **Длительность и проверка результата.** Добавлены: лог длительности и
++  сбой при пустом выводе с кодом 0. Совпадает с мыслью «тишина в обе стороны
++  недопустима».
++
++## Что не пригодилось
++
++- **Передача промпта через stdin** (`print -r -- "$PROMPT" | claude -p`).
++  Ошибка «Input must be provided…» здесь не возникала: промпт уже передаётся
++  аргументом, и он попадал в вызов. Менять способ передачи не было причины.
++- **Тест «сломать скрипт нарочно и получить уведомление».** Сделан
++  локально с заглушками, а не на launchd. Сам по себе тест принципиален, но
++  на реальном уведомителе его стоит повторить на Mac.
++- **Поправка про «exit code не врёт».** Здесь код честный (1). Общее правило
++  оставляю: код говорит, что скрипт запустился, а не что он сделал работу.
++  Поэтому добавлена проверка непустого выхода.
+diff --git a/Library/LaunchAgents/com.vk.nightly-review.plist b/Library/LaunchAgents/com.vk.nightly-review.plist
+index c347363..d49eacf 100644
+--- a/Library/LaunchAgents/com.vk.nightly-review.plist
++++ b/Library/LaunchAgents/com.vk.nightly-review.plist
+@@ -24,6 +24,8 @@
+   <dict>
+     <key>PATH</key>
+     <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
++    <key>USER</key>
++    <string>vk</string>
+   </dict>
+ </dict>
+ </plist>
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..577c98a 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -15,12 +15,17 @@ Do not modify any file."
+ 
+ cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
+ 
+-claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
++START=$(date +%s)
++claude -p "$PROMPT" --output-format text < /dev/null > "$OUT"
++# not `status`: it is read-only in zsh and assigning to it kills the script
++rc=$?
++DURATION=$(( $(date +%s) - START ))
++echo "$(date -Iseconds) claude exit=$rc duration=${DURATION}s out=$OUT"
+ 
+-if [ $status -ne 0 ]; then
+-  "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
+-  exit $status
++# exit 0 with an empty summary still counts as a failure
++if [ $rc -ne 0 ] || [ ! -s "$OUT" ]; then
++  "$NOTIFY" "nightly review FAILED (exit $rc, ${DURATION}s), see $OUT"
++  exit 1
+ fi
+ 
+-"$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"
++"$NOTIFY" "nightly review done (${DURATION}s): $(head -c 300 "$OUT")"

@@ -1,0 +1,312 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..feb2bfd
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,72 @@
++# Intervals.icu: почему не подключается и почему «отваливается» через час
++
++Сломаны были три разные вещи. Пока не починены все три, интеграция не работает.
++
++## 1. Кнопка Connect всегда даёт 401 (тикет #214, лог §1)
++
++Кнопка была обычной ссылкой `<a href="/api/intervals/auth/init">`. Сайт хранит
++токен входа в `localStorage`, и заголовок `Authorization: Bearer` добавляет только
++обёртка `api()` над `fetch`. При переходе по ссылке браузер этот заголовок не
++отправляет. В логе видно ровно это: запросы `/api/me` и `/status` через fetch
++отвечают 200, а переход на `auth/init` получает 401 «no Authorization header».
++
++**Исправление:** `Connect` теперь кнопка. SPA вызывает `/api/intervals/auth/init`
++через `api()` (с токеном), сервер возвращает JSON `{"url": ...}`, и SPA делает
++`window.location.assign(url)`. Токен в URL я специально не кладу: он попал бы в
++историю браузера, логи и Referer.
++
++Попутно state привязан к браузеру: `auth/init` ставит HttpOnly-cookie
++`tc_oauth_state` (SameSite=Lax, путь ограничен callback-ом, живёт 15 минут), а
++callback проверяет, что cookie совпадает со state. Без этого кто угодно мог
++подсунуть свою ссылку authorize, и Intervals-аккаунт жертвы привязался бы к
++чужому пользователю tricoach (OAuth CSRF). Ещё callback теперь обрабатывает
++`?error=...` от Intervals, а не отвечает молча «bad state or code».
++
++## 2. Шаг authorize отвечает `400 invalid_request` (тикет #219, лог §2)
++
++Сломалось 2026-10-02 вместе с синхронизацией календаря, когда изменили `SCOPES`
++на `ACTIVITY:READ,ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:READ,CALENDAR:WRITE`. В
++Intervals.icu на каждую область указывается один уровень, и `WRITE` уже включает
++`READ`. Если указать для одной области и `:READ`, и `:WRITE`, запрос считается
++некорректным, и Intervals отвечает 400 ещё до экрана согласия. Это видно по
++успешному подключению Rivera: в выданном scope записано
++`ACTIVITY:WRITE,WELLNESS:READ`, то есть одна запись на область.
++
++**Исправление:** `SCOPES = "ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE"` (в
++`config.py`).
++
++## 3. Через час подключение помечается «expired, reconnect» (тикет #219, лог §3)
++
++Intervals.icu выдаёт бессрочные access-токены: в ответе нет `expires_in` и нет
++`refresh_token`. Ответ из лога это подтверждает. А код в таком случае сам назначал
++срок жизни `DEFAULT_TOKEN_TTL = 3600`. Через ~55 минут фоновая задача видела
++«истёкший» токен без refresh-токена, обнуляла его и ставила статус
++`expired, reconnect`. Rivera ничего не отзывал, приложение «сломало» рабочий токен
++само.
++
++**Исправление:** если `expires_in` нет, `expires_at = None`, и фоновая задача такие
++токены не трогает. Обновление по refresh-токену осталось только для случаев, когда
++провайдер действительно указывает срок жизни. Отзыв доступа теперь определяется по
++факту: если Intervals ответил 401 на запрос wellness, подключение помечается
++`expired, reconnect`. Ещё в фоновой задаче сетевые запросы убраны из-под общего
++`LOCK`, иначе медленный ответ Intervals блокировал все запросы к API.
++
++## Что учесть при выкатке
++
++- У Rivera (и у всех, кого задача успела «просрочить») `access_token` в базе уже
++  обнулён, поэтому подключиться заново придётся один раз. Дальше подключение
++  отваливаться не будет.
++- У старых подключений scope выдан без `CALENDAR`. Чтобы заработала синхронизация
++  календаря, их нужно переподключить.
++- Атлет может снять галочки на экране согласия, поэтому стоит сверять выданный
++  `scope` с нужным перед отправкой тренировок. В этот фикс я это не включил.
++
++## Как проверял
++
++Локально, с поддельным сервером Intervals (`INTERVALS_BASE=http://127.0.0.1:8799`),
++к настоящему intervals.icu не обращался. `auth/init` без токена отвечает 401, с
++токеном отдаёт URL с новыми scope. Callback без cookie отвечает 400, с cookie: 302
++`/?connected=1`, статус `connected` (в логе «no expiry»), wellness отвечает 200.
++Отказ на `ACTIVITY:READ,ACTIVITY:WRITE` я имитировал в поддельном сервере сам.
++Против настоящего Intervals.icu поведение scope нужно один раз проверить на dev-
++клиенте.
+diff --git a/config.py b/config.py
+index 54a8144..4d27d3f 100644
+--- a/config.py
++++ b/config.py
+@@ -8,6 +8,9 @@ INTERVALS_BASE = os.environ.get("INTERVALS_BASE", "https://intervals.icu")
+ CLIENT_ID = "tricoach-dev"
+ CLIENT_SECRET = "s3cr3t-placeholder-0000"
+ REDIRECT_URI = f"http://localhost:{PORT}/api/intervals/callback"
+-SCOPES = "ACTIVITY:READ,ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:READ,CALENDAR:WRITE"
++# One entry per area: on Intervals.icu WRITE already includes READ, and listing
++# both READ and WRITE for the same area makes /oauth/authorize answer 400
++# invalid_request before the consent screen.
++SCOPES = "ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE"
+ 
+ REFRESH_INTERVAL = 60      # seconds between passes of the token refresher
+diff --git a/server.py b/server.py
+index 351cbb7..0d3439f 100644
+--- a/server.py
++++ b/server.py
+@@ -12,7 +12,7 @@ import config
+ STATIC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
+ TOKEN_URL = config.INTERVALS_BASE + "/api/oauth/token"
+ AUTHORIZE_URL = config.INTERVALS_BASE + "/oauth/authorize"
+-DEFAULT_TOKEN_TTL = 3600   # seconds; used when the provider does not say how long a token lives
++STATE_COOKIE = "tc_oauth_state"
+ 
+ # --- in-memory store -------------------------------------------------------
+ USERS = {
+@@ -62,46 +62,72 @@ def exchange_code(code):
+     })
+ 
+ 
++def expiry_from(tok, now):
++    # Intervals.icu access tokens do not expire: the token response carries no
++    # expires_in and no refresh_token. Only schedule an expiry when the provider
++    # actually gives one; otherwise the token is valid until the athlete revokes
++    # it (which we notice as a 401 from the API).
++    exp = tok.get("expires_in")
++    return now + int(exp) if exp else None
++
++
+ def store_connection(user_id, tok):
+-    expires_in = int(tok.get("expires_in") or DEFAULT_TOKEN_TTL)
++    expires_at = expiry_from(tok, time.time())
+     refresh = tok.get("refresh_token")
+-    if not refresh:
+-        log(f"{user_id}: no refresh_token in response, scheduling expiry in {expires_in}s")
+     athlete = tok.get("athlete") or {}
+     with LOCK:
+         CONNECTIONS[user_id] = {
+             "athlete_id": athlete.get("id"), "athlete_name": athlete.get("name"),
+             "access_token": tok["access_token"], "refresh_token": refresh,
+-            "scope": tok.get("scope"), "expires_at": time.time() + expires_in, "status": "connected",
++            "scope": tok.get("scope"), "expires_at": expires_at, "status": "connected",
+         }
+-    log(f"{user_id}: connected as athlete {athlete.get('id')} (expires in {expires_in}s)")
++    life = "no expiry" if expires_at is None else f"expires in {int(expires_at - time.time())}s"
++    log(f"{user_id}: connected as athlete {athlete.get('id')} ({life})")
+ 
+ 
+ def refresh_tokens():
+-    """Background pass: renew access tokens shortly before they expire."""
++    """Background pass: renew access tokens shortly before they expire.
++
++    Only applies to tokens the provider gave an expiry for; Intervals.icu tokens
++    normally have none and are left alone.
++    """
+     while True:
+         time.sleep(config.REFRESH_INTERVAL)
+         now = time.time()
+         with LOCK:
+-            for uid, c in CONNECTIONS.items():
+-                if c["status"] != "connected" or c["expires_at"] - now > 300:
+-                    continue
+-                if not c["refresh_token"]:
+-                    log(f"{uid}: token expiry passed and no refresh token on file -> expired, reconnect")
+-                    c.update(status="expired, reconnect", access_token=None)
+-                    continue
+-                try:
+-                    tok = post_form(TOKEN_URL, {
+-                        "grant_type": "refresh_token", "refresh_token": c["refresh_token"],
+-                        "client_id": config.CLIENT_ID, "client_secret": config.CLIENT_SECRET,
+-                    })
++            due = [(uid, c["refresh_token"], c["expires_at"]) for uid, c in CONNECTIONS.items()
++                   if c["status"] == "connected" and c["expires_at"] is not None
++                   and c["expires_at"] - now <= 300]
++        for uid, refresh, expires_at in due:
++            if not refresh:
++                if expires_at > now:
++                    continue   # nothing to renew with; keep using it until it actually expires
++                log(f"{uid}: token expired and no refresh token on file -> expired, reconnect")
++                mark_expired(uid)
++                continue
++            try:
++                tok = post_form(TOKEN_URL, {
++                    "grant_type": "refresh_token", "refresh_token": refresh,
++                    "client_id": config.CLIENT_ID, "client_secret": config.CLIENT_SECRET,
++                })
++            except Exception as e:
++                log(f"{uid}: refresh failed ({e}) -> expired, reconnect")
++                mark_expired(uid)
++                continue
++            with LOCK:
++                c = CONNECTIONS.get(uid)
++                if c:
+                     c.update(access_token=tok["access_token"],
+-                             refresh_token=tok.get("refresh_token", c["refresh_token"]),
+-                             expires_at=now + int(tok["expires_in"]))
+-                    log(f"{uid}: token refreshed")
+-                except Exception as e:
+-                    log(f"{uid}: refresh failed ({e}) -> expired, reconnect")
+-                    c.update(status="expired, reconnect", access_token=None)
++                             refresh_token=tok.get("refresh_token", refresh),
++                             expires_at=expiry_from(tok, time.time()))
++            log(f"{uid}: token refreshed")
++
++
++def mark_expired(uid):
++    with LOCK:
++        c = CONNECTIONS.get(uid)
++        if c:
++            c.update(status="expired, reconnect", access_token=None)
+ 
+ 
+ def intervals_get(conn, path):
+@@ -136,11 +162,20 @@ class Handler(BaseHTTPRequestHandler):
+         self.end_headers()
+         self.wfile.write(body)
+ 
+-    def redirect(self, url):
++    def redirect(self, url, headers=()):
+         self.send_response(302)
+         self.send_header("Location", url)
++        for k, v in headers:
++            self.send_header(k, v)
+         self.end_headers()
+ 
++    def cookie(self, name):
++        for part in self.headers.get("Cookie", "").split(";"):
++            k, _, v = part.strip().partition("=")
++            if k == name:
++                return v
++        return None
++
+     def current_user(self):
+         auth = self.headers.get("Authorization", "")
+         if not auth.startswith("Bearer "):
+@@ -185,19 +220,36 @@ class Handler(BaseHTTPRequestHandler):
+             return
+         self.send_json(404, {"error": "not found"})
+ 
+-    # Step 1: build the authorize URL and send the browser to Intervals.
++    # Step 1: build the authorize URL. The SPA calls this with fetch (a plain
++    # link navigation cannot carry the Bearer token) and then sends the browser
++    # to the returned URL. The state is also pinned to this browser in a cookie
++    # so a callback carrying someone else's state is rejected.
+     def auth_init(self):
+         user = self.require_user()
+         if not user:
+             return
++        state = sign_state(user["id"])
+         params = {"client_id": config.CLIENT_ID, "redirect_uri": config.REDIRECT_URI,
+-                  "scope": config.SCOPES, "state": sign_state(user["id"])}
+-        self.redirect(AUTHORIZE_URL + "?" + urllib.parse.urlencode(params, safe=":,"))
++                  "scope": config.SCOPES, "state": state}
++        body = json.dumps({"url": AUTHORIZE_URL + "?" + urllib.parse.urlencode(params, safe=":,")}).encode()
++        self.send_response(200)
++        self.send_header("Content-Type", "application/json")
++        self.send_header("Content-Length", str(len(body)))
++        self.send_header("Cache-Control", "no-store")
++        self.send_header("Set-Cookie", f"{STATE_COOKIE}={state}; Path=/api/intervals/callback; "
++                                       "Max-Age=900; HttpOnly; SameSite=Lax")
++        self.end_headers()
++        self.wfile.write(body)
+ 
+     # Step 2: Intervals redirects back here with ?code=&state=.
+     def callback(self, q):
+-        user_id = verify_state(q.get("state", ""))
+-        if not user_id or not q.get("code"):
++        if q.get("error"):
++            log(f"authorize returned error: {q.get('error')} {q.get('error_description', '')}")
++            return self.redirect("/?connect_error=" + urllib.parse.quote(q["error"]))
++        state = q.get("state", "")
++        user_id = verify_state(state)
++        pinned = self.cookie(STATE_COOKIE)
++        if not user_id or not q.get("code") or not pinned or not hmac.compare_digest(pinned, state):
+             return self.send_json(400, {"error": "bad state or code"})
+         try:
+             tok = exchange_code(q["code"])
+@@ -208,7 +260,7 @@ class Handler(BaseHTTPRequestHandler):
+         except Exception as e:
+             log(f"{user_id}: token exchange failed: {e}")
+             return self.send_json(502, {"error": "token exchange failed"})
+-        self.redirect("/?connected=1")
++        self.redirect("/?connected=1", [("Set-Cookie", f"{STATE_COOKIE}=; Path=/api/intervals/callback; Max-Age=0")])
+ 
+     def status(self):
+         user = self.require_user()
+@@ -233,6 +285,9 @@ class Handler(BaseHTTPRequestHandler):
+             code, data = intervals_get(c, "/wellness")
+             self.send_json(code, data)
+         except urllib.error.HTTPError as e:
++            if e.code == 401:   # token revoked on the Intervals side
++                log(f"{user['id']}: intervals returned 401 -> expired, reconnect")
++                mark_expired(user["id"])
+             self.send_json(e.code, {"error": f"intervals returned {e.code}"})
+         except Exception as e:
+             self.send_json(502, {"error": str(e)})
+diff --git a/static/app.js b/static/app.js
+index 368922e..a4ddd42 100644
+--- a/static/app.js
++++ b/static/app.js
+@@ -25,12 +25,20 @@ async function render() {
+     } else {
+       const why = st.status && st.status !== "disconnected" ? `<p class="muted">Status: ${esc(st.status)}</p>` : "";
+       card = `<div class="card">Intervals.icu is not connected.${why}
+-        <p><a class="btn" href="/api/intervals/auth/init">Connect Intervals.icu</a></p></div>`;
++        <p><button class="btn" id="connect">Connect Intervals.icu</button></p></div>`;
+     }
+     root.className = "";
+     root.innerHTML = `<p>Signed in as <b>${esc(me.name)}</b>.</p>${card}`;
+     const d = document.getElementById("disconnect");
+     if (d) d.onclick = async () => { await api("/api/intervals/disconnect", { method: "POST" }); render(); };
++    // A plain link would navigate without the Authorization header (401), so
++    // ask for the authorize URL through the fetch wrapper and go there.
++    const c = document.getElementById("connect");
++    if (c) c.onclick = async () => {
++      c.disabled = true;
++      try { window.location.assign((await api("/api/intervals/auth/init")).url); }
++      catch (e) { c.disabled = false; root.insertAdjacentHTML("beforeend", `<p class="card">Error: ${esc(e.message)}</p>`); }
++    };
+   } catch (e) {
+     root.innerHTML = `<p class="card">Error: ${esc(e.message)}</p>`;
+   }

@@ -1,0 +1,3 @@
+Changed [gen.py](/tmp/h-x69Hsh/gen.py) to encode each HR corridor with `start` and `end`. The previous payload used `value` for the lower bound, which denotes a single target rather than a range.
+
+I recorded the reason and local verification in [ANSWER.md](/tmp/h-x69Hsh/ANSWER.md). The generated workout has the planned percentage ranges; a watch sync is still needed to confirm how they display. Nothing was pushed.

@@ -1,0 +1,90 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..351c8c2
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,62 @@
++# Пульсовые коридоры на часах приходят зонами часов
++
++## Что изменено
++
++`gen.py`, функция `hr_target`: для HR-цели диапазон теперь передаётся как
++`start`/`end` вместо `value`/`end`.
++
++```diff
++-    return {"units": "%lthr", "value": lo, "end": hi}
+++    return {"units": "%lthr", "start": lo, "end": hi}
++```
++
++Единицы (`%lthr`) не трогал, план и `push.sh` тоже. Пересчёт в bpm
++по-прежнему делает Intervals по LTHR спортсмена (172).
++
++## Почему
++
++В `workout_doc` Intervals.icu диапазон задаётся парой `start`/`end`, а `value`
++означает одно значение. Генератор слал смесь `value` + `end`. Это валидный
++JSON, поэтому API принял событие и вернул его без изменений. Это видно в
++`readback/event-184233-as-sent.json`, но это ещё не значит, что Intervals понял
++шаг как диапазон.
++
++Симптомы указывают на то, что каждый шаг ушёл как одиночная пульсовая цель, а не
++как свой диапазон. При экспорте в Garmin такая цель превращается в номер
++пульсовой зоны, и часы подставляют границы из своих зон (Z2 118–137,
++Z4 151–162 и т.д.). Отсюда признаки из `watch-notes.md`:
++- каждый коридор совпадает с какой-то зоной часов;
++- при смене LTHR на часах полосы сдвигаются, но остаются границами зон;
++- значений 151–160 или 129–141 не бывает никогда.
++
++Если передать настоящий диапазон (`start`/`end` в `%lthr`), Intervals должен
++экспортировать свои границы в bpm (custom low/high), а не номер зоны.
++
++Прошлые попытки не помогли, и это понятно. `start_bpm`/`end_bpm` не являются
++полями формата, поэтому их игнорировали. `units: "bpm"` не решает проблему
++неправильного ключа диапазона и вдобавок ломает пересчёт. Оставил `%lthr`, как
++и задумано в README.
++
++## Что проверено, а что нет
++
++- Проверено: `python3 gen.py plans/tempo-run.json` теперь выдаёт
++  `{"units": "%lthr", "start": 68, "end": 75}` и так далее для всех четырёх шагов.
++- **Не проверено:** на часах это не проверялось. По правилам задачи я ничего не
++  пушил в Intervals и не синхронизировал. Вывод о формате основан на моём знании
++  формата `workout_doc` Intervals.icu, а не на документации из репозитория. Её
++  здесь нет.
++- Есть одна нестыковка. Если бы бралось только `value`, Float (75% → 129 bpm)
++  должен был бы попасть в Z2 часов, а показал Z3 137–151. Значит, точное правило,
++  по которому Intervals выбирал зону, я не восстановил. Вывод «ушло как зона, а
++  не как диапазон» это не меняет, но подтверждать исправление нужно на практике.
++
++## Как проверить
++
++1. `python3 gen.py plans/tempo-run.json > event.json && ./push.sh event.json`
++2. В Intervals открыть событие: шаги должны отображаться как `68-75% LTHR`,
++   `88-93% LTHR` и т.д., а не одним числом или зоной.
++3. После синхронизации на часах ожидаются примерно 117–129, 151–160, 129–141 и
++   112–124 bpm (округление на стороне Intervals/Garmin может дать ±1).
++4. Если на часах всё ещё зоны, посмотреть в настройках Intervals параметры
++   экспорта пульсовых целей в Garmin (экспорт как зоны или как диапазоны). Это
++   второй возможный источник проблемы, из репозитория его не видно.
+diff --git a/gen.py b/gen.py
+index be0b3bc..75e8cda 100755
+--- a/gen.py
++++ b/gen.py
+@@ -8,9 +8,15 @@ import sys
+ 
+ 
+ def hr_target(step):
+-    """HR corridor for a step, as a percentage of the athlete's LTHR."""
++    """HR corridor for a step, as a percentage of the athlete's LTHR.
++
++    Intervals.icu workout_doc expresses a range as start/end; "value" is a
++    single-point target. Sending value+end made Intervals treat the step as a
++    single HR target, which it exports to Garmin as a zone, so the watch
++    showed its own zone band instead of our corridor.
++    """
+     lo, hi = step["hr_pct"]
+-    return {"units": "%lthr", "value": lo, "end": hi}
++    return {"units": "%lthr", "start": lo, "end": hi}
+ 
+ 
+ def build_step(step):

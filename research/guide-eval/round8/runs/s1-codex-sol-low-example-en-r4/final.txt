@@ -1,0 +1,3 @@
+Changed [gen.py](/tmp/h-yxFT4G/gen.py) to emit HR corridors as `%lthr` with `start` and `end`. The previous `value`/`end` payload matches the watch’s zone-clamping symptom.
+
+[ANSWER.md](/tmp/h-yxFT4G/ANSWER.md) explains the change and which parts of the colleague’s note applied. I verified the generated targets for the sample plan locally; the watch result still needs an Intervals and Garmin round trip.

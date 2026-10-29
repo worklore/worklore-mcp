@@ -1,0 +1,128 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..665d02d
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,21 @@
++# Why the nightly review was silent
++
++The job **did run**. The captured `launchctl print` shows six runs, a 02:30 calendar trigger, and `last exit code = 1`. The stderr log has the same two errors six times: `claude` says `Not logged in · Please run /login`, then zsh says `read-only variable: status` at line 19 of the wrapper. The empty stdout log is expected because the wrapper redirects the agent's stdout to a dated summary file.
++
++The agent failed before producing a review. The plist supplied `PATH` but no `USER`; that is a plausible cause of the headless CLI being unable to locate its saved login. The snapshot cannot prove that adding `USER` is sufficient: the real Mac may also need a valid CLI login or keychain access. The immediate reason **no failure note arrived** is certain: `status=$?` assigns to zsh's read-only `status` parameter and terminates the wrapper before its notification branch. This would also have killed the wrapper after a successful agent call, so no success note could have been sent either.
++
++## Fixes in this snapshot
++
++- Set `USER=vk` in the launchd plist, matching the account in the captured paths.
++- Use `rc` for the agent exit code. Send the failure note as soon as an agent failure is detected.
++- Close stdin for `claude -p` because the prompt is already passed as an argument.
++- Treat a zero-exit, empty summary as a failure. Log the run duration and notification outcome to stderr so a fast or silent run is diagnosable.
++- Make the Telegram notifier fail visibly when keychain lookup or the HTTP request fails; the wrapper logs a notifier failure and exits nonzero.
++
++The colleague's **runs/exit-code check**, **read-only `status` bug**, **`USER` setting**, **closed stdin for an argument prompt**, **duration logging**, and **checking the real output rather than only exit 0** apply here. Their **missing prompt** diagnosis does not: this wrapper already passes the prompt as an argument, and its recorded error is an authentication error. Piping the prompt through stdin is therefore unnecessary here. Their `launchctl kickstart` and real success/failure notification checks remain useful after deployment, but were not run against this snapshot.
++
++## Verification and remaining live check
++
++`zsh -n`, `bash -n`, and `plutil -lint` pass. Local mock runs exercised success, agent exit 7, empty output, and notifier exit 1: the wrapper returned 0, 7, 1, and 1 respectively; failure cases produced failure messages when the mock notifier worked, and the notifier failure appeared in stderr. These tests did not contact Telegram or the real agent.
++
++This directory is a snapshot, so the edited plist and scripts have **not** been installed or reloaded in the real user's launchd session. After applying them there, reload the agent so the new `USER` environment takes effect, run it once, and check a fresh nonempty summary file, the stderr duration, and an actual Telegram message. If `Not logged in` persists, repair the CLI login/keychain access in that account. Then force one agent failure and confirm the failure message arrives.
+diff --git a/Library/LaunchAgents/com.vk.nightly-review.plist b/Library/LaunchAgents/com.vk.nightly-review.plist
+index c347363..f371054 100644
+--- a/Library/LaunchAgents/com.vk.nightly-review.plist
++++ b/Library/LaunchAgents/com.vk.nightly-review.plist
+@@ -22,6 +22,8 @@
+   <string>/Users/vk/Library/Logs/nightly-review.err</string>
+   <key>EnvironmentVariables</key>
+   <dict>
++    <key>USER</key>
++    <string>vk</string>
+     <key>PATH</key>
+     <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+   </dict>
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..e8f88c0 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -2,10 +2,24 @@
+ # Nightly review of yesterday's commits, summary to Telegram.
+ set -u
+ 
++STARTED_AT=$(date +%s)
+ REPO="$HOME/projects/shop"
+ OUT="$HOME/Library/Logs/nightly-review-$(date +%F).md"
+ NOTIFY="$HOME/bin/notify.sh"
+ 
++log_result() {
++  print -r -- "nightly review: $1 (duration $(($(date +%s) - STARTED_AT))s)" >&2
++}
++
++notify() {
++  "$NOTIFY" "$1"
++  local notify_rc=$?
++  if (( notify_rc != 0 )); then
++    print -r -- "nightly review: notification failed (exit $notify_rc)" >&2
++  fi
++  return "$notify_rc"
++}
++
+ SINCE=$(date -v-1d +%F)
+ PROMPT="Review the commits in this repository since $SINCE.
+ For each commit: one line on what it changes and whether anything looks risky
+@@ -13,14 +27,32 @@ For each commit: one line on what it changes and whether anything looks risky
+ End with a three-line summary I can read on my phone.
+ Do not modify any file."
+ 
+-cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
++if ! cd "$REPO"; then
++  log_result "repo missing: $REPO"
++  notify "nightly review FAILED: repo missing: $REPO"
++  exit 1
++fi
++
++claude -p "$PROMPT" --output-format text </dev/null > "$OUT"
++rc=$?
+ 
+-claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
++if (( rc != 0 )); then
++  log_result "agent failed (exit $rc)"
++  notify "nightly review FAILED (agent exit $rc), see $OUT"
++  exit "$rc"
++fi
+ 
+-if [ $status -ne 0 ]; then
+-  "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
+-  exit $status
++if [[ ! -s "$OUT" ]]; then
++  log_result "agent produced an empty summary"
++  notify "nightly review FAILED: empty summary, see $OUT"
++  exit 1
+ fi
+ 
+-"$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"
++if notify "nightly review done: $(head -c 300 "$OUT")"; then
++  log_result "completed"
++  exit 0
++else
++  rc=$?
++  log_result "summary ready; notification failed (exit $rc)"
++  exit "$rc"
++fi
+diff --git a/bin/notify.sh b/bin/notify.sh
+index 818e531..260abe1 100755
+--- a/bin/notify.sh
++++ b/bin/notify.sh
+@@ -1,7 +1,12 @@
+ #!/bin/bash
+ # usage: notify.sh "message"  — sends a Telegram message to me.
+ set -eu
+-: "${TG_BOT_TOKEN:=$(security find-generic-password -s tg-bot -w)}"
++if [[ -z ${TG_BOT_TOKEN:-} ]]; then
++  TG_BOT_TOKEN=$(security find-generic-password -s tg-bot -w) || {
++    echo "nightly review: could not read Telegram token from keychain" >&2
++    exit 1
++  }
++fi
+ CHAT_ID=123456789
+-curl -sS -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
++curl -fsS -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
+   -d chat_id="$CHAT_ID" --data-urlencode text="$1" > /dev/null

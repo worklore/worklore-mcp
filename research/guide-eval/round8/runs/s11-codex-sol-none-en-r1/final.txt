@@ -1,0 +1,3 @@
+The first publish stores no related stories. The second adds a similarity score as a Python `float`, which DynamoDB rejects, causing the 500.
+
+I fixed [src/app.py](/tmp/h-vbSZEJ/src/app.py) to convert nested floats to `Decimal` before storage and added a consecutive-publish regression test. The cause and fix are in [ANSWER.md](/tmp/h-vbSZEJ/ANSWER.md). All 2 tests pass.

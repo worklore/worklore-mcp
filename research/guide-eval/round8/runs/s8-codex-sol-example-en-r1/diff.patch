@@ -1,0 +1,122 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..fb78a30
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,7 @@
++# Prompt cache fix
++
++`bot.py` now sends two system text blocks, each with an ephemeral cache breakpoint. The first contains byte-stable coaching instructions; the second contains the date and athlete profile, zones, goal, facts, and language. A `save_fact` write therefore changes only the second block. I added stable guidance that restates the existing coaching rules to put the first breakpoint above Claude Sonnet's minimum cacheable prefix length with the default tool set. This length is inferred from the old usage log; it still needs a live cache read to confirm.
++
++The colleague's two-breakpoint approach applied directly. Keeping all long-term facts in the context also applied: there is no per-message fact selection to change the cached tail. The existing keyword-based tool selection is retained, and its selected list stays fixed across rounds of one reply. Its optional tool groups can still cause a cache miss when the tool list changes between messages. The existing `usage.jsonl` logging already records both cache creation and cache read tokens, so no logging change was needed. The note's claim about observed cost savings was not used as evidence for this repo.
++
++Verification: `python3 -m unittest -v test_bot` passes. The test runs a `save_fact` tool round and confirms that the next request has an identical first system block, an updated second block, both cache breakpoints, and the same tool list. I did not make a live API call because the task is limited to local work. After deployment, the usage log should show a cache read for the fixed prefix and cache creation for the changed athlete tail after a memory write; exact token counts require a live request.
+diff --git a/README.md b/README.md
+index ebd390e..b9429f2 100644
+--- a/README.md
++++ b/README.md
+@@ -11,6 +11,7 @@ its system prompt. Every API call appends its `usage` object to `logs/usage.json
+ Run it locally with `COACH_ANTHROPIC_KEY=sk-ant-... python3 bot.py 42` and type
+ messages on stdin (the Telegram long-polling transport, which needs
+ `COACH_TELEGRAM_TOKEN`, lives in a separate deploy repo and just calls `reply()`).
+-Requires Python 3.11+ and `pip install anthropic`. Prompt caching is on: the system
+-prompt carries a `cache_control` marker so the tool-loop rounds and follow-up
+-messages inside the 5-minute window read it from cache.
++Requires Python 3.11+ and `pip install anthropic`. Prompt caching uses two
++`cache_control` breakpoints: one after the fixed coaching instructions and one
++after the athlete context. A saved fact changes the second block while the
++instruction prefix remains eligible for cache reads within the 5-minute window.
+diff --git a/bot.py b/bot.py
+index e2ff241..1dcd691 100644
+--- a/bot.py
++++ b/bot.py
+@@ -111,6 +111,13 @@ Formatting:
+ - Plain text. No markdown headings, no tables.
+ - Lists only for a session structure (warm-up / main / cool-down).
+ - Numbers with units: 45 min, 12 km, 150 bpm.
++
++Applying the coaching rules:
++- Read the athlete context that follows these instructions before answering. Use its date for time-sensitive questions, its zones for intensity, its goal for race context, and its language for the reply.
++- Treat long-term facts as durable background. A fact about a usual schedule, equipment, preference, or injury history can guide an answer; a single workout or a passing mood is not a durable fact.
++- When a completed workout is reported, log that workout and then respond to what the athlete said. When a weekly structure is requested, use plan_week before describing the structure.
++- Keep a suggested easy session inside the athlete's easy zones. If the athlete's recent volume, experience, or race result is needed to answer safely and is absent from the context, ask for it.
++- Apply the same short, direct style after a tool result as before it. Tool results add information for the answer; they do not change the athlete's goal or override the safety rules.
+ """
+ 
+ 
+@@ -128,9 +135,12 @@ def athlete_context(a, today):
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    # The first breakpoint survives changes to a user's facts or profile.
++    # Keep this block byte-stable; only the second block may contain live data.
++    return [
++        {"type": "text", "text": INSTRUCTIONS, "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": athlete_context(a, today), "cache_control": {"type": "ephemeral"}},
++    ]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [
+diff --git a/test_bot.py b/test_bot.py
+new file mode 100644
+index 0000000..e3d3bed
+--- /dev/null
++++ b/test_bot.py
+@@ -0,0 +1,54 @@
++"""Local regression checks for prompt caching across memory writes."""
++import tempfile
++import unittest
++from pathlib import Path
++from types import SimpleNamespace
++from unittest.mock import patch
++
++import bot
++
++
++class SaveFactResponse:
++    type = "tool_use"
++    name = "save_fact"
++    id = "fact-1"
++    input = {"fact": "Prefers morning workouts"}
++
++    def model_dump(self):
++        return {"type": self.type, "name": self.name, "id": self.id, "input": self.input}
++
++
++class RecordingLLM:
++    def __init__(self):
++        self.requests = []
++
++    def create(self, **request):
++        self.requests.append(request)
++        content = [SaveFactResponse()] if len(self.requests) == 1 else [SimpleNamespace(type="text", text="Done")]
++        return SimpleNamespace(
++            content=content,
++            stop_reason="tool_use" if len(self.requests) == 1 else "end_turn",
++            usage=SimpleNamespace(input_tokens=1, cache_creation_input_tokens=0,
++                                  cache_read_input_tokens=0, output_tokens=1),
++        )
++
++
++class CacheTests(unittest.TestCase):
++    def test_memory_write_changes_only_context_block(self):
++        with tempfile.TemporaryDirectory(dir=Path(__file__).parent) as tmp:
++            with patch.object(bot, "ATHLETES_FILE", str(Path(tmp) / "athletes.json")), \
++                 patch.object(bot, "USAGE_LOG", str(Path(tmp) / "usage.jsonl")):
++                llm = RecordingLLM()
++                self.assertEqual(bot.reply("42", "I prefer morning workouts", llm), "Done")
++                before, after = (request["system"] for request in llm.requests)
++                self.assertEqual(len(before), 2)
++                self.assertEqual(before[0], after[0])
++                self.assertNotEqual(before[1]["text"], after[1]["text"])
++                self.assertIn("Prefers morning workouts", after[1]["text"])
++                self.assertEqual([block["cache_control"] for block in after],
++                                 [{"type": "ephemeral"}] * 2)
++                self.assertEqual(llm.requests[0]["tools"], llm.requests[1]["tools"])
++
++
++if __name__ == "__main__":
++    unittest.main()

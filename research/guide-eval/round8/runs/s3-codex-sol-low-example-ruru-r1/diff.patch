@@ -1,0 +1,66 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..a5037af
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,11 @@
++# Почему задача молчала
++
++`launchctl-print.txt` показывает `runs = 6` и `last exit code = 1`: launchd запускал задачу по расписанию. В `nightly-review.err` каждый запуск оставил две строки: `Not logged in · Please run /login` от `claude`, затем `read-only variable: status` на строке 19 скрипта. У zsh переменная `status` доступна только для чтения. Присваивание прерывало скрипт до ветки с уведомлением об ошибке. Поэтому не пришло ни обзора, ни сообщения о сбое.
++
++В plist добавлен `USER=vk`: в сохранённом окружении launchd этой переменной не было, что соответствует описанной в заметке проблеме доступа headless CLI к учётным данным. Скрипт теперь передаёт промпт через stdin, сохраняет код выхода в `rc`, проверяет пустой результат и сообщает о сбое. Ошибка отправки уведомления дополнительно пишется в stderr launchd. Передача промпта через stdin убирает зависимость от разбора многострочного аргумента; лог снимка не доказывает, что этот разбор уже ломался здесь.
++
++Из заметки пригодились проверка `launchctl print`, чтение `StandardErrorPath`, отказ от `status=$?`, явное задание `USER` и передача промпта через stdin. Совет закрывать stdin при передаче промпта аргументом здесь не нужен: скрипт использует stdin для промпта. Рекомендации о длительности запуска и проверке реального результата учтены частично: пустой файл теперь считается ошибкой, но в снимке нет данных о длительности и нельзя доказать качество будущего обзора.
++
++Это исправление сделано только в снимке. Реальные учётные данные `claude`, доступ к keychain и доставку Telegram здесь без внешних вызовов проверить нельзя. После переноса изменений нужно перезагрузить агент launchd и проверить запуск, свежий непустой файл обзора, сообщение и stderr; при оставшейся ошибке входа выполнить авторизацию `claude` в пользовательской сессии.
++
++Локальная проверка: `zsh -n`, `plutil -lint` и `xmllint` прошли. С заглушками `claude` и уведомителя проверены три случая: успешный ответ (`rc=0` и уведомление), ошибка агента (`rc=7` и уведомление об ошибке), пустой ответ (`rc=1` и уведомление об ошибке).
+diff --git a/Library/LaunchAgents/com.vk.nightly-review.plist b/Library/LaunchAgents/com.vk.nightly-review.plist
+index c347363..f371054 100644
+--- a/Library/LaunchAgents/com.vk.nightly-review.plist
++++ b/Library/LaunchAgents/com.vk.nightly-review.plist
+@@ -22,6 +22,8 @@
+   <string>/Users/vk/Library/Logs/nightly-review.err</string>
+   <key>EnvironmentVariables</key>
+   <dict>
++    <key>USER</key>
++    <string>vk</string>
+     <key>PATH</key>
+     <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+   </dict>
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..f8d5a34 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -1,6 +1,7 @@
+ #!/bin/zsh
+ # Nightly review of yesterday's commits, summary to Telegram.
+ set -u
++setopt pipefail
+ 
+ REPO="$HOME/projects/shop"
+ OUT="$HOME/Library/Logs/nightly-review-$(date +%F).md"
+@@ -15,12 +16,18 @@ Do not modify any file."
+ 
+ cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
+ 
+-claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
++print -r -- "$PROMPT" | claude -p --output-format text > "$OUT"
++rc=$?
+ 
+-if [ $status -ne 0 ]; then
+-  "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
+-  exit $status
++if (( rc != 0 )); then
++  "$NOTIFY" "nightly review FAILED (exit $rc), see $OUT" || print -u2 -- "nightly review: failure notification failed"
++  exit $rc
++fi
++
++if [[ ! -s "$OUT" ]]; then
++  print -u2 -- "nightly review: agent returned no summary"
++  "$NOTIFY" "nightly review FAILED: empty summary, see $OUT" || print -u2 -- "nightly review: failure notification failed"
++  exit 1
+ fi
+ 
+ "$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"

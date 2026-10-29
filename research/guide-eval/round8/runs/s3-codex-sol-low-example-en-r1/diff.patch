@@ -1,0 +1,66 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..e4f5e01
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,20 @@
++# Why the nightly review was silent
++
++The job **did run**. The saved `launchctl-print.txt` shows six runs and `last exit code = 1`; the empty stdout file alone was misleading. Each run's stderr says `Not logged in · Please run /login`, followed by `read-only variable: status` at line 19 of the wrapper.
++
++Two failures combined:
++
++1. The launchd environment in the snapshot omitted `USER`. The headless `claude` invocation failed to find its login. I added `USER=vk` to the plist's `EnvironmentVariables`.
++2. Immediately after `claude`, the zsh script assigned `status=$?`. `status` is a read-only zsh parameter, so the script stopped before its failure notification. I changed it to `rc=$?` and use that value for the notification and exit code.
++
++I also closed the prompt-as-argument invocation's stdin with `< /dev/null`, and made an empty output file a reported failure rather than a success message. These guard against silent or false-success runs; the captured log does not show either as the cause of the six failures.
++
++## Colleague's note
++
++Applicable: inspect `launchctl print` and stderr; avoid zsh's read-only `status`; set `USER` for the headless CLI; close stdin when passing the prompt as an argument; check the real output as well as the exit code.
++
++Not evidenced here: a missing prompt. This script already passes the prompt as the `-p` argument, and the recorded error is a login error. Piping the prompt via stdin is therefore unnecessary. There is no captured evidence of a timeout or an implausibly short run, and the snapshot contains no live launchd domain to kickstart.
++
++## Verification
++
++`zsh -n bin/nightly-review.zsh`, `plutil -lint Library/LaunchAgents/com.vk.nightly-review.plist`, and `git diff --check` pass. Live confirmation requires installing these changed files in the real home directory, reloading the agent, and checking that a fresh summary file and Telegram message appear; this snapshot was not deployed or sent to Telegram.
+diff --git a/Library/LaunchAgents/com.vk.nightly-review.plist b/Library/LaunchAgents/com.vk.nightly-review.plist
+index c347363..d49eacf 100644
+--- a/Library/LaunchAgents/com.vk.nightly-review.plist
++++ b/Library/LaunchAgents/com.vk.nightly-review.plist
+@@ -24,6 +24,8 @@
+   <dict>
+     <key>PATH</key>
+     <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
++    <key>USER</key>
++    <string>vk</string>
+   </dict>
+ </dict>
+ </plist>
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..f8b081c 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -15,12 +15,17 @@ Do not modify any file."
+ 
+ cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
+ 
+-claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
++claude -p "$PROMPT" --output-format text < /dev/null > "$OUT"
++rc=$?
+ 
+-if [ $status -ne 0 ]; then
+-  "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
+-  exit $status
++if (( rc != 0 )); then
++  "$NOTIFY" "nightly review FAILED (exit $rc), see $OUT"
++  exit $rc
++fi
++
++if [[ ! -s "$OUT" ]]; then
++  "$NOTIFY" "nightly review FAILED (empty summary), see $OUT"
++  exit 1
+ fi
+ 
+ "$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"

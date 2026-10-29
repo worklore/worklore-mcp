@@ -1,0 +1,197 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..ae3f71e
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,112 @@
++# Почему nightly-review молчит
++
++## Что показали факты
++
++- `launchctl-print.txt`: `runs = 6`, `last exit code = 1`, `state = waiting`.
++  Job загружен 2026-10-12, снимок сделан 2026-10-18, то есть это шесть ночей по
++  разу. **launchd срабатывает каждую ночь.** Проблема не в расписании, а в том,
++  что скрипт падает и не может об этом сообщить.
++- `Library/Logs/nightly-review.err` содержит 6 одинаковых пар строк:
++  ```
++  Not logged in · Please run /login
++  /Users/vk/bin/nightly-review.zsh:19: read-only variable: status
++  ```
++- `nightly-review.out` пустой, `environment` в launchctl print содержит только
++  `PATH` и `XPC_SERVICE_NAME`, переменной `USER` там нет.
++
++## Причины (две, одна поверх другой)
++
++1. **`claude -p` падает с ошибкой «Not logged in».** В окружении launchd нет
++   `USER`, и CLI не может найти свой логин в связке ключей. Вручную из
++   терминала всё работает, потому что там `USER` задана.
++2. **Сообщение об ошибке так и не отправлялось.** В строке 19 было
++   `status=$?`. В zsh `status` встроенная read-only переменная (синоним `$?`),
++   и присваивание ей сразу завершает скрипт с кодом 1. Оно стояло между вызовом
++   `claude` и `notify.sh`, поэтому скрипт погибал до уведомления и об ошибке, и
++   об успехе. Отсюда `last exit code = 1` и полная тишина. Воспроизвёл
++   локально: `zsh -c 'status=$?; echo after'` печатает
++   `read-only variable: status` и `rc=1`.
++
++## Что исправлено
++
++`Library/LaunchAgents/com.vk.nightly-review.plist`, раздел `EnvironmentVariables`:
++- добавлен `USER=vk`, чтобы claude нашёл логин в keychain (причина 1);
++- `HOME=/Users/vk` для надёжности;
++- `LANG=en_US.UTF-8`, чтобы обрезка текста до 300 символов не резала
++  UTF-8 посреди символа.
++
++`bin/nightly-review.zsh`:
++- `status=$?` заменено на `rc=$?` (причина 2);
++- prompt передаётся через stdin (`print -r -- "$PROMPT" | claude -p ...`).
++  Так нет зависимости от многострочного аргумента, и claude не ждёт ввода на
++  открытом stdin;
++- stderr claude пишется в `nightly-review-ДАТА.err`, и его начало попадает в
++  текст уведомления об ошибке. Раньше в сообщении стояло «see $OUT», а этот
++  файл при ошибке пустой;
++- **exit 0 с пустым выводом теперь считается ошибкой** и тоже приходит
++  уведомлением;
++- в общий `.err` логируются старт (с `USER`/`HOME`), exit code, длительность и
++  размер вывода. Прогон claude, который закончился за пару секунд, сразу виден
++  как подозрительный;
++- `trap ... EXIT` срабатывает как последний сигнал, если скрипт завершился
++  любым путём, кроме штатного (например, на какой-нибудь новой неожиданной
++  ошибке). При сбое самого `notify.sh` в лог пишется строка.
++
++`bin/notify.sh` не менял.
++
++## Как проверял
++
++Скрипт прогнан во временной песочнице (потом удалена) с подставными `claude` и
++`notify.sh`, под `env -i`, похожим на launchd. В каждом сценарии пришло ровно
++одно уведомление:
++- claude падает с «Not logged in»: пришло `FAILED (exit 1, …): Not logged in · …`;
++- успех: пришло `done (…): <сводка>`, все 5 строк prompt дошли через stdin;
++- exit 0 без вывода: пришло `FAILED: claude exited 0 … but produced no output`;
++- нет репозитория: пришло `repo … missing`.
++
++`plutil -lint` для plist выдаёт OK, `zsh -n` для скрипта тоже.
++
++## Что нужно сделать на реальной машине (я этого не делал)
++
++```sh
++cp Library/LaunchAgents/com.vk.nightly-review.plist ~/Library/LaunchAgents/
++cp bin/nightly-review.zsh ~/bin/
++launchctl bootout gui/$UID/com.vk.nightly-review
++launchctl bootstrap gui/$UID ~/Library/LaunchAgents/com.vk.nightly-review.plist
++launchctl kickstart -k gui/$UID/com.vk.nightly-review
++launchctl print gui/$UID/com.vk.nightly-review | grep -E 'runs|last exit'
++tail ~/Library/Logs/nightly-review.err
++```
++Проверить, что `last exit code = 0`, файл `nightly-review-ДАТА.md` свежий и не
++пустой, `duration` правдоподобная (не 1–3 секунды), а в Telegram пришла сводка.
++Затем один раз сломать скрипт специально (например, временно указать
++несуществующий `REPO`) и убедиться, что приходит уведомление об ошибке.
++
++Непроверенный риск: `notify.sh` берёт токен через `security find-generic-password`.
++В gui-домене это обычно работает, но если связка ключей заблокирована, в
++`.err` появится строка `notify.sh failed`.
++
++## Какие части заметки коллеги пригодились
++
++Пригодились:
++- «Сначала докажи, что job запускался» (`launchctl print`: runs и last exit
++  code). Именно это показало, что расписание ни при чём.
++- «Прочитай StandardErrorPath до того, как строить теории». Обе причины
++  нашлись там.
++- `status=$?` в zsh убивает скрипт, и уведомление об ошибке стоит после
++  места падения. У меня ровно эта ошибка, даже в той же позиции.
++- «Not logged in» лечится заданием `USER` в `EnvironmentVariables` plist (из
++  поправки со ссылкой на Mihai Perdum).
++- Передавать prompt через stdin (или ставить `< /dev/null`).
++- Поправка «exit code не доказывает, что работа сделана»: отсюда проверка на
++  пустой вывод и логирование длительности.
++- Процедура проверки: kickstart, проверить реальный результат и длительность,
++  потом специально вызвать ошибку.
++
++Не пригодились:
++- Ошибка «Input must be provided either through stdin or as a prompt
++  argument»: в моих логах её нет, prompt доходил. На stdin я всё равно
++  перешёл, но как профилактику, а не как исправление найденной причины.
++- Совет про watchdog, который выходит с кодом 0 по таймауту: у меня нет
++  watchdog.
++- Детали случая коллеги (расписание 16:50, `runs = 2`).
+diff --git a/Library/LaunchAgents/com.vk.nightly-review.plist b/Library/LaunchAgents/com.vk.nightly-review.plist
+index c347363..dc65e40 100644
+--- a/Library/LaunchAgents/com.vk.nightly-review.plist
++++ b/Library/LaunchAgents/com.vk.nightly-review.plist
+@@ -24,6 +24,12 @@
+   <dict>
+     <key>PATH</key>
+     <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
++    <key>USER</key>
++    <string>vk</string>
++    <key>HOME</key>
++    <string>/Users/vk</string>
++    <key>LANG</key>
++    <string>en_US.UTF-8</string>
+   </dict>
+ </dict>
+ </plist>
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..361c108 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -4,8 +4,21 @@ set -u
+ 
+ REPO="$HOME/projects/shop"
+ OUT="$HOME/Library/Logs/nightly-review-$(date +%F).md"
++ERR="$HOME/Library/Logs/nightly-review-$(date +%F).err"
+ NOTIFY="$HOME/bin/notify.sh"
+ 
++# Every notification attempt is logged; a failing notifier must not be silent.
++notify() {
++  "$NOTIFY" "$1" || print -u2 -- "$(date '+%F %T') notify.sh failed (rc=$?) for: $1"
++}
++
++# Last-resort reporter: fires on any exit that did not go through the success path.
++DONE=0
++START=$SECONDS
++trap 'rc=$?; (( DONE )) || notify "nightly review FAILED unexpectedly (exit $rc) after $((SECONDS-START))s, see ~/Library/Logs/nightly-review.err"' EXIT
++
++print -u2 -- "$(date '+%F %T') start (USER=${USER:-unset} HOME=$HOME)"
++
+ SINCE=$(date -v-1d +%F)
+ PROMPT="Review the commits in this repository since $SINCE.
+ For each commit: one line on what it changes and whether anything looks risky
+@@ -13,14 +26,28 @@ For each commit: one line on what it changes and whether anything looks risky
+ End with a three-line summary I can read on my phone.
+ Do not modify any file."
+ 
+-cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
++cd "$REPO" || { notify "nightly review: repo $REPO missing"; DONE=1; exit 1; }
+ 
+-claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
++# Prompt via stdin: no dependence on multi-line argv, and claude never waits on an open stdin.
++print -r -- "$PROMPT" | claude -p --output-format text > "$OUT" 2> "$ERR"
++rc=$?   # never `status`: it is a read-only zsh builtin, assigning to it kills the script
++dur=$((SECONDS - START))
++print -u2 -- "$(date '+%F %T') claude exit=$rc duration=${dur}s out_bytes=$(wc -c < "$OUT" | tr -d ' ')"
++
++err=$(<"$ERR")
++if (( rc != 0 )); then
++  notify "nightly review FAILED (exit $rc, ${dur}s): ${err[1,300]}"
++  DONE=1
++  exit $rc
++fi
+ 
+-if [ $status -ne 0 ]; then
+-  "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
+-  exit $status
++# Exit 0 is not proof of work: empty output counts as failure.
++if [[ ! -s "$OUT" ]]; then
++  notify "nightly review FAILED: claude exited 0 after ${dur}s but produced no output. ${err[1,300]}"
++  DONE=1
++  exit 1
+ fi
+ 
+-"$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"
++summary=$(<"$OUT")
++notify "nightly review done (${dur}s): ${summary[1,300]}"
++DONE=1

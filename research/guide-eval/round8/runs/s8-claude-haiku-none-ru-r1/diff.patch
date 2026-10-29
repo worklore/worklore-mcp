@@ -1,0 +1,97 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..4a80848
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,52 @@
++# Ответ: кеш сбрасывается после save_fact
++
++## Причина
++
++В `build_system` (bot.py) инструкции и блок с данными атлета (`athlete_context`:
++факты, зоны, цель, дата) склеивались в один текстовый блок с `cache_control`.
++`save_fact` добавляет факт в `athlete.facts`, меняет этот блок, и кеш на весь
++префикс (инструменты + system) становится невалидным. Поэтому в `logs/usage.jsonl`
++сразу после каждого `save_fact` стоит `cache_read_input_tokens: 0` и новый
++`cache_creation_input_tokens` примерно на всю статичную часть.
++
++Дополнительно: дата `Today:` тоже лежала в кешируемом блоке, так что кеш
++сбрасывался раз в сутки даже без записей в память.
++
++## Что изменил
++
++**bot.py, `build_system`**: system теперь два блока.
++
++1. `INSTRUCTIONS` (статичный текст, одинаковый для всех атлетов и сообщений),
++   с `cache_control: ephemeral`. Это кешируемый префикс.
++2. `athlete_context(...)` (факты, зоны, цель, дата, язык) без `cache_control`,
++   идёт после точки кеширования. Изменения здесь больше не трогают кеш инструкций.
++
++Остальная логика (инструменты, цикл, логирование usage, `save_fact`) не менялась.
++
++**README.md**: абзац про кеширование переписан под новую схему.
++
++## Проверка
++
++Скриптом, без обращения к API: собрал system для атлета, добавил факт и
++собрал снова. Текст первого блока совпал байт в байт, `cache_control` стоит на
++первом блоке и не стоит на втором.
++
++Не проверено: реальное попадание в кеш. Для этого нужен ключ API и запуск
++`save_fact` с последующим сообщением. Ожидаемый признак в
++`logs/usage.jsonl`: после `save_fact` у следующего вызова
++`cache_read_input_tokens` ≈ размер статичного блока, а не 0.
++
++## Риски и что осталось
++
++- **Минимальный размер кешируемого префикса.** Модель требует минимум токенов
++  для кеширования (для Sonnet около 1024). Статичный блок вместе с инструментами
++  может оказаться на границе. Если в логе `cache_creation_input_tokens` остаётся
++  0 даже на обычных сообщениях, значит префикс короче минимума, и его надо
++  дополнить или переписать. Оценить точно без API я не смог.
++- **Фильтр инструментов по ключевым словам** (`select_tools`) меняет список
++  `tools` в начале префикса. Кеш тогда не работает между сообщениями с разным
++  набором групп (например, «plan» и обычное сообщение). Это отдельная проблема,
++  в этот запрос не входила, я её не трогал. Если нужно, можно передавать все
++  инструменты всегда и управлять доступностью другим способом, либо держать
++  отдельный кеш на каждый набор.
++- Данные из `logs/usage.jsonl` не менял. Коммит не делал.
+diff --git a/README.md b/README.md
+index ebd390e..60674ce 100644
+--- a/README.md
++++ b/README.md
+@@ -11,6 +11,6 @@ its system prompt. Every API call appends its `usage` object to `logs/usage.json
+ Run it locally with `COACH_ANTHROPIC_KEY=sk-ant-... python3 bot.py 42` and type
+ messages on stdin (the Telegram long-polling transport, which needs
+ `COACH_TELEGRAM_TOKEN`, lives in a separate deploy repo and just calls `reply()`).
+-Requires Python 3.11+ and `pip install anthropic`. Prompt caching is on: the system
+-prompt carries a `cache_control` marker so the tool-loop rounds and follow-up
+-messages inside the 5-minute window read it from cache.
++Requires Python 3.11+ and `pip install anthropic`. Prompt caching is on: the static coaching rules are a separate system block with
++a `cache_control` marker, and the per-athlete context (facts, today's date) follows
++it uncached, so a `save_fact` does not invalidate the cached instructions.
+diff --git a/__pycache__/bot.cpython-314.pyc b/__pycache__/bot.cpython-314.pyc
+new file mode 100644
+index 0000000..1b12024
+Binary files /dev/null and b/__pycache__/bot.cpython-314.pyc differ
+diff --git a/bot.py b/bot.py
+index e2ff241..64002e4 100644
+--- a/bot.py
++++ b/bot.py
+@@ -128,9 +128,13 @@ def athlete_context(a, today):
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    # Two blocks. The static instructions are the cached prefix: they stay byte-identical
++    # across messages and athletes, so a save_fact (which changes only the athlete block)
++    # does not evict them. The per-athlete block comes after the breakpoint and is not cached.
++    return [
++        {"type": "text", "text": INSTRUCTIONS, "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": athlete_context(a, today)},
++    ]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [

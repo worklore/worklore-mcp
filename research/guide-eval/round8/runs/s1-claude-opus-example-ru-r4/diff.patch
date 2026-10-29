@@ -1,0 +1,94 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..58a322f
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,66 @@
++# Fix: HR corridors are clamped to the watch's own zones
++
++## What changed
++
++`gen.py`, function `hr_target`: the lower bound of the HR corridor is now
++written as `start` instead of `value`.
++
++```diff
++-    return {"units": "%lthr", "value": lo, "end": hi}
+++    return {"units": "%lthr", "start": lo, "end": hi}
++```
++
++I also added a docstring that explains why `start` is used, so nobody changes
++it back to `value`. Nothing else changed. Units stay `%lthr`, so Intervals
++still converts to bpm from its own LTHR (172) when it exports the FIT file.
++
++## Why
++
++The data in `readback/` shows the problem clearly:
++
++- The API accepted the event (`workout_doc.steps` is populated), so the
++  request is not the problem.
++- Every displayed corridor matches one of the watch's own zone bands exactly
++  (Z2 118–137, Z3 137–151, Z4 151–162). Changing the watch's LTHR moves the
++  bands, but they never become the planned 151–160 or 129–141.
++
++This means Intervals exported the steps as a zone-mapped (Lap-HR) target, and
++the watch replaced each range with its local zone. With `{value, end}`
++Intervals uses that zone-mapped export. With `{start, end}` it exports an
++Instant-HR corridor in absolute bpm, calculated from the LTHR stored in
++Intervals, so the watch's own LTHR (168) doesn't affect it.
++
++Expected result after the fix (× 172): Warm-up 117–129, Tempo 151–160,
++Float 129–141, Cool-down 112–124.
++
++I checked this locally only: `python3 gen.py plans/tempo-run.json` now
++produces `start`/`end` in all four HR steps, with no `value` left. I did not
++push anything to Intervals or sync the watch. The task rules don't allow it.
++Next step: push the event, read it back with `GET /events/{id}`, sync the
++watch and compare it with the table above. A good check is that the watch
++LTHR (168) and the Intervals LTHR (172) are different.
++
++## Which parts of the colleague's note helped
++
++Used:
++- The main point: `value` gives a Lap-HR / zone-mapped target that the watch
++  clamps, while `start` gives an Instant-HR corridor. Our symptoms match
++  theirs exactly, including the same LTHR values 172/168 and the same Float
++  75–82% → 129–141 example.
++- Keeping percentages (`%lthr`) instead of absolute bpm. It confirms our
++  earlier failed attempts (`bpm` → 214–249, `start_bpm`/`end_bpm` → constant
++  101) were dead ends, so I didn't try them again.
++- The verification method: push → readback → sync, and compare with
++  percent × Intervals LTHR while the two LTHR values differ.
++
++Skipped:
++- The "Bonus trap" about the top-level `description` and the text grammar
++  (`m` = minutes, `mtr`/`km`, `Z2` → power, and so on). It covers a different
++  symptom: steps not showing in the web UI. Nobody reported that, and the
++  readback shows steps are populated. Adding a `description` would bring a new
++  risk, since a parser error can wipe both representations, and it doesn't fix
++  the reported bug.
++- The search history (the UI dropdown, the "absolute bpm is impossible"
++  idea). It's background and adds nothing to the fix.
++- The parts about API credentials and creating or deleting a test event. They
++  need external calls, which aren't allowed here.
+diff --git a/gen.py b/gen.py
+index be0b3bc..93885ef 100755
+--- a/gen.py
++++ b/gen.py
+@@ -8,9 +8,15 @@ import sys
+ 
+ 
+ def hr_target(step):
+-    """HR corridor for a step, as a percentage of the athlete's LTHR."""
++    """HR corridor for a step, as a percentage of the athlete's LTHR.
++
++    The lower bound must be `start`, not `value`: Intervals FIT-exports
++    {value, end} as a zone-mapped (Lap-HR) target that the watch clamps to its
++    own HR zones, while {start, end} is exported as an Instant-HR corridor with
++    the bpm Intervals computed from its own LTHR.
++    """
+     lo, hi = step["hr_pct"]
+-    return {"units": "%lthr", "value": lo, "end": hi}
++    return {"units": "%lthr", "start": lo, "end": hi}
+ 
+ 
+ def build_step(step):

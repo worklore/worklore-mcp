@@ -1,0 +1,48 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..c3312b8
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,9 @@
++# Why the nightly job was silent
++
++The agent was loaded and did run. `launchctl-print.txt` records six runs and a last exit code of 1. Each run wrote `Not logged in · Please run /login` to `Library/Logs/nightly-review.err`, so the headless `claude -p` process had no usable authentication in launchd's environment. Authentication must be configured for that noninteractive user job before reviews can succeed; an interactive terminal login alone is not evidence that the launchd process has access to it. The snapshot contains no credential to install, and none was added to the repository.
++
++The failure message never reached Telegram because `bin/nightly-review.zsh` assigned `$?` to `status`. In zsh, `status` is a read-only special parameter. That assignment aborted the script before its failure branch, as the repeated line-19 errors in stderr show. It now uses `review_exit` and includes the captured error in the failure notification.
++
++`bin/notify.sh` also discarded Telegram's HTTP response and previously returned success for HTTP errors. It now uses `curl -f`, so HTTP failures produce a nonzero exit and a visible stderr error. This was a reporting blind spot, not a demonstrated cause of these six missing messages; the notifier was never reached on those runs.
++
++To finish setup on the actual Mac, make noninteractive Claude authentication available to the `gui/501` launchd job and verify it with the same user and environment. Keep the credential out of this plist and repository. Then trigger one local run and inspect `Library/Logs/nightly-review.err`, the dated review file, and the Telegram delivery. This snapshot cannot verify the external authentication or delivery.
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..aa09a6f 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -15,12 +15,12 @@ Do not modify any file."
+ 
+ cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
+ 
+-claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
++claude -p "$PROMPT" --output-format text > "$OUT" 2>&1
++review_exit=$?
+ 
+-if [ $status -ne 0 ]; then
+-  "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
+-  exit $status
++if [ "$review_exit" -ne 0 ]; then
++  "$NOTIFY" "nightly review FAILED (exit $review_exit): $(head -c 300 "$OUT")"
++  exit "$review_exit"
+ fi
+ 
+ "$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"
+diff --git a/bin/notify.sh b/bin/notify.sh
+index 818e531..bc9115f 100755
+--- a/bin/notify.sh
++++ b/bin/notify.sh
+@@ -3,5 +3,5 @@
+ set -eu
+ : "${TG_BOT_TOKEN:=$(security find-generic-password -s tg-bot -w)}"
+ CHAT_ID=123456789
+-curl -sS -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
++curl -fsS -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
+   -d chat_id="$CHAT_ID" --data-urlencode text="$1" > /dev/null

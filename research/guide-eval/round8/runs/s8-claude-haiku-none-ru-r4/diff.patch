@@ -1,0 +1,96 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..194479b
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,53 @@
++# Кеширование и save_fact
++
++## Причина
++
++`build_system()` в `bot.py` собирал системный промпт из одного текстового блока:
++инструкции + контекст атлета (профиль, зоны, цель, `facts`). Маркер `cache_control`
++стоял на этом блоке целиком. Поэтому любой `save_fact` менял `facts`, менял весь блок,
++и кеш-префикс переставал совпадать. Следующий вызов писал весь промпт заново
++(`cache_creation_input_tokens` ~1000), а `cache_read_input_tokens` был 0. Это видно
++в `logs/usage.jsonl` и описано в `NOTES.md`.
++
++## Что изменено
++
++- `bot.py`, `build_system()`: системный промпт теперь два блока.
++  1. `INSTRUCTIONS` (статичный текст) с `cache_control: ephemeral`.
++  2. `athlete_context(...)` (профиль, дата, факты) без маркера, идёт после первого.
++  Запись в память меняет только второй блок, поэтому первый остаётся в кеше.
++- `README.md`: абзац про кеширование приведён в соответствие с новой схемой.
++
++Порядок кеша в API: tools → system → messages. Маркер на первом системном блоке
++кеширует tools + инструкции.
++
++## Проверка
++
++Офлайн, с фейковым LLM (SDK не установлен, сеть не использовалась, `data/athletes.json`
++и `logs/usage.jsonl` не трогались; `save_athlete` и `USAGE_LOG` подменены в тесте):
++
++- Сценарий: сообщение → `save_fact` → ответ. Два вызова API.
++- Первый блок системного промпта побайтно одинаков в обоих вызовах.
++- Второй блок изменился и содержит новый факт.
++- Список tools одинаков в обоих вызовах.
++
++Реального вызова API не делалось, поэтому экономия пока не измерена. Её стоит
++проверить по `logs/usage.jsonl` после выкладки: на вызове сразу после `save_fact`
++должен быть `cache_read_input_tokens` около 1000 и малый `cache_creation_input_tokens`
++(только блок с контекстом атлета, а не весь промпт).
++
++## Ограничения и что не сделано
++
++- Минимальный размер кешируемого префикса у модели зависит от версии. В логах
++  префикс tools + инструкции около 1090 токенов, что выше минимума 1024, который
++  действует для Sonnet. Если модель сменится на модель с большим минимумом, статичный
++  блок может не закешироваться совсем. Проверяется тем же способом: в логах должен
++  появиться `cache_read_input_tokens` на первом блоке.
++- `select_tools()` меняет список tools по ключевым словам. Сообщение со словом
++  «race» или «plan» меняет префикс tools, и кеш инструкций инвалидируется. Это тоже
++  вызывает всплески `cache_creation`, но не из-за `save_fact`. Я это не трогал, потому
++  что `NOTES.md` называет фильтрацию tools выигрышем. Возможное решение: всегда
++  передавать полный список tools (дороже по токенам, но стабильный префикс), либо
++  сравнить две стоимости по логам.
++- Блок с контекстом атлета не кешируется. Он короткий (сотни токенов) и платится
++  по обычной цене на каждом вызове. Если фактов станет много, стоит поставить второй
++  маркер на этот блок.
+diff --git a/README.md b/README.md
+index ebd390e..1becb53 100644
+--- a/README.md
++++ b/README.md
+@@ -11,6 +11,8 @@ its system prompt. Every API call appends its `usage` object to `logs/usage.json
+ Run it locally with `COACH_ANTHROPIC_KEY=sk-ant-... python3 bot.py 42` and type
+ messages on stdin (the Telegram long-polling transport, which needs
+ `COACH_TELEGRAM_TOKEN`, lives in a separate deploy repo and just calls `reply()`).
+-Requires Python 3.11+ and `pip install anthropic`. Prompt caching is on: the system
+-prompt carries a `cache_control` marker so the tool-loop rounds and follow-up
+-messages inside the 5-minute window read it from cache.
++Requires Python 3.11+ and `pip install anthropic`. Prompt caching is on: the static
++coaching instructions are their own system block with a `cache_control` marker, and
++the per-athlete context (profile, facts) is a second block after it. A `save_fact`
++changes only the second block, so the instructions stay cached for the tool-loop
++rounds and follow-up messages inside the 5-minute window.
+diff --git a/bot.py b/bot.py
+index e2ff241..5dc8a91 100644
+--- a/bot.py
++++ b/bot.py
+@@ -128,9 +128,13 @@ def athlete_context(a, today):
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    # Two blocks. The static instructions carry the cache marker on their own, so a
++    # save_fact (which only changes the athlete context block) does not evict them.
++    # Cache order is tools -> system -> messages, so the marker covers tools + instructions.
++    return [
++        {"type": "text", "text": INSTRUCTIONS, "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": athlete_context(a, today)},
++    ]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [

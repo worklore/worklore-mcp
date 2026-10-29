@@ -1,0 +1,50 @@
+# HR corridors clamped to the watch's zones
+
+## Cause
+
+`gen.py` built every HR target as `{"units": "%lthr", "value": lo, "end": hi}`.
+`readback/event-184233-as-sent.json` shows the event went out exactly that way.
+The API accepted it, but the watch showed its own zone bands instead of the
+planned ranges. The colleague's note says a `value` lower bound routes to a
+zone-mapped (Lap-HR) target, which the watch clamps to its local zones. That
+matches what we saw.
+
+## Change
+
+`gen.py`, `hr_target()`: the lower bound key is now `start` instead of `value`:
+
+```python
+return {"units": "%lthr", "start": lo, "end": hi}
+```
+
+The units stay `%lthr` and the values stay percentages, so Intervals still
+converts them using the LTHR stored in Intervals (172). I added a comment
+explaining why the key must be `start`.
+
+Regenerating `plans/tempo-run.json` now produces `start`/`end` for all four
+targets and no `value` keys. For example, Tempo is `{"units": "%lthr", "start": 88, "end": 93}`.
+
+## What applied from the colleague's note
+
+- **Applied:** `start` instead of `value` for the lower bound. This is the fix.
+- **Applied (as context):** percentages of LTHR, not absolute bpm. The
+  repo already did this.
+- **Not applied:** the top-level `description` in Intervals' text grammar. It
+  affects only the web UI step chart, not the watch HR ranges, and the
+  request was about the watch. Adding it would be a separate change, and it
+  needs a read-back check that I did not run.
+- **Not applied:** the `Z<number>`, `m`/`mtr`, and repeat-block rules. They
+  only matter for `description`.
+- **Not applied:** the instruction to push, read back, and sync. The
+  ground rules for this task forbid submitting to external services, so I
+  did not call the API.
+
+## Not verified
+
+- I have not pushed a new event or checked the watch. The colleague's note
+  reports that `start`/`end` renders as an instant-HR corridor, and I did not
+  reproduce that here. A push plus a `GET /events/{id}` readback and a Garmin
+  sync are needed to confirm it.
+- `readback/event-184233-as-sent.json` is left as the record of the old
+  payload.
+- Nothing is committed.

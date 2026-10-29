@@ -1,0 +1,3 @@
+Updated [bot.py](/tmp/h-PO1v8p/bot.py) to cache the fixed coaching instructions separately from athlete context, so `save_fact` changes only the context block. I also expanded the fixed guidance because Sonnet 4.5 requires a 1,024-token cacheable prefix.
+
+Local checks confirmed that the instruction block stays identical after a fact is added and across athletes. I documented the changes, which parts of the colleague’s note applied, and the remaining live usage check in [ANSWER.md](/tmp/h-PO1v8p/ANSWER.md). No API call was made, so the cache savings have not yet been measured live.

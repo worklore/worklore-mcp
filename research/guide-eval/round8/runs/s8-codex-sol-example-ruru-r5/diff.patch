@@ -1,0 +1,113 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..0b19ba8
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,9 @@
++# Исправление кеширования промпта
++
++В `bot.py` системный промпт разбит на два текстовых блока с отдельными маркерами `cache_control: ephemeral`. Первый содержит неизменные инструкции; второй — дату, профиль, зоны, цель, факты и язык спортсмена. `save_fact` меняет только второй блок, поэтому статический префикс запроса остаётся прежним. Суммарный текст промпта сохранён байт в байт.
++
++Добавлены локальные тесты: они проверяют текст промпта, неизменность блока инструкций и списка инструментов после `save_fact`, а также обновление фактов в следующем раунде. Команда `python3 -m unittest -v test_bot.py` прошла: 2 теста.
++
++Из заметки коллеги пригодились принцип кеширования по префиксу, два маркера для статической и изменчивой частей, а также проверка через поля `cache_creation_input_tokens` и `cache_read_input_tokens`. Отбор фактов под отдельное сообщение здесь не внедрялся: он менял бы кешируемый контекст на каждом запросе. Фильтрация инструментов уже была в проекте и сохранена без изменений.
++
++В `logs/usage.jsonl` до исправления после `save_fact` видно `cache_read_input_tokens: 0` и создание кеша на 1039–1104 токена. Фактические значения после исправления не измерялись: обращения к Claude API запрещены условиями задачи. Проверка на реальном трафике должна показать чтение статического префикса из кеша после записи факта; результат также зависит от ограничений провайдера на минимальный размер кешируемого префикса и времени жизни кеша.
+diff --git a/README.md b/README.md
+index ebd390e..189f328 100644
+--- a/README.md
++++ b/README.md
+@@ -12,5 +12,6 @@ Run it locally with `COACH_ANTHROPIC_KEY=sk-ant-... python3 bot.py 42` and type
+ messages on stdin (the Telegram long-polling transport, which needs
+ `COACH_TELEGRAM_TOKEN`, lives in a separate deploy repo and just calls `reply()`).
+ Requires Python 3.11+ and `pip install anthropic`. Prompt caching is on: the system
+-prompt carries a `cache_control` marker so the tool-loop rounds and follow-up
+-messages inside the 5-minute window read it from cache.
++prompt has separate `cache_control` markers for stable coaching instructions and
++athlete context. A new fact changes the context block while preserving the
++instruction prefix for cache reuse within the 5-minute window.
+diff --git a/bot.py b/bot.py
+index e2ff241..d90e50c 100644
+--- a/bot.py
++++ b/bot.py
+@@ -128,9 +128,11 @@ def athlete_context(a, today):
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    # Keep the instructions as a stable prefix when save_fact changes the context.
++    return [
++        {"type": "text", "text": INSTRUCTIONS, "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": "\n\n" + athlete_context(a, today), "cache_control": {"type": "ephemeral"}},
++    ]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [
+diff --git a/test_bot.py b/test_bot.py
+new file mode 100644
+index 0000000..27b61c5
+--- /dev/null
++++ b/test_bot.py
+@@ -0,0 +1,60 @@
++import datetime as dt
++import tempfile
++import unittest
++from pathlib import Path
++from types import SimpleNamespace
++from unittest.mock import patch
++
++import bot
++
++
++class PromptCacheTest(unittest.TestCase):
++    def test_save_fact_changes_only_context_block_in_tool_loop(self):
++        class ToolUse:
++            type = "tool_use"
++            name = "save_fact"
++            id = "tool-1"
++            input = {"fact": "Prefers morning runs"}
++
++            def model_dump(self):
++                return {"type": self.type, "name": self.name, "id": self.id, "input": self.input}
++
++        class FakeLLM:
++            def __init__(self):
++                self.requests = []
++
++            def create(self, **request):
++                self.requests.append(request)
++                usage = SimpleNamespace(input_tokens=0, cache_creation_input_tokens=0,
++                                        cache_read_input_tokens=0, output_tokens=0)
++                if len(self.requests) == 1:
++                    return SimpleNamespace(content=[ToolUse()], stop_reason="tool_use", usage=usage)
++                return SimpleNamespace(content=[SimpleNamespace(type="text", text="Saved.")],
++                                       stop_reason="end_turn", usage=usage)
++
++        with tempfile.TemporaryDirectory() as tmp:
++            with patch.object(bot, "ATHLETES_FILE", str(Path(tmp) / "athletes.json")), \
++                 patch.object(bot, "USAGE_LOG", str(Path(tmp) / "usage.jsonl")):
++                llm = FakeLLM()
++                self.assertEqual(bot.reply("42", "I prefer morning runs", llm), "Saved.")
++
++                before, after = (request["system"] for request in llm.requests)
++                self.assertEqual(len(before), 2)
++                self.assertEqual(before[0], after[0])
++                self.assertEqual(before[0]["text"], bot.INSTRUCTIONS)
++                self.assertEqual(before[1]["cache_control"], {"type": "ephemeral"})
++                self.assertEqual(after[1]["cache_control"], {"type": "ephemeral"})
++                self.assertNotEqual(before[1]["text"], after[1]["text"])
++                self.assertIn("Prefers morning runs", after[1]["text"])
++                self.assertEqual(llm.requests[0]["tools"], llm.requests[1]["tools"])
++
++    def test_prompt_text_is_preserved(self):
++        athlete = bot.Athlete(user_id="42", name="Marta")
++        today = dt.date(2026, 4, 18)
++        blocks = bot.build_system(athlete, today)
++        self.assertEqual("".join(block["text"] for block in blocks),
++                         bot.INSTRUCTIONS + "\n\n" + bot.athlete_context(athlete, today))
++
++
++if __name__ == "__main__":
++    unittest.main()

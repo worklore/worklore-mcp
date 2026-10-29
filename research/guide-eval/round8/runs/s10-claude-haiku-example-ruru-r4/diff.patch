@@ -1,0 +1,226 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..33ebf3f
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,82 @@
++# Аналитика на экранах регистрации и предложений
++
++## Что сделано
++
++Все шесть событий из `docs/EVENTS.md` подключены через существующую обёртку
++`Analytics.capture` (`lib/analytics.dart`). Имена событий и свойства совпадают
++со спецификацией. Email и телефон в свойствах не отправляются.
++
++### `lib/screens/registration_screen.dart`
++
++| Событие | Когда срабатывает | Свойства |
++|---|---|---|
++| `registration_email_started` | первое редактирование поля email за визит на экран | — |
++| `registration_phone_started` | первое редактирование поля phone за визит на экран | — |
++| `loan_amount_changed` | в `Slider.onChangeEnd`, то есть когда пользователь отпустил слайдер | `amount` (int) |
++| `terms_accepted` | при включении чекбокса (при снятии не срабатывает) | — |
++| `registration_continue_tapped` | при нажатии Continue, только когда кнопка активна | `amount` (int), `terms` (bool) |
++
++- Для полей `email` и `phone` добавлены флаги `_emailStartedSent` и
++  `_phoneStartedSent` в состоянии экрана. `onChanged` срабатывает на каждое
++  нажатие клавиши, поэтому без флага пришло бы событие на каждый символ.
++- Слайдер: `onChanged` оставлен только для обновления UI, событие отправляется
++  из `onChangeEnd`.
++
++### `lib/screens/offer_screen.dart`
++
++| Событие | Когда срабатывает | Свойства |
++|---|---|---|
++| `offers_scrolled` | в `ScrollEndNotification`, один раз за жест скролла | `offset` (double, `metrics.pixels`) |
++
++`OfferScreen` был `StatelessWidget` и остался им. `ListView` обёрнут в
++`NotificationListener<ScrollEndNotification>`, который возвращает `false`,
++чтобы уведомление продолжало всплывать.
++
++## Что взято из заметки коллеги
++
++Пригодилось:
++- флаг «один раз за визит» для текстовых полей (п. 2 заметки);
++- перенос события слайдера из `onChanged` в `onChangeEnd` (п. 5);
++- `ScrollEndNotification` вместо обновлений скролла (п. 6);
++- правило «имена событий и свойства не меняем», чтобы дашборды не сломались.
++
++Не пригодилось или не применялось:
++- шаг 1 (grep по существующему коду): репозиторий новый, `Posthog().capture`
++  в экранах раньше не было;
++- события фокуса и срабатывание по потере фокуса: в `EVENTS.md` таких событий
++  нет, итоговое значение поля никуда не передаётся;
++- проверка через PostHog → Activity: не выполнялась, см. ниже.
++
++## Проверка
++
++- `dart format` применён к `lib/`.
++- `flutter analyze` (с `flutter_lints`): **No issues found**.
++- Сборку под устройство и отправку событий в PostHog я не запускал, поэтому
++  то, что события уходят ровно по одному разу, подтверждено только чтением кода.
++  Для проверки: debug-сборка с `PostHogConfig.debug = true`, ввод в email,
++  протяжка слайдера, скролл списка офферов, затем сверка в PostHog → Activity.
++- Тестов в репозитории нет, новые я не добавлял.
++
++## Оставшиеся вопросы и допущения
++
++1. **`terms_accepted` срабатывает при каждом включении чекбокса.** Если
++   пользователь включает и снимает его несколько раз, событий будет несколько.
++   Если нужно только первое включение, это меняется флагом по образцу полей
++   ввода. Спецификация этого не уточняет, поэтому я выбрал «каждое включение».
++2. **`offset` в `offers_scrolled` — текущая позиция скролла (`metrics.pixels`),
++   а не дельта за жест.** Спецификация говорит «how far they scrolled», и я
++   прочитал это как позицию. Если нужна дельта, понадобится запоминать позицию
++   в начале жеста.
++3. **Флаги `*_started` живут в состоянии экрана.** «За визит» означает
++   «пока экран смонтирован»: после возврата с экрана офферов флаги сохраняются,
++   после перезапуска приложения сбрасываются.
++4. Ключ PostHog в `lib/analytics.dart` остался заглушкой `phc_REPLACE_ME_IN_CI`.
++   Я его не менял.
++
++## Файлы
++
++- `lib/screens/registration_screen.dart` — изменён
++- `lib/screens/offer_screen.dart` — изменён
++- `ANSWER.md` — этот файл
++
++Коммит не делался.
+diff --git a/lib/screens/offer_screen.dart b/lib/screens/offer_screen.dart
+index 921ee59..fdb0c5c 100644
+--- a/lib/screens/offer_screen.dart
++++ b/lib/screens/offer_screen.dart
+@@ -1,5 +1,7 @@
+ import 'package:flutter/material.dart';
+ 
++import '../analytics.dart';
++
+ class Offer {
+   const Offer(this.bank, this.months, this.rate);
+   final String bank;
+@@ -27,18 +29,25 @@ class OfferScreen extends StatelessWidget {
+   Widget build(BuildContext context) {
+     return Scaffold(
+       appBar: AppBar(title: const Text('Offers')),
+-      body: ListView.builder(
+-        itemCount: _offers.length,
+-        itemBuilder: (context, i) {
+-          final o = _offers[i];
+-          return ListTile(
+-            leading: const Icon(Icons.account_balance),
+-            title: Text('${o.bank}, ${o.months} months'),
+-            subtitle: Text('${o.rate.toStringAsFixed(1)}% APR'),
+-            trailing: const Icon(Icons.chevron_right),
+-            onTap: () {},
+-          );
++      // ScrollEndNotification fires once per scroll gesture, not on every frame.
++      body: NotificationListener<ScrollEndNotification>(
++        onNotification: (n) {
++          Analytics.capture('offers_scrolled', {'offset': n.metrics.pixels});
++          return false;
+         },
++        child: ListView.builder(
++          itemCount: _offers.length,
++          itemBuilder: (context, i) {
++            final o = _offers[i];
++            return ListTile(
++              leading: const Icon(Icons.account_balance),
++              title: Text('${o.bank}, ${o.months} months'),
++              subtitle: Text('${o.rate.toStringAsFixed(1)}% APR'),
++              trailing: const Icon(Icons.chevron_right),
++              onTap: () {},
++            );
++          },
++        ),
+       ),
+     );
+   }
+diff --git a/lib/screens/registration_screen.dart b/lib/screens/registration_screen.dart
+index 059a250..4004611 100644
+--- a/lib/screens/registration_screen.dart
++++ b/lib/screens/registration_screen.dart
+@@ -1,5 +1,7 @@
+ import 'package:flutter/material.dart';
+ 
++import '../analytics.dart';
++
+ class RegistrationScreen extends StatefulWidget {
+   const RegistrationScreen({super.key});
+ 
+@@ -13,6 +15,11 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
+   double _amount = 50000;
+   bool _terms = false;
+ 
++  // Text fields fire onChanged on every keystroke, so "started" is sent once
++  // per visit to this screen, on the first edit.
++  bool _emailStartedSent = false;
++  bool _phoneStartedSent = false;
++
+   @override
+   void dispose() {
+     _email.dispose();
+@@ -36,14 +43,26 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
+               controller: _email,
+               keyboardType: TextInputType.emailAddress,
+               decoration: const InputDecoration(labelText: 'Email'),
+-              onChanged: (_) => setState(() {}),
++              onChanged: (_) {
++                if (!_emailStartedSent) {
++                  _emailStartedSent = true;
++                  Analytics.capture('registration_email_started');
++                }
++                setState(() {});
++              },
+             ),
+             const SizedBox(height: 12),
+             TextField(
+               controller: _phone,
+               keyboardType: TextInputType.phone,
+               decoration: const InputDecoration(labelText: 'Phone'),
+-              onChanged: (_) => setState(() {}),
++              onChanged: (_) {
++                if (!_phoneStartedSent) {
++                  _phoneStartedSent = true;
++                  Analytics.capture('registration_phone_started');
++                }
++                setState(() {});
++              },
+             ),
+             const SizedBox(height: 24),
+             Text('Loan amount: ${_amount.round()}'),
+@@ -53,18 +72,33 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
+               divisions: 49,
+               value: _amount,
+               label: _amount.round().toString(),
++              // onChanged runs on every step while dragging; the event goes on
++              // onChangeEnd so it is sent once per slide.
+               onChanged: (v) => setState(() => _amount = v),
++              onChangeEnd: (v) => Analytics.capture(
++                'loan_amount_changed',
++                {'amount': v.round()},
++              ),
+             ),
+             CheckboxListTile(
+               value: _terms,
+               title: const Text('I accept the terms and conditions'),
+               controlAffinity: ListTileControlAffinity.leading,
+-              onChanged: (v) => setState(() => _terms = v ?? false),
++              onChanged: (v) {
++                setState(() => _terms = v ?? false);
++                if (_terms) Analytics.capture('terms_accepted');
++              },
+             ),
+             const Spacer(),
+             FilledButton(
+               onPressed: _canContinue
+-                  ? () => Navigator.of(context).pushNamed('/offers')
++                  ? () {
++                      Analytics.capture('registration_continue_tapped', {
++                        'amount': _amount.round(),
++                        'terms': _terms,
++                      });
++                      Navigator.of(context).pushNamed('/offers');
++                    }
+                   : null,
+               child: const Text('Continue'),
+             ),

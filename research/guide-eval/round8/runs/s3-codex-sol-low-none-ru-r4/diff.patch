@@ -1,0 +1,62 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..f92dcd8
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,13 @@
++# Почему задача молчала
++
++`launchd` запускал агент: снимок `launchctl print` показывает 6 запусков и последний код завершения 1. Расписание и пути stdout/stderr в plist работают. В `Library/Logs/nightly-review.err` после каждого запуска повторяются две строки:
++
++1. `Not logged in · Please run /login` — `claude` не авторизован в окружении, доступном ночному агенту. Поэтому обзор не создавался.
++2. `read-only variable: status` — в zsh `status` является специальной переменной только для чтения. Присваивание `status=$?` останавливало скрипт до проверки ошибки и вызова `notify.sh`. Поэтому даже сообщение об ошибке не отправлялось.
++
++# Исправления
++
++- В `bin/nightly-review.zsh` код выхода сохраняется в `review_status`; при ошибке `claude` вызывается уведомление, а при ошибке самого уведомления пишется сообщение в stderr. То же сделано для уведомления об успешном обзоре.
++- В `bin/notify.sh` ошибка чтения токена из Keychain теперь явно пишется в stderr; `curl -f` возвращает ошибку при HTTP 4xx/5xx.
++
++Для получения **самого обзора** нужно авторизовать `claude` для того же пользователя и окружения, в котором работает LaunchAgent. Из снимка нельзя определить, почему его авторизация недоступна, или восстановить ее без учетных данных. После авторизации стоит проверить запуск вручную в таком же окружении и посмотреть `Library/Logs/nightly-review.err`. Если сообщение об ошибке после исправления не придет, этот лог покажет, удалось ли фоновому процессу прочесть токен `tg-bot` из Keychain. Никаких запусков с обращением к Claude или Telegram в этом снимке не выполнялось.
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..b5427d5 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -16,11 +16,14 @@ Do not modify any file."
+ cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
+ 
+ claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
++review_status=$?
+ 
+-if [ $status -ne 0 ]; then
+-  "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
+-  exit $status
++if [ "$review_status" -ne 0 ]; then
++  "$NOTIFY" "nightly review FAILED (exit $review_status), see $OUT" || print -u2 "nightly review: failed to send failure notification"
++  exit "$review_status"
+ fi
+ 
+-"$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"
++"$NOTIFY" "nightly review done: $(head -c 300 "$OUT")" || {
++  print -u2 "nightly review: failed to send success notification"
++  exit 1
++}
+diff --git a/bin/notify.sh b/bin/notify.sh
+index 818e531..9128736 100755
+--- a/bin/notify.sh
++++ b/bin/notify.sh
+@@ -1,7 +1,12 @@
+ #!/bin/bash
+ # usage: notify.sh "message"  — sends a Telegram message to me.
+ set -eu
+-: "${TG_BOT_TOKEN:=$(security find-generic-password -s tg-bot -w)}"
++if [ -z "${TG_BOT_TOKEN:-}" ]; then
++  TG_BOT_TOKEN=$(security find-generic-password -s tg-bot -w) || {
++    echo "notify: cannot read tg-bot token from Keychain" >&2
++    exit 1
++  }
++fi
+ CHAT_ID=123456789
+-curl -sS -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
++curl -fsS -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
+   -d chat_id="$CHAT_ID" --data-urlencode text="$1" > /dev/null

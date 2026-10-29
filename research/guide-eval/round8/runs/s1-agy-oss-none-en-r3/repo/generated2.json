@@ -1,0 +1,51 @@
+{
+  "category": "WORKOUT",
+  "type": "Run",
+  "name": "Tempo run 45",
+  "start_date_local": "2026-10-20T00:00:00",
+  "workout_doc": {
+    "steps": [
+      {
+        "duration": 600,
+        "hr": {
+          "units": "bpm",
+          "value": 117,
+          "end": 129
+        },
+        "text": "Warm-up easy"
+      },
+      {
+        "reps": 3,
+        "steps": [
+          {
+            "duration": 480,
+            "hr": {
+              "units": "bpm",
+              "value": 151,
+              "end": 160
+            },
+            "text": "Tempo"
+          },
+          {
+            "duration": 120,
+            "hr": {
+              "units": "bpm",
+              "value": 129,
+              "end": 141
+            },
+            "text": "Float"
+          }
+        ]
+      },
+      {
+        "duration": 300,
+        "hr": {
+          "units": "bpm",
+          "value": 112,
+          "end": 124
+        },
+        "text": "Cool-down"
+      }
+    ]
+  }
+}

@@ -1,0 +1,61 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..940eee2
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,7 @@
++# Исправление кеширования
++
++В `bot.py` разделил системный промпт на два текстовых блока с отдельными `cache_control`: неизменные инструкции идут первыми, затем профиль спортсмена и долговременные факты. После `save_fact` меняется только второй блок, поэтому прежний кеш статических инструкций остаётся пригодным, а новый факт доступен уже в следующем вызове модели.
++
++Уточнил постоянные правила тренера, чтобы статический префикс достигал минимального размера для кеширования у используемой модели. Фильтрация инструментов по ключевым словам не менялась.
++
++Проверил локально: `python3 -m py_compile bot.py` и проверка сборки запроса до и после `save_fact` прошли. Реальный API не вызывался; значения `cache_read_input_tokens` после исправления здесь не измерялись.
+diff --git a/bot.py b/bot.py
+index e2ff241..0ac3115 100644
+--- a/bot.py
++++ b/bot.py
+@@ -111,6 +111,28 @@ Formatting:
+ - Plain text. No markdown headings, no tables.
+ - Lists only for a session structure (warm-up / main / cool-down).
+ - Numbers with units: 45 min, 12 km, 150 bpm.
++
++How to apply these rules:
++- Read the current athlete profile and long-term facts before recommending a session. The profile is
++  specific to this athlete and may change between requests. If a fact conflicts with an older fact,
++  ask for clarification when the difference affects the answer. Do not silently choose a boundary,
++  training history, or schedule that the athlete has not confirmed.
++- Treat the current question as the task. A question about one workout calls for an answer about that
++  workout, while a request for the whole week calls for plan_week. Keep the reply proportional to the
++  question. Do not add a weekly plan to a question about one session.
++- When prescribing an easy run or ride, use the athlete's Z1 or Z2 boundary, or an easy RPE if zones
++  are unavailable. When prescribing a hard interval, identify both the work and recovery effort.
++  Include a warm-up and cool-down when giving a session structure. Avoid a pace target unless asked.
++- Consider a completed session a report of what happened, not a request to raise the next target.
++  Record it with log_session, then give one useful observation. If the report mentions pain, illness,
++  dizziness, or unusual fatigue, address that before discussing future training.
++- Save durable personal information only when it adds something to the existing facts. State the fact
++  plainly in one sentence so it remains useful in later chats. A permanent work schedule, regular
++  training availability, relevant injury history, or equipment constraint may be worth saving. A
++  single missed workout, today's mood, or a tentative plan is not durable information.
++- Before suggesting more training, check the athlete's stated goal, the available zones, the weekly
++  increase limit, and any rest or safety constraint that applies. If a number needed for this check
++  is missing, ask for that number instead of presenting a precise prescription as if it were known.
+ """
+ 
+ 
+@@ -128,9 +150,11 @@ def athlete_context(a, today):
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    # Keep the stable prefix reusable when save_fact changes the athlete context.
++    return [
++        {"type": "text", "text": INSTRUCTIONS, "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": athlete_context(a, today), "cache_control": {"type": "ephemeral"}},
++    ]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [

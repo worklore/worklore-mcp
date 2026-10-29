@@ -1,0 +1,45 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..92b1a67
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,26 @@
++# Fix for HR Range Clamping
++
++## What Changed
++
++In `gen.py`, updated `hr_target()` to use `"start"` instead of `"value"` for the lower bound of the HR range:
++
++```python
++def hr_target(step):
++    """HR corridor for a step, as a percentage of the athlete's LTHR."""
++    lo, hi = step["hr_pct"]
++    return {"units": "%lthr", "start": lo, "end": hi}
++```
++
++## Why
++
++In Intervals.icu's `workout_doc` schema:
++- A target range/corridor requires `"start"` and `"end"` properties.
++- The `"value"` property specifies a single target value.
++
++Previously, `gen.py` passed `{"units": "%lthr", "value": lo, "end": hi}`:
++1. Because `"start"` was missing, Intervals.icu did not recognize the step as a target range; it ignored `"end"` and treated `"value": lo` as a single target intensity.
++2. When exporting a single HR target percentage to Garmin Connect, Intervals.icu maps the percentage into the athlete's corresponding discrete HR zone (e.g. 68% $\to$ Zone 2, 88% $\to$ Zone 4, 75% $\to$ Zone 3).
++3. The exported Garmin workout therefore contained zone-based targets rather than custom corridors.
++4. On the Garmin watch, zone targets are evaluated against the watch's own configured HR zones, clamping the target displays to the watch's zone boundaries (e.g., 118–137 bpm for Z2, 151–162 bpm for Z4) regardless of what range was planned.
++
++Using `{"units": "%lthr", "start": lo, "end": hi}` marks the step as an explicit target corridor. Intervals.icu resolves this range against the athlete's LTHR (172 bpm) into custom BPM boundaries and exports custom target values rather than device zone numbers.
+diff --git a/gen.py b/gen.py
+index be0b3bc..4aeba5a 100755
+--- a/gen.py
++++ b/gen.py
+@@ -10,7 +10,7 @@ import sys
+ def hr_target(step):
+     """HR corridor for a step, as a percentage of the athlete's LTHR."""
+     lo, hi = step["hr_pct"]
+-    return {"units": "%lthr", "value": lo, "end": hi}
++    return {"units": "%lthr", "start": lo, "end": hi}
+ 
+ 
+ def build_step(step):

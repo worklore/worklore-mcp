@@ -1,0 +1,157 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..3610d0c
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,74 @@
++# Кеширование промпта после появления save_fact
++
++## Причина
++
++Весь системный промпт шёл одним блоком с одним `cache_control` в конце:
++`INSTRUCTIONS + дата + профиль + факты`. Кеш работает по хешу префикса, поэтому
++`save_fact` (меняет список фактов), а также смена даты, меняли хеш всего блока.
++В `logs/usage.jsonl` это хорошо видно: следующий раунд после `save_fact` всегда даёт
++`cache_read_input_tokens: 0` и `cache_creation_input_tokens` ≈ 1040–1100, то есть промпт
++перекешируется целиком.
++
++## Что изменено (`bot.py`)
++
++1. **`build_system`: два сегмента вместо одного**, у каждого свой
++   `cache_control: ephemeral`:
++   - сегмент 1 — `INSTRUCTIONS`, без подстановок, байт в байт одинаковый для всех
++     атлетов и любых дат;
++   - сегмент 2 — `athlete_context` (дата, профиль, зоны, цель, факты, язык).
++   Теперь запись в память инвалидирует только хвост (~60–110 токенов), а префикс
++   «инструменты + инструкции» читается из кеша.
++
++2. **`select_tools` теперь всегда возвращает полный список инструментов в
++   фиксированном порядке** (`ALL_TOOLS`). Без этого правки из п. 1 не хватило бы.
++   - У Sonnet 4.5 минимальная длина кешируемого префикса — 1024 токена. Если вычесть
++     хвост из логов (каждый факт добавляет ~15 токенов, 1046 → 1061 → 1075; профиль с
++     датой около 60–70 токенов), то «core-инструменты + инструкции» дают примерно
++     940 токенов. Маркер после инструкций при таком размере API молча проигнорировал
++     бы, и после `save_fact` всё равно перекешировался бы весь промпт. С профилем
++     внутри статического сегмента выходит ~990, это тоже меньше порога.
++   - Инструменты в префиксе стоят раньше системного промпта. При фильтрации по ключевым
++     словам префикс меняется каждый раз, когда группа включается или выключается.
++     В логе это видно: в 06:44:31 `plan_week` даёт creation 1305.
++   - С полным набором статический префикс ≈ 1400 токенов: его можно кешировать, и он
++     **общий для всех атлетов**, так что держится горячим почти постоянно. Чтение из
++     кеша стоит 10% цены входа, то есть ~140 токенов-эквивалента за вызов. Сейчас
++     после каждой записи мы платим ~1050 по полной цене и ещё 25% надбавки за запись.
++
++   ⚠️ Это идёт вразрез с пометкой в `NOTES.md`: «фильтрация инструментов — явная победа,
++   leave it». Я сознательно отошёл от неё. Фильтрация экономила токены, пока префикс не
++   кешировался. Теперь короткий отфильтрованный префикс оказывается ниже порога
++   кеширования, и сама фильтрация ломает кеш. Если захотите её вернуть, придётся
++   удлинить статический сегмент до ≥1024 токенов чем-то полезным, иначе первый маркер
++   не будет работать. Код `TOOL_GROUPS` я оставил, откатить можно одной функцией.
++
++Также обновлён абзац про кеширование и инструменты в `README.md`.
++
++## Проверка
++
++- Офлайн, с фейковым LLM, без обращений к API: прогнал сообщение с `save_fact`
++  (2 раунда) у атлета 42 и сообщение атлета 77. Во всех трёх запросах `tools` и
++  `system[0]` совпадают байт в байт, а хвосты разные. Новый факт виден уже во втором
++  раунде. `data/` и `logs/` после теста я восстановил.
++- Числа токенов выше — это оценки по логу. Реальный API и `count_tokens` я не вызывал,
++  потому что внешние сервисы запрещены. Как проверить вживую: отправьте два сообщения
++  в течение 5 минут, затем сообщение, которое вызывает `save_fact`. В следующем раунде
++  `cache_read_input_tokens` должен покрывать статический префикс (~1400), а
++  `cache_creation_input_tokens` должен быть размером только с хвост. Если creation
++  снова размером с весь промпт, значит статический сегмент не дотягивает до 1024
++  токенов или в нём появилась подстановка.
++
++## Что пригодилось из заметки коллеги
++
++- **Пригодилось:** главная идея с двумя маркерами `cache_control` (инструкции
++  отдельно, изменчивый хвост отдельно). Пригодилось и требование держать статический
++  блок стабильным байт в байт, без дат и имён: у нас дата и так стояла в хвосте.
++  Важной оказалась мысль, что инструменты стоят выше системного промпта и их вариации
++  ломают кеш; она и привела ко второму изменению. Пригодились совет не отбирать факты
++  под конкретное сообщение (все факты грузятся, как и раньше) и способ проверки
++  через `cache_creation_input_tokens` / `cache_read_input_tokens`.
++- **Не подошло / пропущено:** вывод, что фильтрацию инструментов можно терпеть.
++  У коллеги ~55 схем и статический блок, видимо, выше порога, а у нас 4 маленьких
++  инструмента, и отфильтрованный префикс оказывается ниже минимума 1024 токена. Об
++  этом пороге в заметке ничего не сказано, а у нас именно он решает дело. Цифры
++  ~780 / ~240 токенов и всё, что связано с Telegram и MCP, к нашему коду не относятся.
+diff --git a/README.md b/README.md
+index ebd390e..5b8f552 100644
+--- a/README.md
++++ b/README.md
+@@ -2,15 +2,15 @@
+ 
+ A coaching chat bot on Claude for a small running/cycling club. It is stateless
+ by design: each message rebuilds the system prompt (coaching rules + the athlete's
+-profile, zones, goal and long-term facts from `data/athletes.json`), picks the tools
+-the message might need (`save_fact` and `log_session` always, planning or race tools
+-when keywords match) and runs a short tool-use loop. `save_fact` is how the bot
++profile, zones, goal and long-term facts from `data/athletes.json`), sends the full,
++fixed tool list (kept stable so it stays in the cached prefix) and runs a short tool-use loop. `save_fact` is how the bot
+ remembers durable things an athlete tells it; the next message sees the fact in
+ its system prompt. Every API call appends its `usage` object to `logs/usage.jsonl`.
+ 
+ Run it locally with `COACH_ANTHROPIC_KEY=sk-ant-... python3 bot.py 42` and type
+ messages on stdin (the Telegram long-polling transport, which needs
+ `COACH_TELEGRAM_TOKEN`, lives in a separate deploy repo and just calls `reply()`).
+-Requires Python 3.11+ and `pip install anthropic`. Prompt caching is on: the system
+-prompt carries a `cache_control` marker so the tool-loop rounds and follow-up
+-messages inside the 5-minute window read it from cache.
++Requires Python 3.11+ and `pip install anthropic`. Prompt caching is on with two
++`cache_control` markers: one after the static instructions (tools + instructions, the
++same for every athlete and day) and one after the per-athlete tail (date, profile,
++facts). A `save_fact` re-caches only the tail; the static prefix stays warm.
+diff --git a/bot.py b/bot.py
+index e2ff241..4880bb6 100644
+--- a/bot.py
++++ b/bot.py
+@@ -128,9 +128,15 @@ def athlete_context(a, today):
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    # Two cached segments. Prompt caching hashes the prefix, so a save_fact (or a new day) used to
++    # invalidate the whole single block, instructions included. Now:
++    #   1. tools + INSTRUCTIONS: byte-identical for every athlete and every day -> stays warm, shared.
++    #   2. the per-athlete tail (date, profile, facts): only this is re-cached after a memory write.
++    # Keep INSTRUCTIONS free of interpolated values, or segment 1 stops being stable.
++    return [
++        {"type": "text", "text": INSTRUCTIONS, "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": athlete_context(a, today), "cache_control": {"type": "ephemeral"}},
++    ]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [
+@@ -152,14 +158,20 @@ TOOL_GROUPS = {
+ }
+ 
+ 
++ALL_TOOLS = CORE_TOOLS + [t for _, group in TOOL_GROUPS.values() for t in group]
++
++
+ def select_tools(text):
+-    """Core tools always; a group is added only when the message mentions its keywords."""
+-    tools = list(CORE_TOOLS)
+-    low = text.lower()
+-    for _, (keys, group) in TOOL_GROUPS.items():
+-        if any(k in low for k in keys):
+-            tools += group
+-    return tools
++    """Always the full tool list, in a fixed order.
++
++    Tools sit in front of the system prompt in the cached prefix. With only the core tools,
++    tools + INSTRUCTIONS come to ~940 tokens, below Sonnet's 1024-token caching minimum, so a
++    cache marker after the instructions would be silently ignored and every save_fact would still
++    re-create the whole prompt. With all tools the static segment is ~1400 tokens, cacheable and
++    identical for every athlete; keyword filtering would also give a different prefix (a full
++    miss) whenever a message switched groups on or off. Cached tool tokens cost 10% of input.
++    """
++    return ALL_TOOLS
+ 
+ 
+ def run_tool(a, name, args):

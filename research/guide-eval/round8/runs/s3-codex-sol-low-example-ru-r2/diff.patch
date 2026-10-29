@@ -1,0 +1,56 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..0f41c0f
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,10 @@
++# Почему задача молчала
++
++Задача запускалась: снимок `launchctl print` от 2026-10-18 показывает `runs = 6` и `last exit code = 1`. В `Library/Logs/nightly-review.err` для каждого запуска записаны две последовательные ошибки.
++
++1. `claude` завершался с `Not logged in · Please run /login`. В окружении launchd не было `USER`; добавил `USER=vk` в `EnvironmentVariables` plist, чтобы CLI мог найти учётные данные пользователя. После установки исправленного plist это нужно проверить на настоящем Mac: один только снимок не доказывает, что авторизация восстановится.
++2. Следующая строка скрипта присваивала код выхода переменной `status`. В zsh она только для чтения, поэтому скрипт аварийно завершался до вызова `notify.sh`. Заменил её на `rc` и сохранил уведомление об ошибке в ветке ненулевого кода выхода.
++
++Дополнительно передаю многострочный запрос через stdin и проверяю, что при коде выхода 0 агент создал непустой файл. Пустой результат теперь вызывает уведомление об ошибке. В этой папке внешние команды не запускались: нельзя подтвердить доставку Telegram или реальную авторизацию без запуска на исходном Mac.
++
++Из заметки коллеги пригодились проверка `runs` и stderr, предупреждение о переменной zsh `status`, передача запроса через stdin, установка `USER` и проверка фактического результата помимо кода выхода. Совет закрыть stdin через `/dev/null` относится к варианту, где запрос передаётся аргументом; здесь он не нужен. Указанная в заметке ошибка о непереданном запросе в нашем логе не встречается. Принудительный `kickstart` и отправку тестовых уведомлений не выполнял из-за запрета на внешние действия и потому, что здесь лишь снимок домашней директории.
+diff --git a/Library/LaunchAgents/com.vk.nightly-review.plist b/Library/LaunchAgents/com.vk.nightly-review.plist
+index c347363..d49eacf 100644
+--- a/Library/LaunchAgents/com.vk.nightly-review.plist
++++ b/Library/LaunchAgents/com.vk.nightly-review.plist
+@@ -24,6 +24,8 @@
+   <dict>
+     <key>PATH</key>
+     <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
++    <key>USER</key>
++    <string>vk</string>
+   </dict>
+ </dict>
+ </plist>
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..5b62c75 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -15,12 +15,17 @@ Do not modify any file."
+ 
+ cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
+ 
+-claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
++print -r -- "$PROMPT" | claude -p --output-format text > "$OUT"
++rc=$?
+ 
+-if [ $status -ne 0 ]; then
+-  "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
+-  exit $status
++if (( rc != 0 )); then
++  "$NOTIFY" "nightly review FAILED (exit $rc), see $OUT"
++  exit $rc
++fi
++
++if [[ ! -s "$OUT" ]]; then
++  "$NOTIFY" "nightly review FAILED (empty output), see $OUT"
++  exit 1
+ fi
+ 
+ "$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"

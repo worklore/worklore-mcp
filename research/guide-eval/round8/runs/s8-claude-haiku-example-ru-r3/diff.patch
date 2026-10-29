@@ -1,0 +1,164 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..945aec9
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,97 @@
++# Кеширование: save_fact не должен вытеснять статические инструкции
++
++## Причина
++
++В `build_system` весь системный промпт был одним блоком с одним `cache_control`:
++инструкции, профиль, зоны, цель, дата и факты. Кеш работает как хеш префикса, поэтому
++любой `save_fact` меняет список фактов в конце блока, и хеш меняется от этого места
++до конца. Инструкции, которые не меняются, тоже уходили в cache miss. В логах это
++видно: после каждого `save_fact` `cache_read_input_tokens: 0` и новый
++`cache_creation_input_tokens` примерно на весь промпт.
++
++## Что изменено
++
++Файл `bot.py`:
++
++- Системный промпт теперь три блока, в таком порядке:
++  1. `INSTRUCTIONS` без маркера. Текст не зависит от пользователя и дня.
++  2. `athlete_profile(a)`: имя, спорт, зоны, цель, язык. Это стабильные данные, и на
++     них стоит единственный маркер `cache_control`.
++  3. `athlete_volatile(a, today)`: дата и факты, без маркера, после него. Здесь меняется всё,
++     что меняется часто. `save_fact` переписывает только этот блок.
++- Дата переехала в волатильный блок. Раньше она жила в кешируемом хвосте, поэтому кеш
++  сбрасывался каждый день. Теперь она не трогает префикс.
++- Правила 15–16 в `INSTRUCTIONS` ссылаются на «list below». Факты по-прежнему идут ниже
++  в системном промпте, так что правило работает как раньше.
++
++Файл `README.md`: абзац про кеширование описывает новую раскладку блоков.
++
++Файлы `data/athletes.json` и `logs/usage.jsonl` не тронуты. Коммита нет.
++
++## Как проверено
++
++Реального API-вызова не было: ключа `COACH_ANTHROPIC_KEY` нет, и отправлять промпт во
++внешний сервис по правилам нельзя. Вместо этого я прогнал `reply()` с фейковым клиентом
++и временными путями для данных и лога:
++
++- сообщение 1: раунд 1 вызывает `save_fact`, раунд 2 отвечает;
++- сообщение 2: обычный вопрос.
++
++Результат:
++
++- префикс (tools и блоки 1–2) побайтово одинаковый между раундом 1 и раундом 2 после
++  `save_fact`;
++- префикс одинаковый между раундом 2 и сообщением 2;
++- маркер стоит только на блоке 2;
++- в волатильном блоке появился новый факт, профиль не изменился.
++
++Проверка на реальном API не делалась. Её надо провести после деплоя (см. ниже).
++
++## Открытый риск: порог 1024 токена
++
++Sonnet 4.5 кеширует только префикс не короче 1024 токенов. Если префикс короче, маркер
++молча ничего не делает: `cache_creation` и `cache_read` будут 0. Оценка по размерам
++текста (не токенизатором, поэтому точность низкая): инструкции около 2484 символов,
++базовые tools около 424, профиль около 220. Это примерно 900–1000 токенов с учётом tools.
++По логу, где весь префикс с фактами и датой давал 1024–1100 токенов, порог проходит
++рядом. Поэтому кеш может не включиться вообще, и тогда эта правка ничего не даёт.
++
++Как проверить после деплоя: в первом запросе нового диалога `cache_creation_input_tokens`
++должен быть около размера префикса (~1000+). Если там 0 и при этом нет `cache_read`,
++префикс короче минимума. Решение тогда одно из двух: вынести в префикс полный набор tools
++(это ломает фильтр по ключевым словам, который в NOTES признан удачным) или добавить
++в стабильную часть реального содержимого. Выбирать тебе, я не стал делать это молча.
++
++## Что взято из заметки коллеги
++
++Пригодилось:
++
++- разбить системный промпт на блоки: стабильный префикс с маркером, волатильный хвост
++  после него;
++- правило «ничего выше системного промпта не меняется без нужды» и порядок блоков;
++- отказ от выборки фактов по сообщению: все факты в одном блоке, иначе хвост меняется
++  на каждом сообщении;
++- проверка через поля `usage` (`cache_creation` и `cache_read`).
++
++Не подошло как есть:
++
++- Два маркера. Блок инструкций без профиля короче 1024 токенов, и маркер на нём
++  ничего бы не кешировал. Поэтому маркер один, на профиле. Он покрывает всё выше себя,
++  то есть tools, инструкции и профиль.
++- «Статический блок ~780 токенов». Это та же ловушка порога: на наших размерах он
++  короче минимума. Заметка описывает другую конфигурацию (модель, длину промпта).
++- Фильтрация tools не трогалась, но у неё есть побочный эффект, который заметка
++  упоминает как «терпимый»: tools стоят выше системного промпта, поэтому смена набора
++  групп сбрасывает весь префикс, включая инструкции. См. ниже.
++
++## Что видно, но не исправлено
++
++1. Ложное срабатывание фильтра tools. `select_tools` ищет подстроки, поэтому слово
++   «brace» включает группу `race` (`predict_race`). Проверено:
++   `select_tools('I just got a knee brace, ...')` даёт `save_fact, log_session, predict_race`.
++   Из-за этого сообщение с «brace» меняет tools и сбрасывает кеш даже без `save_fact`.
++   Исправление: сравнивать по границам слов (`re.search(r'\b' + k + r'\b', low)`). Меняет
++   поведение фильтра, поэтому не делал без твоего слова.
++2. Смена групп tools сбрасывает весь префикс. Это свойство порядка в API, не ошибка кода.
++   Если цена важна, стоит держать набор tools стабильным на протяжении диалога или
++   принять это как издержку.
+diff --git a/README.md b/README.md
+index ebd390e..95fa38e 100644
+--- a/README.md
++++ b/README.md
+@@ -11,6 +11,8 @@ its system prompt. Every API call appends its `usage` object to `logs/usage.json
+ Run it locally with `COACH_ANTHROPIC_KEY=sk-ant-... python3 bot.py 42` and type
+ messages on stdin (the Telegram long-polling transport, which needs
+ `COACH_TELEGRAM_TOKEN`, lives in a separate deploy repo and just calls `reply()`).
+-Requires Python 3.11+ and `pip install anthropic`. Prompt caching is on: the system
+-prompt carries a `cache_control` marker so the tool-loop rounds and follow-up
+-messages inside the 5-minute window read it from cache.
++Requires Python 3.11+ and `pip install anthropic`. Prompt caching is on. The system
++prompt is three blocks: instructions, the athlete's profile (cached, with the one
++`cache_control` marker), and the date plus long-term facts (uncached, after the
++marker). A `save_fact` therefore does not evict the cached prefix. Tool-loop rounds and
++follow-up messages inside the 5-minute window read it from cache.
+diff --git a/bot.py b/bot.py
+index e2ff241..b1bc603 100644
+--- a/bot.py
++++ b/bot.py
+@@ -114,23 +114,33 @@ Formatting:
+ """
+ 
+ 
+-def athlete_context(a, today):
++def athlete_profile(a):
++    # Stable per athlete: changes only when the profile is edited.
+     lines = [
+-        f"Today: {today.isoformat()} ({today.strftime('%A')})",
+         f"Athlete: {a.name} (id {a.user_id}), sport: {a.sport}",
+         "Zones: " + ", ".join(f"{k} {v}" for k, v in a.zones.items()),
+         f"Goal: {a.goal}",
+-        "Long-term facts:",
++        f"Language: {a.lang}",
+     ]
++    return "\n".join(lines)
++
++
++def athlete_volatile(a, today):
++    # Changes on every save_fact and every day. Kept after the cache marker.
++    lines = [f"Today: {today.isoformat()} ({today.strftime('%A')})", "Long-term facts:"]
+     lines += [f"- {f}" for f in a.facts] or ["- (none yet)"]
+-    lines.append(f"Language: {a.lang}")
+     return "\n".join(lines)
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    # The cache is a prefix hash, so order is what matters. Instructions and profile
++    # are stable and sit before the one cache marker. The date and facts come after it:
++    # a save_fact then rewrites only the uncached tail and never evicts the prefix.
++    return [
++        {"type": "text", "text": INSTRUCTIONS},
++        {"type": "text", "text": athlete_profile(a), "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": athlete_volatile(a, today)},
++    ]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [

@@ -1,0 +1,87 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..5739191
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,46 @@
++# Причины сбоя и молчания задачи launchd
++
++В результате анализа логов (`Library/Logs/nightly-review.err`), конфигурации launchd (`Library/LaunchAgents/com.vk.nightly-review.plist`) и скрипта (`bin/nightly-review.zsh`) были выявлены следующие причины:
++
++## 1. Основные причины сбоя и отсутствия сообщений
++
++1. **Ошибка `status=$?` в zsh (убийство скрипта до отправки уведомления):**
++   - В оболочке `zsh` переменная `status` является встроенным специальным псевдонимом только для чтения (read-only alias для `$?`).
++   - Попытка присваивания `status=$?` вызывала фатальную ошибку:
++     ```text
++     /Users/vk/bin/nightly-review.zsh:19: read-only variable: status
++     ```
++   - Поскольку это присваивание происходило сразу после вызова `claude` и перед блоком проверки ошибок и вызова `$NOTIFY`, скрипт аварийно завершался, так и не дойдя до отправки сообщения об ошибке в Telegram.
++
++2. **Отсутствие переменной `USER` в `EnvironmentVariables` plist-файла:**
++   - Launchd запускает пользовательские сервисы с усечённым окружением. В `EnvironmentVariables` была определена только переменная `PATH`.
++   - Headless CLI (`claude`) использует имя текущего пользователя (`USER`) для доступа к Keychain macOS. Без установленной переменной `USER` CLI не мог получить авторизационные данные и падал с ошибкой:
++     ```text
++     Not logged in · Please run /login
++     ```
++
++3. **Передача промпта и взаимодействие с stdin в запланированном шелле:**
++   - Для надежной работы headless-инструментов при автоматическом запуске в контексте launchd рекомендуется передавать многострочный промпт через пайп в stdin (`print -r -- "$PROMPT" | claude -p - ...`), чтобы избежать проблем с обработкой многострочных аргументов и ожиданием ввода.
++
++---
++
++## 2. Какие части из заметки коллеги пригодились
++
++Из заметки коллеги непосредственно подтвердились и пригодились следующие пункты:
++- **`status` в zsh — переменная только для чтения**: рекомендация заменить на `rc=$?` устранила падение скрипта при сохранении кода возврата.
++- **`USER` в `EnvironmentVariables` plist-файла**: добавление ключа `<key>USER</key><string>vk</string>` в plist устраняет ошибку `Not logged in · Please run /login` при доступе CLI к macOS Keychain под launchd.
++- **Передача промпта через stdin**: использование передачи промпта в `claude` через пайп (`print -r -- "$PROMPT" | claude -p - ...`) предотвращает сбои обработки аргументов.
++- **Анализ `launchctl print` и `StandardErrorPath`**: проверка лога ошибок подтвердила точное совпадение картины («Not logged in» и «read-only variable: status»).
++
++Остальные части заметки (общие рассуждения про тайм-ауты, ручные проверки через `launchctl kickstart`, специфичные сценарии без stdin) были приняты к сведению, но дополнительных правок не потребовали.
++
++---
++
++## 3. Внесённые изменения
++
++1. **`bin/nightly-review.zsh`**:
++   - Заменено присваивание `status=$?` на `rc=$?` (и соответственно проверка `[ $rc -ne 0 ]` и `exit $rc`).
++   - Заменен вызов агента на чтение промпта через stdin: `print -r -- "$PROMPT" | claude -p - --output-format text > "$OUT"`.
++
++2. **`Library/LaunchAgents/com.vk.nightly-review.plist`**:
++   - В блок `EnvironmentVariables` добавлена переменная `USER` со значением `vk`.
+diff --git a/Library/LaunchAgents/com.vk.nightly-review.plist b/Library/LaunchAgents/com.vk.nightly-review.plist
+index c347363..d49eacf 100644
+--- a/Library/LaunchAgents/com.vk.nightly-review.plist
++++ b/Library/LaunchAgents/com.vk.nightly-review.plist
+@@ -24,6 +24,8 @@
+   <dict>
+     <key>PATH</key>
+     <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
++    <key>USER</key>
++    <string>vk</string>
+   </dict>
+ </dict>
+ </plist>
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..748961a 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -15,12 +15,12 @@ Do not modify any file."
+ 
+ cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
+ 
+-claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
++print -r -- "$PROMPT" | claude -p - --output-format text > "$OUT"
++rc=$?
+ 
+-if [ $status -ne 0 ]; then
+-  "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
+-  exit $status
++if [ $rc -ne 0 ]; then
++  "$NOTIFY" "nightly review FAILED (exit $rc), see $OUT"
++  exit $rc
+ fi
+ 
+ "$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"

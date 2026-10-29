@@ -1,0 +1,146 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..8f177e1
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,66 @@
++# Почему nightly-review ничего не сообщала
++
++## Что видно в данных
++
++- `launchctl-print.txt`: `runs = 6`, `last exit code = 1`. Задача запускалась 6 раз и каждый раз падала.
++- `Library/Logs/nightly-review.out` пустой.
++- `Library/Logs/nightly-review.err` содержит 6 одинаковых пар строк:
++  ```
++  Not logged in · Please run /login
++  /Users/vk/bin/nightly-review.zsh:19: read-only variable: status
++  ```
++
++## Причина 1 (главная): `status` — read-only в zsh
++
++В строке 19 скрипта `status=$?`. В zsh `status` — встроенный read-only параметр (синоним `$?`). Присваивание падает, а в неинтерактивном скрипте это фатальная ошибка: shell завершается с кодом 1. Проверено локально: `zsh -c 'false; status=$?'` даёт `read-only variable: status` и exit 1.
++
++Из-за этого:
++- ветка `if [ $status -ne 0 ]` с уведомлением `FAILED` никогда не выполняется;
++- ветка успеха тоже не выполняется;
++- `notify.sh` не вызывается вообще, поэтому в Telegram ничего не приходит, ни успех, ни ошибка.
++
++Сбой в `claude` тоже не был бы виден сам по себе, потому что код возврата `claude` никогда не проверялся до того места, где скрипт падал.
++
++## Причина 2: скрипт не сообщает о падениях, которые не предусмотрены явно
++
++Даже без бага с `status` скрипт сообщал бы только об ошибках, которые он сам распознал. Любой аварийный выход (неопределённая переменная при `set -u`, неудачный `cd`, опечатка вроде этой) завершал бы его молча. Нужен обработчик `EXIT`, который уведомляет о любом ненулевом коде.
++
++## Причина 3: `notify.sh` молча проглатывает ошибки отправки
++
++- `: "${TG_BOT_TOKEN:=$(security ...)}"`: если `security` не смог прочитать токен из Keychain, подстановка падает, но `set -e` это не ловит (проверено: `: "${T:=$(false)}"` продолжает работу с пустым `T`). В итоге запрос уходит на `…/bot/sendMessage` с пустым токеном.
++- `curl -sS` без `-f`: HTTP-ошибки (404 на неверный токен, 400 и т. д.) не считаются ошибкой curl, тело ответа уходит в `/dev/null`. Скрипт «успешно» завершается, ничего не отправив.
++
++Поэтому даже ручной тест может выглядеть рабочим, а из ночного запуска сообщения не будет.
++
++## Причина 4 (не исправлена кодом, нужна проверка): `claude` в launchd говорит «Not logged in»
++
++Это отдельная проблема, и её нельзя решить правкой скрипта. При запуске из launchd `claude -p` не видит авторизацию. Исходя из данных, не могу сказать точно, какая именно. Возможные варианты:
++- ключ API экспортирован в `~/.zshrc`, а launchd его не читает (`.zshrc` для LaunchAgent не загружается);
++- учётные данные Claude Code в Keychain, и для фонового запуска они недоступны.
++
++Чтобы проверить, стоит временно запустить `claude auth status` (или аналог) из того же окружения, что и launchd, и посмотреть переменные окружения: `launchctl print gui/501/com.vk.nightly-review` показывает только PATH и XPC. Ключи в plist не хранить: если нужен API-ключ, читать его из Keychain в скрипте, как сделано с токеном Telegram.
++
++## Что изменено в этом снимке
++
++1. `bin/nightly-review.zsh`
++   - `status` переименован в `claude_rc`.
++   - Добавлен обработчик `EXIT` (`finish`): при любом ненулевом коде отправляется `FAILED` с первыми 300 байтами stderr. Пишет и `|| true`, чтобы сбой уведомления не маскировал исходную ошибку.
++   - stderr `claude` теперь пишется в `~/Library/Logs/nightly-review-YYYY-MM-DD.err`, а не в общий лог launchd. Файл для каждого дня, поэтому старые логи не перезаписываются.
++   - Пустой вывод при коде 0 считается ошибкой (код 2).
++2. `bin/notify.sh`
++   - Если токен не читается из Keychain, скрипт пишет понятную ошибку в stderr и выходит с кодом 1.
++   - `curl -fsS`: HTTP-ошибки Telegram теперь дают ненулевой код и видны в логах.
++
++Проверено в песочнице внутри этой директории (заглушки `claude` и `notify`, `HOME` подменён; реальный Telegram не вызывался):
++- `claude` падает с кодом 1 → уходит `FAILED (exit 1): Not logged in …`, код скрипта 1;
++- `claude` выходит с 0 и пустым выводом → `FAILED (exit 2)`;
++- `claude` выходит с 0 и выводом → `done: …`, код 0;
++- Keychain недоступен → `notify.sh` выводит ошибку и выходит с кодом 1.
++
++Настоящий запуск через launchd и отправка в Telegram не проверялись: это нужно сделать вами.
++
++## Что нужно сделать вам
++
++1. Скопировать исправленные файлы в `~/bin/` (`nightly-review.zsh`, `notify.sh`), сохранив права на исполнение.
++2. Решить проблему авторизации `claude` из пункта 4. Без неё скрипт теперь будет честно присылать `FAILED … Not logged in`, но отчётов не будет.
++3. Перезагрузить агент, чтобы не ждать 02:30: `launchctl kickstart -k gui/$(id -u)/com.vk.nightly-review`. Этот запуск вызовет реальный `claude` и реальный Telegram, поэтому я его не выполнял.
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..68fae71 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -3,7 +3,9 @@
+ set -u
+ 
+ REPO="$HOME/projects/shop"
+-OUT="$HOME/Library/Logs/nightly-review-$(date +%F).md"
++DAY=$(date +%F)
++OUT="$HOME/Library/Logs/nightly-review-$DAY.md"
++ERR="$HOME/Library/Logs/nightly-review-$DAY.err"
+ NOTIFY="$HOME/bin/notify.sh"
+ 
+ SINCE=$(date -v-1d +%F)
+@@ -13,14 +15,30 @@ For each commit: one line on what it changes and whether anything looks risky
+ End with a three-line summary I can read on my phone.
+ Do not modify any file."
+ 
+-cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
++# Runs on every exit. Any non-zero exit, including an abort in the middle of
++# the script, gets a Telegram note. Without this, a crash before the explicit
++# failure branch is silent.
++finish() {
++  local rc=$?
++  if [ $rc -ne 0 ]; then
++    "$NOTIFY" "nightly review FAILED (exit $rc): $(head -c 300 "$ERR" 2>/dev/null)" || true
++  fi
++}
++trap finish EXIT
+ 
+-claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
++cd "$REPO" || exit 1
+ 
+-if [ $status -ne 0 ]; then
+-  "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
+-  exit $status
++# Not named `status`: that is a read-only special parameter in zsh (same as $?),
++# and the assignment aborted the script before anything was reported.
++claude -p "$PROMPT" --output-format text > "$OUT" 2> "$ERR"
++claude_rc=$?
++if [ $claude_rc -ne 0 ]; then
++  exit $claude_rc
++fi
++
++if [ ! -s "$OUT" ]; then
++  echo "claude exited 0 but wrote no output to $OUT" >> "$ERR"
++  exit 2
+ fi
+ 
+ "$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"
+diff --git a/bin/notify.sh b/bin/notify.sh
+index 818e531..4be1908 100755
+--- a/bin/notify.sh
++++ b/bin/notify.sh
+@@ -1,7 +1,14 @@
+ #!/bin/bash
+-# usage: notify.sh "message"  — sends a Telegram message to me.
++# usage: notify.sh "message" — sends a Telegram message to me.
+ set -eu
+-: "${TG_BOT_TOKEN:=$(security find-generic-password -s tg-bot -w)}"
++if [ -z "${TG_BOT_TOKEN:-}" ]; then
++  TG_BOT_TOKEN=$(security find-generic-password -s tg-bot -w) || {
++    echo "notify.sh: no tg-bot token in keychain (run by launchd?)" >&2
++    exit 1
++  }
++fi
+ CHAT_ID=123456789
+-curl -sS -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
++# -f: HTTP errors (bad token, 404, 400) make curl exit non-zero instead of
++# being discarded. Without it the script "succeeded" on every failed send.
++curl -fsS -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
+   -d chat_id="$CHAT_ID" --data-urlencode text="$1" > /dev/null

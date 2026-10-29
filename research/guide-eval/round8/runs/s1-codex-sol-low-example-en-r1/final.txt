@@ -1,0 +1,3 @@
+Updated [gen.py](/tmp/h-HoTVNb/gen.py) so HR corridors use `start`/`end` with `%lthr`, instead of `value`/`end`. The local check confirms all four sample targets retain their planned percentages, and `git diff --check` passes.
+
+[ANSWER.md](/tmp/h-HoTVNb/ANSWER.md) explains why the key change applies, which parts of the colleague’s note were relevant, and why description generation was left alone. Watch behavior still needs a sync to verify; nothing was pushed to Intervals.

@@ -1,0 +1,3 @@
+I separated the system prompt into cached coaching instructions and uncached athlete context. A `save_fact` write now changes only the athlete block, leaving the cached instruction prefix intact. I documented the change in [ANSWER.md](/tmp/h-FsVpk6/ANSWER.md).
+
+A local request check confirmed the cached block stays identical after a fact is added while the athlete block updates. Syntax and diff checks passed. Live cache usage was not measured because that would require an API call.

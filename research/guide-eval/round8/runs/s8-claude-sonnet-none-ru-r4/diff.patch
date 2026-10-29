@@ -1,0 +1,42 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..3ac48b7
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,11 @@
++# Что изменено
++
++**Причина:** `build_system` склеивал статические инструкции и контекст атлета (дата, зоны, цель, факты) в один text-блок с одним `cache_control`. Кеш префиксный, поэтому любое изменение факта (`save_fact`) меняло единственный блок целиком, и следующий вызов заново платил за весь промпт (`cache_creation ~1000`, `cache_read 0` в `logs/usage.jsonl`).
++
++**Исправление (`bot.py`, `build_system`):** system теперь из двух блоков, у каждого свой `cache_control`:
++1. `INSTRUCTIONS` — неизменный, кешируется независимо от памяти;
++2. `athlete_context(...)` — меняется при `save_fact` и со сменой даты; внутри одного сообщения раунды tool-loop по-прежнему читают его из кеша.
++
++Фильтрация инструментов по ключевым словам не тронута.
++
++**Оговорка:** минимальный кешируемый префикс для claude-sonnet-4-5 — 1024 токена. Префикс «инструменты + инструкции» по оценке около 750–950 токенов (всего в логах ~1046 вместе с контекстом), то есть он может оказаться ниже порога, и тогда первый брейкпоинт не сработает. Проверьте по `usage.jsonl` после выката: после `save_fact` `cache_read_input_tokens` должен быть > 0. Если нет — нужно, чтобы статическая часть (инструкции + инструменты) превышала 1024 токена, например перенести в неё стабильные справочные данные. Тест с реальным API я не запускал.
+diff --git a/__pycache__/bot.cpython-314.pyc b/__pycache__/bot.cpython-314.pyc
+new file mode 100644
+index 0000000..201c5b4
+Binary files /dev/null and b/__pycache__/bot.cpython-314.pyc differ
+diff --git a/bot.py b/bot.py
+index e2ff241..36f7110 100644
+--- a/bot.py
++++ b/bot.py
+@@ -128,9 +128,13 @@ def athlete_context(a, today):
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    # Two blocks, two breakpoints. The instructions never change, so their prefix stays
++    # cached when save_fact (or a new day) changes the athlete context in the second block.
++    cc = {"type": "ephemeral"}
++    return [
++        {"type": "text", "text": INSTRUCTIONS, "cache_control": cc},
++        {"type": "text", "text": athlete_context(a, today), "cache_control": cc},
++    ]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [

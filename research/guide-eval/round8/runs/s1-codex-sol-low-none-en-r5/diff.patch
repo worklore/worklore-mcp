@@ -1,0 +1,30 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..3e4cfec
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,7 @@
++# HR range generator fix
++
++Changed `gen.py` to emit each HR corridor as `{"units":"%lthr","start":low,"end":high}`. The previous `value`/`end` object did not encode a range in Intervals.icu's workout format: `value` is for a single target, while ranges use `start` and `end`. That explains why the accepted event could still reach the watch as a zone band.
++
++The plan percentages and repeat structure are unchanged. A local check of the generated tempo run confirmed all four planned corridors, including both repeated steps. Garmin export and watch display have not been rechecked because that would require an external push.
++
++Format reference: [Intervals.icu workout builder discussion](https://forum.intervals.icu/t/custom-zones-work-started/112132?page=4) (documents the `value`, `start`, and `end` fields on HR targets).
+diff --git a/__pycache__/gen.cpython-314.pyc b/__pycache__/gen.cpython-314.pyc
+new file mode 100644
+index 0000000..46097b3
+Binary files /dev/null and b/__pycache__/gen.cpython-314.pyc differ
+diff --git a/gen.py b/gen.py
+index be0b3bc..4aeba5a 100755
+--- a/gen.py
++++ b/gen.py
+@@ -10,7 +10,7 @@ import sys
+ def hr_target(step):
+     """HR corridor for a step, as a percentage of the athlete's LTHR."""
+     lo, hi = step["hr_pct"]
+-    return {"units": "%lthr", "value": lo, "end": hi}
++    return {"units": "%lthr", "start": lo, "end": hi}
+ 
+ 
+ def build_step(step):

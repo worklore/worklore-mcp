@@ -1,0 +1,95 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..eff52d0
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,38 @@
++# Second publish returns 500: float stored in DynamoDB
++
++## Cause
++
++`publish()` stores each story's `similar` list, and every entry carries a `score`
++produced by `similarity()`. That function returned a Python `float`
++(`round(..., 4)`).
++
++DynamoDB (via boto3) does not accept floats. It only accepts `Decimal`, `int`,
++`str`, and similar types, so `put_item` raises
++`TypeError: Float types are not supported. Use Decimal types instead.`
++
++The first publish worked because the library was empty, so `similar` was `[]`
++and no float was ever written. The second publish is the first one with an
++existing story to score against, so it writes a float and fails. The log matches
++this: the first publish is `similar=0 stored`, and every failure comes after it.
++
++The existing test only publishes once, so it never reached a non-empty
++`similar` list. The test fake (`tests/fake_dynamo.py`) does reject floats, so the
++bug would have been caught if a second publish had been tested.
++
++## Fix
++
++- `src/app.py`: `similarity()` now returns `Decimal(str(round(score, 4)))`.
++  The value is still rounded to 4 places, the ranking is unchanged, and
++  `str()` avoids binary float artifacts when converting to `Decimal`.
++- `tests/test_publish.py`: added `test_second_publish_stores_related_stories`,
++  which publishes two stories and checks that the second one stores the first
++  in `similar`. It fails on the old code with the same `TypeError` as production
++  and passes with the fix.
++
++## Keeping it from coming back
++
++The regression test exercises the path that failed (a publish with a non-empty
++library), and the fake table already rejects floats, so any future float in the
++item will fail the test locally. Run with:
++
++    python3 -m unittest discover tests
+diff --git a/src/app.py b/src/app.py
+index db49c5e..a0a3a17 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -8,6 +8,7 @@ import json
+ import logging
+ import re
+ import time
++from decimal import Decimal
+ 
+ log = logging.getLogger("stories")
+ 
+@@ -22,12 +23,15 @@ def words(text):
+ 
+ 
+ def similarity(a, b):
+-    """Shared-tag ratio (Jaccard), blended with shared words of the two bodies."""
++    """Shared-tag ratio (Jaccard), blended with shared words of the two bodies.
++
++    Returns a Decimal: DynamoDB rejects Python floats, and this value is stored.
++    """
+     ta, tb = set(a.get("tags", [])), set(b.get("tags", []))
+     tag_score = len(ta & tb) / len(ta | tb) if (ta | tb) else 0
+     wa, wb = words(a.get("body")), words(b.get("body"))
+     word_score = len(wa & wb) / len(wa | wb) if (wa | wb) else 0
+-    return round(0.7 * tag_score + 0.3 * word_score, 4)
++    return Decimal(str(round(0.7 * tag_score + 0.3 * word_score, 4)))
+ 
+ 
+ def related(story, existing):
+diff --git a/tests/test_publish.py b/tests/test_publish.py
+index 6c9ac44..6a39a62 100644
+--- a/tests/test_publish.py
++++ b/tests/test_publish.py
+@@ -23,6 +23,16 @@ class PublishTest(unittest.TestCase):
+         self.assertEqual(table.get_item(Key={"slug": "why-my-cron-ran-twice"})["Item"]["title"], "Why my cron ran twice")
+         self.assertEqual(table.scan()["Count"], 1)
+ 
++    def test_second_publish_stores_related_stories(self):
++        # Regression: the second publish has an existing story to score against,
++        # so the stored "similar" scores were floats and DynamoDB rejected the put.
++        table = FakeTable()
++        app.publish(table, {"slug": "first-story", "title": "First", "tags": ["cron", "linux"], "body": "cron ran twice"})
++        stored = app.publish(table, {"slug": "second-story", "title": "Second", "tags": ["cron"], "body": "cron ran twice"})
++        self.assertEqual([s["slug"] for s in stored["similar"]], ["first-story"])
++        self.assertEqual(table.scan()["Count"], 2)
++        self.assertEqual(table.get_item(Key={"slug": "second-story"})["Item"]["similar"][0]["slug"], "first-story")
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

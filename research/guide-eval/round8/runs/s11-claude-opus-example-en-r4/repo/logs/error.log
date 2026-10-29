@@ -1,0 +1,36 @@
+2026-07-31T09:14:02.118Z INFO  stories publish slug=why-my-cron-ran-twice similar=0 stored
+2026-07-31T09:14:02.121Z INFO  POST /stories -> 201 (41 ms)
+2026-07-31T09:21:47.503Z ERROR stories publish failed
+Traceback (most recent call last):
+  File "/var/task/src/app.py", line 72, in handler
+    stored = publish(table, story)
+  File "/var/task/src/app.py", line 63, in publish
+    table.put_item(Item=item)
+  File "/var/task/boto3/resources/factory.py", line 581, in do_action
+    response = action(self, *args, **kwargs)
+  File "/var/task/boto3/resources/action.py", line 88, in __call__
+    response = getattr(parent.meta.client, operation_name)(*args, **params)
+  File "/var/task/botocore/client.py", line 569, in _api_call
+    return self._make_api_call(operation_name, kwargs)
+  File "/var/task/botocore/client.py", line 980, in _make_api_call
+    api_params, operation_model, context=request_context
+  File "/var/task/boto3/dynamodb/transform.py", line 120, in inject_attribute_value_input
+    self._transformer.transform(params, model.input_shape, self._serializer.serialize, 'AttributeValue')
+  File "/var/task/boto3/dynamodb/transform.py", line 199, in transform
+    self._transform_parameters(model, params, transformation, target_shape)
+  File "/var/task/boto3/dynamodb/types.py", line 109, in serialize
+    dynamodb_type = self._get_dynamodb_type(value)
+  File "/var/task/boto3/dynamodb/types.py", line 164, in _get_dynamodb_type
+    raise TypeError(msg)
+TypeError: Float types are not supported. Use Decimal types instead.
+2026-07-31T09:21:47.506Z INFO  POST /stories -> 500 (63 ms)
+2026-07-31T09:22:10.887Z ERROR stories publish failed
+Traceback (most recent call last):
+  File "/var/task/src/app.py", line 72, in handler
+    stored = publish(table, story)
+  File "/var/task/src/app.py", line 63, in publish
+    table.put_item(Item=item)
+  File "/var/task/boto3/dynamodb/types.py", line 164, in _get_dynamodb_type
+    raise TypeError(msg)
+TypeError: Float types are not supported. Use Decimal types instead.
+2026-07-31T09:22:10.889Z INFO  POST /stories -> 500 (58 ms)

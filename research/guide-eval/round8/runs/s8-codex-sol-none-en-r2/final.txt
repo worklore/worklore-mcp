@@ -1,0 +1,3 @@
+Split the prompt into two cacheable blocks: stable coaching instructions and athlete profile, followed by the date and long-term facts. A `save_fact` write now changes only the second block. Tool selection is unchanged.
+
+I documented the change in [ANSWER.md](/tmp/h-cYhfgw/ANSWER.md). Both regression tests pass. I made no live API call, so token savings have not yet been measured.

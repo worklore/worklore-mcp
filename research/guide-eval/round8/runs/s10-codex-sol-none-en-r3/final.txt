@@ -1,0 +1,3 @@
+Implemented all six events from `docs/EVENTS.md` on the registration and offers screens through the existing `Analytics.capture` wrapper. The text-start events send no personal data. I documented the changes in [ANSWER.md](/tmp/h-OhoqU6/ANSWER.md).
+
+Formatting and `git diff --check` passed. Static analysis could not complete because this checkout has no resolved Flutter or PostHog dependencies; I did not fetch them or run the app.

@@ -1,0 +1,21 @@
+diff --git a/src/app.py b/src/app.py
+index db49c5e..dc3a173 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -31,11 +31,15 @@ def similarity(a, b):
+ 
+ 
+ def related(story, existing):
++    from decimal import Decimal
+     scored = []
+     for other in existing:
+         if other["slug"] == story["slug"]:
+             continue
+-        scored.append({"slug": other["slug"], "score": similarity(story, other)})
++        # Convert similarity score to Decimal for DynamoDB compatibility
++        score_float = similarity(story, other)
++        score_decimal = Decimal(str(score_float))
++        scored.append({"slug": other["slug"], "score": score_decimal})
+     scored.sort(key=lambda s: s["score"], reverse=True)
+     return scored[:TOP_N]
+ 

@@ -1,0 +1,133 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..439542d
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,57 @@
++# Ответ: обрезанные пульсовые диапазоны на часах
++
++## Причина
++
++`gen.py` отправлял HR-цели как `{"units": "%lthr", "value": 88, "end": 93}` и
++оставлял перевод в bpm Intervals.icu. При экспорте в Garmin Connect Intervals
++передаёт такую цель как зону часов, а не как коридор. Часы показывают границы
++собственной зоны (например, Tempo 151–162 вместо 151–160). Поэтому любой
++коридор превращается в одну из зон часов, и смена LTHR на часах этого не
++исправляет: они по-прежнему показывают границы зон.
++
++## Что изменено
++
++- `gen.py`:
++  - добавлена константа `DEFAULT_LTHR = 172`;
++  - `hr_target` считает bpm сам: `round(lthr * pct / 100)` для обоих концов
++    коридора и отправляет `{"units": "bpm", "value": ..., "end": ...}`;
++  - LTHR можно переопределить полем `lthr` в файле плана, иначе берётся 172;
++  - `build_step` и `build_doc` получили параметр `lthr` и передают его дальше.
++- `README.md`: описание преобразования исправлено, теперь написано, что bpm
++  считает `gen.py`.
++- `readback/` не менялся: это записи того, что было отправлено и показано.
++
++## Проверка
++
++`python3 gen.py plans/tempo-run.json` даёт такие цели (LTHR 172):
++
++| шаг | % LTHR | bpm (новый вывод) | ожидалось по notes |
++|---|---|---|---|
++| Warm-up easy | 68–75 | 117–129 | 117–129 |
++| Tempo | 88–93 | 151–160 | 151–160 |
++| Float | 75–82 | 129–141 | 129–141 |
++| Cool-down | 65–72 | 112–124 | 112–124 |
++
++JSON валиден. Отправку в API я не делал (по правилам не публикую и не отправляю
++ничего во внешние сервисы), поэтому на часах этот вариант не проверен.
++
++## Что ещё не проверено
++
++- Нужно загрузить новый event и посмотреть на часах, что Tempo показывает
++  151–160. Если часы всё равно показывают зону, значит и `units: "bpm"`
++  экспортируется как зона, и тогда нужен другой путь (например, явная
++  пользовательская зона в Garmin Connect).
++- В notes записано, что ранее `units: "bpm"` дал на часах 214–249 bpm. Из
++  репозитория не видно, какой payload тогда отправлялся, поэтому причина этого
++  результата не установлена. Возможно, в той попытке были неверные значения,
++  но это не проверено. Если при новом выводе снова будет расхождение, сравнить
++  с `readback/event-184233-as-sent.json`.
++- Форум Intervals.icu упоминает, что при экспорте в Garmin есть особенности
++  обработки пользовательских HR-диапазонов (поправка в -100 для Garmin-файлов).
++  Я не проверял, касается ли это нашего случая. Это тоже нужно проверить на
++  часах.
++- Если LTHR на часах (168) и в Intervals (172) разные, bpm будут считаться от
++  172, и это совпадает с планом. Часовые зоны при этом всё равно будут другими,
++  но это не влияет на цели, которые теперь заданы в bpm.
++
++Коммит не делал.
+diff --git a/README.md b/README.md
+index 31b0941..3baf1bb 100644
+--- a/README.md
++++ b/README.md
+@@ -10,7 +10,9 @@ exports them to the athlete's Garmin watch through Garmin Connect.
+   notes on what the watch displayed.
+ 
+ Athlete thresholds live in Intervals (LTHR 172 for this athlete). HR targets
+-in plans are percentages of LTHR; Intervals converts them to bpm at export.
++in plans are percentages of LTHR; `gen.py` converts them to absolute bpm
++(using the plan's optional `lthr`, default 172) before sending, because
++Intervals exports %LTHR targets to the watch as its own zone bands.
+ 
+ ```
+ python3 gen.py plans/tempo-run.json > event.json
+diff --git a/gen.py b/gen.py
+index be0b3bc..0457441 100755
+--- a/gen.py
++++ b/gen.py
+@@ -7,31 +7,43 @@ import json
+ import sys
+ 
+ 
+-def hr_target(step):
+-    """HR corridor for a step, as a percentage of the athlete's LTHR."""
++DEFAULT_LTHR = 172
++
++
++def hr_target(step, lthr):
++    """HR corridor for a step, converted to absolute bpm from the LTHR.
++
++    Intervals.icu exports %LTHR targets to the watch as the watch's own zone
++    bands, so the corridor is computed here and sent as plain bpm instead.
++    """
+     lo, hi = step["hr_pct"]
+-    return {"units": "%lthr", "value": lo, "end": hi}
++    return {
++        "units": "bpm",
++        "value": round(lthr * lo / 100),
++        "end": round(lthr * hi / 100),
++    }
+ 
+ 
+-def build_step(step):
++def build_step(step, lthr):
+     out = {"duration": step["minutes"] * 60}
+     if "hr_pct" in step:
+-        out["hr"] = hr_target(step)
++        out["hr"] = hr_target(step, lthr)
+     if "label" in step:
+         out["text"] = step["label"]
+     return out
+ 
+ 
+ def build_doc(plan):
++    lthr = plan.get("lthr", DEFAULT_LTHR)
+     steps = []
+     for block in plan["steps"]:
+         if "repeat" in block:
+             steps.append({
+                 "reps": block["repeat"],
+-                "steps": [build_step(s) for s in block["steps"]],
++                "steps": [build_step(s, lthr) for s in block["steps"]],
+             })
+         else:
+-            steps.append(build_step(block))
++            steps.append(build_step(block, lthr))
+     return {"steps": steps}
+ 
+ 

@@ -1,0 +1,82 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..ac92952
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,29 @@
++# Почему nightly-review молчал
++
++Задача запускалась (в `launchctl-print.txt`: `runs = 6`, `last exit code = 1`) — молчал сам скрипт.
++
++## Причины
++1. **`claude -p` падает: «Not logged in · Please run /login»** (в `.err` перед каждой ошибкой). Под launchd нет `USER`
++   (в окружении только `PATH`), и CLI не находит свой логин в keychain.
++   Исправление: `USER` и `HOME` добавлены в `EnvironmentVariables` plist. Не проверено у вас на машине: если после
++   этого ошибка останется, один раз выполните `claude /login` в обычном терминале.
++2. **`status=$?` в zsh** — `status` переменная только для чтения, скрипт умирает на строке 19
++   (`read-only variable: status`) до вызова `notify.sh`. Поэтому уведомления об ошибке не было никогда.
++   Исправление: `rc=$?`.
++
++Итог: ошибка 1 → отправитель ошибок убит ошибкой 2 → тишина; stdout пуст, а `.err` никто не читал.
++
++## Дополнительно изменено
++- `< /dev/null` для `claude -p` (промпт идёт аргументом, иначе возможно ожидание stdin).
++- Логируется длительность запуска; пустой вывод при коде 0 считается ошибкой (код 2).
++- Сбой `notify.sh` теперь виден в `.err` и не маскирует исходную ошибку.
++- После правок: `launchctl bootout gui/$UID/com.vk.nightly-review` и снова `bootstrap` (plist изменён),
++  затем `launchctl kickstart -k gui/$UID/com.vk.nightly-review`. Проверьте код 0, свежий `nightly-review-<дата>.md`,
++  длительность и сообщение в Telegram; потом намеренно сломайте скрипт и убедитесь, что придёт FAILED.
++  Здесь я этого сделать не мог (нет launchd/claude/Telegram в снимке).
++
++## Что пригодилось из заметки коллеги
++- Пригодилось: `launchctl print` как первый шаг; запрет `status=$?` (точное совпадение); `USER` в plist;
++  `< /dev/null`; проверка реального результата, а не только кода выхода; логирование длительности.
++- Не пригодилось: передача промпта через stdin (у вас нет ошибки «Input must be provided», промпт — один
++  аргумент); время 16:50 (у вас 02:30); её лог/код выхода — у вас другие.
+diff --git a/Library/LaunchAgents/com.vk.nightly-review.plist b/Library/LaunchAgents/com.vk.nightly-review.plist
+index c347363..563be5d 100644
+--- a/Library/LaunchAgents/com.vk.nightly-review.plist
++++ b/Library/LaunchAgents/com.vk.nightly-review.plist
+@@ -24,6 +24,10 @@
+   <dict>
+     <key>PATH</key>
+     <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
++    <key>USER</key>
++    <string>vk</string>
++    <key>HOME</key>
++    <string>/Users/vk</string>
+   </dict>
+ </dict>
+ </plist>
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..40f66e4 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -13,14 +13,20 @@ For each commit: one line on what it changes and whether anything looks risky
+ End with a three-line summary I can read on my phone.
+ Do not modify any file."
+ 
+-cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
++cd "$REPO" || { "$NOTIFY" "nightly review: repo missing" || true; exit 1; }
+ 
+-claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
++START=$SECONDS
++# </dev/null: prompt is an argument, so don't let claude wait on stdin.
++claude -p "$PROMPT" --output-format text < /dev/null > "$OUT"
++rc=$?   # never assign to $status: read-only in zsh, kills the script
++echo "nightly review: claude exit $rc after $((SECONDS - START))s"
+ 
+-if [ $status -ne 0 ]; then
+-  "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
+-  exit $status
++# A "successful" run with empty output is still a failure.
++if [ $rc -eq 0 ] && [ ! -s "$OUT" ]; then rc=2; fi
++
++if [ $rc -ne 0 ]; then
++  "$NOTIFY" "nightly review FAILED (exit $rc), see $OUT" || echo "notify failed" >&2
++  exit $rc
+ fi
+ 
+-"$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"
++"$NOTIFY" "nightly review done: $(head -c 300 "$OUT")" || { echo "notify failed" >&2; exit 3; }

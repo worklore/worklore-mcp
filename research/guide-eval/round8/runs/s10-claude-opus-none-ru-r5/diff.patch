@@ -1,0 +1,191 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..63f9494
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,32 @@
++# Аналитика: события из docs/EVENTS.md
++
++Все 6 событий отправляются через `Analytics.capture` (`lib/analytics.dart`). Имена событий совпадают со спецификацией символ в символ.
++
++| Событие | Где / когда отправляется | Свойства |
++|---|---|---|
++| `registration_email_started` | `registration_screen.dart`, первый непустой ввод в поле Email | — |
++| `registration_phone_started` | `registration_screen.dart`, первый непустой ввод в поле Phone | — |
++| `loan_amount_changed` | `Slider.onChangeEnd`, когда пользователь отпускает слайдер | `amount`: int (`_amount.round()`) |
++| `terms_accepted` | чекбокс переключили с `false` на `true` | — |
++| `registration_continue_tapped` | нажатие Continue, перед переходом на `/offers` | `amount`: int, `terms`: bool |
++| `offers_scrolled` | `offer_screen.dart`, `ScrollEndNotification` у списка | `offset`: double (`metrics.pixels`) |
++
++## Решения
++
++Главная цель: не слать событие на каждый кадр или нажатие клавиши. Мы на бесплатном тарифе PostHog, а лишние события ещё и испортили бы воронку.
++
++- **email/phone started** отправляются один раз за время жизни экрана (флаги `_emailStartedSent` / `_phoneStartedSent`), а не на каждую клавишу. Флаги не сбрасываются, если пользователь очистит поле и начнёт заново.
++- **loan_amount_changed** висит на `onChangeEnd`, а не на `onChanged`: `onChanged` срабатывает на каждый кадр перетаскивания. Получается одно событие на одно движение слайдера с итоговой суммой.
++- **terms_accepted** отправляется только когда галочку ставят. Когда её снимают, событие не уходит. Если поставить её повторно, событие уйдёт ещё раз.
++- **offers_scrolled** отправляется один раз в конце каждого жеста прокрутки, а не на каждый пиксель. `offset` — позиция списка в момент остановки.
++- **PII**: email и телефон не передаются ни в одном событии, в свойствах есть только `amount`, `terms` и `offset`.
++- Экранные просмотры по-прежнему отслеживает `PosthogObserver`, отдельных событий для них не добавлял.
++
++## Изменённые файлы
++- `lib/screens/registration_screen.dart`
++- `lib/screens/offer_screen.dart`
++
++## Проверка
++- `dart format lib` и `flutter analyze` прошли, ошибок нет.
++- Тестов в проекте нет. На устройстве и в эмуляторе не запускал, события в PostHog не отправлялись.
++- `flutter analyze` сам переписал `analysis_options.yaml` и создал `.dart_tool/` и `pubspec.lock`. Эти изменения я откатил, в репозитории остались только два экрана и этот файл.
+diff --git a/lib/screens/offer_screen.dart b/lib/screens/offer_screen.dart
+index 921ee59..6977069 100644
+--- a/lib/screens/offer_screen.dart
++++ b/lib/screens/offer_screen.dart
+@@ -1,5 +1,7 @@
+ import 'package:flutter/material.dart';
+ 
++import '../analytics.dart';
++
+ class Offer {
+   const Offer(this.bank, this.months, this.rate);
+   final String bank;
+@@ -27,18 +29,25 @@ class OfferScreen extends StatelessWidget {
+   Widget build(BuildContext context) {
+     return Scaffold(
+       appBar: AppBar(title: const Text('Offers')),
+-      body: ListView.builder(
+-        itemCount: _offers.length,
+-        itemBuilder: (context, i) {
+-          final o = _offers[i];
+-          return ListTile(
+-            leading: const Icon(Icons.account_balance),
+-            title: Text('${o.bank}, ${o.months} months'),
+-            subtitle: Text('${o.rate.toStringAsFixed(1)}% APR'),
+-            trailing: const Icon(Icons.chevron_right),
+-            onTap: () {},
+-          );
++      // Send one event when a scroll gesture ends, not on every scroll frame.
++      body: NotificationListener<ScrollEndNotification>(
++        onNotification: (n) {
++          Analytics.capture('offers_scrolled', {'offset': n.metrics.pixels});
++          return false;
+         },
++        child: ListView.builder(
++          itemCount: _offers.length,
++          itemBuilder: (context, i) {
++            final o = _offers[i];
++            return ListTile(
++              leading: const Icon(Icons.account_balance),
++              title: Text('${o.bank}, ${o.months} months'),
++              subtitle: Text('${o.rate.toStringAsFixed(1)}% APR'),
++              trailing: const Icon(Icons.chevron_right),
++              onTap: () {},
++            );
++          },
++        ),
+       ),
+     );
+   }
+diff --git a/lib/screens/registration_screen.dart b/lib/screens/registration_screen.dart
+index 059a250..e71de9b 100644
+--- a/lib/screens/registration_screen.dart
++++ b/lib/screens/registration_screen.dart
+@@ -1,5 +1,7 @@
+ import 'package:flutter/material.dart';
+ 
++import '../analytics.dart';
++
+ class RegistrationScreen extends StatefulWidget {
+   const RegistrationScreen({super.key});
+ 
+@@ -13,6 +15,10 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
+   double _amount = 50000;
+   bool _terms = false;
+ 
++  // "started typing" events are sent once per screen, not on every keystroke.
++  bool _emailStartedSent = false;
++  bool _phoneStartedSent = false;
++
+   @override
+   void dispose() {
+     _email.dispose();
+@@ -23,6 +29,38 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
+   bool get _canContinue =>
+       _terms && _email.text.contains('@') && _phone.text.length >= 10;
+ 
++  void _onEmailChanged(String value) {
++    if (!_emailStartedSent && value.isNotEmpty) {
++      _emailStartedSent = true;
++      Analytics.capture('registration_email_started');
++    }
++    setState(() {});
++  }
++
++  void _onPhoneChanged(String value) {
++    if (!_phoneStartedSent && value.isNotEmpty) {
++      _phoneStartedSent = true;
++      Analytics.capture('registration_phone_started');
++    }
++    setState(() {});
++  }
++
++  void _onTermsChanged(bool? value) {
++    final accepted = value ?? false;
++    if (accepted && !_terms) {
++      Analytics.capture('terms_accepted');
++    }
++    setState(() => _terms = accepted);
++  }
++
++  void _onContinue() {
++    Analytics.capture('registration_continue_tapped', {
++      'amount': _amount.round(),
++      'terms': _terms,
++    });
++    Navigator.of(context).pushNamed('/offers');
++  }
++
+   @override
+   Widget build(BuildContext context) {
+     return Scaffold(
+@@ -36,14 +74,14 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
+               controller: _email,
+               keyboardType: TextInputType.emailAddress,
+               decoration: const InputDecoration(labelText: 'Email'),
+-              onChanged: (_) => setState(() {}),
++              onChanged: _onEmailChanged,
+             ),
+             const SizedBox(height: 12),
+             TextField(
+               controller: _phone,
+               keyboardType: TextInputType.phone,
+               decoration: const InputDecoration(labelText: 'Phone'),
+-              onChanged: (_) => setState(() {}),
++              onChanged: _onPhoneChanged,
+             ),
+             const SizedBox(height: 24),
+             Text('Loan amount: ${_amount.round()}'),
+@@ -54,18 +92,20 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
+               value: _amount,
+               label: _amount.round().toString(),
+               onChanged: (v) => setState(() => _amount = v),
++              // onChanged fires on every drag frame; send one event per drag.
++              onChangeEnd: (v) => Analytics.capture('loan_amount_changed', {
++                'amount': v.round(),
++              }),
+             ),
+             CheckboxListTile(
+               value: _terms,
+               title: const Text('I accept the terms and conditions'),
+               controlAffinity: ListTileControlAffinity.leading,
+-              onChanged: (v) => setState(() => _terms = v ?? false),
++              onChanged: _onTermsChanged,
+             ),
+             const Spacer(),
+             FilledButton(
+-              onPressed: _canContinue
+-                  ? () => Navigator.of(context).pushNamed('/offers')
+-                  : null,
++              onPressed: _canContinue ? _onContinue : null,
+               child: const Text('Continue'),
+             ),
+           ],

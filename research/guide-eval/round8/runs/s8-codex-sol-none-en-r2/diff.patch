@@ -1,0 +1,129 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..5c9f7bc
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,16 @@
++# Prompt cache fix
++
++The old system prompt cached coaching instructions and long-term facts as one
++block. `save_fact` changed that block before the next tool round, so the API had
++to create a new cache entry for the whole prefix.
++
++I split the system prompt into two cached blocks. The first holds the coaching
++rules and stable athlete profile (including zones, goal and language). The second
++holds today's date and long-term facts. After a memory write, the first block is
++identical and can be read from cache; only the short memory suffix needs a new
++cache entry. The second breakpoint still lets unchanged memory be cached across
++subsequent calls. Tool selection by keyword is unchanged.
++
++Added regression tests for the cache boundaries after `save_fact` and a date
++change. `python3 -m unittest -v test_bot.py` passes (2 tests). No live API call was
++made, so actual token usage has not been measured after the change.
+diff --git a/README.md b/README.md
+index ebd390e..0c3bfee 100644
+--- a/README.md
++++ b/README.md
+@@ -11,6 +11,7 @@ its system prompt. Every API call appends its `usage` object to `logs/usage.json
+ Run it locally with `COACH_ANTHROPIC_KEY=sk-ant-... python3 bot.py 42` and type
+ messages on stdin (the Telegram long-polling transport, which needs
+ `COACH_TELEGRAM_TOKEN`, lives in a separate deploy repo and just calls `reply()`).
+-Requires Python 3.11+ and `pip install anthropic`. Prompt caching is on: the system
+-prompt carries a `cache_control` marker so the tool-loop rounds and follow-up
+-messages inside the 5-minute window read it from cache.
++Requires Python 3.11+ and `pip install anthropic`. Prompt caching uses two system
++breakpoints: one after the coaching rules and stable athlete profile, and one after
++the date and long-term facts. A fact write changes only the latter block, so the
++stable prefix remains available to subsequent calls within the cache window.
+diff --git a/bot.py b/bot.py
+index e2ff241..eb0106e 100644
+--- a/bot.py
++++ b/bot.py
+@@ -111,26 +111,40 @@ Formatting:
+ - Plain text. No markdown headings, no tables.
+ - Lists only for a session structure (warm-up / main / cool-down).
+ - Numbers with units: 45 min, 12 km, 150 bpm.
++
++Context layout:
++- The athlete profile below supplies the name, sport, zones, goal and reply language.
++- The following system block supplies today's date and the current long-term facts.
++- Check those facts before calling save_fact, including after a tool result confirms a save.
++- A saved fact is available in the next system block; do not treat the previous list as current.
+ """
+ 
+ 
+-def athlete_context(a, today):
++def athlete_profile(a):
+     lines = [
+-        f"Today: {today.isoformat()} ({today.strftime('%A')})",
+         f"Athlete: {a.name} (id {a.user_id}), sport: {a.sport}",
+         "Zones: " + ", ".join(f"{k} {v}" for k, v in a.zones.items()),
+         f"Goal: {a.goal}",
+-        "Long-term facts:",
++        f"Language: {a.lang}",
+     ]
++    return "\n".join(lines)
++
++
++def athlete_memory(a, today):
++    lines = [f"Today: {today.isoformat()} ({today.strftime('%A')})", "Long-term facts:"]
+     lines += [f"- {f}" for f in a.facts] or ["- (none yet)"]
+-    lines.append(f"Language: {a.lang}")
+     return "\n".join(lines)
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    # The first breakpoint survives fact and date changes. Keep the second one
++    # so unchanged memory can also be read from cache on later requests.
++    return [
++        {"type": "text", "text": INSTRUCTIONS + "\n\n" + athlete_profile(a),
++         "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": athlete_memory(a, today),
++         "cache_control": {"type": "ephemeral"}},
++    ]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [
+diff --git a/test_bot.py b/test_bot.py
+new file mode 100644
+index 0000000..987eeb1
+--- /dev/null
++++ b/test_bot.py
+@@ -0,0 +1,34 @@
++"""Regression checks for prompt cache boundaries."""
++import datetime as dt
++import unittest
++from unittest.mock import patch
++
++import bot
++
++
++class PromptCacheTests(unittest.TestCase):
++    def test_save_fact_changes_only_memory_block(self):
++        athlete = bot.Athlete(user_id="42", name="Marta")
++        today = dt.date(2026, 4, 18)
++        before = bot.build_request(athlete, [], bot.select_tools("hello"), today)["system"]
++
++        with patch.object(bot, "save_athlete"):
++            bot.run_tool(athlete, "save_fact", {"fact": "Runs before work"})
++
++        after = bot.build_request(athlete, [], bot.select_tools("hello"), today)["system"]
++        self.assertEqual(before[0], after[0])
++        self.assertNotEqual(before[1]["text"], after[1]["text"])
++        self.assertIn("Runs before work", after[1]["text"])
++        self.assertEqual([block["cache_control"] for block in after],
++                         [{"type": "ephemeral"}] * 2)
++
++    def test_date_change_keeps_stable_cache_prefix(self):
++        athlete = bot.Athlete(user_id="77", name="Jonas", lang="de")
++        first = bot.build_system(athlete, dt.date(2026, 4, 18))
++        next_day = bot.build_system(athlete, dt.date(2026, 4, 19))
++        self.assertEqual(first[0], next_day[0])
++        self.assertNotEqual(first[1]["text"], next_day[1]["text"])
++
++
++if __name__ == "__main__":
++    unittest.main()

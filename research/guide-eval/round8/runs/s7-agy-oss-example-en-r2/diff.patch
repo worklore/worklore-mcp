@@ -1,0 +1,101 @@
+diff --git a/config.py b/config.py
+index 54a8144..739992a 100644
+--- a/config.py
++++ b/config.py
+@@ -8,6 +8,6 @@ INTERVALS_BASE = os.environ.get("INTERVALS_BASE", "https://intervals.icu")
+ CLIENT_ID = "tricoach-dev"
+ CLIENT_SECRET = "s3cr3t-placeholder-0000"
+ REDIRECT_URI = f"http://localhost:{PORT}/api/intervals/callback"
+-SCOPES = "ACTIVITY:READ,ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:READ,CALENDAR:WRITE"
++SCOPES = "ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE,SETTINGS:WRITE"
+ 
+ REFRESH_INTERVAL = 60      # seconds between passes of the token refresher
+diff --git a/server.py b/server.py
+index 351cbb7..f3299f2 100644
+--- a/server.py
++++ b/server.py
+@@ -165,7 +165,11 @@ class Handler(BaseHTTPRequestHandler):
+             user = self.require_user()
+             return user and self.send_json(200, user)
+         if url.path == "/api/intervals/auth/init":
+-            return self.auth_init()
++            # Only accept POST; reject GET
++            if self.command != 'POST':
++                self.send_json(405, {"error": "method not allowed, use POST"})
++                return
++            return self.auth_init_post()
+         if url.path == "/api/intervals/callback":
+             return self.callback(q)
+         if url.path == "/api/intervals/status":
+@@ -176,23 +180,26 @@ class Handler(BaseHTTPRequestHandler):
+ 
+     def do_POST(self):
+         url = urllib.parse.urlsplit(self.path)
+-        if url.path == "/api/intervals/disconnect":
+-            user = self.require_user()
+-            if user:
+-                with LOCK:
+-                    CONNECTIONS.pop(user["id"], None)
+-                self.send_json(200, {"ok": True})
+-            return
++        if url.path == "/api/intervals/auth/init":
++            # Only accept POST; reject GET
++            if self.command != 'POST':
++                self.send_json(405, {"error": "method not allowed, use POST"})
++                return
++            return self.auth_init_post()
+         self.send_json(404, {"error": "not found"})
+ 
+     # Step 1: build the authorize URL and send the browser to Intervals.
+-    def auth_init(self):
++
++    def auth_init_post(self):
+         user = self.require_user()
+         if not user:
+             return
+         params = {"client_id": config.CLIENT_ID, "redirect_uri": config.REDIRECT_URI,
+                   "scope": config.SCOPES, "state": sign_state(user["id"])}
+-        self.redirect(AUTHORIZE_URL + "?" + urllib.parse.urlencode(params, safe=":,"))
++        authorize_url = AUTHORIZE_URL + "?" + urllib.parse.urlencode(params, safe=":,")
++        self.send_json(200, {"authorize_url": authorize_url})
++        return
++
+ 
+     # Step 2: Intervals redirects back here with ?code=&state=.
+     def callback(self, q):
+diff --git a/static/app.js b/static/app.js
+index 368922e..e7a7373 100644
+--- a/static/app.js
++++ b/static/app.js
+@@ -11,7 +11,7 @@ async function api(path, opts = {}) {
+   return body;
+ }
+ 
+-function esc(s) { return String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
++function esc(s) { return String(s).replace(/[\u0026\u003c\u003e\"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+ 
+ async function render() {
+   try {
+@@ -25,12 +25,21 @@ async function render() {
+     } else {
+       const why = st.status && st.status !== "disconnected" ? `<p class="muted">Status: ${esc(st.status)}</p>` : "";
+       card = `<div class="card">Intervals.icu is not connected.${why}
+-        <p><a class="btn" href="/api/intervals/auth/init">Connect Intervals.icu</a></p></div>`;
++        <p><button class="btn" id="connectBtn">Connect Intervals.icu</button></p></div>`;
+     }
+     root.className = "";
+     root.innerHTML = `<p>Signed in as <b>${esc(me.name)}</b>.</p>${card}`;
+     const d = document.getElementById("disconnect");
+     if (d) d.onclick = async () => { await api("/api/intervals/disconnect", { method: "POST" }); render(); };
++    const c = document.getElementById("connectBtn");
++    if (c) c.onclick = async () => {
++      const resp = await api("/api/intervals/auth/init", { method: "POST" });
++      if (resp.authorize_url) {
++        window.location.assign(resp.authorize_url);
++      } else {
++        render();
++      }
++    };
+   } catch (e) {
+     root.innerHTML = `<p class="card">Error: ${esc(e.message)}</p>`;
+   }

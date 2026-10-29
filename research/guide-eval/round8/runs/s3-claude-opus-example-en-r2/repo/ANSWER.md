@@ -1,0 +1,71 @@
+# Why the nightly review was silent
+
+## It did run
+`launchctl-print.txt` (captured 2026-10-18) shows `runs = 6` and `last exit code = 1`.
+That's one run per night from 10-13 to 10-18, all failing. `Library/Logs/nightly-review.err`
+has the same two lines for every run:
+
+```
+Not logged in · Please run /login
+/Users/vk/bin/nightly-review.zsh:19: read-only variable: status
+```
+
+## Cause 1: `claude` is not logged in under launchd
+The `environment` block in `launchctl print` holds only `PATH` and `XPC_SERVICE_NAME`.
+`USER` is missing, so the CLI can't find its login in the keychain and quits with
+"Not logged in". The review never started.
+
+**Fix:** `Library/LaunchAgents/com.vk.nightly-review.plist` now sets `USER=vk` (and
+`HOME=/Users/vk` to be safe) under `EnvironmentVariables`.
+
+## Cause 2: `status=$?` kills the script before it can report anything
+In zsh, `status` is a read-only special parameter. Line 19 (`status=$?`) aborts the
+script with exit 1, so neither `notify.sh` call is reached: no failure note, and no
+success note either. This is why the job was silent and not just failing.
+
+**Fix:** the script now uses `rc=$?`.
+
+## Other hardening (not causes, but they would hide the next failure)
+- **Exit 0 is not proof the job worked.** If `claude` exits 0 with empty output, the
+  script now reports a failure (`[[ -s $OUT ]]`) instead of sending an empty "done".
+- **Every notification is also written to the `.err` log with a timestamp.** If
+  `notify.sh` fails, that gets logged too. Each run logs how long it took, so a
+  2-second "review" stands out.
+- **The prompt now goes in via stdin** (`print -r -- "$PROMPT" | claude -p ...`), so
+  `claude` never waits on an open stdin.
+- **`notify.sh` uses `curl --fail`.** Before, a Telegram HTTP error (bad token or
+  chat id) still exited 0.
+
+## Which parts of the colleague's note applied
+| Note says | Applied? |
+|---|---|
+| Check `launchctl print` first: runs / last exit code | **Yes.** runs = 6, exit 1 showed it had fired every night. |
+| Read the StandardErrorPath log before theorizing | **Yes.** It named both bugs. |
+| `status=$?` is read-only in zsh and kills the messenger | **Yes, exactly.** Cause 2. |
+| Set `USER` in the plist or you get "Not logged in" | **Yes, exactly.** Cause 1. |
+| Exit code shows *that* it ran, not *that it worked*; check the real outcome and duration | **Applied as hardening.** Here the exit code (1) was honest. |
+| "Input must be provided…": the prompt isn't received as an argument | **No.** That error isn't in the log. Switched to stdin anyway as a precaution. |
+| `< /dev/null` when the prompt is an argument | **Not needed.** launchd gives `/dev/null` as stdin when there's no `StandardInPath`, and the prompt now comes via stdin anyway. |
+| Force a failure to test the failure notification | **Done locally with stubs only** (see below). |
+
+## What I checked, and what's left for you
+I tested the new script under zsh with a stub `claude` and a stub notifier. All three
+paths send a message and log their duration:
+- `claude` fails (exit 1): failure note.
+- `claude` exits 0 with empty output: failure note.
+- `claude` produces output: summary note.
+
+The plist passes `plutil -lint`. I didn't touch launchd or Telegram because this is a
+snapshot. To apply it on the real machine:
+
+```sh
+launchctl bootout gui/$UID/com.vk.nightly-review
+launchctl bootstrap gui/$UID ~/Library/LaunchAgents/com.vk.nightly-review.plist
+launchctl kickstart -k gui/$UID/com.vk.nightly-review
+launchctl print gui/$UID/com.vk.nightly-review | grep -E 'runs|last exit'
+tail ~/Library/Logs/nightly-review.err   # duration should be well over a few seconds
+cat ~/Library/Logs/nightly-review-$(date +%F).md
+```
+
+Then confirm the Telegram summary arrived. After that, break it once on purpose (for
+example, point `REPO` at a missing path) and confirm the failure note arrives too.

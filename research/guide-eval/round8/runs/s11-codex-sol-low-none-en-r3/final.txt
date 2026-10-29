@@ -1,0 +1,3 @@
+The second publish returned 500 because it was the first to store a related-story score. That score was a Python `float`, which DynamoDB rejects.
+
+I changed [app.py](/tmp/h-qcUalB/src/app.py) to store scores as `Decimal` and added a two-publish regression test. The cause, fix, and verification are in [ANSWER.md](/tmp/h-qcUalB/ANSWER.md). Both tests pass.

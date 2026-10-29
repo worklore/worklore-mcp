@@ -1,0 +1,73 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..0698c7e
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,10 @@
++# Why the nightly review stayed silent
++
++The launchd agent did run. The captured `launchctl print` shows six runs and a last exit code of 1; the calendar trigger and script paths were active. `Library/Logs/nightly-review.err` shows the same two errors on each run:
++
++1. `claude` reported `Not logged in · Please run /login`. The launchd job has a minimal environment and cannot rely on an interactive shell's credentials. The job now optionally reads an `ANTHROPIC_API_KEY` from a Keychain item named `nightly-review-anthropic-api-key` before invoking Claude. A usable Claude credential still needs to be placed in that item (or supplied to the agent through its environment); none is present in this snapshot. Until then, the job will report a Claude failure rather than produce a review. On the Mac, `security add-generic-password -U -a "$USER" -s nightly-review-anthropic-api-key -w` prompts for the key without putting it in the command line.
++2. In zsh, `status` is a read-only special parameter. The assignment `status=$?` failed before the script reached its failure notification branch. The script now saves the exit code in `review_exit`, so a failed Claude run calls `notify.sh` and exits with that code.
++
++The notifier also discarded Telegram's HTTP response and did not fail on HTTP error codes. It now uses `curl -f` so a rejected request returns a nonzero status, and it logs a clear error if the Telegram token cannot be read from Keychain. Its existing `tg-bot` Keychain item must be readable by the user agent at 02:30 for a Telegram message to arrive.
++
++The changed files are only in this snapshot. They have not been installed into the home directory. After copying them to the corresponding paths and providing the Claude credential, the already loaded agent will use the updated scripts on its next run. Its stdout and stderr are written to `~/Library/Logs/nightly-review.out` and `~/Library/Logs/nightly-review.err`.
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..cef7914 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -6,6 +6,16 @@ REPO="$HOME/projects/shop"
+ OUT="$HOME/Library/Logs/nightly-review-$(date +%F).md"
+ NOTIFY="$HOME/bin/notify.sh"
+ 
++# launchd does not inherit credentials exported by an interactive shell.
++# Use a dedicated Keychain item when the agent needs an API key.
++if [[ -z ${ANTHROPIC_API_KEY:-} ]]; then
++  api_key=$(security find-generic-password -s nightly-review-anthropic-api-key -w 2>/dev/null) || api_key=
++  if [[ -n $api_key ]]; then
++    export ANTHROPIC_API_KEY=$api_key
++  fi
++  unset api_key
++fi
++
+ SINCE=$(date -v-1d +%F)
+ PROMPT="Review the commits in this repository since $SINCE.
+ For each commit: one line on what it changes and whether anything looks risky
+@@ -16,11 +26,11 @@ Do not modify any file."
+ cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
+ 
+ claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
++review_exit=$?
+ 
+-if [ $status -ne 0 ]; then
+-  "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
+-  exit $status
++if (( review_exit != 0 )); then
++  "$NOTIFY" "nightly review FAILED (exit $review_exit); see $HOME/Library/Logs/nightly-review.err"
++  exit $review_exit
+ fi
+ 
+ "$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"
+diff --git a/bin/notify.sh b/bin/notify.sh
+index 818e531..b8114be 100755
+--- a/bin/notify.sh
++++ b/bin/notify.sh
+@@ -1,7 +1,12 @@
+ #!/bin/bash
+ # usage: notify.sh "message"  — sends a Telegram message to me.
+-set -eu
+-: "${TG_BOT_TOKEN:=$(security find-generic-password -s tg-bot -w)}"
++set -euo pipefail
++if [[ -z ${TG_BOT_TOKEN:-} ]]; then
++  TG_BOT_TOKEN=$(security find-generic-password -s tg-bot -w) || {
++    echo "nightly review: could not read Telegram token from Keychain" >&2
++    exit 1
++  }
++fi
+ CHAT_ID=123456789
+-curl -sS -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
++curl -fsS -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
+   -d chat_id="$CHAT_ID" --data-urlencode text="$1" > /dev/null

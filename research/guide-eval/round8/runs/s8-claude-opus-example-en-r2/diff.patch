@@ -1,0 +1,161 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..e1ef512
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,88 @@
++# Fix: a save_fact no longer evicts the static prompt
++
++## What the log shows
++
++In `logs/usage.jsonl`, every `save_fact` is followed by a **round 2 of the same
++message** with `cache_read_input_tokens: 0` and `cache_creation_input_tokens` of
++about 1040–1100. That is the whole prefix: the tools, the instructions and the athlete context. There were two causes, plus a
++third issue that would have quietly cancelled the obvious fix.
++
++1. **One cache marker over everything.** `build_system` sent instructions and
++   athlete context as one block with one `cache_control`. A new fact changes the
++   hash of the entire block.
++2. **The system prompt was rebuilt on every loop round.** `run_tool` appends the
++   fact to `a.facts` in place, and `build_request` called `build_system(a, ...)`
++   each round. So round 2 of the same message already carried a different prompt.
++3. **The static part is below the cache minimum.** Sonnet 4.5 only caches a
++   breakpoint whose prefix (tools + system up to the marker) is at least 1024 tokens.
++   Athlete 77's whole prompt was cached at exactly 1024 tokens, so tools plus
++   instructions without the ~70-token tail come to about 950. That is under the
++   minimum, so a marker after the instructions would be ignored without any error
++   and every fact write would still re-create the full prompt.
++
++## What I changed (`bot.py`)
++
++- **`build_system` now returns two blocks, each with `cache_control: ephemeral`**.
++  The first is `INSTRUCTIONS`, which is byte-identical for every athlete and every day.
++  The second is `athlete_context` (date, profile, zones, goal, facts, language).
++  A fact write now invalidates only the tail. The static block is also shared
++  across athletes, so one athlete's message keeps it warm for the others.
++- **The system prompt is built once per message** in `reply()`, before the tool
++  loop. `build_request` now takes the prebuilt `system` instead of `(a, today)`.
++  Rounds 2..N of a message are byte-identical to round 1, so they hit the cache
++  even after a `save_fact`. The new fact appears from the next message on, which
++  is what the README already describes. In round 2 the model still sees the fact
++  in its own tool call.
++- **`plan_week` moved from the "plan" keyword group into `CORE_TOOLS`.** This adds
++  roughly 250 tokens (1046 → 1305 in the log), which puts tools + instructions at
++  about 1200, above the 1024 minimum, so the static marker actually gets written.
++  It also matches rule 17 ("use plan_week for any weekly structure"), which
++  previously pointed at a tool that most messages didn't offer. Keyword filtering
++  itself is unchanged: the `race` group (`predict_race`) is still added only on
++  keywords, as NOTES.md asks. Side effect: the model can call `plan_week` on any
++  message. Cost: about 250 more tokens per call, but read from cache at ~10% price.
++  It also means "plan/week/schedule" messages no longer re-create the whole prefix.
++  If you'd rather not change the tool set, the other way to clear 1024 is to add
++  ~80+ tokens of real, stable content to `INSTRUCTIONS`. Without one of the two,
++  the split does nothing on Sonnet 4.5.
++
++An offline check with a fake client (no API calls) confirmed three things. The
++request for round 1 and round 2 is identical after a `save_fact`. The static
++block is identical for athletes 42 and 77 on different dates. The saved fact
++appears in the tail on the next message.
++
++## Not verified
++
++I had no API key and made no API calls, so the token figures come from the
++existing log, not from a new measurement. To confirm against the API:
++
++1. Send two messages within 5 minutes. The second should show `cache_read` ≈
++   the whole prompt.
++2. Send a message that triggers `save_fact`. Round 2 should now *read* from the
++   cache; before the fix it created about 1100 tokens.
++3. Send the next message. It should show `cache_read` ≈ 1200 (the static prefix)
++   and `cache_creation` ≈ 100 (the tail only).
++
++If step 3 shows `cache_creation` near the full prompt, the static prefix is
++either still under 1024 tokens or not byte-stable.
++
++## Which parts of the colleague's note applied
++
++- **Applied:** two `cache_control` segments, static instructions first and the
++  volatile per-user tail second. INSTRUCTIONS was already free of interpolated
++  values, so it is byte-stable.
++- **Applied:** keep the tools above the system prompt stable and make the default
++  tool selection cover the common case. That is the reasoning behind moving
++  `plan_week` to core and leaving `predict_race` keyword-gated.
++- **Applied:** load all facts every time and don't select a top-N per message.
++  The code already does this, and I left it alone. Capping facts wouldn't have
++  helped anyway, as NOTES.md found.
++- **Applied:** the verification recipe using `cache_creation_input_tokens` /
++  `cache_read_input_tokens`, listed above.
++- **Didn't carry over:** "~780 static tokens is fine". The note assumes the
++  static segment is cacheable on its own. Here, on Sonnet 4.5 (1024-token
++  minimum), it wasn't, and this was the main thing to fix beyond the note.
++- **Not in the note:** the system prompt was rebuilt inside the tool loop after an
++  in-place fact append. That was a separate cause of the mid-message misses.
++- **Not relevant:** the ~55-tool / MCP filtering story (this bot has 4 tools)
++  and the Telegram transport.
+diff --git a/bot.py b/bot.py
+index e2ff241..4c88507 100644
+--- a/bot.py
++++ b/bot.py
+@@ -128,9 +128,15 @@ def athlete_context(a, today):
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    # Two cache segments. The prefix hash is cumulative, so a save_fact (which rewrites the
++    # athlete context) only invalidates the second block; tools + INSTRUCTIONS stay cached and
++    # are shared by every athlete. INSTRUCTIONS must stay byte-stable: no dates, names, counters.
++    # Note: a breakpoint is only cached if the prefix up to it (tools + system) is at least the
++    # model's minimum (1024 tokens for Sonnet 4.5); see plan_week in CORE_TOOLS.
++    return [
++        {"type": "text", "text": INSTRUCTIONS, "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": athlete_context(a, today), "cache_control": {"type": "ephemeral"}},
++    ]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [
+@@ -139,12 +145,14 @@ CORE_TOOLS = [
+     {"name": "log_session", "description": "Record a completed workout.",
+      "input_schema": {"type": "object", "properties": {"minutes": {"type": "integer"}, "rpe": {"type": "integer"},
+                                                        "note": {"type": "string"}}, "required": ["minutes"]}},
++    # plan_week is core, not keyword-gated: rule 17 tells the model to use it for any weekly
++    # structure, and without it tools + INSTRUCTIONS are ~950 tokens, below Sonnet 4.5's
++    # 1024-token cache minimum, so the static cache breakpoint would silently never be written.
++    {"name": "plan_week", "description": "Draft a week of sessions.",
++     "input_schema": {"type": "object", "properties": {"hours": {"type": "number"}, "hard_days": {"type": "integer"}},
++                      "required": ["hours"]}},
+ ]
+ TOOL_GROUPS = {
+-    "plan": (("plan", "week", "schedule", "taper", "build"), [
+-        {"name": "plan_week", "description": "Draft a week of sessions.",
+-         "input_schema": {"type": "object", "properties": {"hours": {"type": "number"}, "hard_days": {"type": "integer"}},
+-                          "required": ["hours"]}}]),
+     "race": (("race", "pace", "predict", "finish time"), [
+         {"name": "predict_race", "description": "Estimate a finish time from a recent effort.",
+          "input_schema": {"type": "object", "properties": {"distance_km": {"type": "number"}, "recent_minutes": {"type": "number"}},
+@@ -187,8 +195,8 @@ def log_usage(usage, user_id, round_no, tool=None):
+         f.write(json.dumps(rec) + "\n")
+ 
+ 
+-def build_request(a, messages, tools, today):
+-    return {"model": MODEL, "max_tokens": MAX_TOKENS, "system": build_system(a, today), "tools": tools, "messages": messages}
++def build_request(system, messages, tools):
++    return {"model": MODEL, "max_tokens": MAX_TOKENS, "system": system, "tools": tools, "messages": messages}
+ 
+ 
+ def reply(user_id, text, llm=None):
+@@ -196,9 +204,12 @@ def reply(user_id, text, llm=None):
+     a = load_athlete(user_id)
+     today = dt.date.today()
+     tools = select_tools(text)
++    # Build system once per message: a save_fact in round 1 must not change the prompt for
++    # round 2 (that was a full cache miss mid-loop). The new fact shows up from the next message.
++    system = build_system(a, today)
+     messages = [{"role": "user", "content": text}]
+     for round_no in range(1, MAX_TOOL_ROUNDS + 1):
+-        resp = llm.create(**build_request(a, messages, tools, today))
++        resp = llm.create(**build_request(system, messages, tools))
+         used_tools = [b.name for b in resp.content if b.type == "tool_use"]
+         log_usage(resp.usage, a.user_id, round_no, tool=",".join(used_tools) or None)
+         if resp.stop_reason != "tool_use":

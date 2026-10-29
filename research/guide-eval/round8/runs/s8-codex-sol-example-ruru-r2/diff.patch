@@ -1,0 +1,73 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..1108dbb
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,9 @@
++# Исправление кеширования
++
++В `logs/usage.jsonl` после `save_fact` следующий раунд раньше показывал `cache_read_input_tokens: 0` и повторное создание кеша на 1039–1104 токена. Причина: `build_system()` помещал неизменные инструкции и изменяемые факты в один блок с одним маркером `cache_control`.
++
++В `bot.py` системный промпт теперь состоит из двух текстовых блоков с `cache_control: {"type": "ephemeral"}`. Первый содержит одинаковые для всех спортсменов инструкции, второй — дату, профиль и факты. После `save_fact` меняется только второй блок; префикс с инструкциями остаётся тем же. Добавил в статический блок пояснения к существующим правилам, чтобы он был достаточно длинным для минимального размера кешируемого префикса модели. `README.md` обновлён под новую структуру.
++
++Из заметки пригодились разделение по стабильности на два маркера, требование сохранять префикс побайтно одинаковым и проверка через `cache_read_input_tokens` / `cache_creation_input_tokens`. Выбор инструментов по ключевым словам уже был в проекте и остался прежним; внутри одного цикла список инструментов не меняется. Отбор top-N фактов не применялся и не добавлялся: он менял бы кешируемый хвост для каждого сообщения. Разные наборы инструментов между сообщениями всё ещё могут давать отдельные ключи кеша, поскольку схемы идут перед `system`.
++
++Локально проверил сборку запросов и цикл с имитацией вызова `save_fact`: первый блок и список инструментов совпадают до и после записи, новый факт появляется во втором блоке следующего раунда. Внешних вызовов не было, поэтому реальные счётчики кеша после изменения пока не измерены. При следующем разрешённом запуске после `save_fact` ожидается ненулевой `cache_read_input_tokens` для статического префикса и создание кеша только для изменившегося хвоста.
+diff --git a/README.md b/README.md
+index ebd390e..864177a 100644
+--- a/README.md
++++ b/README.md
+@@ -11,6 +11,7 @@ its system prompt. Every API call appends its `usage` object to `logs/usage.json
+ Run it locally with `COACH_ANTHROPIC_KEY=sk-ant-... python3 bot.py 42` and type
+ messages on stdin (the Telegram long-polling transport, which needs
+ `COACH_TELEGRAM_TOKEN`, lives in a separate deploy repo and just calls `reply()`).
+-Requires Python 3.11+ and `pip install anthropic`. Prompt caching is on: the system
+-prompt carries a `cache_control` marker so the tool-loop rounds and follow-up
+-messages inside the 5-minute window read it from cache.
++Requires Python 3.11+ and `pip install anthropic`. Prompt caching uses two
++`cache_control` markers: one after stable coaching instructions and one after
++athlete context. A saved fact changes the second segment while the instruction
++prefix remains available for cache reads inside the 5-minute window.
+diff --git a/bot.py b/bot.py
+index e2ff241..2c02c7f 100644
+--- a/bot.py
++++ b/bot.py
+@@ -111,6 +111,22 @@ Formatting:
+ - Plain text. No markdown headings, no tables.
+ - Lists only for a session structure (warm-up / main / cool-down).
+ - Numbers with units: 45 min, 12 km, 150 bpm.
++
++Applying the coaching rules:
++- Read the athlete profile before suggesting a session. Its zones are the only available
++  heart-rate boundaries. If a zone is missing, ask for it instead of estimating it.
++- Treat a completed workout as a report of what happened, not a request to add more
++  training. Record it with log_session and then respond to what the athlete said.
++- For a weekly training request, use plan_week first. Check its proposed structure
++  against rest, hard-session and weekly-volume rules before presenting it.
++- A durable fact is about the athlete beyond this conversation. Save it only once;
++  do not turn an ordinary question or a single workout into a lasting preference.
++- If the profile and a new message disagree, ask one short clarifying question when
++  the difference would change the advice. Do not silently replace the profile.
++- For race estimates, use only supplied effort data and the available tool. If the
++  data needed for an estimate is missing, ask for it instead of inventing a result.
++- Keep the final answer focused on the athlete's question and the immediate next
++  step. Do not repeat the profile or the full list of rules in the reply.
+ """
+ 
+ 
+@@ -128,9 +144,12 @@ def athlete_context(a, today):
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    # Keep the stable prefix cacheable when save_fact changes only the second block.
++    # The stable instructions also need enough tokens to meet the model's cache floor.
++    return [
++        {"type": "text", "text": INSTRUCTIONS, "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": athlete_context(a, today), "cache_control": {"type": "ephemeral"}},
++    ]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [

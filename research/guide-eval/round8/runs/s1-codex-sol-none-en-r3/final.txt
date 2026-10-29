@@ -1,0 +1,3 @@
+Fixed [gen.py](/tmp/h-SecqI7/gen.py) to encode HR corridors with `start` and `end` instead of a single-target `value`, and to mark the workout target as HR. The format distinction is documented in the [Intervals.icu workout model](https://forum.intervals.icu/t/downloading-planned-workouts-from-the-api/93737). The cause and change are recorded in [ANSWER.md](/tmp/h-SecqI7/ANSWER.md).
+
+Local checks passed for all four planned ranges and the three repeats. I did not push a workout, so the watch display remains unverified.

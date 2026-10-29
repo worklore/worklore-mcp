@@ -1,0 +1,57 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..e93bd90
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,30 @@
++# Fix: HR corridors clamped to the watch's own zones
++
++## Change
++`gen.py`, `hr_target()`: the lower bound key is now `start` instead of `value`:
++`{"units": "%lthr", "start": lo, "end": hi}`.
++
++## Why
++`readback/watch-notes.md` shows every corridor displayed as a watch zone band
++(e.g. planned 75–82% = 129–141 bpm, shown 137–151), even though the API
++accepted and returned the event unchanged. `{value, end}` is exported to FIT
++as a Lap-HR / zone target, which the watch clamps to its own zones (LTHR 168).
++`{start, end}` is exported as an Instant-HR corridor in raw bpm computed by
++Intervals from its stored LTHR (172). Units stay `%lthr`, so Intervals does the
++conversion (the absolute-bpm attempts gave 214–249 and 101).
++
++## Which parts of the colleague's note I used
++- Used: the `start`/`end` vs `value`/`end` finding, and keeping `%lthr` units
++  (matches our earlier failed bpm attempts in the watch notes).
++- Not used: the top-level `description` text grammar. Our readback has
++  `workout_doc.steps` populated and the problem reported is the watch targets,
++  not the web UI. Adding it would be unverified here and, per the note, a
++  parser stumble erases both representations. Worth doing separately if the
++  web UI shows no step chart.
++- Not used: the reproduction steps (they need the API key, athlete id and a
++  watch sync).
++
++## Not verified
++I could not push or sync a watch (no credentials, nothing external sent). To
++verify: push `gen.py` output, read it back (`steps` must be non-empty), sync,
++and expect Tempo 151–160, Float 129–141 on the watch.
+diff --git a/gen.py b/gen.py
+index be0b3bc..47e1d44 100755
+--- a/gen.py
++++ b/gen.py
+@@ -8,9 +8,14 @@ import sys
+ 
+ 
+ def hr_target(step):
+-    """HR corridor for a step, as a percentage of the athlete's LTHR."""
++    """HR corridor for a step, as a percentage of the athlete's LTHR.
++
++    The lower bound must be called "start", not "value": "value" is exported
++    to FIT as a Lap-HR/zone target (the watch clamps it to its own zones),
++    "start"+"end" becomes an Instant-HR corridor in raw bpm.
++    """
+     lo, hi = step["hr_pct"]
+-    return {"units": "%lthr", "value": lo, "end": hi}
++    return {"units": "%lthr", "start": lo, "end": hi}
+ 
+ 
+ def build_step(step):

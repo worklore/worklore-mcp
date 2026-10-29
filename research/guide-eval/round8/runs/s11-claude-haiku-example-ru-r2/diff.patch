@@ -1,0 +1,191 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..06a5378
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,75 @@
++# Почему второй publish возвращает 500
++
++## Причина
++
++`similarity()` в `src/app.py` возвращает `round(..., 4)`. В Python это `float`.
++`related()` кладёт этот float в `similar[].score`, и весь элемент уходит в
++`table.put_item(...)`. DynamoDB через boto3 не принимает float и кидает
++`TypeError: Float types are not supported`.
++
++Первый publish проходит, потому что таблица пустая: `existing` пуст, `related()`
++ничего не считает, и в элементе нет ни одного float. Второй publish видит одну
++историю, считает похожесть и падает. Это совпадает с `logs/error.log`: первая
++запись `similar=0 stored`, вторая с 500.
++
++Тесты не ловили это, потому что все проверяли только пустой путь: publish в
++пустую таблицу. Тестов на второй publish с уже существующими историями не было.
++
++Воспроизведено: первый `handler()` даёт 201, второй даёт 500 с той же ошибкой
++из лога.
++
++## Исправление
++
++- `src/app.py`: добавлена `to_dynamo(value)`. Она рекурсивно переводит все
++  `float` в `Decimal(str(value))` (точное значение, без двоичного хвоста).
++  `publish()` вызывает её прямо перед `put_item`, и возвращает ровно то, что
++  записано. Значения score не меняются (`0.4286` остаётся `0.4286`), так что
++  контракт для страницы чтения сохраняется.
++- `tests/test_publish.py`: добавлены тесты:
++  - второй publish при существующих историях (проверяет `similar` и тип `Decimal`);
++  - `handler()` дважды возвращает 201;
++  - `to_dynamo` конвертирует float рекурсивно.
++
++## Как не допустить повтора
++
++1. Все float переводятся в одной точке записи, а не точечно для `score`. Новое
++   поле с float (процент, среднее, округлённый счёт) не сломает запись.
++2. Тест на заполненную таблицу: `test_second_publish_with_existing_stories` и
++   `test_handler_second_publish_returns_201`. `FakeTable` уже валидирует типы как
++   boto3, поэтому тест упал бы до исправления. Раньше он просто не выполнял
++   этот путь.
++
++Ограничение: `to_dynamo` нужно вызывать в любом новом пути записи. Если появится
++второй `put_item`, который её обойдёт, защита не сработает. Это проверяется
++ревью, а не тестом.
++
++## Что из заметки коллеги пригодилось
++
++- Главное: тест должен засевать таблицу одной записью, иначе путь «похожие
++  истории» не выполняется. Применено.
++- Шаг «найти `round(` и `/`, которые попадают в элемент». Пригодился: нашёл
++  `round` в `similarity()`. Деления в `similarity()` дают float, но `round`
++  возвращает float в любом случае.
++- Не пригодилось: перевод score в целые проценты. Это меняет формат данных,
++  который читает страница, и не нужно для исправления. Выбран `Decimal`.
++- Не выполнено: публикация дважды на реальной таблице DynamoDB. Нет доступа к
++  AWS, и по правилам ничего не деплоится и не публикуется. Проверка сделана на
++  `FakeTable`, который валидирует типы так же, как boto3.
++
++## Что заметил, но не менял
++
++- `publish()` делает один `table.scan(...)` без пагинации. DynamoDB возвращает
++  до 1 МБ за вызов, поэтому при росте библиотеки `similar` будет считаться
++  только по части историй. Это отдельная задача.
++- Значения score теперь читаются как `Decimal`. Если страница чтения будет
++  отдавать их через `json.dumps`, понадобится кастомный encoder. Сейчас
++  `handler()` возвращает только `slug`, так что на текущий путь это не влияет.
++
++## Проверка
++
++```
++python3 -m unittest discover tests
++# Ran 4 tests ... OK
++```
++
++Повторный `handler()` на заполненной таблице: `201`, `201`.
+diff --git a/src/app.py b/src/app.py
+index db49c5e..1e49300 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -8,6 +8,7 @@ import json
+ import logging
+ import re
+ import time
++from decimal import Decimal
+ 
+ log = logging.getLogger("stories")
+ 
+@@ -40,6 +41,17 @@ def related(story, existing):
+     return scored[:TOP_N]
+ 
+ 
++def to_dynamo(value):
++    """DynamoDB rejects Python floats, so convert them to Decimal at the write boundary."""
++    if isinstance(value, float):
++        return Decimal(str(value))
++    if isinstance(value, dict):
++        return {k: to_dynamo(v) for k, v in value.items()}
++    if isinstance(value, list):
++        return [to_dynamo(v) for v in value]
++    return value
++
++
+ def validate(story):
+     for k in ("slug", "title", "body"):
+         if not story.get(k):
+@@ -60,6 +72,7 @@ def publish(table, story):
+         "published_at": int(time.time()),
+         "similar": related(story, existing),
+     }
++    item = to_dynamo(item)
+     table.put_item(Item=item)
+     log.info("publish slug=%s similar=%d stored", item["slug"], len(item["similar"]))
+     return item
+diff --git a/tests/test_publish.py b/tests/test_publish.py
+index 6c9ac44..a75ff20 100644
+--- a/tests/test_publish.py
++++ b/tests/test_publish.py
+@@ -1,3 +1,4 @@
++import json
+ import os
+ import sys
+ import unittest
+@@ -6,23 +7,55 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+ sys.path.insert(0, os.path.dirname(__file__))
+ 
+ import app  # noqa: E402
++from decimal import Decimal  # noqa: E402
+ from fake_dynamo import FakeTable  # noqa: E402
+ 
++FIRST = {
++    "slug": "why-my-cron-ran-twice",
++    "title": "Why my cron ran twice",
++    "tags": ["cron", "linux"],
++    "body": "Two crontabs, one for root and one for me, both had the line.",
++}
++SECOND = {
++    "slug": "cron-and-bash-loops",
++    "title": "Cron and bash loops",
++    "tags": ["cron", "bash"],
++    "body": "A bash loop inside a crontab line ran twice because both crontabs had it.",
++}
++
+ 
+ class PublishTest(unittest.TestCase):
+     def test_publish_stores_story(self):
+         table = FakeTable()
+-        story = {
+-            "slug": "why-my-cron-ran-twice",
+-            "title": "Why my cron ran twice",
+-            "tags": ["cron", "linux"],
+-            "body": "Two crontabs, one for root and one for me, both had the line.",
+-        }
+-        stored = app.publish(table, story)
++        stored = app.publish(table, FIRST)
+         self.assertEqual(stored["slug"], "why-my-cron-ran-twice")
+         self.assertEqual(table.get_item(Key={"slug": "why-my-cron-ran-twice"})["Item"]["title"], "Why my cron ran twice")
+         self.assertEqual(table.scan()["Count"], 1)
+ 
++    def test_second_publish_with_existing_stories(self):
++        # The first publish runs against an empty table; the second one is the
++        # path that computes scores, so it must be tested with a seeded table.
++        table = FakeTable()
++        app.publish(table, FIRST)
++        stored = app.publish(table, SECOND)
++        self.assertEqual(table.scan()["Count"], 2)
++        self.assertEqual([s["slug"] for s in stored["similar"]], ["why-my-cron-ran-twice"])
++        self.assertIsInstance(stored["similar"][0]["score"], Decimal)
++
++    def test_handler_second_publish_returns_201(self):
++        table = FakeTable()
++        first = app.handler({"body": json.dumps(FIRST)}, table)
++        second = app.handler({"body": json.dumps(SECOND)}, table)
++        self.assertEqual(first["statusCode"], 201)
++        self.assertEqual(second["statusCode"], 201, second["body"])
++
++    def test_to_dynamo_converts_floats_recursively(self):
++        value = {"a": 0.4286, "b": [1.5, {"c": 2.0}], "d": 3, "e": "x"}
++        self.assertEqual(
++            app.to_dynamo(value),
++            {"a": Decimal("0.4286"), "b": [Decimal("1.5"), {"c": Decimal("2.0")}], "d": 3, "e": "x"},
++        )
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

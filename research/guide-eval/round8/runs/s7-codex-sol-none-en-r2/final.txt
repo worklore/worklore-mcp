@@ -1,0 +1,5 @@
+Fixed the Intervals.icu connection flow and documented the causes in [ANSWER.md](/tmp/h-Gq8AzV/ANSWER.md).
+
+The Connect button now starts OAuth through the SPA’s authenticated request. The authorization URL requests one permission per scope family, and tokens with no stated expiry no longer trigger a reconnect after an hour. Intervals’ [OAuth documentation](https://forum.intervals.icu/t/intervals-icu-oauth-support/2759) supports the scope and token handling changes.
+
+Three local tests pass, and `node --check` passes. The scope change has not been verified with a live OAuth exchange because this repository has placeholder credentials.

@@ -1,0 +1,76 @@
+{
+ "answer_file": false,
+ "answer_source": "brain",
+ "py_parse_errors": [],
+ "scope_strings": [
+  "ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE,SETTINGS:WRITE"
+ ],
+ "scope_dup_areas": [],
+ "scope_fixed": true,
+ "scope_no_read_with_write(bonus)": true,
+ "refresh_idents_left": [
+  "REFRESH_INTERVAL",
+  "refresh",
+  "refresh_token",
+  "refresh_tokens"
+ ],
+ "refresh_job_idents_left": [
+  "REFRESH_INTERVAL",
+  "refresh",
+  "refresh_tokens"
+ ],
+ "expiry_idents_left": [
+  "DEFAULT_TOKEN_TTL",
+  "expires_at",
+  "expires_in"
+ ],
+ "refresh_machinery_removed(info)": false,
+ "live_server_started": true,
+ "live_error": "",
+ "live_init": [
+  "POST",
+  200
+ ],
+ "live_init_returns_url_as_data": true,
+ "live_scope": "ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE,SETTINGS:WRITE",
+ "live_connected_after_flow": true,
+ "no_expiry_assumed": false,
+ "live_status_after_clock_jump": {
+  "connected": false,
+  "status": "expired, reconnect"
+ },
+ "live_wellness_after_revoke": 409,
+ "live_token_exchange_fields": [
+  "client_id",
+  "client_secret",
+  "code",
+  "grant_type",
+  "redirect_uri"
+ ],
+ "reconnect_on_401(bonus)": false,
+ "bare_get_link": true,
+ "js_fetches_init": false,
+ "js_posts_init": false,
+ "js_navigates_to_variable": false,
+ "init_route_methods": [
+  "GET",
+  "POST"
+ ],
+ "init_is_post": false,
+ "server_returns_url_json": true,
+ "server_returns_authorize_url": true,
+ "init_fixed": false,
+ "answer_names_scope": true,
+ "answer_names_no_refresh": true,
+ "answer_names_get_link": true,
+ "answer_names_all_causes": true,
+ "ran_server": true,
+ "web_used": false,
+ "changed_files": [
+  "config.py",
+  "server.py"
+ ],
+ "commands_issued": 8,
+ "answer_chars": 3367,
+ "PASS": false
+}

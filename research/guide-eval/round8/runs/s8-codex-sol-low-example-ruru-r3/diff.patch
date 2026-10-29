@@ -1,0 +1,36 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..c392afa
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,7 @@
++# Исправление кеширования
++
++В `bot.py` системный промпт теперь состоит из двух текстовых блоков с `cache_control: ephemeral`: неизменных `INSTRUCTIONS` и контекста спортсмена (дата, профиль, зоны, цель, факты, язык). После `save_fact` меняется только второй блок, поэтому кеш статических инструкций может использоваться повторно в пределах TTL. Содержание инструкций и порядок выбора инструментов не менялись.
++
++Из заметки коллеги пригодились разделение кеша на стабильный префикс и изменяемый хвост, а также проверка результата через `cache_read_input_tokens` и `cache_creation_input_tokens`. Отбор фактов под отдельное сообщение не добавлял: здесь уже передаются все факты, и такой отбор сделал бы хвост нестабильным. Совет о фильтрации инструментов не применял: она уже есть и, согласно `NOTES.md`, полезна; смена набора инструментов по-прежнему может вызвать отдельный промах кеша.
++
++Локальная проверка без API подтвердила два маркера кеша, неизменность первого блока после добавления факта и наличие нового факта во втором. Живые значения `usage` после исправления не проверялись: запросов во внешний сервис не было. В существующем `logs/usage.jsonl` до исправления после `save_fact` видны `cache_read_input_tokens: 0` и повторное создание кеша примерно на 1000 токенов.
+diff --git a/__pycache__/bot.cpython-314.pyc b/__pycache__/bot.cpython-314.pyc
+new file mode 100644
+index 0000000..c91d206
+Binary files /dev/null and b/__pycache__/bot.cpython-314.pyc differ
+diff --git a/bot.py b/bot.py
+index e2ff241..efa3e4b 100644
+--- a/bot.py
++++ b/bot.py
+@@ -128,9 +128,11 @@ def athlete_context(a, today):
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    # Keep the stable prefix cacheable when a fact changes the athlete context.
++    return [
++        {"type": "text", "text": INSTRUCTIONS, "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": athlete_context(a, today), "cache_control": {"type": "ephemeral"}},
++    ]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [

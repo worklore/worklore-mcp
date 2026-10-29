@@ -1,0 +1,121 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..5b5bbab
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,63 @@
++# Почему ночная задача nightly-review молчит
++
++Задача запускается launchd в 02:30 и должна присылать в Telegram либо сводку, либо сообщение об ошибке. С момента загрузки (2026-10-12) не пришло ничего. `launchctl print` показывает `runs = 6` и `last exit code = 1`, то есть скрипт запускался шесть раз и каждый раз падал.
++
++## Причина 1 (основная): скрипт падает до отправки уведомления
++
++В `bin/nightly-review.zsh` строка 19 была:
++
++```zsh
++status=$?
++```
++
++В zsh `status` — read-only специальный параметр (синоним `$?`). Присваивание к нему — ошибка, и неинтерактивный скрипт завершается. Это видно в `Library/Logs/nightly-review.err`: при каждом запуске последняя строка — `nightly-review.zsh:19: read-only variable: status`.
++
++Из-за этого:
++
++- до `notify.sh` дело не доходит, ни при успехе, ни при ошибке, поэтому в Telegram ничего не приходит;
++- в логе нет никакого сообщения об ошибке от самой задачи, есть только строка от zsh;
++- код выхода 1 объясняет `last exit code = 1`.
++
++Проверено: `zsh -c 'status=$?'` даёт `read-only variable: status`. Оригинальный скрипт в песочнице с заглушками `claude` и `notify.sh` не отправил ни одного уведомления ни в одном сценарии.
++
++**Исправление:** переменная переименована в `rc`. Кроме того, добавлено:
++
++- если `claude` вернул 0, но вывод пустой, это считается ошибкой;
++- stderr `claude` сохраняется в `~/Library/Logs/nightly-review-<дата>.stderr` и дублируется в stderr задачи (то есть в `nightly-review.err`);
++- текст сообщения об ошибке содержит первые 300 байт stderr, например `Not logged in`;
++- если сам `notify.sh` не смог отправить сообщение, это пишется в stderr, а не теряется.
++
++## Причина 2: `claude` под launchd не залогинен
++
++В `nightly-review.err` шесть раз встречается `Not logged in · Please run /login`. Значит, `claude` найден (`/opt/homebrew/bin/claude` есть в PATH из plist), но не видит учётных данных. Скрипт это не исправит: сообщение теперь будет доходить до Telegram, но сама задача по-прежнему не сможет работать, пока `claude` не авторизован в этом окружении.
++
++Я не могу проверить это со снимка. Возможные причины:
++
++- учётные данные привязаны к интерактивной сессии (вход через `/login` сохраняется в Keychain, и задача, запущенная вне GUI-сессии, может его не получить);
++- токен истёк или отозван;
++- в интерактивной оболочке задан `ANTHROPIC_API_KEY` (в `~/.zshrc` или подобном), а launchd его не наследует.
++
++Что проверить на вашей машине:
++
++1. Выполнить `launchctl print gui/$(id -u)/com.vk.nightly-review` и убедиться, что окружение задачи то, что ожидаете.
++2. Повторить окружение задачи вручную:
++   `env -i HOME="$HOME" PATH=/opt/homebrew/bin:/usr/bin:/bin claude -p "ping" --output-format text`
++   Если здесь тоже `Not logged in`, дело в учётных данных. Если работает, проблема в окружении launchd.
++3. Если нужен неинтерактивный запуск, надёжнее всего API-ключ, прочитанный из Keychain в самом скрипте, а не в `EnvironmentVariables` plist (ключ в plist лежит открытым текстом).
++
++## Причина 3 (возможная, не подтверждена): Telegram-токен в Keychain
++
++`notify.sh` берёт токен через `security find-generic-password -s tg-bot -w`. README говорит, что скрипт работает при ручном запуске, но не проверялось, работает ли он из launchd. Если доступ к Keychain из задачи запрещён или требует подтверждения, которое некому дать, уведомление не уйдёт. Теперь такой сбой виден в `nightly-review.err`, но сам доступ к Keychain нужно проверить отдельно.
++
++## Что изменено
++
++- `bin/nightly-review.zsh`: `status` → `rc`, обработка пустого вывода, сохранение stderr, сообщения о сбоях `notify.sh`. Остальные части скрипта не менялись.
++- `plist` и `notify.sh` не менялись.
++
++Проверено в песочнице (удалена) с заглушками `claude` и `notify.sh`: ошибка (`Not logged in`, код 1), код 0 с пустым выводом, успех, отсутствующий репозиторий и падение `notify.sh`. Во всех сценариях уведомление или сообщение в stderr появляется. Синтаксис проверен через `zsh -n`.
++
++## Что нужно сделать вам
++
++1. Скопировать исправленный `bin/nightly-review.zsh` в `~/bin/nightly-review.zsh`. Перезагружать launchd не нужно: скрипт читается заново при каждом запуске. Плист тоже не меняется.
++2. Исправить авторизацию `claude` в окружении launchd (см. причину 2).
++3. Можно запустить задачу вручную (`launchctl kickstart gui/$(id -u)/com.vk.nightly-review`) и посмотреть, что пришло в Telegram или в `nightly-review.err`.
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..6236ddf 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -3,9 +3,16 @@
+ set -u
+ 
+ REPO="$HOME/projects/shop"
+-OUT="$HOME/Library/Logs/nightly-review-$(date +%F).md"
++DAY=$(date +%F)
++OUT="$HOME/Library/Logs/nightly-review-$DAY.md"
++ERR="$HOME/Library/Logs/nightly-review-$DAY.stderr"
+ NOTIFY="$HOME/bin/notify.sh"
+ 
++# A failed notification must not be silent: launchd keeps stderr in nightly-review.err.
++notify() {
++  "$NOTIFY" "$1" || print -u2 "nightly review: could not send Telegram message: $1"
++}
++
+ SINCE=$(date -v-1d +%F)
+ PROMPT="Review the commits in this repository since $SINCE.
+ For each commit: one line on what it changes and whether anything looks risky
+@@ -13,14 +20,22 @@ For each commit: one line on what it changes and whether anything looks risky
+ End with a three-line summary I can read on my phone.
+ Do not modify any file."
+ 
+-cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
++cd "$REPO" || { notify "nightly review: repo missing ($REPO)"; exit 1; }
++
++# `status` is a read-only special parameter in zsh (it aliases $?), so use `rc`.
++claude -p "$PROMPT" --output-format text > "$OUT" 2> "$ERR"
++rc=$?
++cat "$ERR" >&2
+ 
+-claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
++# Exit 0 with empty output is also a failure (e.g. "Not logged in" on some versions).
++if [ $rc -eq 0 ] && [ ! -s "$OUT" ]; then
++  rc=1
++fi
+ 
+-if [ $status -ne 0 ]; then
+-  "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
+-  exit $status
++if [ $rc -ne 0 ]; then
++  reason=$(head -c 300 "$ERR")
++  notify "nightly review FAILED (exit $rc): ${reason:-no output}. See $OUT and $ERR"
++  exit $rc
+ fi
+ 
+-"$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"
++notify "nightly review done: $(head -c 300 "$OUT")"

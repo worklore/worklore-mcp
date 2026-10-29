@@ -1,0 +1,58 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..e926cb4
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,32 @@
++# Причины сбоя ночной задачи launchd
++
++В ходе анализа логов (`Library/Logs/nightly-review.err`) и скрипта `bin/nightly-review.zsh` были выявлены следующие причины:
++
++1. **Ошибка исполнения zsh-скрипта (почему не приходило даже уведомление об ошибке):**
++   - В строке 19 скрипта `bin/nightly-review.zsh` выполнялось присваивание:
++     ```zsh
++     status=$?
++     ```
++   - В оболочке `zsh` переменная `status` является встроенным специальным алиасом для `$?` (код завершения последней команды) и доступна **только для чтения** (`read-only variable`).
++   - Попытка записи в неё (`status=$?`) приводила к фатальной ошибке zsh:
++     ```text
++     /Users/vk/bin/nightly-review.zsh:19: read-only variable: status
++     ```
++   - Из-за этого выполнение скрипта аварийно прерывалось прямо на строке 19 с ненулевым кодом выхода, так и не дойдя до блока отправки уведомления об ошибке (`"$NOTIFY" "nightly review FAILED..."`).
++
++2. **Первопричина сбоя команды `claude`:**
++   - Как зафиксировано в логе `nightly-review.err`:
++     ```text
++     Not logged in · Please run /login
++     ```
++   - Утилита Claude Code завершалась с ошибкой из-за отсутствия авторизации/сессии в окружении запуска.
++
++---
++
++### Что было исправлено
++
++В файле [`bin/nightly-review.zsh`](file:///tmp/h-FHUbiz/bin/nightly-review.zsh) переменная `status` переименована в `exit_code`:
++- Вместо `status=$?` теперь используется `exit_code=$?`.
++- Соответственно обновлены проверки и вызовы: `[ $exit_code -ne 0 ]` и `exit $exit_code`.
++
++Теперь при возникновении ошибки на этапе выполнения команды `claude` скрипт корректно обрабатывает ненулевой код завершения и вызывает скрипт отправки уведомления в Telegram (`bin/notify.sh`).
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..f9f7692 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -16,11 +16,11 @@ Do not modify any file."
+ cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
+ 
+ claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
++exit_code=$?
+ 
+-if [ $status -ne 0 ]; then
+-  "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
+-  exit $status
++if [ $exit_code -ne 0 ]; then
++  "$NOTIFY" "nightly review FAILED (exit $exit_code), see $OUT"
++  exit $exit_code
+ fi
+ 
+ "$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"

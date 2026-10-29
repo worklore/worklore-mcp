@@ -1,0 +1,62 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..c115d4d
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,19 @@
++# Why nightly-review was silent
++
++Evidence: `launchctl-print.txt` shows `runs = 6`, `last exit code = 1` — the job fires on schedule (02:30) and fails; it is not a launchd scheduling problem. `Library/Logs/nightly-review.err` shows two stacked errors, repeated every run.
++
++## Causes
++1. **`claude -p` fails with "Not logged in"** under launchd. The launchd environment has no `USER` (only PATH/XPC_SERVICE_NAME), so the CLI can't find its login in the keychain. Fix: added `USER` to `EnvironmentVariables` in the plist.
++2. **`status=$?` in the zsh script** (line 19): `status` is a read-only special variable in zsh, so the script aborts right there ("read-only variable: status"), before the failure `notify.sh` call. The failure reporter never ran, hence total silence. Fix: use `rc=$?`.
++
++## Other hardening (in `bin/nightly-review.zsh`)
++- `< /dev/null` on the `claude -p` call so it never waits on stdin.
++- Logs rc and duration to stderr each run.
++- Also treats an empty output file as failure (exit 0 with no work done).
++
++## Colleague's note: what applied
++- Applied: `launchctl print` first (runs/last exit code); read the err log; the zsh `status` bug; `USER` in the plist; `< /dev/null`; log duration; check real outcome, not just exit code.
++- Not applied: piping the prompt via stdin (the prompt is a single-argument string and the actual error was "Not logged in", not a missing prompt); the 16:50 schedule (ours is 02:30).
++
++## To do on your machine (not done here)
++Reload the plist (`launchctl bootout` / `bootstrap gui/$UID ...`), copy the files into `~`, make sure `claude` is logged in in the GUI session, then `launchctl kickstart -k gui/$UID/com.vk.nightly-review` and confirm last exit code 0, a fresh non-empty output file, a plausible duration, and the Telegram message. Force one failure to test the failure path. Note `notify.sh` reads the keychain too; if it fails under launchd, its error will now land in the .err log only — verify that it delivers when kicked off by launchd. I could not run any of this here.
+diff --git a/Library/LaunchAgents/com.vk.nightly-review.plist b/Library/LaunchAgents/com.vk.nightly-review.plist
+index c347363..d49eacf 100644
+--- a/Library/LaunchAgents/com.vk.nightly-review.plist
++++ b/Library/LaunchAgents/com.vk.nightly-review.plist
+@@ -24,6 +24,8 @@
+   <dict>
+     <key>PATH</key>
+     <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
++    <key>USER</key>
++    <string>vk</string>
+   </dict>
+ </dict>
+ </plist>
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..bf48721 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -15,12 +15,14 @@ Do not modify any file."
+ 
+ cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
+ 
+-claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
++START=$SECONDS
++claude -p "$PROMPT" --output-format text > "$OUT" < /dev/null
++rc=$?
++print -r -- "nightly-review: rc=$rc duration=$((SECONDS-START))s" >&2
+ 
+-if [ $status -ne 0 ]; then
+-  "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
+-  exit $status
++if [ $rc -ne 0 ] || [ ! -s "$OUT" ]; then
++  "$NOTIFY" "nightly review FAILED (exit $rc), see $OUT"
++  exit $(( rc != 0 ? rc : 1 ))
+ fi
+ 
+ "$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"

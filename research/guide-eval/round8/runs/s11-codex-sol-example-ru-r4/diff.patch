@@ -1,0 +1,118 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..205e054
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,15 @@
++# Причина
++
++Первая публикация прошла, потому что таблица была пустой: `related()` вернул пустой список `similar`. При второй публикации `similarity()` вычислил дробный `float` и поместил его в `similar[0].score`. `table.put_item()` передал этот элемент сериализатору DynamoDB, который отклоняет Python `float` (`TypeError: Float types are not supported`). Обработчик превратил исключение в HTTP 500. Это соответствует трассировке в `logs/error.log`.
++
++# Исправление
++
++- Расчёт сходства в `src/app.py` теперь ведётся в `Decimal` и округляется до четырёх знаков. Значение балла остаётся долей от 0 до 1, а в записываемом `Item` больше не появляется `float` из расчёта сходства.
++- Проверка входной истории требует строковые `slug`, `title`, `body` и список строковых `tags`. Числа из JSON поэтому не могут попасть в записываемый элемент и вызвать ту же ошибку; некорректный запрос получает HTTP 400.
++- Тест в `tests/test_publish.py` публикует две истории подряд через обработчик, проверяет HTTP 201 и сохранённый `Decimal` в `similar`. Отдельный тест проверяет отклонение числовых входных значений.
++
++# Что пригодилось из заметки
++
++Пригодились объяснение различия между первой записью в пустую таблицу и записью при уже существующей истории, указание на запрет `float` в DynamoDB, проверка вычисляемых значений перед `put_item` и тест с предварительно заполненной таблицей. Вариант с целыми процентами не использован: он изменил бы смысл и диапазон сохранённого `score`. Проверка на реальной таблице не проводилась, поскольку задача запрещает обращения к внешним сервисам; использован локальный `FakeTable`, проверяющий типы как сериализатор boto3.
++
++Проверка: `python3 -m unittest discover tests -v` — 3 теста прошли. До исправления тест второй публикации воспроизводил HTTP 500 и ошибку `Float types are not supported`.
+diff --git a/src/app.py b/src/app.py
+index db49c5e..8cce717 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -8,6 +8,7 @@ import json
+ import logging
+ import re
+ import time
++from decimal import Decimal, ROUND_HALF_EVEN
+ 
+ log = logging.getLogger("stories")
+ 
+@@ -24,10 +25,12 @@ def words(text):
+ def similarity(a, b):
+     """Shared-tag ratio (Jaccard), blended with shared words of the two bodies."""
+     ta, tb = set(a.get("tags", [])), set(b.get("tags", []))
+-    tag_score = len(ta & tb) / len(ta | tb) if (ta | tb) else 0
++    tag_score = Decimal(len(ta & tb)) / len(ta | tb) if (ta | tb) else Decimal(0)
+     wa, wb = words(a.get("body")), words(b.get("body"))
+-    word_score = len(wa & wb) / len(wa | wb) if (wa | wb) else 0
+-    return round(0.7 * tag_score + 0.3 * word_score, 4)
++    word_score = Decimal(len(wa & wb)) / len(wa | wb) if (wa | wb) else Decimal(0)
++    return (Decimal("0.7") * tag_score + Decimal("0.3") * word_score).quantize(
++        Decimal("0.0001"), rounding=ROUND_HALF_EVEN
++    )
+ 
+ 
+ def related(story, existing):
+@@ -41,11 +44,16 @@ def related(story, existing):
+ 
+ 
+ def validate(story):
++    if not isinstance(story, dict):
++        raise ValueError("story must be an object")
+     for k in ("slug", "title", "body"):
+-        if not story.get(k):
++        if not isinstance(story.get(k), str) or not story[k]:
+             raise ValueError(f"missing field: {k}")
+     if not re.fullmatch(r"[a-z0-9-]{3,80}", story["slug"]):
+         raise ValueError("bad slug")
++    tags = story.get("tags", [])
++    if not isinstance(tags, list) or any(not isinstance(tag, str) for tag in tags):
++        raise ValueError("tags must be a list of strings")
+ 
+ 
+ def publish(table, story):
+diff --git a/tests/test_publish.py b/tests/test_publish.py
+index 6c9ac44..86c9edd 100644
+--- a/tests/test_publish.py
++++ b/tests/test_publish.py
+@@ -1,6 +1,7 @@
+ import os
+ import sys
+ import unittest
++from decimal import Decimal
+ 
+ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+ sys.path.insert(0, os.path.dirname(__file__))
+@@ -23,6 +24,38 @@ class PublishTest(unittest.TestCase):
+         self.assertEqual(table.get_item(Key={"slug": "why-my-cron-ran-twice"})["Item"]["title"], "Why my cron ran twice")
+         self.assertEqual(table.scan()["Count"], 1)
+ 
++    def test_second_publish_stores_decimal_similarity(self):
++        table = FakeTable()
++        first = {
++            "slug": "first-story",
++            "title": "First story",
++            "tags": ["python", "testing"],
++            "body": "python tests catch bugs",
++        }
++        second = {
++            "slug": "second-story",
++            "title": "Second story",
++            "tags": ["python", "dynamodb"],
++            "body": "python tests find bugs",
++        }
++
++        self.assertEqual(app.handler({"body": app.json.dumps(first)}, table)["statusCode"], 201)
++        self.assertEqual(app.handler({"body": app.json.dumps(second)}, table)["statusCode"], 201)
++
++        stored = table.get_item(Key={"slug": "second-story"})["Item"]
++        self.assertEqual(stored["similar"], [{"slug": "first-story", "score": Decimal("0.4133")}])
++        self.assertEqual(table.scan()["Count"], 2)
++
++    def test_numeric_input_cannot_reach_dynamodb(self):
++        table = FakeTable()
++        valid = {"slug": "story-one", "title": "Story", "body": "Text", "tags": ["python"]}
++        for field, value in (("title", 1.5), ("body", 1.5), ("tags", ["python", 1.5])):
++            with self.subTest(field=field):
++                story = {**valid, field: value}
++                response = app.handler({"body": app.json.dumps(story)}, table)
++                self.assertEqual(response["statusCode"], 400)
++                self.assertEqual(table.scan()["Count"], 0)
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

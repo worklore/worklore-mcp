@@ -1,0 +1,63 @@
+diff --git a/config.py b/config.py
+index 54a8144..e39e425 100644
+--- a/config.py
++++ b/config.py
+@@ -8,6 +8,6 @@ INTERVALS_BASE = os.environ.get("INTERVALS_BASE", "https://intervals.icu")
+ CLIENT_ID = "tricoach-dev"
+ CLIENT_SECRET = "s3cr3t-placeholder-0000"
+ REDIRECT_URI = f"http://localhost:{PORT}/api/intervals/callback"
+-SCOPES = "ACTIVITY:READ,ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:READ,CALENDAR:WRITE"
++SCOPES = "ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE"
+ 
+ REFRESH_INTERVAL = 60      # seconds between passes of the token refresher
+diff --git a/server.py b/server.py
+index 351cbb7..5014c45 100644
+--- a/server.py
++++ b/server.py
+@@ -56,9 +56,11 @@ def post_form(url, fields):
+ 
+ 
+ def exchange_code(code):
++    # Intervals.icu token endpoint expects only client_id, client_secret, and code.
+     return post_form(TOKEN_URL, {
+-        "grant_type": "authorization_code", "client_id": config.CLIENT_ID,
+-        "client_secret": config.CLIENT_SECRET, "code": code, "redirect_uri": config.REDIRECT_URI,
++        "client_id": config.CLIENT_ID,
++        "client_secret": config.CLIENT_SECRET,
++        "code": code,
+     })
+ 
+ 
+@@ -165,7 +167,8 @@ class Handler(BaseHTTPRequestHandler):
+             user = self.require_user()
+             return user and self.send_json(200, user)
+         if url.path == "/api/intervals/auth/init":
+-            return self.auth_init()
++            # GET not supported for auth init; require POST with auth header
++            return self.send_json(405, {"error": "Method Not Allowed, use POST"})
+         if url.path == "/api/intervals/callback":
+             return self.callback(q)
+         if url.path == "/api/intervals/status":
+@@ -183,7 +186,10 @@ class Handler(BaseHTTPRequestHandler):
+                     CONNECTIONS.pop(user["id"], None)
+                 self.send_json(200, {"ok": True})
+             return
+-        self.send_json(404, {"error": "not found"})
++        if url.path == "/api/intervals/auth/init":
++            # POST endpoint to initiate OAuth flow, returns authorize_url JSON
++            self.auth_init()
++            return
+ 
+     # Step 1: build the authorize URL and send the browser to Intervals.
+     def auth_init(self):
+@@ -192,7 +198,9 @@ class Handler(BaseHTTPRequestHandler):
+             return
+         params = {"client_id": config.CLIENT_ID, "redirect_uri": config.REDIRECT_URI,
+                   "scope": config.SCOPES, "state": sign_state(user["id"])}
+-        self.redirect(AUTHORIZE_URL + "?" + urllib.parse.urlencode(params, safe=":,"))
++        url = AUTHORIZE_URL + "?" + urllib.parse.urlencode(params, safe=":,")
++        # Return the URL as JSON for frontend to redirect.
++        self.send_json(200, {"authorize_url": url})
+ 
+     # Step 2: Intervals redirects back here with ?code=&state=.
+     def callback(self, q):

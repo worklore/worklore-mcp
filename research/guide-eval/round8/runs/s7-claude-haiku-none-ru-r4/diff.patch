@@ -1,0 +1,184 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..abd6924
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,65 @@
++# Intervals.icu: почему не подключается и что исправлено
++
++Источники: `logs/connect-attempt.log`, `logs/support-tickets.md` (#214, #219), `server.py`, `static/app.js`.
++
++## Причины
++
++### 1. Кнопка Connect всегда отдаёт 401 (тикет #214, все атлеты)
++
++Кнопка была обычной ссылкой `<a href="/api/intervals/auth/init">`. Токен входа лежит в `localStorage` и уходит только в заголовке `Authorization` из обёртки `fetch` в SPA. Обычный переход по ссылке этот заголовок не передаёт, поэтому сервер отвечал `401 {"error": "unauthorized"}` (см. лог, раздел 1).
++
++**Исправлено:** `auth/init` теперь возвращает JSON `{"url": ...}`. SPA запрашивает его через `api()` с токеном и затем переводит браузер на полученный URL.
++
++### 2. Шаг authorize отвечает `400 invalid_request` (тикет #219, с 2026-10-02)
++
++Проверить это по живому Intervals я не мог: по правилам работы ни во что внешнее я не обращался. Что известно из логов:
++
++- Тот же URL, что и при подключении 19 сентября, теперь отвечает 400 без экрана согласия.
++- Изменение совпадает по времени с добавлением календаря 2 октября: в `SCOPES` появились `CALENDAR:READ` и `CALENDAR:WRITE`.
++- В запросе не было `response_type=code`, стандартного параметра OAuth2 (RFC 6749). Раньше Intervals его, видимо, не требовал, поэтому это не объясняет поломку, но без него запрос неполный.
++
++**Сделано:** добавлен `response_type=code`.
++
++**Не проверено и требует проверки со стороны Intervals:** наиболее вероятная причина — scope `CALENDAR:*` не разрешён или не зарегистрирован для приложения `tricoach-dev` в Intervals. Что сделать:
++1. В настройках OAuth-приложения Intervals проверить, какие scope разрешены, и добавить `CALENDAR:READ` / `CALENDAR:WRITE`, если их там нет.
++2. Если Intervals использует другой формат списка scope (в ответе токена он приходит через запятую, в RFC — через пробел), это тоже стоит сверить с документацией Intervals.
++3. Проверить на тестовом аккаунте, что authorize проходит и без `CALENDAR:*`. Если да, то дело именно в них.
++
++### 3. Соединение помечается «expired, reconnect» через час (тикет #219, Rivera)
++
++Ответ Intervals при подключении 19 сентября (лог, раздел 3) не содержал ни `expires_in`, ни `refresh_token`. Сервер подставил `DEFAULT_TOKEN_TTL = 3600` как срок жизни и через час пометил соединение как истёкшее. Токен при этом работал: `wellness` в 17:44 вернул 200, а провайдер не сообщал никакого срока.
++
++**Исправлено:**
++- срок жизни берётся только из ответа провайдера;
++- если `expires_in` не пришёл, соединение не истекает по таймеру;
++- соединение помечается «expired, reconnect» только когда сам Intervals отвечает 401 на запрос данных (`/wellness`).
++
++### 4. Почему Rivera не смогла переподключиться
++
++Это следствие пунктов 1–3. Кнопка не работала (1), обходной путь через вставку ссылки в браузер сломан из-за 400 (2), а само соединение ложно считалось истёкшим (3).
++
++## Что изменено
++
++- `server.py`:
++  - `auth_init` возвращает JSON с `url` и содержит `response_type=code`;
++  - `store_connection` не придумывает срок жизни токена;
++  - добавлена `mark_expired`, и `wellness` при 401 от Intervals переводит соединение в «expired, reconnect»;
++  - удалён `DEFAULT_TOKEN_TTL`.
++- `static/app.js`: кнопка Connect стала `<button>`, по нажатию она запрашивает `auth/init` с токеном и переходит по `url`.
++
++## Проверка
++
++Прогнано локально на моке Intervals (`INTERVALS_BASE=http://127.0.0.1:9999`), через HTTP:
++- `auth/init` с токеном возвращает URL, без токена 401;
++- мок authorize отдаёт код, callback сохраняет соединение и редиректит на `/?connected=1`;
++- `status` и `wellness` работают;
++- после двух проходов фонового обновления соединение остаётся активным (срока жизни не пришло, значит по таймеру ничего не истекает);
++- когда мок отзывает токен, `wellness` отвечает 409, а `status` — `expired, reconnect`.
++
++Реальный Intervals не проверялся. Пункт 2 остаётся открытым до проверки scope в настройках приложения.
++
++## Замечено, но не трогал
++
++- Фоновое обновление токенов держит `LOCK` во время HTTP-запросов к Intervals (до 15 с), из-за этого запросы всех пользователей могут ждать. Лучше брать данные под замком, а сетевые вызовы делать вне него.
++- `config.py` хранит `CLIENT_SECRET` и `APP_SECRET` в репозитории. README говорит, что боевые значения в окружении деплоя, но секреты лучше вынести в переменные окружения и убрать из репо.
++- При локальном запуске порт 8766 был занят чужим процессом (PID 94527, запущен до моих правок), поэтому проверка шла на порту 8790.
+diff --git a/server.py b/server.py
+index 351cbb7..5922d1a 100644
+--- a/server.py
++++ b/server.py
+@@ -12,7 +12,6 @@ import config
+ STATIC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
+ TOKEN_URL = config.INTERVALS_BASE + "/api/oauth/token"
+ AUTHORIZE_URL = config.INTERVALS_BASE + "/oauth/authorize"
+-DEFAULT_TOKEN_TTL = 3600   # seconds; used when the provider does not say how long a token lives
+ 
+ # --- in-memory store -------------------------------------------------------
+ USERS = {
+@@ -63,18 +62,29 @@ def exchange_code(code):
+ 
+ 
+ def store_connection(user_id, tok):
+-    expires_in = int(tok.get("expires_in") or DEFAULT_TOKEN_TTL)
++    # Only trust a lifetime the provider actually sent. Guessing one made healthy
++    # connections expire after an hour; without a known lifetime we wait for a 401.
++    expires_in = tok.get("expires_in")
+     refresh = tok.get("refresh_token")
+-    if not refresh:
+-        log(f"{user_id}: no refresh_token in response, scheduling expiry in {expires_in}s")
+     athlete = tok.get("athlete") or {}
+     with LOCK:
+         CONNECTIONS[user_id] = {
+             "athlete_id": athlete.get("id"), "athlete_name": athlete.get("name"),
+             "access_token": tok["access_token"], "refresh_token": refresh,
+-            "scope": tok.get("scope"), "expires_at": time.time() + expires_in, "status": "connected",
++            "scope": tok.get("scope"),
++            "expires_at": time.time() + int(expires_in) if expires_in else None,
++            "status": "connected",
+         }
+-    log(f"{user_id}: connected as athlete {athlete.get('id')} (expires in {expires_in}s)")
++    lifetime = f"expires in {expires_in}s" if expires_in else "lifetime not stated by provider"
++    log(f"{user_id}: connected as athlete {athlete.get('id')} ({lifetime}, refresh_token={'yes' if refresh else 'no'})")
++
++
++def mark_expired(user_id, reason):
++    with LOCK:
++        c = CONNECTIONS.get(user_id)
++        if c and c["status"] == "connected":
++            log(f"{user_id}: {reason} -> expired, reconnect")
++            c.update(status="expired, reconnect", access_token=None)
+ 
+ 
+ def refresh_tokens():
+@@ -84,7 +94,7 @@ def refresh_tokens():
+         now = time.time()
+         with LOCK:
+             for uid, c in CONNECTIONS.items():
+-                if c["status"] != "connected" or c["expires_at"] - now > 300:
++                if c["status"] != "connected" or c["expires_at"] is None or c["expires_at"] - now > 300:
+                     continue
+                 if not c["refresh_token"]:
+                     log(f"{uid}: token expiry passed and no refresh token on file -> expired, reconnect")
+@@ -185,14 +195,16 @@ class Handler(BaseHTTPRequestHandler):
+             return
+         self.send_json(404, {"error": "not found"})
+ 
+-    # Step 1: build the authorize URL and send the browser to Intervals.
++    # Step 1: return the authorize URL. The SPA fetches this with the Bearer token
++    # (a plain link cannot send the header) and then navigates the browser to it.
+     def auth_init(self):
+         user = self.require_user()
+         if not user:
+             return
+-        params = {"client_id": config.CLIENT_ID, "redirect_uri": config.REDIRECT_URI,
++        params = {"response_type": "code", "client_id": config.CLIENT_ID,
++                  "redirect_uri": config.REDIRECT_URI,
+                   "scope": config.SCOPES, "state": sign_state(user["id"])}
+-        self.redirect(AUTHORIZE_URL + "?" + urllib.parse.urlencode(params, safe=":,"))
++        self.send_json(200, {"url": AUTHORIZE_URL + "?" + urllib.parse.urlencode(params, safe=":,")})
+ 
+     # Step 2: Intervals redirects back here with ?code=&state=.
+     def callback(self, q):
+@@ -233,6 +245,9 @@ class Handler(BaseHTTPRequestHandler):
+             code, data = intervals_get(c, "/wellness")
+             self.send_json(code, data)
+         except urllib.error.HTTPError as e:
++            if e.code == 401:
++                mark_expired(user["id"], "intervals rejected the access token")
++                return self.send_json(409, {"error": "intervals not connected"})
+             self.send_json(e.code, {"error": f"intervals returned {e.code}"})
+         except Exception as e:
+             self.send_json(502, {"error": str(e)})
+diff --git a/static/app.js b/static/app.js
+index 368922e..310b859 100644
+--- a/static/app.js
++++ b/static/app.js
+@@ -25,12 +25,21 @@ async function render() {
+     } else {
+       const why = st.status && st.status !== "disconnected" ? `<p class="muted">Status: ${esc(st.status)}</p>` : "";
+       card = `<div class="card">Intervals.icu is not connected.${why}
+-        <p><a class="btn" href="/api/intervals/auth/init">Connect Intervals.icu</a></p></div>`;
++        <p><button class="btn" id="connect">Connect Intervals.icu</button></p></div>`;
+     }
+     root.className = "";
+     root.innerHTML = `<p>Signed in as <b>${esc(me.name)}</b>.</p>${card}`;
+     const d = document.getElementById("disconnect");
+     if (d) d.onclick = async () => { await api("/api/intervals/disconnect", { method: "POST" }); render(); };
++    const c = document.getElementById("connect");
++    if (c) c.onclick = async () => {
++      try {
++        const { url } = await api("/api/intervals/auth/init");
++        window.location.href = url;
++      } catch (e) {
++        root.insertAdjacentHTML("beforeend", `<p class="card">Error: ${esc(e.message)}</p>`);
++      }
++    };
+   } catch (e) {
+     root.innerHTML = `<p class="card">Error: ${esc(e.message)}</p>`;
+   }

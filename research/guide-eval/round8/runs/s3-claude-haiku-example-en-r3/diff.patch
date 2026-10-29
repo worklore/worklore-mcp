@@ -1,0 +1,153 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..b9723aa
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,93 @@
++# Why nightly-review never reported anything
++
++## Diagnosis
++
++The job was running. `launchctl-print.txt` shows `runs = 6` and `last exit code = 1`,
++which matches the six failures in `Library/Logs/nightly-review.err`. The problem was
++never that launchd didn't fire.
++
++Two bugs stacked:
++
++1. **The agent could not run: `Not logged in · Please run /login`.** `claude -p`
++   failed on every run (exit 1). The plist's `EnvironmentVariables` sets only `PATH`,
++   with no `USER`. Under launchd the CLI could not find its login, which is the case the
++   colleague note describes. The snapshot shows the error but not the root cause, so
++   treat `USER` as the likely fix and confirm it with the verification steps below.
++2. **The failure reporter never ran: `read-only variable: status`.** The script
++   assigned `status=$?`. In zsh, `status` is a read-only alias of `$?`, so the
++   assignment at line 19 kills the script. It sits between the agent call and the
++   Telegram failure notice, so the failure is swallowed silently. I reproduced this in a
++   scratch HOME with the original script: the error appears and no notification is
++   sent.
++
++Together these produce perfect silence: the job fails, and the only thing that could
++report the failure is killed before it speaks.
++
++## What changed
++
++- `bin/nightly-review.zsh`
++  - `status` renamed to `rc`, and the failure check now sits directly after the agent call.
++  - Agent stderr goes to a per-day `.err` file. The failure message includes its tail, so
++    the reason reaches your phone.
++  - An exit 0 with an empty report counts as a failure.
++  - Each run appends `rc`, duration in seconds, and output bytes to
++    `Library/Logs/nightly-review-runs.log`.
++  - `< /dev/null` on the `claude` call (defensive; see below).
++  - If the notifier itself fails, the script exits non-zero instead of pretending success.
++- `Library/LaunchAgents/com.vk.nightly-review.plist`: added `USER` = `vk` under
++  `EnvironmentVariables`. The plist paths use `/Users/vk`, so `vk` is my best guess for
++  the account name. Confirm it with `id -un` on the Mac.
++
++## Which parts of the colleague's note applied
++
++- **Applied:** `status` is read-only in zsh and kills the script, which silenced the
++  failure notice. This was the main bug.
++- **Applied:** check `launchctl print` first. It showed runs and exit code, and the
++  `.err` log showed the real error.
++- **Applied:** `USER` missing from the plist → "Not logged in" → set `USER`.
++- **Applied:** log each run's duration, and treat empty output as failure, so a green
++  exit code with nothing done is caught.
++- **Applied:** put the failure notification directly after the failure path.
++- **Did not apply:** the stdin/prompt bug ("Input must be provided…"). The logs don't show
++  it, and the prompt is passed as an argument. The original script never got that far.
++  I kept the prompt as an argument and added `< /dev/null` only as defensive hardening.
++- **Not verified:** the external article and the claim that launchd does not pass
++  `USER`. I did not fetch them.
++
++## What I could not verify here
++
++I cannot run launchd or call your real `claude` and Telegram from this snapshot. Both
++fixes are verified only by a local simulation: a scratch HOME with fake `claude` and
++`notify.sh` (failure, success, empty-output, and notifier-failure cases all behave as
++intended), plus `plutil -lint` and `zsh -n`. The real test is on your Mac.
++
++## Steps on your Mac
++
++```sh
++# copy the fixed files from the snapshot into place
++cp bin/nightly-review.zsh ~/bin/nightly-review.zsh
++cp Library/LaunchAgents/com.vk.nightly-review.plist ~/Library/LaunchAgents/
++
++# reload the plist so launchd picks up the new environment
++launchctl bootout gui/$UID ~/Library/LaunchAgents/com.vk.nightly-review.plist
++launchctl bootstrap gui/$UID ~/Library/LaunchAgents/com.vk.nightly-review.plist
++
++# run it now
++launchctl kickstart -k gui/$UID/com.vk.nightly-review
++```
++
++Then check all three:
++
++1. `launchctl print gui/$UID/com.vk.nightly-review` → `last exit code = 0`.
++2. `tail ~/Library/Logs/nightly-review-runs.log` → a new line with `rc=0`, a plausible
++   `seconds` (not 0–3), and `bytes` > 0. The report file
++   `~/Library/Logs/nightly-review-<today>.md` exists and is fresh.
++3. You received the "done" message on Telegram.
++
++If it still says "Not logged in", `USER` was not the only cause. Check that `claude`
++can log in non-interactively from launchd; `claude setup-token` may help, but keep any
++token in the keychain, not in the plist.
++
++To test the failure path, temporarily make the job fail (for example, point `REPO` at a
++missing directory with a bogus value), kickstart it, and confirm the "FAILED" message
++arrives on Telegram. Then restore the file.
+diff --git a/Library/LaunchAgents/com.vk.nightly-review.plist b/Library/LaunchAgents/com.vk.nightly-review.plist
+index c347363..d49eacf 100644
+--- a/Library/LaunchAgents/com.vk.nightly-review.plist
++++ b/Library/LaunchAgents/com.vk.nightly-review.plist
+@@ -24,6 +24,8 @@
+   <dict>
+     <key>PATH</key>
+     <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
++    <key>USER</key>
++    <string>vk</string>
+   </dict>
+ </dict>
+ </plist>
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..18eea4b 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -3,7 +3,10 @@
+ set -u
+ 
+ REPO="$HOME/projects/shop"
+-OUT="$HOME/Library/Logs/nightly-review-$(date +%F).md"
++LOGS="$HOME/Library/Logs"
++OUT="$LOGS/nightly-review-$(date +%F).md"
++ERR="$LOGS/nightly-review-$(date +%F).err"
++RUNLOG="$LOGS/nightly-review-runs.log"
+ NOTIFY="$HOME/bin/notify.sh"
+ 
+ SINCE=$(date -v-1d +%F)
+@@ -15,12 +18,18 @@ Do not modify any file."
+ 
+ cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
+ 
+-claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
++# zsh reserves `status` (read-only alias of $?), so use rc. Keep the failure
++# check directly after the agent call so nothing can sit between failure and report.
++START=$SECONDS
++claude -p "$PROMPT" --output-format text > "$OUT" 2> "$ERR" < /dev/null
++rc=$?
++ELAPSED=$(( SECONDS - START ))
++print -r -- "$(date '+%F %T') rc=$rc seconds=$ELAPSED bytes=$(wc -c < "$OUT" | tr -d ' ')" >> "$RUNLOG"
+ 
+-if [ $status -ne 0 ]; then
+-  "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
+-  exit $status
++# An empty report is a failure too: exit 0 with nothing done must not look like success.
++if (( rc != 0 )) || [[ ! -s "$OUT" ]]; then
++  "$NOTIFY" "nightly review FAILED (rc $rc, ${ELAPSED}s), see $ERR: $(tail -c 300 "$ERR")" || exit 1
++  exit $(( rc ? rc : 1 ))
+ fi
+ 
+-"$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"
++"$NOTIFY" "nightly review done (${ELAPSED}s): $(head -c 300 "$OUT")" || exit 1

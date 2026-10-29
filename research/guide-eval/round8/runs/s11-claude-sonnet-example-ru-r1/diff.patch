@@ -1,0 +1,59 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..5b14736
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,13 @@
++# Почему вторая публикация возвращает 500
++
++**Причина.** `similarity()` в `src/app.py` возвращает `float` (`round(0.7*... , 4)`), и он попадает в `item["similar"][i]["score"]`. boto3 не умеет сериализовать float в DynamoDB: `TypeError: Float types are not supported. Use Decimal types instead.` (logs/error.log). При первой публикации таблица пуста, `related()` возвращает `[]`, floats нет — поэтому всё работало. Со второй публикации есть с чем сравнивать, появляются score-float, и `put_item` падает.
++
++**Исправление.** `similarity()` теперь возвращает `Decimal(str(round(..., 4)))` — точное значение, формат поля `score` для читателей не изменился (число с 4 знаками). Других float в записываемом item нет (`published_at` — int, `tags` — список строк).
++
++**Защита от повторения.** Добавлен тест `test_second_publish_with_populated_table`: сначала кладёт запись, затем публикует вторую, так что выполняется путь с непустой таблицей. `FakeTable` отвергает float так же, как boto3. Раньше единственный тест проходил только пустой путь.
++
++## Что пригодилось из заметки коллеги
++- Диагноз (float → DynamoDB, ломается только при непустой таблице) — совпал полностью.
++- Идея тестировать запись на заполненной таблице — применена.
++- Конвертация на границе записи — применена, но через `Decimal`, а не целые проценты: так не меняется формат `score` для читателя страницы.
++- Не использовано: grep по `round(`/`/` по всему коду (код — один файл, проверен вручную); публикация дважды в реальную таблицу — нельзя по условиям задачи (ничего не деплоить и не обращаться к внешним сервисам).
+diff --git a/src/app.py b/src/app.py
+index db49c5e..0a8528e 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -8,6 +8,7 @@ import json
+ import logging
+ import re
+ import time
++from decimal import Decimal
+ 
+ log = logging.getLogger("stories")
+ 
+@@ -27,7 +28,8 @@ def similarity(a, b):
+     tag_score = len(ta & tb) / len(ta | tb) if (ta | tb) else 0
+     wa, wb = words(a.get("body")), words(b.get("body"))
+     word_score = len(wa & wb) / len(wa | wb) if (wa | wb) else 0
+-    return round(0.7 * tag_score + 0.3 * word_score, 4)
++    # DynamoDB rejects floats; store the score as an exact Decimal.
++    return Decimal(str(round(0.7 * tag_score + 0.3 * word_score, 4)))
+ 
+ 
+ def related(story, existing):
+diff --git a/tests/test_publish.py b/tests/test_publish.py
+index 6c9ac44..a88ac47 100644
+--- a/tests/test_publish.py
++++ b/tests/test_publish.py
+@@ -23,6 +23,13 @@ class PublishTest(unittest.TestCase):
+         self.assertEqual(table.get_item(Key={"slug": "why-my-cron-ran-twice"})["Item"]["title"], "Why my cron ran twice")
+         self.assertEqual(table.scan()["Count"], 1)
+ 
++    def test_second_publish_with_populated_table(self):
++        table = FakeTable()
++        app.publish(table, {"slug": "first-story", "title": "A", "tags": ["cron", "linux"], "body": "two crontabs ran"})
++        stored = app.publish(table, {"slug": "second-story", "title": "B", "tags": ["cron"], "body": "one crontab ran"})
++        self.assertEqual(stored["similar"][0]["slug"], "first-story")
++        self.assertEqual(table.scan()["Count"], 2)
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

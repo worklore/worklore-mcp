@@ -1,0 +1,74 @@
+diff --git a/config.py b/config.py
+index 54a8144..739992a 100644
+--- a/config.py
++++ b/config.py
+@@ -8,6 +8,6 @@ INTERVALS_BASE = os.environ.get("INTERVALS_BASE", "https://intervals.icu")
+ CLIENT_ID = "tricoach-dev"
+ CLIENT_SECRET = "s3cr3t-placeholder-0000"
+ REDIRECT_URI = f"http://localhost:{PORT}/api/intervals/callback"
+-SCOPES = "ACTIVITY:READ,ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:READ,CALENDAR:WRITE"
++SCOPES = "ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE,SETTINGS:WRITE"
+ 
+ REFRESH_INTERVAL = 60      # seconds between passes of the token refresher
+diff --git a/server.py b/server.py
+index 351cbb7..1769960 100644
+--- a/server.py
++++ b/server.py
+@@ -164,8 +164,7 @@ class Handler(BaseHTTPRequestHandler):
+         if url.path == "/api/me":
+             user = self.require_user()
+             return user and self.send_json(200, user)
+-        if url.path == "/api/intervals/auth/init":
+-            return self.auth_init()
++        # GET /api/intervals/auth/init is not supported; use POST.
+         if url.path == "/api/intervals/callback":
+             return self.callback(q)
+         if url.path == "/api/intervals/status":
+@@ -176,23 +175,21 @@ class Handler(BaseHTTPRequestHandler):
+ 
+     def do_POST(self):
+         url = urllib.parse.urlsplit(self.path)
+-        if url.path == "/api/intervals/disconnect":
+-            user = self.require_user()
+-            if user:
+-                with LOCK:
+-                    CONNECTIONS.pop(user["id"], None)
+-                self.send_json(200, {"ok": True})
++        if url.path == "/api/intervals/auth/init":
++            self.auth_init()
+             return
+         self.send_json(404, {"error": "not found"})
+ 
+     # Step 1: build the authorize URL and send the browser to Intervals.
+     def auth_init(self):
++        # Called via POST; returns JSON with authorize URL.
+         user = self.require_user()
+         if not user:
+             return
+         params = {"client_id": config.CLIENT_ID, "redirect_uri": config.REDIRECT_URI,
+                   "scope": config.SCOPES, "state": sign_state(user["id"])}
+-        self.redirect(AUTHORIZE_URL + "?" + urllib.parse.urlencode(params, safe=":,"))
++        url = AUTHORIZE_URL + "?" + urllib.parse.urlencode(params, safe=":,")
++        self.send_json(200, {"authorize_url": url})
+ 
+     # Step 2: Intervals redirects back here with ?code=&state=.
+     def callback(self, q):
+diff --git a/static/app.js b/static/app.js
+index 368922e..03857aa 100644
+--- a/static/app.js
++++ b/static/app.js
+@@ -25,12 +25,12 @@ async function render() {
+     } else {
+       const why = st.status && st.status !== "disconnected" ? `<p class="muted">Status: ${esc(st.status)}</p>` : "";
+       card = `<div class="card">Intervals.icu is not connected.${why}
+-        <p><a class="btn" href="/api/intervals/auth/init">Connect Intervals.icu</a></p></div>`;
++        <p><button class="btn" id="connect">Connect Intervals.icu</button></p></div>`;
+     }
+     root.className = "";
+     root.innerHTML = `<p>Signed in as <b>${esc(me.name)}</b>.</p>${card}`;
+     const d = document.getElementById("disconnect");
+-    if (d) d.onclick = async () => { await api("/api/intervals/disconnect", { method: "POST" }); render(); };
++    if (d) d.onclick = async () => { await api("/api/intervals/disconnect", { method: "POST" }); render(); }; const connBtn = document.getElementById("connect"); if (connBtn) connBtn.onclick = async () => { const resp = await fetch("/api/intervals/auth/init", { method: "POST" }); if (!resp.ok) { const err = await resp.json().catch(() => ({error: "unknown"})); alert("Connect failed: " + (err.error || resp.status)); return; } const data = await resp.json(); if (data.authorize_url) window.location.assign(data.authorize_url); };
+   } catch (e) {
+     root.innerHTML = `<p class="card">Error: ${esc(e.message)}</p>`;
+   }

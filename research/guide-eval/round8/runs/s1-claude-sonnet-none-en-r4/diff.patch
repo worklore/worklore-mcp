@@ -1,0 +1,35 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..403c024
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,29 @@
++# ANSWER
++
++## Changes
++None. I did not change `gen.py`, because I can't verify a fix from this repo.
++
++## What the evidence shows
++- `gen.py` emits what the plan says: `hr: {units: "%lthr", value: lo, end: hi}`.
++  The readback (`event-184233-as-sent.json`) matches that exactly, so the generator isn't mangling the plan.
++- The clamping happens after the API accepts the event. Intervals.icu exports `%lthr` targets to Garmin
++  as the watch's own HR zones, so the watch shows zone bands (118–137, 151–162, ...). Re-setting the
++  watch LTHR only moves those bands, which fits this.
++- Both alternatives already tried fail for different reasons:
++  - `units: "bpm"` gave 214–249, so the values were scaled or interpreted differently from what we sent.
++  - `start_bpm`/`end_bpm` gave a constant 101, so those aren't fields the doc schema reads.
++
++## Why I stopped
++The fix is probably to send absolute bpm in a form that Intervals exports as a custom range
++(for example, converting `hr_pct × 172` in `gen.py` and using the correct units key). I don't know
++the right schema key or units string, though. Nothing in the repo documents it, and I'm not allowed to
++call the API to test. A guess would be a fourth failed attempt on a real event.
++
++## Suggested next step
++1. Check the Intervals.icu API docs, or create one workout in the UI with a custom bpm range
++   (e.g. 151–160 bpm). Then `GET` that event and copy the `workout_doc` shape it returns.
++2. Make `hr_target()` in `gen.py` produce that shape, with bpm = round(pct/100 × LTHR). LTHR (172)
++   would need to be a plan field or a CLI argument.
++3. Check the result on the watch (expected: 117–129, 151–160, 129–141, 112–124).
++
++If you give me that readback or a doc link, I can make the change.

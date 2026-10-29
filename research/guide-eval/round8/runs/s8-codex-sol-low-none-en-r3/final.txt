@@ -1,0 +1,3 @@
+I split the system prompt so `save_fact` changes the athlete context without changing the cached coaching instructions. Keyword based tool selection is unchanged. The change and its limits are documented in [ANSWER.md](/tmp/h-UwHtK5/ANSWER.md).
+
+A local check confirmed that a new fact appears in the next request while the cached instruction block stays identical. No API call was made, so cache usage has not been measured.

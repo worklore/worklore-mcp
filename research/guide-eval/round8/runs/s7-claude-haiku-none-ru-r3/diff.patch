@@ -1,0 +1,175 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..0224edc
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,48 @@
++# Intervals.icu: почему не подключается и что исправлено
++
++Три разные причины, каждая проявляется на своем шаге.
++
++## 1. Кнопка Connect отдает 401 (все атлеты, см. `logs/connect-attempt.log`, #1)
++
++**Причина.** Кнопка была `<a href="/api/intervals/auth/init">`. Браузер при переходе по ссылке не шлет заголовок `Authorization`. Токен tricoach лежит в `localStorage` и добавляется только обёрткой `api()` в `static/app.js`. Сервер видит запрос без токена и отвечает `{"error": "unauthorized"}`. Поэтому кнопка не работала ни у кого, и вопрос в #214 тоже про это.
++
++**Исправление.**
++- `server.py`, `auth_init`: вместо редиректа возвращает JSON `{"url": ...}` с authorize-ссылкой (запрос идет с токеном).
++- `static/app.js`: кнопка `#connect` через `api()` получает URL и делает `location.href = url`.
++
++## 2. Шаг authorize отвечает `400 invalid_request` (с 2026-10-02, см. `logs/connect-attempt.log`, #2)
++
++**Что известно.** Ошибка появилась после того, как в `SCOPES` добавили `CALENDAR:READ,CALENDAR:WRITE` (календарная синхронизация, 2026-10-02). Тело ответа не говорит, какой параметр не понравился, поэтому точную причину по логам определить нельзя.
++
++**Что сделано.** `config.py`: `SCOPES` сокращен до `ACTIVITY:READ,ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE`. По документации Intervals `WRITE` включает `READ`, поэтому `CALENDAR:READ` лишний. **Это не подтверждено:** с реальным Intervals я не проверял, потому что внешние сервисы трогать нельзя было.
++
++**Что еще проверить (возможно, главная причина).** `config.py` держит заглушки `CLIENT_ID = "tricoach-dev"` и `CLIENT_SECRET`, а README говорит, что настоящая пара лежит в env деплоя. Но `config.py` env не читает. Если на проде подставляется заглушка, Intervals не узнает клиента или redirect_uri и будет отвечать ровно такой ошибкой. Проверить на деплое:
++- какие переменные окружения заданы и что `CLIENT_ID` совпадает с зарегистрированным в Intervals;
++- что `http://localhost:8766/api/intervals/callback` (или прод-URL) зарегистрирован для этого клиента;
++- что клиенту разрешены CALENDAR-скоупы.
++Имена env-переменных я не угадываю, поэтому в `config.py` ничего не менял.
++
++## 3. Подключение «истекает через час» (T. Rivera, `logs/connect-attempt.log`, #3)
++
++**Причина.** Ответ токена от Intervals содержал только `access_token`, `scope` и `athlete`: ни `expires_in`, ни `refresh_token` (строка 36 лога). Сервер подставил `DEFAULT_TOKEN_TTL = 3600` и посчитал, что токен живет час. Через час фоновый обновлятель увидел, что refresh-токена нет, и пометил подключение `expired, reconnect`. Долгоживущий токен в итоге считался истекшим по нашей же выдумке.
++
++**Исправление.**
++- `server.py`: срок берется только из `expires_in`, который прислал провайдер. Если его нет, `expires_at = None`, и обновлятель такое подключение не трогает.
++- Константа `DEFAULT_TOKEN_TTL` удалена.
++- В лог при подключении пишется, что реально пришло (`expires_in=...`, `refresh_token=yes/no`).
++
++Сторонний источник (библиотека для Elixir) говорит, что токены Intervals не истекают и refresh-токенов нет. Это согласуется с логом, но официальной документации я не нашел, поэтому подтвердить стоит по официальным доке или тестовому подключению.
++
++**Что нужно от вас.** T. Rivera (#219) придется подключиться заново через исправленную кнопку. Старая запись в памяти сервера потеряна при перезапуске, так что переподключение нужно в любом случае. Revoke на стороне Intervals делать не нужно.
++
++## Проверено и не проверено
++
++- **Проверено локально** на мок-сервере Intervals (`INTERVALS_BASE=http://127.0.0.1:9999`, внешние сервисы не трогались): `auth/init` с токеном возвращает URL, без токена 401; переход по URL, callback с ответом провайдера без `expires_in`/`refresh_token`, статус `connected`, wellness отдает данные. `server.py`, `config.py` компилируются, `app.js` проходит `node --check`.
++- **Не проверено:** реальный обмен с intervals.icu. Причина 2 (400) на реальном провайдере не воспроизводилась.
++
++## Что осталось за рамками
++
++- В `logs/connect-attempt.log` (строка 36) лежит префикс access-токена реального атлета. Логи стоит почистить и не писать токены в лог.
++- `wellness()` при 401 от Intervals не переводит подключение в `expired, reconnect`, это отдельная доработка.
++- `refresh_tokens()` держит `LOCK` во время сетевых запросов. Не блокирует, но стоит исправить.
++- В `static/app.js` по умолчанию используется `tok-okafor` (dev-токен). На проде так быть не должно.
+diff --git a/config.py b/config.py
+index 54a8144..c9eda30 100644
+--- a/config.py
++++ b/config.py
+@@ -8,6 +8,6 @@ INTERVALS_BASE = os.environ.get("INTERVALS_BASE", "https://intervals.icu")
+ CLIENT_ID = "tricoach-dev"
+ CLIENT_SECRET = "s3cr3t-placeholder-0000"
+ REDIRECT_URI = f"http://localhost:{PORT}/api/intervals/callback"
+-SCOPES = "ACTIVITY:READ,ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:READ,CALENDAR:WRITE"
++SCOPES = "ACTIVITY:READ,ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE"   # WRITE implies READ on CALENDAR
+ 
+ REFRESH_INTERVAL = 60      # seconds between passes of the token refresher
+diff --git a/server.py b/server.py
+index 351cbb7..f51c110 100644
+--- a/server.py
++++ b/server.py
+@@ -12,7 +12,6 @@ import config
+ STATIC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
+ TOKEN_URL = config.INTERVALS_BASE + "/api/oauth/token"
+ AUTHORIZE_URL = config.INTERVALS_BASE + "/oauth/authorize"
+-DEFAULT_TOKEN_TTL = 3600   # seconds; used when the provider does not say how long a token lives
+ 
+ # --- in-memory store -------------------------------------------------------
+ USERS = {
+@@ -20,6 +19,7 @@ USERS = {
+     "tok-rivera": {"id": "u_rivera", "name": "T. Rivera"},
+ }
+ # user_id -> {athlete_id, athlete_name, access_token, refresh_token, scope, expires_at, status}
++# expires_at is None when the provider did not say when the token expires.
+ CONNECTIONS = {}
+ LOCK = threading.Lock()
+ 
+@@ -63,18 +63,19 @@ def exchange_code(code):
+ 
+ 
+ def store_connection(user_id, tok):
+-    expires_in = int(tok.get("expires_in") or DEFAULT_TOKEN_TTL)
++    # Only trust an expiry the provider actually sent; guessing one turns a long-lived token into "expired" an hour later.
++    expires_in = tok.get("expires_in")
+     refresh = tok.get("refresh_token")
+-    if not refresh:
+-        log(f"{user_id}: no refresh_token in response, scheduling expiry in {expires_in}s")
+     athlete = tok.get("athlete") or {}
+     with LOCK:
+         CONNECTIONS[user_id] = {
+             "athlete_id": athlete.get("id"), "athlete_name": athlete.get("name"),
+             "access_token": tok["access_token"], "refresh_token": refresh,
+-            "scope": tok.get("scope"), "expires_at": time.time() + expires_in, "status": "connected",
++            "scope": tok.get("scope"),
++            "expires_at": time.time() + int(expires_in) if expires_in else None, "status": "connected",
+         }
+-    log(f"{user_id}: connected as athlete {athlete.get('id')} (expires in {expires_in}s)")
++    log(f"{user_id}: connected as athlete {athlete.get('id')} "
++        f"(expires_in={expires_in}, refresh_token={'yes' if refresh else 'no'})")
+ 
+ 
+ def refresh_tokens():
+@@ -84,7 +85,7 @@ def refresh_tokens():
+         now = time.time()
+         with LOCK:
+             for uid, c in CONNECTIONS.items():
+-                if c["status"] != "connected" or c["expires_at"] - now > 300:
++                if c["status"] != "connected" or c["expires_at"] is None or c["expires_at"] - now > 300:
+                     continue
+                 if not c["refresh_token"]:
+                     log(f"{uid}: token expiry passed and no refresh token on file -> expired, reconnect")
+@@ -97,7 +98,7 @@ def refresh_tokens():
+                     })
+                     c.update(access_token=tok["access_token"],
+                              refresh_token=tok.get("refresh_token", c["refresh_token"]),
+-                             expires_at=now + int(tok["expires_in"]))
++                             expires_at=now + int(tok["expires_in"]) if tok.get("expires_in") else None)
+                     log(f"{uid}: token refreshed")
+                 except Exception as e:
+                     log(f"{uid}: refresh failed ({e}) -> expired, reconnect")
+@@ -185,14 +186,15 @@ class Handler(BaseHTTPRequestHandler):
+             return
+         self.send_json(404, {"error": "not found"})
+ 
+-    # Step 1: build the authorize URL and send the browser to Intervals.
++    # Step 1: return the authorize URL. The SPA fetches this with its Bearer token and then
++    # navigates there; a plain link would not send the Authorization header and gets a 401.
+     def auth_init(self):
+         user = self.require_user()
+         if not user:
+             return
+         params = {"client_id": config.CLIENT_ID, "redirect_uri": config.REDIRECT_URI,
+                   "scope": config.SCOPES, "state": sign_state(user["id"])}
+-        self.redirect(AUTHORIZE_URL + "?" + urllib.parse.urlencode(params, safe=":,"))
++        self.send_json(200, {"url": AUTHORIZE_URL + "?" + urllib.parse.urlencode(params, safe=":,")})
+ 
+     # Step 2: Intervals redirects back here with ?code=&state=.
+     def callback(self, q):
+diff --git a/static/app.js b/static/app.js
+index 368922e..3480725 100644
+--- a/static/app.js
++++ b/static/app.js
+@@ -25,12 +25,22 @@ async function render() {
+     } else {
+       const why = st.status && st.status !== "disconnected" ? `<p class="muted">Status: ${esc(st.status)}</p>` : "";
+       card = `<div class="card">Intervals.icu is not connected.${why}
+-        <p><a class="btn" href="/api/intervals/auth/init">Connect Intervals.icu</a></p></div>`;
++        <p><button class="btn" id="connect">Connect Intervals.icu</button></p></div>`;
+     }
+     root.className = "";
+     root.innerHTML = `<p>Signed in as <b>${esc(me.name)}</b>.</p>${card}`;
+     const d = document.getElementById("disconnect");
+     if (d) d.onclick = async () => { await api("/api/intervals/disconnect", { method: "POST" }); render(); };
++    const c = document.getElementById("connect");
++    if (c) c.onclick = async () => {
++      try {
++        // The Bearer token is only sent by api(), so fetch the URL first and then navigate.
++        const { url } = await api("/api/intervals/auth/init");
++        location.href = url;
++      } catch (e) {
++        alert("Could not start the Intervals.icu connection: " + e.message);
++      }
++    };
+   } catch (e) {
+     root.innerHTML = `<p class="card">Error: ${esc(e.message)}</p>`;
+   }

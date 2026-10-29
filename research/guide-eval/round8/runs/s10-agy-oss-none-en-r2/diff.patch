@@ -1,0 +1,83 @@
+diff --git a/lib/screens/registration_screen.dart b/lib/screens/registration_screen.dart
+index 059a250..0417f76 100644
+--- a/lib/screens/registration_screen.dart
++++ b/lib/screens/registration_screen.dart
+@@ -1,4 +1,9 @@
++
++
++
++
+ import 'package:flutter/material.dart';
++import '../analytics.dart';
+ 
+ class RegistrationScreen extends StatefulWidget {
+   const RegistrationScreen({super.key});
+@@ -9,9 +14,13 @@ class RegistrationScreen extends StatefulWidget {
+ 
+ class _RegistrationScreenState extends State<RegistrationScreen> {
+   final _email = TextEditingController();
++  bool _emailStartedSent = false;
++  
+   final _phone = TextEditingController();
++  
+   double _amount = 50000;
+-  bool _terms = false;
++  bool _termsAcceptedSent = false;
++bool _terms = false;
+ 
+   @override
+   void dispose() {
+@@ -36,14 +45,26 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
+               controller: _email,
+               keyboardType: TextInputType.emailAddress,
+               decoration: const InputDecoration(labelText: 'Email'),
+-              onChanged: (_) => setState(() {}),
++              onChanged: (_) {
++                if (!_emailStartedSent) {
++                  _emailStartedSent = true;
++                  Analytics.capture('registration_email_started');
++                }
++                setState(() {});
++              },
+             ),
+             const SizedBox(height: 12),
+             TextField(
+               controller: _phone,
+               keyboardType: TextInputType.phone,
+               decoration: const InputDecoration(labelText: 'Phone'),
+-              onChanged: (_) => setState(() {}),
++              onChanged: (_) {
++                if (!_phoneStartedSent) {
++                  _phoneStartedSent = true;
++                  Analytics.capture('registration_phone_started');
++                }
++                setState(() {});
++              },
+             ),
+             const SizedBox(height: 24),
+             Text('Loan amount: ${_amount.round()}'),
+@@ -53,13 +74,22 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
+               divisions: 49,
+               value: _amount,
+               label: _amount.round().toString(),
+-              onChanged: (v) => setState(() => _amount = v),
++              onChanged: (v) {
++                setState(() => _amount = v);
++                Analytics.capture('loan_amount_changed', {'amount': v.round()});
++              },
+             ),
+             CheckboxListTile(
+               value: _terms,
+               title: const Text('I accept the terms and conditions'),
+               controlAffinity: ListTileControlAffinity.leading,
+-              onChanged: (v) => setState(() => _terms = v ?? false),
++              onChanged: (v) {
++                setState(() => _terms = v ?? false);
++                if (_terms && !_termsAcceptedSent) {
++                  _termsAcceptedSent = true;
++                  Analytics.capture('terms_accepted');
++                }
++              },
+             ),
+             const Spacer(),
+             FilledButton(

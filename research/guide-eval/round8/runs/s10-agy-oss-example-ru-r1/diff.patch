@@ -1,0 +1,85 @@
+diff --git a/lib/screens/registration_screen.dart b/lib/screens/registration_screen.dart
+index 059a250..4434a9e 100644
+--- a/lib/screens/registration_screen.dart
++++ b/lib/screens/registration_screen.dart
+@@ -1,4 +1,4 @@
+-import 'package:flutter/material.dart';
++import '../analytics.dart';
+ 
+ class RegistrationScreen extends StatefulWidget {
+   const RegistrationScreen({super.key});
+@@ -8,10 +8,18 @@ class RegistrationScreen extends StatefulWidget {
+ }
+ 
+ class _RegistrationScreenState extends State<RegistrationScreen> {
++  // Flags to ensure events are only sent once per screen visit
++  bool _phoneStartedFired = false;
++  bool _phoneStartedFired = false;
++  // Analytics wrapper
++  // ignore: unused_import
++
+   final _email = TextEditingController();
+   final _phone = TextEditingController();
+   double _amount = 50000;
+-  bool _terms = false;
++  bool _loanAmountChangedFired = false;
++  bool _termsAcceptedFired = false;
++  bool _termsAcceptedFired = false;
+ 
+   @override
+   void dispose() {
+@@ -36,14 +44,26 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
+               controller: _email,
+               keyboardType: TextInputType.emailAddress,
+               decoration: const InputDecoration(labelText: 'Email'),
+-              onChanged: (_) => setState(() {}),
++              onChanged: (value) {
++                  if (!_phoneStartedFired) {
++                    Analytics.capture('registration_phone_started');
++                    _phoneStartedFired = true;
++                  }
++                  setState(() {});
++                },
+             ),
+             const SizedBox(height: 12),
+             TextField(
+               controller: _phone,
+               keyboardType: TextInputType.phone,
+               decoration: const InputDecoration(labelText: 'Phone'),
+-              onChanged: (_) => setState(() {}),
++              onChanged: (value) {
++                  if (!_phoneStartedFired) {
++                    Analytics.capture('registration_phone_started');
++                    _phoneStartedFired = true;
++                  }
++                  setState(() {});
++                },
+             ),
+             const SizedBox(height: 24),
+             Text('Loan amount: ${_amount.round()}'),
+@@ -54,12 +74,24 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
+               value: _amount,
+               label: _amount.round().toString(),
+               onChanged: (v) => setState(() => _amount = v),
++              onChangeEnd: (v) {
++                if (!_loanAmountChangedFired) {
++                  Analytics.capture('loan_amount_changed', {'amount': v.round()});
++                  _loanAmountChangedFired = true;
++                }
++              },
+             ),
+             CheckboxListTile(
+               value: _terms,
+               title: const Text('I accept the terms and conditions'),
+               controlAffinity: ListTileControlAffinity.leading,
+-              onChanged: (v) => setState(() => _terms = v ?? false),
++              onChanged: (v) {
++                setState(() => _terms = v ?? false);
++                if (v == true && !_termsAcceptedFired) {
++                  Analytics.capture('terms_accepted');
++                  _termsAcceptedFired = true;
++                }
++              },
+             ),
+             const Spacer(),
+             FilledButton(

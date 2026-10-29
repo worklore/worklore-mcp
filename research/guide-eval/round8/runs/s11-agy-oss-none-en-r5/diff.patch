@@ -1,0 +1,32 @@
+diff --git a/src/app.py b/src/app.py
+index db49c5e..f69af46 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -8,6 +8,8 @@ import json
+ import logging
+ import re
+ import time
++from decimal import Decimal
++
+ 
+ log = logging.getLogger("stories")
+ 
+@@ -30,12 +32,17 @@ def similarity(a, b):
+     return round(0.7 * tag_score + 0.3 * word_score, 4)
+ 
+ 
++import time
++from decimal import Decimal
++
+ def related(story, existing):
+     scored = []
+     for other in existing:
+         if other["slug"] == story["slug"]:
+             continue
+-        scored.append({"slug": other["slug"], "score": similarity(story, other)})
++        # Convert similarity score to Decimal to avoid DynamoDB float issue
++        score = Decimal(str(similarity(story, other)))
++        scored.append({"slug": other["slug"], "score": score})
+     scored.sort(key=lambda s: s["score"], reverse=True)
+     return scored[:TOP_N]
+ 

@@ -1,0 +1,55 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..eb0715a
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,26 @@
++# Changes Made to Fix Prompt Caching
++
++## 1. What was changed in the codebase
++
++In [bot.py](file:///tmp/h-uAmP4j/bot.py#L129-L136), the `build_system(a, today)` function previously concatenated the static instruction text (`INSTRUCTIONS`) and the athlete context (`athlete_context(a, today)`) into a single text block with a single `cache_control: {"type": "ephemeral"}` marker. Because Anthropic prompt caching operates as a prefix hash, any memory write (`save_fact`) modified the facts section appended to that single block, invalidating the entire cached system prompt (resulting in `cache_read_input_tokens: 0` and re-caching the entire ~1000+ tokens).
++
++The function was updated to return two distinct text blocks, each configured with `cache_control: {"type": "ephemeral"}`:
++- **Segment 1 (Static instructions prefix):** `{"type": "text", "text": INSTRUCTIONS, "cache_control": {"type": "ephemeral"}}`
++  This block is byte-stable and invariant across users, days, and tool calls.
++- **Segment 2 (Volatile per-user tail):** `{"type": "text", "text": athlete_context(a, today), "cache_control": {"type": "ephemeral"}}`
++  This block contains the volatile data (date, athlete profile, zones, goal, facts, language).
++
++When `save_fact` appends a new fact to the athlete profile, only Segment 2's cache is invalidated and recreated (~240 tokens). Segment 1 remains cached and is hit on subsequent rounds or calls.
++
++---
++
++## 2. Analysis of the colleague's note: which parts applied and which did not
++
++### What applied:
++- **Two `cache_control: {"type": "ephemeral"}` markers on separate system prompt blocks (Step 1):** Directly applied to `build_system()`. Segment 1 isolates `INSTRUCTIONS` (byte-stable text without interpolated dates or counters), and Segment 2 contains the volatile context (`athlete_context(a, today)`).
++- **Prefix cache invalidation rationale:** The understanding of prefix hashing—specifically that mutating facts in a unified block invalidates instructions preceding them unless segmented by a cache breakpoint—was the root cause and directly guided the fix.
++- **Monitoring usage metrics (Step 4 & Verify):** Confirmed against `logs/usage.jsonl`, where `save_fact` previously caused `cache_read_input_tokens: 0` and full re-creation of ~1060–1100 tokens. With two segments, the static block (~780 tokens) remains cached.
++
++### What did not apply / was ignored:
++- **Tool filtering by keyword (Initial win & Step 2):** Already implemented in the codebase via `select_tools()` and noted in `NOTES.md` as working well (~75% reduction on short messages). No changes to tool schemas or filtering logic were needed.
++- **Top-N fact selection / dynamic memory filtering (Non-obvious refusal & Step 3):** The codebase already appends and injects all facts (`lines += [f"- {f}" for f in a.facts]`) without dynamic per-message filtering, so no code needed to be changed or refused there.
+diff --git a/__pycache__/bot.cpython-314.pyc b/__pycache__/bot.cpython-314.pyc
+new file mode 100644
+index 0000000..7f38ec4
+Binary files /dev/null and b/__pycache__/bot.cpython-314.pyc differ
+diff --git a/bot.py b/bot.py
+index e2ff241..e9c9693 100644
+--- a/bot.py
++++ b/bot.py
+@@ -128,9 +128,11 @@ def athlete_context(a, today):
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    # Two blocks, cached separately: static instructions and per-athlete context.
++    return [
++        {"type": "text", "text": INSTRUCTIONS, "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": athlete_context(a, today), "cache_control": {"type": "ephemeral"}},
++    ]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [

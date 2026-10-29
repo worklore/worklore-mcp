@@ -1,0 +1,74 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..6620781
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,43 @@
++# Fix: memory writes no longer evict the static instructions
++
++## Cause
++`build_system` (bot.py) sent one text block, `INSTRUCTIONS + athlete_context`, with a single
++`cache_control` marker. `save_fact` changes the facts list, so the block's bytes change and the
++whole prefix misses. That matches `logs/usage.jsonl`: after a `save_fact`, `cache_read` is 0 and
++`cache_creation` is about 1000 again.
++
++## Change
++`build_system` now returns two blocks, each with its own `ephemeral` marker:
++1. `INSTRUCTIONS`: static. It has no interpolation, so it is byte-identical for every user and day.
++2. `athlete_context(...)`: the date, profile, zones, goal, facts and language. This is the only part a memory write changes.
++
++Nothing else changed. Tool filtering is untouched, as NOTES.md asks. Tools sit above the system
++prompt in the cached prefix, so I did not touch their order or wording.
++
++Checked offline: after appending a fact, block 0 is identical and only block 1 differs.
++I did not call the API, so the effect on real `cache_read` / `cache_creation` numbers is unverified.
++
++## Caveat: the static prefix may be too small to cache
++Sonnet 4.5 needs at least 1024 tokens before a breakpoint. My estimate for the static prefix
++(tools plus `INSTRUCTIONS`) is about 730 tokens (2484 characters of instructions, about 620 tokens,
++plus about 110 for the core tools). That is below the minimum, so the first marker may be silently
++ignored. If so, a memory write would still re-create the whole prompt, because only the second
++marker would cache and it covers everything.
++
++To check, trigger a `save_fact`, then send another message, and read `usage` in `logs/usage.jsonl`:
++`cache_read_input_tokens` should be about 730 or more, and `cache_creation_input_tokens` should be
++only the tail, about 300. If `cache_read` is 0, the prefix is under the minimum.
++The options are to grow the static part with real coaching content or to switch models.
++I did not pad the prompt with invented rules.
++
++## Colleague's note
++Applied:
++- The two-marker split.
++- Keeping the static block free of dates, names and counters.
++- Leaving the tools array stable.
++- Reading `usage` to verify.
++
++Not applicable:
++- Top-N fact selection. The code already injects all facts, which is what the note recommends.
++- The tool-filtering design. It already exists.
++- The note's token counts (780 static / 240 tail). They don't carry over to this prompt because of the 1024 minimum above.
+diff --git a/__pycache__/bot.cpython-314.pyc b/__pycache__/bot.cpython-314.pyc
+new file mode 100644
+index 0000000..0ae7f1d
+Binary files /dev/null and b/__pycache__/bot.cpython-314.pyc differ
+diff --git a/bot.py b/bot.py
+index e2ff241..085837e 100644
+--- a/bot.py
++++ b/bot.py
+@@ -128,9 +128,13 @@ def athlete_context(a, today):
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    # Two cached segments. The instructions are byte-identical for everyone, so a
++    # save_fact (which rewrites the tail) leaves that prefix valid. Keep anything
++    # per-user, per-day or per-write out of INSTRUCTIONS.
++    return [
++        {"type": "text", "text": INSTRUCTIONS, "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": athlete_context(a, today), "cache_control": {"type": "ephemeral"}},
++    ]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [

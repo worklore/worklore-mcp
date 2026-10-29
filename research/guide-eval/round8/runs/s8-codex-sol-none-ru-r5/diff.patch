@@ -1,0 +1,129 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..34ae0cb
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,7 @@
++# Исправление кеширования
++
++Причина: `build_system` ставил `cache_control` после всего системного текста, включая долгосрочные факты. После `save_fact` менялся кешируемый префикс, поэтому следующий вызов создавал его заново. Это соответствует записям в `logs/usage.jsonl`: после сохранения факта `cache_read_input_tokens` становился 0, а `cache_creation_input_tokens` — около 1000.
++
++Теперь системный промпт состоит из двух блоков. Первый содержит инструкции и устойчивый профиль спортсмена (имя, вид спорта, зоны, цель, язык) и заканчивается меткой `cache_control`. Второй содержит текущую дату и долгосрочные факты без метки. Сохранение факта меняет только второй блок, поэтому кеш инструкций и профиля остается пригодным. В инструкции добавлены уточнения применения уже существующих правил, чтобы устойчивый префикс уверенно превышал минимальный размер кешируемого промпта модели. Выбор инструментов по ключевым словам не менялся.
++
++Проверка: `python3 -m unittest -v test_cache.py` проверяет неизменность кешируемого блока после `save_fact`, наличие нового факта в следующем запросе и изменение только некешируемого блока при смене даты. Внешних вызовов нет. Фактическое число кешированных токенов можно подтвердить только по новым записям `logs/usage.jsonl` при работе бота; текущий лог описывает поведение до исправления.
+diff --git a/README.md b/README.md
+index ebd390e..f962114 100644
+--- a/README.md
++++ b/README.md
+@@ -11,6 +11,8 @@ its system prompt. Every API call appends its `usage` object to `logs/usage.json
+ Run it locally with `COACH_ANTHROPIC_KEY=sk-ant-... python3 bot.py 42` and type
+ messages on stdin (the Telegram long-polling transport, which needs
+ `COACH_TELEGRAM_TOKEN`, lives in a separate deploy repo and just calls `reply()`).
+-Requires Python 3.11+ and `pip install anthropic`. Prompt caching is on: the system
+-prompt carries a `cache_control` marker so the tool-loop rounds and follow-up
+-messages inside the 5-minute window read it from cache.
++Requires Python 3.11+ and `pip install anthropic`. Prompt caching is on: a
++`cache_control` marker follows the coaching rules and stable athlete profile.
++The date and long-term facts follow that marker, so saving a fact does not
++invalidate the cached prefix within its 5-minute lifetime. The selected tools
++are still part of the cache key; changing tool groups can create a new entry.
+diff --git a/bot.py b/bot.py
+index e2ff241..1ec4b1b 100644
+--- a/bot.py
++++ b/bot.py
+@@ -111,26 +111,44 @@ Formatting:
+ - Plain text. No markdown headings, no tables.
+ - Lists only for a session structure (warm-up / main / cool-down).
+ - Numbers with units: 45 min, 12 km, 150 bpm.
++
++Applying these rules:
++- Treat the profile as the source of truth for the athlete's name, language, sport, goal and heart-rate zones.
++- Treat the dated context and long-term facts that follow as current information about this athlete.
++- Check the facts before saving a new one. If the same information is already there, continue without calling save_fact.
++- When a workout is reported, record the completed session before giving feedback. Keep the feedback tied to what the athlete actually reported.
++- When a weekly plan is requested, use plan_week and describe its result in the athlete's language. Keep rest and easy sessions within the stated limits.
++- When a question lacks a number needed for a sound answer, ask for that number in one short question. Do not fill gaps with an assumed training history.
++- In every reply, put the direct answer first, then add only the context needed to make it useful.
+ """
+ 
+ 
+-def athlete_context(a, today):
++def athlete_profile(a):
+     lines = [
+-        f"Today: {today.isoformat()} ({today.strftime('%A')})",
+         f"Athlete: {a.name} (id {a.user_id}), sport: {a.sport}",
+         "Zones: " + ", ".join(f"{k} {v}" for k, v in a.zones.items()),
+         f"Goal: {a.goal}",
++        f"Language: {a.lang}",
++    ]
++    return "\n".join(lines)
++
++
++def athlete_context(a, today):
++    lines = [
++        f"Today: {today.isoformat()} ({today.strftime('%A')})",
+         "Long-term facts:",
+     ]
+     lines += [f"- {f}" for f in a.facts] or ["- (none yet)"]
+-    lines.append(f"Language: {a.lang}")
+     return "\n".join(lines)
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    # The cache boundary precedes the date and facts, which can change after a tool call.
++    stable = INSTRUCTIONS + "\n\n" + athlete_profile(a)
++    return [
++        {"type": "text", "text": stable, "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": athlete_context(a, today)},
++    ]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [
+diff --git a/test_cache.py b/test_cache.py
+new file mode 100644
+index 0000000..1d648ef
+--- /dev/null
++++ b/test_cache.py
+@@ -0,0 +1,39 @@
++"""Local checks for the prompt cache boundary; no API calls are made."""
++import datetime as dt
++import tempfile
++import unittest
++from pathlib import Path
++from unittest.mock import patch
++
++import bot
++
++
++class PromptCacheTests(unittest.TestCase):
++    def test_save_fact_keeps_cached_prefix_and_updates_context(self):
++        with tempfile.TemporaryDirectory() as tmp, patch.object(bot, "ATHLETES_FILE", str(Path(tmp) / "athletes.json")):
++            athlete = bot.Athlete(user_id="42", name="Marta")
++            today = dt.date(2026, 4, 18)
++            before = bot.build_request(athlete, [{"role": "user", "content": "hello"}], bot.select_tools("hello"), today)
++
++            bot.run_tool(athlete, "save_fact", {"fact": "Runs before work"})
++            after = bot.build_request(athlete, [{"role": "user", "content": "hello"}], bot.select_tools("hello"), today)
++            next_message = bot.build_system(bot.load_athlete("42"), today)
++
++            self.assertEqual(before["tools"], after["tools"])
++            self.assertEqual(before["system"][0], after["system"][0])
++            self.assertEqual(after["system"], next_message)
++            self.assertEqual(before["system"][0]["cache_control"], {"type": "ephemeral"})
++            self.assertNotIn("Runs before work", before["system"][0]["text"])
++            self.assertIn("Runs before work", after["system"][1]["text"])
++            self.assertNotIn("cache_control", after["system"][1])
++
++    def test_date_changes_only_uncached_context(self):
++        athlete = bot.Athlete(user_id="42", name="Marta")
++        before = bot.build_system(athlete, dt.date(2026, 4, 18))
++        after = bot.build_system(athlete, dt.date(2026, 4, 19))
++        self.assertEqual(before[0], after[0])
++        self.assertNotEqual(before[1], after[1])
++
++
++if __name__ == "__main__":
++    unittest.main()

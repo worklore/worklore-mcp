@@ -1,0 +1,3 @@
+The job **ran six times** and failed each time. Its log shows that `claude` was not logged in under launchd; then the wrapper assigned to zsh’s read-only `status` variable and stopped before sending a failure notification.
+
+I fixed the plist and wrapper, added checks for empty output and run duration, and documented the causes and which parts of the colleague’s note applied in [ANSWER.md](/tmp/h-8leSDQ/ANSWER.md). The script passes `zsh -n`, and the plist parses. This snapshot cannot verify live authentication or Telegram delivery; no external service was contacted.

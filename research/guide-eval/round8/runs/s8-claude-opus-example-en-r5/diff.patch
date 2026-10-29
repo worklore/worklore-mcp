@@ -1,0 +1,233 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..99b53fb
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,100 @@
++# Why save_fact evicted the system prompt, and what changed
++
++## Diagnosis
++
++`build_system` sent instructions, profile, date and facts as **one** cached text block.
++Prompt caching matches on the prefix, so when `save_fact` appended a fact, the block
++changed and the cache missed. That happened as early as round 2 of the same tool loop,
++because `run_tool` mutates the athlete record and the loop rebuilt the system prompt
++every round. In `logs/usage.jsonl`, every call right after a `save_fact` shows
++`cache_read_input_tokens: 0` and `cache_creation_input_tokens` of about 1040–1100.
++
++## Why splitting into two segments isn't enough here
++
++The colleague's main fix is two `cache_control` segments: static instructions first,
++then a volatile per-user tail. On this bot, that alone would probably do nothing.
++
++- The model is `claude-sonnet-4-5`, and its **minimum cacheable prefix is 1024 tokens**.
++  Smaller prefixes are silently not cached, even if they have a marker.
++- The log shows how close this bot is to that limit. User 77's whole prefix (tools +
++  instructions + profile + 2 facts) is cached at exactly **1024** tokens. Each fact
++  adds about 15 tokens, so tools + instructions come to roughly **900 tokens**.
++- A segment holding only the instructions would therefore fall below the minimum
++  with the core tool set. Its marker would be ignored, and every `save_fact` would
++  still rebuild about 1050 tokens. (The colleague's static block probably cleared the
++  minimum because ~55 tool schemas came before it. Here only 2 core tools do.)
++
++The only cacheable prefix is one that **includes the per-athlete block**. So that
++block has to stay byte-stable across memory writes.
++
++## What changed (bot.py)
++
++1. **Facts are snapshotted.** `Athlete` has two new fields: `cached_facts`, the
++   number of facts in the cached block, and `last_call`. `athlete_context()` lists
++   only `facts[:cached_facts]`.
++2. **New facts go in an uncached tail.** `build_system()` now returns
++   `[instructions ✓cache, profile+language+date+fact snapshot ✓cache, recent facts (no marker)]`.
++   A `save_fact` only adds about 15 tokens to the unmarked third block. No cached
++   byte changes, so the next call reads the whole ~1050-token prefix from cache. The
++   recent facts are still in the prompt, so rule 16 ("don't re-save a known fact")
++   keeps working.
++3. **Recent facts move into the snapshot only when the cache is cold anyway**
++   (`snapshot_facts()`): no call in the last 5 minutes, or a new day (the "Today" line
++   changes the block that day anyway). Rebuilding the snapshot then costs nothing extra.
++   `last_call` is recorded after each response, so the code errs toward not
++   rebuilding. A wrong guess only costs a few uncached fact tokens.
++4. **The system prompt is built once per message**, not once per loop round. The fact
++   saved in round 1 is already visible to the model as its own tool call, so round 2
++   reuses identical blocks.
++5. Marker 1 (instructions only) is kept. It does nothing with core tools only, because
++   it's under 1024 tokens. With a plan or race tool group attached it clears the
++   minimum and is shared across users. It costs nothing when it's ignored.
++6. `reply()` saves the athlete at the end to persist `last_call`/`cached_facts`.
++   Existing records without these fields load with defaults and rebuild on first use.
++
++Other changes:
++- The "Language" line moved from the bottom of the context block up next to the profile.
++- `build_request()` now takes the prebuilt system blocks.
++- README updated.
++
++## Expected effect
++
++| Call | Before | After |
++|---|---|---|
++| Round 2 after a `save_fact` | create ~1050 | read ~1050 |
++| Next message (within 5 min) | read | read ~1050, +~15 uncached per new fact |
++| First message after cache expiry | create | create (unchanged; recent facts get folded in here) |
++
++**Not verified against the real API.** The SDK isn't installed here, and I made no
++external calls. Instead, I ran a fake-LLM simulation (temporary files, deleted
++afterwards) through three messages, one of which included a `save_fact`. The cached
++blocks were byte-identical across all four API calls, and the new fact appeared in
++the uncached tail. After faking a 6-minute gap, the fact moved into the cached block.
++
++To check against the real API: send a message, then one that triggers `save_fact`,
++then another, all within 5 minutes. Rounds after the save should show
++`cache_creation_input_tokens: 0` and `cache_read` of about 1050.
++
++## Which parts of the colleague's note applied
++
++- **Applied:** The diagnosis (a prefix hash covering instructions and memory, so one
++  fact evicts everything).
++- **Applied:** "Read `usage` to see what happened". That is how the 1024-token limit
++  showed up.
++- **Applied:** Keeping cached blocks byte-stable, with no interpolated values in the
++  instructions. `INSTRUCTIONS` was already a plain constant.
++- **Applied:** Within one message's tool loop, keep everything constant. That is why
++  I freeze the system prompt per message.
++- **Applied in part:** Two `cache_control` markers. I kept them, but they are not what
++  fixes this case (see above). The fix is an append-only uncached tail with a deferred
++  snapshot rebuild.
++- **Applied:** Rejecting top-N or per-message fact selection. Nothing here selects
++  facts per message.
++- **Did not apply:** "~780-token static block caches on its own". It doesn't on Sonnet
++  4.5 with 2 core tools, because it's under the 1024 minimum.
++- **Left alone:** Tool filtering. NOTES.md says to keep it. Its cost is still visible:
++  a message that adds the plan or race group misses the whole prefix (the 1305/1334
++  creations in the log). Sending all tools all the time would remove those misses
++  and push marker 1 over the minimum. That trade-off is the owner's decision, so I
++  only mention it.
++- **Not relevant:** MCP, Telegram transport, the 4-marker limit (we use 2).
+diff --git a/README.md b/README.md
+index ebd390e..a5ac0a0 100644
+--- a/README.md
++++ b/README.md
+@@ -12,5 +12,7 @@ Run it locally with `COACH_ANTHROPIC_KEY=sk-ant-... python3 bot.py 42` and type
+ messages on stdin (the Telegram long-polling transport, which needs
+ `COACH_TELEGRAM_TOKEN`, lives in a separate deploy repo and just calls `reply()`).
+ Requires Python 3.11+ and `pip install anthropic`. Prompt caching is on: the system
+-prompt carries a `cache_control` marker so the tool-loop rounds and follow-up
+-messages inside the 5-minute window read it from cache.
++prompt is two cached blocks (instructions; profile + date + fact snapshot) plus an
++uncached block with facts saved since the snapshot, so a `save_fact` never changes
++cached bytes. Recent facts are folded into the snapshot only when the cache is
++cold anyway (5 min since the last call, or a new day). See ANSWER.md.
+diff --git a/bot.py b/bot.py
+index e2ff241..6cef826 100644
+--- a/bot.py
++++ b/bot.py
+@@ -16,6 +16,7 @@ MAX_TOKENS = 700
+ MAX_TOOL_ROUNDS = 5
+ ATHLETES_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "athletes.json")
+ USAGE_LOG = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs", "usage.jsonl")
++CACHE_TTL = dt.timedelta(minutes=5)  # Anthropic ephemeral cache lifetime, refreshed on every hit
+ 
+ # --------------------------------------------------------------------------- LLM
+ try:
+@@ -46,6 +47,10 @@ class Athlete:
+     goal: str = "finish a half marathon"
+     zones: dict = field(default_factory=lambda: {"Z1": "<135", "Z2": "135-150", "Z3": "150-162", "Z4": "162-172", "Z5": ">172"})
+     facts: list = field(default_factory=list)   # long-term memory, grows via save_fact
++    # Prompt-cache bookkeeping: facts[:cached_facts] sit in the cached system block; facts saved
++    # after that are sent in an uncached block until the cache goes cold (see snapshot_facts).
++    cached_facts: int = 0
++    last_call: str = ""                          # UTC ISO time of the last API response
+ 
+ 
+ def _load_all():
+@@ -115,22 +120,46 @@ Formatting:
+ 
+ 
+ def athlete_context(a, today):
++    """Per-athlete block, cached. Only facts already in the snapshot go here, so save_fact doesn't change it."""
+     lines = [
+-        f"Today: {today.isoformat()} ({today.strftime('%A')})",
+         f"Athlete: {a.name} (id {a.user_id}), sport: {a.sport}",
+         "Zones: " + ", ".join(f"{k} {v}" for k, v in a.zones.items()),
+         f"Goal: {a.goal}",
++        f"Language: {a.lang}",
++        f"Today: {today.isoformat()} ({today.strftime('%A')})",
+         "Long-term facts:",
+     ]
+-    lines += [f"- {f}" for f in a.facts] or ["- (none yet)"]
+-    lines.append(f"Language: {a.lang}")
++    lines += [f"- {f}" for f in a.facts[:a.cached_facts]] or ["- (none yet)"]
+     return "\n".join(lines)
+ 
+ 
++def recent_facts(a):
++    """Facts saved since the cached snapshot. Sent uncached (~15 tokens each) instead of rewriting the cache."""
++    new = a.facts[a.cached_facts:]
++    return "Long-term facts saved recently:\n" + "\n".join(f"- {f}" for f in new) if new else ""
++
++
++def snapshot_facts(a, now):
++    """Fold recent facts into the cached block, but only when that cache is gone anyway:
++    TTL expired since the last call, or the date changed (the Today line rewrites the block)."""
++    last = dt.datetime.fromisoformat(a.last_call) if a.last_call else None
++    if last is None or now - last >= CACHE_TTL or last.astimezone().date() != now.astimezone().date():
++        a.cached_facts = len(a.facts)
++    a.cached_facts = min(a.cached_facts, len(a.facts))
++
++
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    # Two cached segments + an uncached tail. Segment 1 (instructions) is byte-identical for everyone;
++    # on its own it is under Sonnet 4.5's 1024-token cache minimum with only the core tools, so its
++    # marker only pays off when extra tool groups are attached. Segment 2 (profile, date, fact snapshot)
++    # is what keeps the whole prefix cacheable. New facts go in the unmarked tail, so a save_fact
++    # never changes a cached byte.
++    system = [{"type": "text", "text": INSTRUCTIONS, "cache_control": {"type": "ephemeral"}},
++              {"type": "text", "text": athlete_context(a, today), "cache_control": {"type": "ephemeral"}}]
++    tail = recent_facts(a)
++    if tail:
++        system.append({"type": "text", "text": tail})
++    return system
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [
+@@ -187,26 +216,33 @@ def log_usage(usage, user_id, round_no, tool=None):
+         f.write(json.dumps(rec) + "\n")
+ 
+ 
+-def build_request(a, messages, tools, today):
+-    return {"model": MODEL, "max_tokens": MAX_TOKENS, "system": build_system(a, today), "tools": tools, "messages": messages}
++def build_request(system, messages, tools):
++    return {"model": MODEL, "max_tokens": MAX_TOKENS, "system": system, "tools": tools, "messages": messages}
+ 
+ 
+ def reply(user_id, text, llm=None):
+     llm = llm or LLM()
+     a = load_athlete(user_id)
+     today = dt.date.today()
++    snapshot_facts(a, dt.datetime.now(dt.timezone.utc))
++    # Built once per message: a save_fact inside the loop is already visible to the model as its own
++    # tool call, so later rounds reuse the exact same system blocks and read them from cache.
++    system = build_system(a, today)
+     tools = select_tools(text)
+     messages = [{"role": "user", "content": text}]
+     for round_no in range(1, MAX_TOOL_ROUNDS + 1):
+-        resp = llm.create(**build_request(a, messages, tools, today))
++        resp = llm.create(**build_request(system, messages, tools))
++        a.last_call = dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")
+         used_tools = [b.name for b in resp.content if b.type == "tool_use"]
+         log_usage(resp.usage, a.user_id, round_no, tool=",".join(used_tools) or None)
+         if resp.stop_reason != "tool_use":
++            save_athlete(a)
+             return "".join(b.text for b in resp.content if b.type == "text")
+         messages.append({"role": "assistant", "content": [b.model_dump() for b in resp.content]})
+         results = [{"type": "tool_result", "tool_use_id": b.id, "content": run_tool(a, b.name, b.input)}
+                    for b in resp.content if b.type == "tool_use"]
+         messages.append({"role": "user", "content": results})
++    save_athlete(a)
+     return "Sorry, I lost the thread. Ask me again?"
+ 
+ 

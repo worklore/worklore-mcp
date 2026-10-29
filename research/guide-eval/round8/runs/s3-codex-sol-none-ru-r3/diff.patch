@@ -1,0 +1,115 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..c31e6f3
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,17 @@
++# Почему ночная задача молчала
++
++`launchd` запускал её. В снимке `launchctl print` указаны `runs = 6`, `last exit code = 1` и календарный триггер на 02:30. Значит, расписание и загрузка агента не были причиной молчания.
++
++Каждый из шести запусков оставил в `nightly-review.err` две строки: `Not logged in · Please run /login` от `claude` и `read-only variable: status` от zsh. У процесса `claude`, запущенного через `launchd`, не оказалось пригодной авторизации. Затем скрипт пытался присвоить код выхода переменной `status`, которая в zsh доступна только для чтения. На этом исполнение прекращалось до ветки `nightly review FAILED`, поэтому даже сообщение об ошибке не отправлялось. Ручная проверка `notify.sh` подтверждала работу отправки в ручной среде, но не авторизацию `claude` в ночном процессе.
++
++## Что исправлено в снимке
++
++- `bin/nightly-review.zsh` получает учётные данные для безинтерактивного запуска из переменной `ANTHROPIC_API_KEY` или `CLAUDE_CODE_OAUTH_TOKEN`, а при их отсутствии пробует запись Keychain с именем `nightly-review-anthropic-api-key`. Если учётные данные недоступны, скрипт пишет понятную ошибку и пытается отправить её в Telegram.
++- Код выхода `claude` теперь сохраняется в обычную переменную `exit_code`; об ошибке и пустом результате отправляется уведомление. Права на создаваемый файл отчёта ограничены через `umask 077`.
++- `bin/notify.sh` сообщает в stderr о недоступном токене Telegram и о неуспешной отправке. Он проверяет HTTP-ошибку и подтверждение `ok` в ответе Telegram, а также повторяет попытки при временном сбое соединения.
++
++## Что нужно сделать на настоящем Mac
++
++Перенести исправленные скрипты из этого снимка на соответствующие пути в домашней директории. В Keychain пользователя создать запись типа **generic password** с именем службы `nightly-review-anthropic-api-key` и действующим Anthropic API key в поле пароля; либо предоставить процессу `launchd` один из двух указанных выше токенов через его окружение. Убедиться, что ночной процесс может читать эту запись и существующую запись `tg-bot` без интерактивного запроса Keychain. Без доступных учётных данных отчёт и уведомление доставить невозможно; причина отказа теперь будет видна в `nightly-review.err`.
++
++Проверены синтаксис обоих скриптов и plist, а также ветки успешного ответа, ошибки `claude` и пустого ответа с локальными подставными командами. Настоящие `claude`, Keychain и Telegram не вызывались; исправление не переносилось за пределы этой папки.
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..e4229ee 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -1,11 +1,28 @@
+ #!/bin/zsh
+ # Nightly review of yesterday's commits, summary to Telegram.
+ set -u
++umask 077
+ 
+ REPO="$HOME/projects/shop"
+ OUT="$HOME/Library/Logs/nightly-review-$(date +%F).md"
+ NOTIFY="$HOME/bin/notify.sh"
+ 
++report_failure() {
++  print -u2 -- "$1"
++  "$NOTIFY" "$1" || print -u2 -- "nightly review: failed to send Telegram notification"
++}
++
++# launchd does not inherit credentials exported in an interactive shell.
++# A dedicated Keychain item gives this unattended job an explicit credential.
++if [[ -z "${ANTHROPIC_API_KEY:-}" && -z "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]]; then
++  if api_key=$(/usr/bin/security find-generic-password -s nightly-review-anthropic-api-key -w 2>/dev/null) && [[ -n "$api_key" ]]; then
++    export ANTHROPIC_API_KEY="$api_key"
++  else
++    report_failure "nightly review FAILED: Claude credential unavailable (Keychain item nightly-review-anthropic-api-key)"
++    exit 1
++  fi
++fi
++
+ SINCE=$(date -v-1d +%F)
+ PROMPT="Review the commits in this repository since $SINCE.
+ For each commit: one line on what it changes and whether anything looks risky
+@@ -13,14 +30,20 @@ For each commit: one line on what it changes and whether anything looks risky
+ End with a three-line summary I can read on my phone.
+ Do not modify any file."
+ 
+-cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
+-
+-claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
++cd "$REPO" || { report_failure "nightly review FAILED: repo missing ($REPO)"; exit 1; }
+ 
+-if [ $status -ne 0 ]; then
+-  "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
+-  exit $status
++if claude -p "$PROMPT" --output-format text > "$OUT"; then
++  if [[ ! -s "$OUT" ]]; then
++    report_failure "nightly review FAILED: Claude returned empty output, see $OUT"
++    exit 1
++  fi
++else
++  exit_code=$?
++  report_failure "nightly review FAILED (exit $exit_code), see $OUT and nightly-review.err"
++  exit "$exit_code"
+ fi
+ 
+-"$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"
++"$NOTIFY" "nightly review done: $(head -c 300 "$OUT")" || {
++  print -u2 -- "nightly review: failed to send Telegram notification"
++  exit 1
++}
+diff --git a/bin/notify.sh b/bin/notify.sh
+index 818e531..8eb3b45 100755
+--- a/bin/notify.sh
++++ b/bin/notify.sh
+@@ -1,7 +1,22 @@
+ #!/bin/bash
+ # usage: notify.sh "message"  — sends a Telegram message to me.
+ set -eu
+-: "${TG_BOT_TOKEN:=$(security find-generic-password -s tg-bot -w)}"
++if [ -z "${TG_BOT_TOKEN:-}" ]; then
++  if ! TG_BOT_TOKEN=$(/usr/bin/security find-generic-password -s tg-bot -w); then
++    echo "notify: Telegram credential unavailable (Keychain item tg-bot)" >&2
++    exit 1
++  fi
++fi
++if [ -z "$TG_BOT_TOKEN" ]; then
++  echo "notify: Telegram credential is empty" >&2
++  exit 1
++fi
+ CHAT_ID=123456789
+-curl -sS -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
+-  -d chat_id="$CHAT_ID" --data-urlencode text="$1" > /dev/null
++response=$(/usr/bin/curl --fail --silent --show-error --retry 3 --retry-delay 5 \
++  --connect-timeout 10 --max-time 30 -X POST \
++  "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
++  -d chat_id="$CHAT_ID" --data-urlencode text="$1") || exit 1
++case "$response" in
++  *'"ok":true'*|*'"ok": true'*) ;;
++  *) echo "notify: Telegram did not confirm delivery" >&2; exit 1 ;;
++esac

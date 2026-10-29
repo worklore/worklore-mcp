@@ -1,0 +1,65 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..fe7bdb3
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,7 @@
++# Причина и исправление
++
++Первая публикация проходит, потому что в пустой библиотеке поле `similar` равно `[]`. При следующей публикации `related()` добавляет оценку сходства, которую `similarity()` вычисляет как `float`. `boto3` не сериализует `float` в DynamoDB, поэтому `put_item()` выбрасывает `TypeError: Float types are not supported`, а обработчик возвращает 500.
++
++В `related()` оценка теперь преобразуется в `Decimal` через строковое представление. Так сохраняется рассчитанное десятичное значение, а каждый элемент `similar` пригоден для записи через boto3. Добавлен тест, который публикует две истории через обработчик и проверяет успешный ответ и тип сохранённой оценки.
++
++Проверка: `python3 -m unittest discover tests -v` — 2 теста прошли.
+diff --git a/src/app.py b/src/app.py
+index db49c5e..d3d8129 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -8,6 +8,7 @@ import json
+ import logging
+ import re
+ import time
++from decimal import Decimal
+ 
+ log = logging.getLogger("stories")
+ 
+@@ -35,7 +36,7 @@ def related(story, existing):
+     for other in existing:
+         if other["slug"] == story["slug"]:
+             continue
+-        scored.append({"slug": other["slug"], "score": similarity(story, other)})
++        scored.append({"slug": other["slug"], "score": Decimal(str(similarity(story, other)))})
+     scored.sort(key=lambda s: s["score"], reverse=True)
+     return scored[:TOP_N]
+ 
+diff --git a/tests/test_publish.py b/tests/test_publish.py
+index 6c9ac44..dce2b8e 100644
+--- a/tests/test_publish.py
++++ b/tests/test_publish.py
+@@ -1,6 +1,8 @@
++import json
+ import os
+ import sys
+ import unittest
++from decimal import Decimal
+ 
+ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+ sys.path.insert(0, os.path.dirname(__file__))
+@@ -23,6 +25,17 @@ class PublishTest(unittest.TestCase):
+         self.assertEqual(table.get_item(Key={"slug": "why-my-cron-ran-twice"})["Item"]["title"], "Why my cron ran twice")
+         self.assertEqual(table.scan()["Count"], 1)
+ 
++    def test_second_publish_stores_related_score(self):
++        table = FakeTable()
++        first = {"slug": "first-story", "title": "First", "tags": ["python"], "body": "hello world"}
++        second = {"slug": "second-story", "title": "Second", "tags": ["python"], "body": "hello again"}
++        self.assertEqual(app.handler({"body": json.dumps(first)}, table)["statusCode"], 201)
++        self.assertEqual(app.handler({"body": json.dumps(second)}, table)["statusCode"], 201)
++        similar = table.get_item(Key={"slug": "second-story"})["Item"]["similar"]
++        self.assertEqual(len(similar), 1)
++        self.assertEqual(similar[0]["slug"], "first-story")
++        self.assertIsInstance(similar[0]["score"], Decimal)
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

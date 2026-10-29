@@ -1,0 +1,182 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..b8c5d27
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,114 @@
++# Why nightly-review never reported anything
++
++## Causes
++
++1. **The failure reporter was downstream of the failure, and zsh killed it.**
++   `bin/nightly-review.zsh` ran `status=$?` on line 19. In zsh, `status` is a
++   read-only alias for `$?`, so the assignment aborts the script:
++
++   ```
++   /Users/vk/bin/nightly-review.zsh:19: read-only variable: status
++   ```
++
++   The script exited before `notify.sh` was reached, so the failure message
++   was never sent. I reproduced this locally with a stub `claude` that exits 1:
++   the script died on that line and the notifier was never called.
++
++2. **Every run failed because the CLI could not find its login.**
++   `nightly-review.err` has six identical pairs, one per run, and
++   `launchctl-print.txt` shows `runs = 6`:
++
++   ```
++   Not logged in · Please run /login
++   /Users/vk/bin/nightly-review.zsh:19: read-only variable: status
++   ```
++
++   The job fired on schedule every time. The `last exit code = 1` came from the
++   `status` error, not from `claude`. The plist's `EnvironmentVariables` sets only
++   `PATH`, with no `USER`. My reading is that a headless `claude` launched by
++   launchd then cannot reach its keychain login. I could not confirm this here,
++   because the only real test is a launchd run on your machine (see below).
++
++3. **The notifier had never run under launchd, so it was an unverified silent
++   path.** `notify.sh` reads the token from the keychain and calls `curl` without
++   `-f`, so an HTTP error (bad token, etc.) exits 0 and its body is discarded. If
++   the keychain item is missing or locked, the token is empty and the call fails
++   silently. I could not confirm this from the logs, since the script never reached
++   the notifier. I hardened it anyway.
++
++Causes 1 and 2 are the two layers. Cause 1 hid cause 2.
++
++## Changes
++
++- `bin/nightly-review.zsh`
++  - `status=$?` → `rc=$?`.
++  - `< /dev/null` on the `claude` call.
++  - Failure if `rc != 0` **or** the output is empty (exit 0 with nothing done is
++    also a failure).
++  - Logs `exit`, `seconds`, and `bytes` for each run to stdout, which goes to
++    `nightly-review.out`. The duration is included in the success message.
++- `Library/LaunchAgents/com.vk.nightly-review.plist`
++  - Added `USER` (`vk`, taken from the paths in this plist) and `HOME`
++    (`/Users/vk`) to `EnvironmentVariables`.
++- `bin/notify.sh`
++  - Exits 1 with a message if the bot token is empty.
++  - `curl -fsS` so HTTP errors fail the script.
++
++## What from the colleague's note applied
++
++- **Applied, exactly the same bug:** `status` is read-only in zsh, and the
++  assignment sat between the agent call and the failure notification.
++- **Applied, matches the log:** "Not logged in" under launchd is fixed by setting
++  `USER` in the plist. I also set `HOME`, which the script uses; that is my addition.
++- **Applied as hardening:** `< /dev/null` on a prompt passed as an argument. This
++  is not the cause here.
++- **Applied:** the failure reporter now sits right after the call, with the exit
++  code checked. Run duration is logged.
++- **Applied:** `runs` and `last exit code` prove the job fired, not that it worked.
++  The check is whether the output exists and is fresh.
++- **Did not apply:** the "Input must be provided either through stdin or as a
++  prompt argument" error. It does not appear in these logs. The prompt was already
++  passed as an argument, and the real error was the login.
++
++## How I verified (locally only)
++
++- `zsh -n` on the script passes, and `plutil -lint` passes on the plist.
++- Stubbed `claude` runs, with the notifier replaced by a stub that logs its message:
++  - claude exits 1: `FAILED`, script exits 1.
++  - claude exits 0 with output: `done`, script exits 0.
++  - claude exits 0 with empty output: `FAILED`, script exits 1.
++- `notify.sh` with no token and a failing `security` stub: exits 1 before any
++  network call.
++- I did **not** run anything against Telegram or the real `claude` login, did not
++  copy files into `~/bin` or `~/Library/LaunchAgents`, and did not load or kick the
++  job. The stub tests do not prove that `claude` works under launchd.
++
++## What you need to do
++
++1. Copy the changed files into place and make the script executable:
++   ```
++   cp bin/nightly-review.zsh bin/notify.sh ~/bin/ && chmod +x ~/bin/nightly-review.zsh ~/bin/notify.sh
++   cp Library/LaunchAgents/com.vk.nightly-review.plist ~/Library/LaunchAgents/
++   ```
++   If your account name is not `vk`, change the `USER` and `HOME` values in the
++   plist first.
++2. Reload the job:
++   ```
++   launchctl bootout gui/$UID/com.vk.nightly-review   # may say "not loaded"; ignore
++   launchctl bootstrap gui/$UID ~/Library/LaunchAgents/com.vk.nightly-review.plist
++   ```
++3. Run it now and check the real outcome:
++   ```
++   launchctl kickstart -k gui/$UID/com.vk.nightly-review
++   launchctl print gui/$UID/com.vk.nightly-review | grep -E 'runs|last exit'
++   tail -n 3 ~/Library/Logs/nightly-review.out      # expect "claude exit=0 seconds=N bytes=M", N not ~0
++   ls -l ~/Library/Logs/nightly-review-$(date +%F).md   # expect a fresh summary
++   ```
++   Expect `last exit code = 0`, a non-trivial duration, a non-empty summary, and
++   the Telegram "done" message.
++4. Force one failure to test the failure path. For example, temporarily add
++   `exit 1` at the top of `~/bin/nightly-review.zsh` (or move `~/projects/shop`
++   aside), kickstart again, and confirm the Telegram "FAILED" message arrives.
++   Revert the change afterwards.
++5. Check `~/Library/Logs/nightly-review.err` for runs after 2026-10-18. The snapshot
++   stops there, so later runs are not in these files.
+diff --git a/Library/LaunchAgents/com.vk.nightly-review.plist b/Library/LaunchAgents/com.vk.nightly-review.plist
+index c347363..563be5d 100644
+--- a/Library/LaunchAgents/com.vk.nightly-review.plist
++++ b/Library/LaunchAgents/com.vk.nightly-review.plist
+@@ -24,6 +24,10 @@
+   <dict>
+     <key>PATH</key>
+     <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
++    <key>USER</key>
++    <string>vk</string>
++    <key>HOME</key>
++    <string>/Users/vk</string>
+   </dict>
+ </dict>
+ </plist>
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..7b3c747 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -15,12 +15,19 @@ Do not modify any file."
+ 
+ cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
+ 
+-claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
++# `status` is read-only in zsh (alias of $?), so use rc.
++# stdin is closed: the prompt is an argument, and claude must not wait on stdin.
++START=$SECONDS
++claude -p "$PROMPT" --output-format text < /dev/null > "$OUT"
++rc=$?
++ELAPSED=$((SECONDS - START))
++BYTES=$(wc -c < "$OUT" | tr -d ' ')
++echo "$(date '+%F %T') claude exit=$rc seconds=$ELAPSED bytes=$BYTES"
+ 
+-if [ $status -ne 0 ]; then
+-  "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
+-  exit $status
++# exit 0 with an empty output is also a failure.
++if [ $rc -ne 0 ] || [ "$BYTES" -eq 0 ]; then
++  "$NOTIFY" "nightly review FAILED (claude exit $rc, ${ELAPSED}s, $BYTES bytes), see $OUT"
++  exit 1
+ fi
+ 
+-"$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"
++"$NOTIFY" "nightly review done (${ELAPSED}s): $(head -c 300 "$OUT")"
+diff --git a/bin/notify.sh b/bin/notify.sh
+index 818e531..f52c436 100755
+--- a/bin/notify.sh
++++ b/bin/notify.sh
+@@ -2,6 +2,11 @@
+ # usage: notify.sh "message"  — sends a Telegram message to me.
+ set -eu
+ : "${TG_BOT_TOKEN:=$(security find-generic-password -s tg-bot -w)}"
++if [ -z "$TG_BOT_TOKEN" ]; then
++  echo "notify.sh: no Telegram bot token (keychain item tg-bot missing or locked)" >&2
++  exit 1
++fi
+ CHAT_ID=123456789
+-curl -sS -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
++# -f: HTTP errors (bad token, etc.) must fail the script, not vanish into /dev/null.
++curl -fsS -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
+   -d chat_id="$CHAT_ID" --data-urlencode text="$1" > /dev/null

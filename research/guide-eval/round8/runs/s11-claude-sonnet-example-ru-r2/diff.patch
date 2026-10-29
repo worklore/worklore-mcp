@@ -1,0 +1,75 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..5a28c7e
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,12 @@
++# Почему вторая публикация падает с 500
++
++**Причина.** `similarity()` возвращает `float` (`round(0.7*... , 4)`), а `publish()` кладёт эти значения в `similar[].score` и вызывает `table.put_item`. boto3 не принимает float (`TypeError: Float types are not supported`). При первой публикации таблица пуста, `related()` возвращает `[]` — float'ов нет, всё проходит. Со второй публикации в таблице уже есть истории, появляются score-ы и запись падает. Тест покрывал только путь с пустой таблицей.
++
++**Исправление.**
++- `src/app.py`: добавлена `to_dynamo()` (рекурсивно float → `Decimal(str(x))`), применяется к item прямо перед `put_item`. Так любое вычисляемое значение, добавленное в item позже, не сможет снова сломать запись; точность score сохранена.
++- `tests/test_publish.py`: новый тест публикует две истории подряд (вторая идёт через путь с существующими данными) и проверяет 201 через `handler`. Без исправления он падает.
++
++## Что пригодилось из заметки коллеги
++- Диагноз «первая запись проходит, потому что нет данных для расчёта» — совпал полностью.
++- Идея конвертировать на границе записи и тест с предзаполненной таблицей — использованы.
++- Не использовано: перевод score в целые проценты — выбрал Decimal, чтобы не менять формат хранимых данных. Проверка на реальной таблице не делалась (по условиям ничего не деплоится и не отправляется).
+diff --git a/src/app.py b/src/app.py
+index db49c5e..6bdee66 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -8,6 +8,7 @@ import json
+ import logging
+ import re
+ import time
++from decimal import Decimal
+ 
+ log = logging.getLogger("stories")
+ 
+@@ -40,6 +41,17 @@ def related(story, existing):
+     return scored[:TOP_N]
+ 
+ 
++def to_dynamo(value):
++    """Recursively convert floats to Decimal; DynamoDB rejects Python floats."""
++    if isinstance(value, float):
++        return Decimal(str(value))
++    if isinstance(value, dict):
++        return {k: to_dynamo(v) for k, v in value.items()}
++    if isinstance(value, (list, tuple)):
++        return [to_dynamo(v) for v in value]
++    return value
++
++
+ def validate(story):
+     for k in ("slug", "title", "body"):
+         if not story.get(k):
+@@ -60,6 +72,7 @@ def publish(table, story):
+         "published_at": int(time.time()),
+         "similar": related(story, existing),
+     }
++    item = to_dynamo(item)
+     table.put_item(Item=item)
+     log.info("publish slug=%s similar=%d stored", item["slug"], len(item["similar"]))
+     return item
+diff --git a/tests/test_publish.py b/tests/test_publish.py
+index 6c9ac44..b0ca192 100644
+--- a/tests/test_publish.py
++++ b/tests/test_publish.py
+@@ -23,6 +23,14 @@ class PublishTest(unittest.TestCase):
+         self.assertEqual(table.get_item(Key={"slug": "why-my-cron-ran-twice"})["Item"]["title"], "Why my cron ran twice")
+         self.assertEqual(table.scan()["Count"], 1)
+ 
++    def test_second_publish_with_existing_stories(self):
++        table = FakeTable()
++        app.publish(table, {"slug": "first-story", "title": "A", "tags": ["cron"], "body": "cron runs twice"})
++        stored = app.publish(table, {"slug": "second-story", "title": "B", "tags": ["cron", "linux"], "body": "cron on linux"})
++        self.assertEqual(stored["similar"][0]["slug"], "first-story")
++        self.assertEqual(table.scan()["Count"], 2)
++        self.assertEqual(app.handler({"body": '{"slug":"third-story","title":"C","body":"cron"}'}, table)["statusCode"], 201)
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

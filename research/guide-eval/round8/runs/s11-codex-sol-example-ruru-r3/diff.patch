@@ -1,0 +1,93 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..b189a98
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,19 @@
++# Почему вторая публикация возвращала 500
++
++В `logs/error.log` видно, что первая публикация сохранилась с `similar=0`, а следующая упала в `table.put_item(Item=item)` с ошибкой `TypeError: Float types are not supported. Use Decimal types instead.`
++
++При пустой таблице `related()` возвращал пустой список. После первой записи он вычислял `similarity()` для существующей истории. Деление и `round()` в этой функции давали Python `float`, который попадал в `item["similar"][...]["score"]`. Сериализатор DynamoDB через boto3 отклоняет `float`, поэтому обработчик отвечал 500. Ошибка зависела от наличия данных, а прежний тест проверял только первую запись в пустую таблицу.
++
++## Исправление
++
++Расчёт оценки теперь выполняется через `Decimal` от целых чисел и десятичных констант. Результат округляется до четырёх знаков, сохраняя прежнюю шкалу от 0 до 1, и в DynamoDB передаётся как `Decimal`. Добавлен регрессионный тест: он публикует две истории через `handler()`, проверяет оба ответа 201, наличие второй записи и тип и значение её оценки похожести.
++
++## Что пригодилось из заметки коллеги
++
++- Объяснение, почему первая запись в пустую таблицу проходит, а следующая включает путь вычисления похожести.
++- Подсказка проверить значения, попадающие в `put_item`, прежде всего результаты деления и `round()`.
++- Идея тестировать публикацию при уже заполненной таблице.
++
++Вариант с целыми процентами не использован: он поменял бы существующую шкалу оценки. Реальную таблицу не проверял, поскольку работа ограничена текущей директорией и внешние сервисы запрещены; локальный `FakeTable` проверяет запрет на `float`, как сериализатор boto3.
++
++Проверка: `python3 -m unittest discover tests -v` — 2 теста прошли.
+diff --git a/src/app.py b/src/app.py
+index db49c5e..e5d2f06 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -8,6 +8,7 @@ import json
+ import logging
+ import re
+ import time
++from decimal import Decimal
+ 
+ log = logging.getLogger("stories")
+ 
+@@ -24,10 +25,10 @@ def words(text):
+ def similarity(a, b):
+     """Shared-tag ratio (Jaccard), blended with shared words of the two bodies."""
+     ta, tb = set(a.get("tags", [])), set(b.get("tags", []))
+-    tag_score = len(ta & tb) / len(ta | tb) if (ta | tb) else 0
++    tag_score = Decimal(len(ta & tb)) / len(ta | tb) if (ta | tb) else Decimal(0)
+     wa, wb = words(a.get("body")), words(b.get("body"))
+-    word_score = len(wa & wb) / len(wa | wb) if (wa | wb) else 0
+-    return round(0.7 * tag_score + 0.3 * word_score, 4)
++    word_score = Decimal(len(wa & wb)) / len(wa | wb) if (wa | wb) else Decimal(0)
++    return (Decimal("0.7") * tag_score + Decimal("0.3") * word_score).quantize(Decimal("0.0001"))
+ 
+ 
+ def related(story, existing):
+diff --git a/tests/test_publish.py b/tests/test_publish.py
+index 6c9ac44..8c391d5 100644
+--- a/tests/test_publish.py
++++ b/tests/test_publish.py
+@@ -1,6 +1,8 @@
++import json
+ import os
+ import sys
+ import unittest
++from decimal import Decimal
+ 
+ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+ sys.path.insert(0, os.path.dirname(__file__))
+@@ -23,6 +25,28 @@ class PublishTest(unittest.TestCase):
+         self.assertEqual(table.get_item(Key={"slug": "why-my-cron-ran-twice"})["Item"]["title"], "Why my cron ran twice")
+         self.assertEqual(table.scan()["Count"], 1)
+ 
++    def test_second_publish_stores_decimal_similarity(self):
++        table = FakeTable()
++        first = {
++            "slug": "first-story",
++            "title": "First",
++            "tags": ["python"],
++            "body": "A short story",
++        }
++        second = {
++            "slug": "second-story",
++            "title": "Second",
++            "tags": ["python"],
++            "body": "Another short story",
++        }
++        self.assertEqual(app.handler({"body": json.dumps(first)}, table)["statusCode"], 201)
++        self.assertEqual(app.handler({"body": json.dumps(second)}, table)["statusCode"], 201)
++
++        stored = table.get_item(Key={"slug": "second-story"})["Item"]
++        self.assertEqual(table.scan()["Count"], 2)
++        self.assertEqual(stored["similar"], [{"slug": "first-story", "score": Decimal("0.8500")}])
++        self.assertIsInstance(stored["similar"][0]["score"], Decimal)
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

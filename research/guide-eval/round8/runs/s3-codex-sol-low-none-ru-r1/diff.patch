@@ -1,0 +1,40 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..a45f6e3
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,12 @@
++# Почему ночная задача молчала
++
++`launchctl-print.txt` показывает, что агент был загружен и запускался шесть раз (`runs = 6`, `last exit code = 1`). Расписание и пути в plist соответствуют ожидаемым; это не случай, когда launchd вообще не запускал задачу.
++
++В `Library/Logs/nightly-review.err` каждый запуск оставил две строки:
++
++1. `Not logged in · Please run /login` — `claude` в контексте задания не был авторизован, поэтому обзор не создавался. Вход в интерактивной оболочке не доказывает, что CLI доступна та же авторизация при запуске агентом.
++2. `read-only variable: status` — в zsh `status` является специальной переменной только для чтения. Присваивание на строке 19 прерывало скрипт до проверки кода возврата и вызова `notify.sh`. Поэтому не приходило даже сообщение об ошибке.
++
++В `bin/nightly-review.zsh` переменная переименована в `review_rc`. Вывод `claude` теперь целиком сохраняется в ежедневный файл, а короткий фрагмент ошибки входит в сообщение об отказе. При следующем сбое из-за отсутствия авторизации скрипт дойдет до `notify.sh` и сообщит причину, если Telegram notifier доступен в контексте launchd.
++
++Для успешного обзора нужно авторизовать `claude` под пользователем `vk` и убедиться, что его учетные данные доступны при запуске из launchd. Это действие требует настоящей учетной записи и не выполнялось в снимке. Измененный файл здесь также не меняет уже загруженный агент на исходном компьютере: исправление нужно перенести в `/Users/vk/bin/nightly-review.zsh`.
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..ca88e32 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -15,12 +15,12 @@ Do not modify any file."
+ 
+ cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
+ 
+-claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
++claude -p "$PROMPT" --output-format text > "$OUT" 2>&1
++review_rc=$?
+ 
+-if [ $status -ne 0 ]; then
+-  "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
+-  exit $status
++if [ "$review_rc" -ne 0 ]; then
++  "$NOTIFY" "nightly review FAILED (exit $review_rc): $(head -c 300 "$OUT")"
++  exit "$review_rc"
+ fi
+ 
+ "$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"

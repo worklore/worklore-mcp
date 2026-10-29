@@ -1,0 +1,53 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..2b6f1ac
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,7 @@
++# Почему задание молчало
++
++`launchctl-print.txt` показывает `runs = 6` и `last exit code = 1`: launchd запускал задание. В `Library/Logs/nightly-review.err` каждый запуск оставил две ошибки. `claude` завершался с `Not logged in · Please run /login`; в окружении задания отсутствовал `USER`, который нужен CLI для поиска учётных данных в связке ключей. Затем строка `status=$?` пыталась записать в доступную только для чтения специальную переменную zsh. Интерпретатор прерывал скрипт до ветки, отправляющей сообщение об ошибке. Поэтому Telegram не получил ни результат, ни сообщение о сбое.
++
++В plist добавлен `USER=vk`; в скрипте код возврата сохраняется в `rc`. Для аргумента `-p` закрыт stdin, чтобы фоновый CLI не ожидал ввод. Пустой файл результата теперь считается ошибкой и вызывает уведомление. Эти изменения сделаны только в снимке; установленный LaunchAgent ими пока не обновлён.
++
++Из заметки коллеги пригодились проверка числа запусков через `launchctl print`, чтение stderr, запрет присваивания `status` в zsh, `USER` для headless CLI, закрытие stdin при передаче prompt аргументом и проверка реального результата помимо кода выхода. Совет передавать prompt через pipe не понадобился: в данном снимке ошибка связана с авторизацией, а prompt уже передаётся аргументом. Сведения о времени выполнения и тестовые уведомления в снимке отсутствуют, поэтому доставку сообщений после исправления здесь подтвердить нельзя.
+diff --git a/Library/LaunchAgents/com.vk.nightly-review.plist b/Library/LaunchAgents/com.vk.nightly-review.plist
+index c347363..f371054 100644
+--- a/Library/LaunchAgents/com.vk.nightly-review.plist
++++ b/Library/LaunchAgents/com.vk.nightly-review.plist
+@@ -22,6 +22,8 @@
+   <string>/Users/vk/Library/Logs/nightly-review.err</string>
+   <key>EnvironmentVariables</key>
+   <dict>
++    <key>USER</key>
++    <string>vk</string>
+     <key>PATH</key>
+     <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+   </dict>
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..33d9c5a 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -15,12 +15,17 @@ Do not modify any file."
+ 
+ cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
+ 
+-claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
++claude -p "$PROMPT" --output-format text < /dev/null > "$OUT"
++rc=$?
+ 
+-if [ $status -ne 0 ]; then
+-  "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
+-  exit $status
++if [ "$rc" -ne 0 ]; then
++  "$NOTIFY" "nightly review FAILED (exit $rc), see $OUT"
++  exit "$rc"
++fi
++
++if [ ! -s "$OUT" ]; then
++  "$NOTIFY" "nightly review FAILED (empty output), see $OUT"
++  exit 1
+ fi
+ 
+ "$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"

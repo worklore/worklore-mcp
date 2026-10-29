@@ -1,0 +1,30 @@
+# Fix: save_fact no longer evicts the static system prompt
+
+## Cause
+`build_system` (bot.py) returned one text block (`INSTRUCTIONS` + athlete context) with a single `cache_control` marker.
+`save_fact` changes the facts list in the context, so the hash of the whole block changed.
+The next call then had `cache_read_input_tokens: 0` and `cache_creation_input_tokens` of about 1000 (see logs/usage.jsonl, 06:43:16).
+
+## Change
+`build_system` now returns two blocks, each with `cache_control: ephemeral`:
+1. `INSTRUCTIONS`. I checked that it has no interpolated values, so it is byte-stable.
+2. `athlete_context(a, today)`. This holds the date, profile, zones, goal, facts and language.
+
+A memory write now invalidates only the second block. No other code changed.
+Within one message, the round after `save_fact` re-caches only the tail.
+
+## What I used from the colleague's note
+- The two-marker split. It is the whole fix.
+- The check that the static block is byte-stable. `INSTRUCTIONS` is a constant.
+- Reading `usage` to verify. `log_usage` already records the cache fields.
+
+## What I skipped
+- Top-N fact selection. It would make the tail differ on every message, and facts are already capped.
+- Tool-filtering changes. NOTES.md says to leave that, and tools were not the problem.
+- Marker-count limits. Two markers is well under the maximum of 4.
+
+## Not verified
+I did not call the real API. The expected behaviour is below.
+After a `save_fact`, the next call should show `cache_read` of about 780 tokens (the instructions) and `cache_creation` of about 240 tokens (the tail), not about 1000.
+If `cache_creation` is about 1000 after a write, the static block is not stable.
+The tool list sits before the system prompt, so a message that adds a tool group still re-caches everything once.

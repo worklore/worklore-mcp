@@ -1,0 +1,175 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..2331938
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,92 @@
++# Почему ночная задача launchd молчала
++
++## Что показали данные
++
++- `launchctl-print.txt`: `runs = 6`, `last exit code = 1`. Задача запускалась каждую ночь, с 13 по 18 октября (загружена 12-го). Значит, проблема не в том, что launchd не запускает задачу.
++- `Library/Logs/nightly-review.err`: по шесть пар строк на каждый запуск:
++  ```
++  Not logged in · Please run /login
++  /Users/vk/bin/nightly-review.zsh:19: read-only variable: status
++  ```
++- `Library/Logs/nightly-review.out`: пустой. Ни один запуск не дошёл до уведомления.
++
++Ошибок было две, и они накладывались друг на друга.
++
++### Причина 1: claude не видит логин (`Not logged in`)
++
++В plist нет `USER` в `EnvironmentVariables`. Claude Code ищет свои учётные данные в keychain, а запись находит по имени пользователя. Без `USER` поиск не работает, и CLI печатает «Not logged in» и выходит с ошибкой.
++
++Это вывод из симптома и конфигурации, а не проверенный факт: на вашем Mac я claude не запускал. Подтвердит или опровергнет только `launchctl kickstart` (см. ниже). Если после добавления `USER` появится та же ошибка, причина другая, например истёкший логин. Тогда выполните `claude /login` в той же пользовательской сессии и повторите тест.
++
++### Причина 2: `status` — read-only переменная в zsh (это и делало тишину полной)
++
++В `nightly-review.zsh`, строка 19: `status=$?`. В zsh `status` — встроенная переменная только для чтения. Присваивание в неинтерактивном скрипте сразу завершает его. Оно стояло между вызовом claude и уведомлением, поэтому:
++
++- задача падала (ошибка claude);
++- уведомление об ошибке (`notify.sh "nightly review FAILED..."`) никогда не вызывалось;
++- код выхода 1 — это код падения самого zsh, а не осознанный выход скрипта.
++
++Я воспроизвела это в песочнице с подставным `claude`: вывод побайтово совпал с `.err` (строка 19, `read-only variable: status`, exit 1), и `NOTIFY` не был вызван.
++
++### Причина 3 (латентная, нашлась при проверке): `notify.sh` проглатывает ошибки Telegram
++
++Без `curl -f` HTTP-ошибка от Telegram (неверный токен, 404) не даёт ненулевого кода. В песочнице старая версия на 404 вышла с кодом 0. Если бы 1 и 2 были исправлены, но этого нет, уведомление «не дошло» бы без единой записи в логе. Пустой `TG_BOT_TOKEN` (если `security` не отдал токен) тоже молча уходил в запрос на `/bot/sendMessage`.
++
++Причина 3 не объясняет вашу тишину: в логе нет ни одной строки от `notify.sh`, потому что до него скрипт не доходил. Но без её исправления уведомления могут молчать и дальше.
++
++## Что исправлено (в рабочей копии)
++
++- `bin/nightly-review.zsh`
++  - `status=$?` заменён на `rc=$?`.
++  - Промпт по-прежнему передаётся аргументом, но stdin закрыт (`< /dev/null`), чтобы claude не ждал ввода.
++  - Stderr каждого запуска пишется в файл за день и дублируется в launchd-лог. Его хвост попадает в уведомление об ошибке.
++  - Пишется строка `дата rc=... secs=... out_bytes=...`, то есть видно, сколько длился запуск.
++  - Код 0 при пустом выводе считается провалом: это тот же «тихий успех», когда ничего не сделано.
++  - Если сам `notify.sh` упал, скрипт завершается с ненулевым кодом, а не тихо.
++- `bin/notify.sh`
++  - `curl -sS -f`: HTTP-ошибка Telegram даёт ненулевой код.
++  - Пустой токен — явная ошибка с сообщением.
++- `Library/LaunchAgents/com.vk.nightly-review.plist`
++  - Добавлен `USER` = `vk`.
++
++## Проверка
++
++Выполнено здесь (в песочнице, Telegram не трогала, `notify` подменён):
++
++| Сценарий | Результат |
++|---|---|
++| A. claude успешен | уведомление «done», exit 0 |
++| B. claude падает (`Not logged in`) | уведомление «FAILED» с текстом ошибки, exit 1 |
++| C. claude выходит с 0, вывод пуст | уведомление «FAILED», exit 1 |
++| D. notifier сломан | скрипт exit 1, сообщение в stderr |
++| `notify.sh` без токена | exit 1 с сообщением |
++| `notify.sh` при HTTP 404 | exit 22 (старая версия давала 0) |
++
++`plutil -lint` для plist: OK. `zsh -n` и `bash -n`: OK.
++
++**Не проверено и не могло быть проверено здесь:** работа под реальным launchd на вашем Mac, добавление `USER` и реальный запуск claude. Для этого нужно выполнить на своей машине:
++
++```sh
++cp bin/nightly-review.zsh bin/notify.sh ~/bin/
++cp Library/LaunchAgents/com.vk.nightly-review.plist ~/Library/LaunchAgents/
++launchctl bootout gui/$UID ~/Library/LaunchAgents/com.vk.nightly-review.plist
++launchctl bootstrap gui/$UID ~/Library/LaunchAgents/com.vk.nightly-review.plist
++launchctl kickstart -k gui/$UID/com.vk.nightly-review
++```
++
++Затем проверить:
++
++1. `launchctl print gui/$UID/com.vk.nightly-review` — `last exit code = 0`, `runs` выросло на 1.
++2. Есть свежий `~/Library/Logs/nightly-review-<дата>.md` с непустым текстом.
++3. В `nightly-review.out` строка `rc=0 secs=...` с разумным временем (не 0–2 секунды).
++4. Пришло сообщение «nightly review done» в Telegram.
++
++Затем проверить ветку ошибки: в `~/bin/nightly-review.zsh` временно заменить `claude -p` на `claude --no-such-flag -p`, снова выполнить `kickstart -k`, убедиться, что пришло «FAILED» с текстом ошибки и `last exit code = 1`. После этого вернуть файл из репозитория. Логин и keychain не трогать.
++
++## Что из заметки коллеги пригодилось
++
++- **Пригодилось:** доказательство запуска через `launchctl print` (`runs`, `last exit code`) и чтение лога до построения теорий. Здесь это сразу показало, что задача запускалась.
++- **Пригодилось:** `rc=$?` вместо `status=$?`; `< /dev/null` при передаче промпта аргументом; `USER` в `EnvironmentVariables`; логирование длительности; проверка уведомления об ошибке через намеренный сбой.
++- **Пригодилось с оговоркой:** поправка про код выхода. Здесь код 1 честный только по совпадению (он из-за падения zsh), поэтому я добавила проверку пустого вывода при коде 0.
++- **Не применимо:** первая ошибка коллеги, «Input must be provided either through stdin or as a prompt argument». В вашем логе её нет, claude получал промпт. Поэтому переход на stdin не делала: аргумент работает, а `< /dev/null` закрывает риск ожидания ввода.
++- **Не применимо:** детали про Telegram и keychain у коллеги не совпадают с вашей настройкой; я использовала ваш `notify.sh` и проверила его отдельно.
+diff --git a/Library/LaunchAgents/com.vk.nightly-review.plist b/Library/LaunchAgents/com.vk.nightly-review.plist
+index c347363..d49eacf 100644
+--- a/Library/LaunchAgents/com.vk.nightly-review.plist
++++ b/Library/LaunchAgents/com.vk.nightly-review.plist
+@@ -24,6 +24,8 @@
+   <dict>
+     <key>PATH</key>
+     <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
++    <key>USER</key>
++    <string>vk</string>
+   </dict>
+ </dict>
+ </plist>
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..4adcd06 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -3,9 +3,16 @@
+ set -u
+ 
+ REPO="$HOME/projects/shop"
+-OUT="$HOME/Library/Logs/nightly-review-$(date +%F).md"
++DAY=$(date +%F)
++OUT="$HOME/Library/Logs/nightly-review-$DAY.md"
++ERR="$HOME/Library/Logs/nightly-review-$DAY.err"
+ NOTIFY="$HOME/bin/notify.sh"
+ 
++# If the notifier itself fails, exit non-zero so launchd shows the failure.
++notify() {
++  "$NOTIFY" "$1" || { echo "notify failed: $1" >&2; exit 1; }
++}
++
+ SINCE=$(date -v-1d +%F)
+ PROMPT="Review the commits in this repository since $SINCE.
+ For each commit: one line on what it changes and whether anything looks risky
+@@ -13,14 +20,20 @@ For each commit: one line on what it changes and whether anything looks risky
+ End with a three-line summary I can read on my phone.
+ Do not modify any file."
+ 
+-cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
++cd "$REPO" || { notify "nightly review: repo missing"; exit 1; }
+ 
+-claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
++START=$(date +%s)
++# < /dev/null: with the prompt passed as an argument, claude must not wait on stdin.
++claude -p "$PROMPT" --output-format text < /dev/null > "$OUT" 2> "$ERR"
++rc=$?
++cat "$ERR" >&2
++SECS=$(( $(date +%s) - START ))
++echo "$(date '+%F %T') rc=$rc secs=$SECS out_bytes=$(wc -c < "$OUT")"
+ 
+-if [ $status -ne 0 ]; then
+-  "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
+-  exit $status
++# Exit 0 with no output is also a failure: it means the review did nothing.
++if [ $rc -ne 0 ] || [ ! -s "$OUT" ]; then
++  notify "nightly review FAILED (exit $rc, ${SECS}s): $(tail -c 300 "$ERR") $OUT"
++  exit 1
+ fi
+ 
+-"$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"
++notify "nightly review done (${SECS}s): $(head -c 300 "$OUT")"
+diff --git a/bin/notify.sh b/bin/notify.sh
+index 818e531..a136357 100755
+--- a/bin/notify.sh
++++ b/bin/notify.sh
+@@ -2,6 +2,8 @@
+ # usage: notify.sh "message"  — sends a Telegram message to me.
+ set -eu
+ : "${TG_BOT_TOKEN:=$(security find-generic-password -s tg-bot -w)}"
++[ -n "$TG_BOT_TOKEN" ] || { echo "notify.sh: no bot token" >&2; exit 1; }
+ CHAT_ID=123456789
+-curl -sS -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
++# -f: an HTTP error from Telegram (bad token, 404, ...) must fail the script.
++curl -sS -f -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
+   -d chat_id="$CHAT_ID" --data-urlencode text="$1" > /dev/null

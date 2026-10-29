@@ -1,0 +1,194 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..9f90b72
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,64 @@
++# Почему вторая публикация возвращает 500
++
++## Причина
++
++`publish()` (`src/app.py`) сохраняет вместе с историей список `similar` — до трёх
++похожих историй из уже имеющихся в таблице, с оценкой `score`. Оценку считает
++`similarity()` как `round(0.7 * tag_score + 0.3 * word_score, 4)`, а это Python
++`float`. boto3 не умеет сериализовать `float` для DynamoDB и бросает
++`TypeError: Float types are not supported. Use Decimal types instead.`
++(`logs/error.log`). `handler()` превращает это в 500.
++
++Первая публикация прошла, потому что таблица была пустой: `scan` ничего не
++вернул, `similar == []`, и до `put_item` не дошло ни одного float
++(в логе так и написано: `similar=0`). Начиная со второй публикации в таблице
++есть данные, в `similar` появляется хотя бы одна оценка, и каждая запись падает.
++Существующий тест проверял только публикацию в пустую таблицу, поэтому этот путь
++никогда не выполнялся под тестами.
++
++## Исправление
++
++1. `similarity()` теперь возвращает `Decimal` (`Decimal(repr(round(..., 4)))`),
++   то есть то же значение от 0 до 1 с 4 знаками. Формат данных для страницы чтения
++   не меняется: оценки не стали процентами.
++2. Добавлена `dynamo_safe()`. Она вызывается для всего item прямо перед
++   `put_item` и рекурсивно заменяет каждый float равным `Decimal`.
++   NaN/inf отклоняются (`TypeError` → 500, потому что это ошибка сервера,
++   а не клиента). Так новое вычисляемое поле (среднее, доля и т.п.) не сможет
++   снова вызвать этот сбой.
++3. Тесты (`tests/test_publish.py`):
++   - `test_second_publish_with_similar_stories` заполняет таблицу одной историей,
++     публикует вторую и проверяет, что `score` имеет тип `Decimal` и лежит в (0, 1];
++   - `test_handler_publishes_twice` выполняет четыре публикации подряд через `handler`,
++     все должны вернуть 201;
++   - `test_dynamo_safe_converts_floats` проверяет защиту на границе записи.
++
++   На старом `src/app.py` новые тесты падают (1 failure, 2 errors), с исправлением
++   все 4 проходят: `python3 -m unittest discover tests`.
++
++## Что пригодилось из заметки коллеги
++
++- **Диагноз совпал полностью.** DynamoDB не принимает float, а первая запись
++  проходит, потому что при пустой таблице нет совпадений, значит нет и оценок.
++  Это подтверждают `similar=0` в логе и код.
++- **Совет «проследить все вычисляемые значения, которые попадают в запись»
++  (`round(`, `/`).** Так я сразу вышел на `similarity()`. Других вычисляемых
++  float в item нет: `published_at` уже `int(...)`.
++- **Совет «перед тестом записи положить в таблицу одну запись».** Именно так
++  устроен новый тест второй публикации.
++
++## Что не взял
++
++- **Перевод оценок в целые проценты.** Это изменило бы формат хранимых данных
++  (0–1 → 0–100) для страницы чтения. `Decimal` сохраняет прежний смысл значения.
++- **«Опубликовать дважды в реальную таблицу».** По условиям задачи ничего не
++  деплоится и внешние сервисы не трогаются. Вместо этого используется
++  `tests/fake_dynamo.py`, который отклоняет float так же, как boto3.
++- **Остальное (Lambda, общие рассуждения про dedup/счётчики)** к этому коду
++  не относится.
++
++## Замечание вне рамок исправления
++
++`table.scan()` возвращает максимум 1 МБ за вызов, а `LastEvaluatedKey` не
++обрабатывается. Когда библиотека вырастет, `similar` будет считаться только по
++части историй. На 500 это не влияет, поэтому здесь не исправлялось.
+diff --git a/src/app.py b/src/app.py
+index db49c5e..f09eb51 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -8,6 +8,7 @@ import json
+ import logging
+ import re
+ import time
++from decimal import Decimal
+ 
+ log = logging.getLogger("stories")
+ 
+@@ -22,12 +23,16 @@ def words(text):
+ 
+ 
+ def similarity(a, b):
+-    """Shared-tag ratio (Jaccard), blended with shared words of the two bodies."""
++    """Shared-tag ratio (Jaccard), blended with shared words of the two bodies.
++
++    Returned as a Decimal in [0, 1] with 4 places: DynamoDB (boto3) rejects
++    Python floats, and this value is stored in the item.
++    """
+     ta, tb = set(a.get("tags", [])), set(b.get("tags", []))
+     tag_score = len(ta & tb) / len(ta | tb) if (ta | tb) else 0
+     wa, wb = words(a.get("body")), words(b.get("body"))
+     word_score = len(wa & wb) / len(wa | wb) if (wa | wb) else 0
+-    return round(0.7 * tag_score + 0.3 * word_score, 4)
++    return Decimal(repr(round(0.7 * tag_score + 0.3 * word_score, 4)))
+ 
+ 
+ def related(story, existing):
+@@ -40,6 +45,27 @@ def related(story, existing):
+     return scored[:TOP_N]
+ 
+ 
++def dynamo_safe(value):
++    """Return ``value`` with every float replaced by an equal Decimal.
++
++    boto3 refuses floats ("Float types are not supported"), so anything computed
++    (ratios, averages, rounded scores) must not reach put_item as a float. This
++    is applied to the whole item right before the write so a new computed field
++    cannot reintroduce the crash. NaN/inf have no DynamoDB representation.
++    """
++    if isinstance(value, bool):
++        return value
++    if isinstance(value, float):
++        if value != value or value in (float("inf"), float("-inf")):
++            raise TypeError(f"cannot store non-finite number {value!r}")
++        return Decimal(repr(value))
++    if isinstance(value, dict):
++        return {k: dynamo_safe(v) for k, v in value.items()}
++    if isinstance(value, list):
++        return [dynamo_safe(v) for v in value]
++    return value
++
++
+ def validate(story):
+     for k in ("slug", "title", "body"):
+         if not story.get(k):
+@@ -60,6 +86,7 @@ def publish(table, story):
+         "published_at": int(time.time()),
+         "similar": related(story, existing),
+     }
++    item = dynamo_safe(item)
+     table.put_item(Item=item)
+     log.info("publish slug=%s similar=%d stored", item["slug"], len(item["similar"]))
+     return item
+diff --git a/tests/test_publish.py b/tests/test_publish.py
+index 6c9ac44..73c6c29 100644
+--- a/tests/test_publish.py
++++ b/tests/test_publish.py
+@@ -5,6 +5,9 @@ import unittest
+ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+ sys.path.insert(0, os.path.dirname(__file__))
+ 
++import json  # noqa: E402
++from decimal import Decimal  # noqa: E402
++
+ import app  # noqa: E402
+ from fake_dynamo import FakeTable  # noqa: E402
+ 
+@@ -24,5 +27,42 @@ class PublishTest(unittest.TestCase):
+         self.assertEqual(table.scan()["Count"], 1)
+ 
+ 
++    def test_second_publish_with_similar_stories(self):
++        # The empty-table path happens once in production; seed the table so
++        # the similarity scoring actually runs and its scores get stored.
++        table = FakeTable()
++        app.publish(table, {
++            "slug": "why-my-cron-ran-twice",
++            "title": "Why my cron ran twice",
++            "tags": ["cron", "linux"],
++            "body": "Two crontabs, one for root and one for me, both had the line.",
++        })
++        stored = app.publish(table, {
++            "slug": "cron-and-timezones",
++            "title": "Cron and timezones",
++            "tags": ["cron", "tz"],
++            "body": "The line ran at the wrong hour because the server was in UTC.",
++        })
++        self.assertEqual(table.scan()["Count"], 2)
++        [sim] = stored["similar"]
++        self.assertEqual(sim["slug"], "why-my-cron-ran-twice")
++        self.assertIsInstance(sim["score"], Decimal)
++        self.assertTrue(Decimal(0) < sim["score"] <= Decimal(1))
++
++    def test_handler_publishes_twice(self):
++        table = FakeTable()
++        for slug, tags in (("first-story", ["a"]), ("second-story", ["a", "b"]),
++                           ("third-story", []), ("fourth-story", ["b"])):
++            event = {"body": json.dumps({"slug": slug, "title": slug, "tags": tags, "body": "same words here"})}
++            self.assertEqual(app.handler(event, table)["statusCode"], 201, slug)
++        self.assertEqual(table.scan()["Count"], 4)
++
++    def test_dynamo_safe_converts_floats(self):
++        item = app.dynamo_safe({"a": 0.1, "b": [1.5, {"c": 2.0}], "d": True, "e": 3})
++        self.assertEqual(item, {"a": Decimal("0.1"), "b": [Decimal("1.5"), {"c": Decimal("2.0")}], "d": True, "e": 3})
++        with self.assertRaises(TypeError):
++            app.dynamo_safe({"x": float("nan")})
++
++
+ if __name__ == "__main__":
+     unittest.main()

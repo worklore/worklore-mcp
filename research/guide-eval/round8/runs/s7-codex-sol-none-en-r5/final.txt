@@ -1,0 +1,3 @@
+Fixed the Intervals.icu connection flow and documented the three causes in [ANSWER.md](/tmp/h-nKMjmQ/ANSWER.md): the Connect link omitted the app’s Authorization header, the OAuth request contained duplicate scopes, and the server invented a one-hour expiry for tokens with no expiry.
+
+The button now obtains the authorize URL through the authenticated API wrapper. The scope request uses one permission per resource, and tokens without `expires_in` stay connected. Local tests pass (`python3 -m unittest -v test_integration.py`); no live connection or external write was attempted.

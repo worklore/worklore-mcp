@@ -1,0 +1,54 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..010713c
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,27 @@
++# Caching Fix for Memory Writes
++
++## Changes Made
++
++In `bot.py`, modified `build_system(a, today)` to return two system prompt blocks, each with `cache_control: {"type": "ephemeral"}`, instead of concatenating everything into a single cached block:
++
++1. **Segment 1 (Static Instructions)**:
++   - Contains `INSTRUCTIONS` (the invariant coaching rules, tone, safety, formatting).
++   - Marked with `cache_control: {"type": "ephemeral"}`.
++   - Completely byte-identical across all users, dates, and tool calls.
++   - Remains cached even when user facts or context change.
++
++2. **Segment 2 (Volatile Tail)**:
++   - Contains `athlete_context(a, today)` (date, athlete profile, heart rate zones, goal, long-term memory facts, and language).
++   - Marked with `cache_control: {"type": "ephemeral"}`.
++   - When `save_fact` runs, only this tail segment is invalidated and recreated on the subsequent call, leaving the prefix (static instructions) hot in cache.
++
++## Colleague Note: What Applied vs What Was Ignored
++
++### Parts that applied:
++- **Two `cache_control: {"type": "ephemeral"}` segments**: Splitting the system prompt array into two blocks: block 1 for byte-stable instructions and block 2 for the volatile per-athlete tail (date, profile, facts). This directly addressed the prefix-hash eviction problem caused by `save_fact`.
++- **Keeping block 1 strictly invariant**: Ensuring no dynamic or interpolated values (dates, user details, facts) appear in the first block.
++
++### Parts ignored / not applicable:
++- **Tool filtering changes / schema adjustments**: The colleague's note discussed filtering 55 tool schemas into keyword-based groups and keeping tools above the system prompt byte-stable. The codebase already had keyword tool filtering implemented in March, and modifying tool grouping was not needed.
++- **Top-N fact selection**: The colleague note discussed rejecting per-message Top-N fact selection. The bot already includes all facts from the profile, so no top-N selection existed or needed removal.
++- **SDK / Live API verification**: The colleague described testing against live Anthropic API tokens with 5-minute TTLs. The local environment does not have active live Anthropic credentials configured for automated calls, so verification was done via static code analysis and schema verification.
+diff --git a/bot.py b/bot.py
+index e2ff241..ea3bb1e 100644
+--- a/bot.py
++++ b/bot.py
+@@ -128,9 +128,13 @@ def athlete_context(a, today):
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    # Two blocks with cache_control:
++    # 1. Static instructions (identical across athletes, sessions, and days)
++    # 2. Volatile per-athlete context (date, profile, zones, goal, facts, lang)
++    return [
++        {"type": "text", "text": INSTRUCTIONS, "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": athlete_context(a, today), "cache_control": {"type": "ephemeral"}},
++    ]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [

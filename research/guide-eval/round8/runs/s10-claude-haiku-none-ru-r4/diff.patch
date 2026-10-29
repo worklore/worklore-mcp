@@ -1,0 +1,177 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..b4d47fa
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,35 @@
++# Аналитика: события воронки регистрации
++
++Реализованы все шесть событий из `docs/EVENTS.md`. Отправка идёт только через `Analytics.capture`, ключ и хост не трогались.
++
++## Экран регистрации (`lib/screens/registration_screen.dart`)
++
++| Событие | Где срабатывает | Свойства |
++|---|---|---|
++| `registration_email_started` | Первый непустой ввод в поле email (один раз за визит на экран) | — |
++| `registration_phone_started` | Первый непустой ввод в поле телефона (один раз за визит на экран) | — |
++| `loan_amount_changed` | `onChanged` слайдера | `amount` (int, `v.round()`) |
++| `terms_accepted` | Галочка поставлена (снятие галочки не отправляет событие) | — |
++| `registration_continue_tapped` | Нажатие Continue, только когда кнопка активна | `amount` (int), `terms` (bool) |
++
++Email и телефон в свойства не попадают (PII).
++
++## Экран предложений (`lib/screens/offer_screen.dart`)
++
++| Событие | Где срабатывает | Свойства |
++|---|---|---|
++| `offers_scrolled` | `ScrollEndNotification` у списка | `offset` (double, `metrics.pixels`) |
++
++Событие отправляется по окончании прокрутки, а не на каждый кадр.
++
++## Решения, которые стоит проверить
++
++- **`loan_amount_changed` на каждом шаге слайдера.** `onChanged` вызывается непрерывно во время перетаскивания, поэтому при одном движении уйдёт много событий. Если продукт считает одним действием всё перетаскивание, нужно заменить на `onChangeEnd`. Сейчас сделано по букве документа («moved»).
++- **`offers_scrolled` по `ScrollEndNotification`.** Это одно событие на жест. Значение `offset` — позиция в пикселях в момент остановки.
++- **Started-события** сбрасываются при новом открытии экрана регистрации, потому что флаги живут в состоянии виджета.
++
++## Проверка
++
++- `flutter analyze`: замечаний нет.
++- Тесты не запускались, в проекте их нет. События в PostHog не проверялись: ключ в `lib/analytics.dart` заглушка `phc_REPLACE_ME_IN_CI`, и в этой среде отправку я не выполнял.
++- Побочные файлы, которые создал `flutter` (правка `analysis_options.yaml`, `.dart_tool/`, `pubspec.lock`), откатил. В диффе только три файла из пунктов выше.
+diff --git a/lib/screens/offer_screen.dart b/lib/screens/offer_screen.dart
+index 921ee59..597bfe7 100644
+--- a/lib/screens/offer_screen.dart
++++ b/lib/screens/offer_screen.dart
+@@ -1,5 +1,7 @@
+ import 'package:flutter/material.dart';
+ 
++import '../analytics.dart';
++
+ class Offer {
+   const Offer(this.bank, this.months, this.rate);
+   final String bank;
+@@ -27,18 +29,24 @@ class OfferScreen extends StatelessWidget {
+   Widget build(BuildContext context) {
+     return Scaffold(
+       appBar: AppBar(title: const Text('Offers')),
+-      body: ListView.builder(
+-        itemCount: _offers.length,
+-        itemBuilder: (context, i) {
+-          final o = _offers[i];
+-          return ListTile(
+-            leading: const Icon(Icons.account_balance),
+-            title: Text('${o.bank}, ${o.months} months'),
+-            subtitle: Text('${o.rate.toStringAsFixed(1)}% APR'),
+-            trailing: const Icon(Icons.chevron_right),
+-            onTap: () {},
+-          );
++      body: NotificationListener<ScrollEndNotification>(
++        onNotification: (n) {
++          Analytics.capture('offers_scrolled', {'offset': n.metrics.pixels});
++          return false;
+         },
++        child: ListView.builder(
++          itemCount: _offers.length,
++          itemBuilder: (context, i) {
++            final o = _offers[i];
++            return ListTile(
++              leading: const Icon(Icons.account_balance),
++              title: Text('${o.bank}, ${o.months} months'),
++              subtitle: Text('${o.rate.toStringAsFixed(1)}% APR'),
++              trailing: const Icon(Icons.chevron_right),
++              onTap: () {},
++            );
++          },
++        ),
+       ),
+     );
+   }
+diff --git a/lib/screens/registration_screen.dart b/lib/screens/registration_screen.dart
+index 059a250..10e7b92 100644
+--- a/lib/screens/registration_screen.dart
++++ b/lib/screens/registration_screen.dart
+@@ -1,5 +1,7 @@
+ import 'package:flutter/material.dart';
+ 
++import '../analytics.dart';
++
+ class RegistrationScreen extends StatefulWidget {
+   const RegistrationScreen({super.key});
+ 
+@@ -12,6 +14,9 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
+   final _phone = TextEditingController();
+   double _amount = 50000;
+   bool _terms = false;
++  // Started-events fire once per screen visit, on the first keystroke.
++  bool _emailStarted = false;
++  bool _phoneStarted = false;
+ 
+   @override
+   void dispose() {
+@@ -36,14 +41,26 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
+               controller: _email,
+               keyboardType: TextInputType.emailAddress,
+               decoration: const InputDecoration(labelText: 'Email'),
+-              onChanged: (_) => setState(() {}),
++              onChanged: (v) {
++                if (!_emailStarted && v.isNotEmpty) {
++                  _emailStarted = true;
++                  Analytics.capture('registration_email_started');
++                }
++                setState(() {});
++              },
+             ),
+             const SizedBox(height: 12),
+             TextField(
+               controller: _phone,
+               keyboardType: TextInputType.phone,
+               decoration: const InputDecoration(labelText: 'Phone'),
+-              onChanged: (_) => setState(() {}),
++              onChanged: (v) {
++                if (!_phoneStarted && v.isNotEmpty) {
++                  _phoneStarted = true;
++                  Analytics.capture('registration_phone_started');
++                }
++                setState(() {});
++              },
+             ),
+             const SizedBox(height: 24),
+             Text('Loan amount: ${_amount.round()}'),
+@@ -53,18 +70,33 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
+               divisions: 49,
+               value: _amount,
+               label: _amount.round().toString(),
+-              onChanged: (v) => setState(() => _amount = v),
++              onChanged: (v) {
++                Analytics.capture(
++                  'loan_amount_changed',
++                  {'amount': v.round()},
++                );
++                setState(() => _amount = v);
++              },
+             ),
+             CheckboxListTile(
+               value: _terms,
+               title: const Text('I accept the terms and conditions'),
+               controlAffinity: ListTileControlAffinity.leading,
+-              onChanged: (v) => setState(() => _terms = v ?? false),
++              onChanged: (v) {
++                if (v == true) Analytics.capture('terms_accepted');
++                setState(() => _terms = v ?? false);
++              },
+             ),
+             const Spacer(),
+             FilledButton(
+               onPressed: _canContinue
+-                  ? () => Navigator.of(context).pushNamed('/offers')
++                  ? () {
++                      Analytics.capture('registration_continue_tapped', {
++                        'amount': _amount.round(),
++                        'terms': _terms,
++                      });
++                      Navigator.of(context).pushNamed('/offers');
++                    }
+                   : null,
+               child: const Text('Continue'),
+             ),

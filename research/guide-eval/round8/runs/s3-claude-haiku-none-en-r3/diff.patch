@@ -1,0 +1,113 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..a507d47
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,64 @@
++# Why the nightly review never reports anything
++
++The job runs (launchctl shows `runs = 6`, `last exit code = 1`), but it never
++reaches the point where it sends a message. Three things combine.
++
++## Cause 1: the script crashes on `status=$?` (fixed)
++
++`bin/nightly-review.zsh` stored the exit code in a variable named `status`.
++In zsh, `status` is a read-only special parameter (another name for `$?`), so
++the assignment fails:
++
++```
++/Users/vk/bin/nightly-review.zsh:19: read-only variable: status
++```
++
++With `set -u` the script exits with status 1 right there. The failure branch
++and the success branch both come after that line, so no Telegram message is
++sent either way. This is the error that appears six times in
++`Library/Logs/nightly-review.err`.
++
++Fix: the variable is now `rc`, and the claude call is `claude ... || rc=$?`.
++The `||` keeps `set -u` from tripping on a failing command.
++
++## Cause 2: `claude -p` is not logged in under launchd (not fixed, needs you)
++
++Every run in `nightly-review.err` begins with:
++
++```
++Not logged in · Please run /login
++```
++
++Your interactive shell is logged in, but the LaunchAgent is not getting that
++login. I can't see your keychain or credentials from this snapshot, so I
++haven't changed auth. Options:
++
++1. Run `claude setup-token` in a terminal and store the token you get in the
++   login keychain. Then have the job export `CLAUDE_CODE_OAUTH_TOKEN` from
++   it, the same way `notify.sh` reads `tg-bot`.
++2. Or export `ANTHROPIC_API_KEY` in the plist's `EnvironmentVariables`. That
++   stores a secret in a plist, so option 1 is better.
++
++Then check it by hand under launchd, not in your shell:
++`launchctl kickstart -k gui/$(id -u)/com.vk.nightly-review`, then read
++`Library/Logs/nightly-review.err`.
++
++## Cause 3: failures in `notify.sh` were silent (fixed)
++
++`bin/notify.sh` filled the token with `$(security ... -w)` and never checked
++it. If the keychain lookup failed, the token was empty, the request went to
++`/bot/sendMessage`, and curl (without `-f`) reported success on the HTTP 404.
++Errors were swallowed, so a broken notifier looks the same as no job at all.
++
++Fix: the script stops with a message on stderr when the token is empty, and
++curl uses `-f` so HTTP errors become a non-zero exit.
++
++## What changed
++
++- `bin/nightly-review.zsh`: `status` renamed to `rc`; the failure notice now
++  points at `nightly-review.err` as well.
++- `bin/notify.sh`: token check and `curl -f`.
++
++Verified with stubs (a failing `claude`, a succeeding `claude`, and a missing
++token). The scripts pass `zsh -n` / `bash -n`. Nothing was deployed. Copy the
++two files to `~/bin/` to put them in place. Cause 2 still needs your credentials.
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..2150ecc 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -15,12 +15,14 @@ Do not modify any file."
+ 
+ cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
+ 
+-claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
++# NB: `status` is a read-only special parameter in zsh (alias of $?), so
++# assigning to it aborts the script before the failure notice is sent.
++rc=0
++claude -p "$PROMPT" --output-format text > "$OUT" || rc=$?
+ 
+-if [ $status -ne 0 ]; then
+-  "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
+-  exit $status
++if [ $rc -ne 0 ]; then
++  "$NOTIFY" "nightly review FAILED (exit $rc), see $OUT and nightly-review.err"
++  exit $rc
+ fi
+ 
+ "$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"
+diff --git a/bin/notify.sh b/bin/notify.sh
+index 818e531..c77455a 100755
+--- a/bin/notify.sh
++++ b/bin/notify.sh
+@@ -1,7 +1,12 @@
+ #!/bin/bash
+ # usage: notify.sh "message"  — sends a Telegram message to me.
+ set -eu
+-: "${TG_BOT_TOKEN:=$(security find-generic-password -s tg-bot -w)}"
++: "${TG_BOT_TOKEN:=$(security find-generic-password -s tg-bot -w 2>/dev/null || true)}"
++if [ -z "$TG_BOT_TOKEN" ]; then
++  echo "notify.sh: no Telegram token (keychain item 'tg-bot' missing or locked)" >&2
++  exit 1
++fi
+ CHAT_ID=123456789
+-curl -sS -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
++# -f: HTTP errors (bad token -> 404) must fail instead of exiting 0 silently
++curl -sS -f -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
+   -d chat_id="$CHAT_ID" --data-urlencode text="$1" > /dev/null

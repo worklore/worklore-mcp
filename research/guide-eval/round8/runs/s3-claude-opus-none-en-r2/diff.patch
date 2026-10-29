@@ -1,0 +1,117 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..8a56a6f
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,64 @@
++# Why the nightly review never reported anything
++
++The job does run. `launchctl print` shows `runs = 6` and `last exit code = 1`,
++and `nightly-review.err` has one pair of lines for each run:
++
++```
++Not logged in · Please run /login
++/Users/vk/bin/nightly-review.zsh:19: read-only variable: status
++```
++
++There are two separate bugs, and together they make it silent.
++
++## 1. The failure path crashes: `status` is read-only in zsh (this is why you got nothing at all)
++
++In zsh, `status` is a built-in special parameter (an alias for `$?`) and
++can't be assigned to. Line 19 (`status=$?`) is a fatal error in a
++non-interactive zsh script. The script stops right there with exit 1, before
++it reaches either `"$NOTIFY"` call. So even when `claude` failed, the failure
++note was never sent. (You can reproduce it with `zsh -c 'status=1'`.)
++
++**Fix:** rename the variable to `rc`.
++
++## 2. `claude` is not authenticated when launchd runs it (this is why every run fails)
++
++launchd starts the script with a bare environment: only the PATH from the
++plist, plus HOME and similar. Nothing from your interactive shell is there,
++because a non-interactive `/bin/zsh script` does not read `~/.zshrc` or
++`~/.zprofile`. Whatever logs `claude` in for you in Terminal is not available
++to the job, so `claude -p` prints "Not logged in" and exits non-zero. That
++could be an exported `ANTHROPIC_API_KEY`/token, or an interactive `/login`
++session that headless use under launchd doesn't pick up.
++
++**Fix:** give the job its own credential. Run `claude setup-token` once (it
++creates a long-lived token for headless use) and store the token in the login
++keychain:
++
++```
++security add-generic-password -U -a "$USER" -s claude-oauth-token -w
++```
++
++The script now reads it into `CLAUDE_CODE_OAUTH_TOKEN` at startup, the same
++way `notify.sh` reads the Telegram token. If the token is missing, the script
++sends a failure note instead of dying quietly. Keeping the token in the
++keychain also keeps it out of the plist.
++
++## Smaller problems fixed in the same edit
++
++- **No useful error in the failure note.** `claude`'s stderr went to the
++  shared `.err` file, and the note only pointed to an empty `.md`. Stderr now
++  goes to a dated `nightly-review-YYYY-MM-DD.err`, and its first 300 chars are
++  included in the Telegram message.
++- **The review couldn't read the commits.** In `-p` mode nothing can approve
++  tool use, so `git log`/`git show` would have been denied. Read-only tools
++  are now pre-approved with `--allowedTools` (git log/show/diff, Read, Grep,
++  Glob). Nothing that writes files is allowed, which also enforces
++  "Do not modify any file".
++
++## What you still need to do (on the real machine)
++
++1. `claude setup-token`, then store the token with the `security` command above.
++2. Copy the new `bin/nightly-review.zsh` into `~/bin/`. The plist doesn't
++   change, so you don't need to reload it.
++3. Test it the way launchd runs it: `launchctl kickstart gui/$UID/com.vk.nightly-review`,
++   then check Telegram and `~/Library/Logs/nightly-review-*.err`.
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..b22395a 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -4,8 +4,19 @@ set -u
+ 
+ REPO="$HOME/projects/shop"
+ OUT="$HOME/Library/Logs/nightly-review-$(date +%F).md"
++ERR="$HOME/Library/Logs/nightly-review-$(date +%F).err"
+ NOTIFY="$HOME/bin/notify.sh"
+ 
++# launchd does not source ~/.zshrc, so the interactive login is not visible
++# here. Use a long-lived token from `claude setup-token`, stored in the login
++# keychain with:
++#   security add-generic-password -U -a "$USER" -s claude-oauth-token -w
++if [ -z "${CLAUDE_CODE_OAUTH_TOKEN:-}" ] && [ -z "${ANTHROPIC_API_KEY:-}" ]; then
++  CLAUDE_CODE_OAUTH_TOKEN=$(security find-generic-password -s claude-oauth-token -w 2>/dev/null) \
++    || { "$NOTIFY" "nightly review FAILED: no claude-oauth-token in keychain"; exit 1; }
++  export CLAUDE_CODE_OAUTH_TOKEN
++fi
++
+ SINCE=$(date -v-1d +%F)
+ PROMPT="Review the commits in this repository since $SINCE.
+ For each commit: one line on what it changes and whether anything looks risky
+@@ -15,12 +26,17 @@ Do not modify any file."
+ 
+ cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
+ 
+-claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
++# Headless mode cannot prompt for permissions, so pre-approve read-only git.
++claude -p "$PROMPT" --output-format text \
++  --allowedTools "Bash(git log:*)" "Bash(git show:*)" "Bash(git diff:*)" Read Grep Glob \
++  > "$OUT" 2> "$ERR"
++# NB: `status` is a read-only special parameter in zsh (same as $?);
++# assigning to it aborts the script before any notification is sent.
++rc=$?
+ 
+-if [ $status -ne 0 ]; then
+-  "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
+-  exit $status
++if [ $rc -ne 0 ]; then
++  "$NOTIFY" "nightly review FAILED (exit $rc): $(head -c 300 "$ERR")"
++  exit $rc
+ fi
+ 
+ "$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"

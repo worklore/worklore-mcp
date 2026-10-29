@@ -1,0 +1,3 @@
+I split the system prompt into two cached blocks: coaching instructions and the stable athlete profile first, then the date and long-term facts. A `save_fact` write now changes the facts block without changing the first cache breakpoint.
+
+I documented the change in [ANSWER.md](/tmp/h-GMQZMw/ANSWER.md). A local check confirmed that the first block stays identical and the new fact reaches the next request. I did not make a live API call, so the resulting cache usage has not been measured.

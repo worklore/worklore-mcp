@@ -1,0 +1,185 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..be5792b
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,56 @@
++# Причины неполадок интеграции с Intervals.icu
++
++В ходе расследования инцидентов и анализа логов (`logs/connect-attempt.log`, `logs/support-tickets.md`) были выявлены три ключевые проблемы:
++
++---
++
++### 1. Ошибка 401 Unauthorized при нажатии на кнопку «Connect Intervals.icu»
++
++* **Причина:**
++  В интерфейсе SPA (`static/app.js`) кнопка подключения была обычной ссылкой:
++  ```html
++  <a class="btn" href="/api/intervals/auth/init">Connect Intervals.icu</a>
++  ```
++  При клике браузер выполнял стандартный прямой переход по ссылке (document navigation). При этом заголовок авторизации `Authorization: Bearer <token>`, хранящийся в `localStorage` SPA, не передавался браузером.
++  Эндпоинт `/api/intervals/auth/init` требует обязательной авторизации пользователя (`require_user()`), из-за чего сервер возвращал `401 Unauthorized`.
++* **Решение:**
++  - В SPA (`static/app.js`) кнопка заменена на `<button id="connect">`, клик по которой делает вызов через функцию `api("/api/intervals/auth/init")` с заголовком `Authorization: Bearer ...`.
++  - В бэкенде (`server.py`) эндпоинт `auth_init` при обращении с заголовком `Accept: application/json` возвращает JSON с URL для редиректа (`{"url": auth_url}`), после чего клиент перенаправляет браузер на страницу авторизации Intervals.icu (`window.location.href = data.url`).
++
++---
++
++### 2. Ошибка 400 Bad Request (`invalid_request`) на стороне Intervals.icu при открытии ссылки авторизации
++
++* **Причина:**
++  В конфигурации скоупов (`config.py`) было указано:
++  ```python
++  SCOPES = "ACTIVITY:READ,ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:READ,CALENDAR:WRITE"
++  ```
++  В OAuth 2.0 провайдера Intervals.icu действуют строгие правила валидации скоупов:
++  1. Скоуп права на запись (`:WRITE`) автоматически включает право на чтение (`:READ`).
++  2. Запрещены дублирующие/избыточные скоупы в запросе (например, указание одновременно `ACTIVITY:READ` и `ACTIVITY:WRITE`, или `CALENDAR:READ` и `CALENDAR:WRITE` приводит к ошибке `Duplicate scope` / `invalid_request`).
++* **Решение:**
++  - В `config.py` список скоупов приведен к корректному виду без дублирования:
++  ```python
++  SCOPES = "ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE"
++  ```
++
++---
++
++### 3. Сброс подключения через 1 час («Status: expired, reconnect»)
++
++* **Причина:**
++  В ответе Intervals.icu на обмен кода (`/api/oauth/token`) отсутствуют поля `expires_in` и `refresh_token`, поскольку OAuth-токены Intervals.icu являются бессрочными (perpetual tokens) и действуют до тех пор, пока пользователь вручную не отзовет доступ в настройках Intervals.icu.
++  В коде `server.py`:
++  - Функция `store_connection` при отсутствии `expires_in` устанавливала дефолтный тайм-аут жизни токена:
++    ```python
++    expires_in = int(tok.get("expires_in") or DEFAULT_TOKEN_TTL) # 3600 секунд (1 час)
++    ```
++  - Фоновый процесс `refresh_tokens()` каждые 60 секунд проверял срок действия токена. Ровно через час (когда до `expires_at` оставалось менее 300 секунд), процесс видел отсутствие `refresh_token` и принудительно переводил статус в:
++    ```python
++    status = "expired, reconnect"
++    ```
++* **Решение:**
++  - В `server.py` отключена установка искусственного таймера истечения для токенов без `expires_in` (для Intervals.icu `expires_at = None`).
++  - Фоновый планировщик обновления `refresh_tokens()` игнорирует токены, у которых нет даты истечения.
++  - Добавлена ленивая обработка недействительных токенов: статус меняется на `expired, reconnect`, если реальный запрос к API Intervals.icu (`/wellness`) возвращает `401 Unauthorized` (когда пользователь действительно отозвал доступ).
+diff --git a/__pycache__/config.cpython-314.pyc b/__pycache__/config.cpython-314.pyc
+new file mode 100644
+index 0000000..67ed3e3
+Binary files /dev/null and b/__pycache__/config.cpython-314.pyc differ
+diff --git a/__pycache__/server.cpython-314.pyc b/__pycache__/server.cpython-314.pyc
+new file mode 100644
+index 0000000..a11379f
+Binary files /dev/null and b/__pycache__/server.cpython-314.pyc differ
+diff --git a/config.py b/config.py
+index 54a8144..e39e425 100644
+--- a/config.py
++++ b/config.py
+@@ -8,6 +8,6 @@ INTERVALS_BASE = os.environ.get("INTERVALS_BASE", "https://intervals.icu")
+ CLIENT_ID = "tricoach-dev"
+ CLIENT_SECRET = "s3cr3t-placeholder-0000"
+ REDIRECT_URI = f"http://localhost:{PORT}/api/intervals/callback"
+-SCOPES = "ACTIVITY:READ,ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:READ,CALENDAR:WRITE"
++SCOPES = "ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE"
+ 
+ REFRESH_INTERVAL = 60      # seconds between passes of the token refresher
+diff --git a/server.py b/server.py
+index 351cbb7..8d3d34c 100644
+--- a/server.py
++++ b/server.py
+@@ -63,28 +63,29 @@ def exchange_code(code):
+ 
+ 
+ def store_connection(user_id, tok):
+-    expires_in = int(tok.get("expires_in") or DEFAULT_TOKEN_TTL)
++    expires_in = int(tok["expires_in"]) if tok.get("expires_in") else None
+     refresh = tok.get("refresh_token")
+     if not refresh:
+-        log(f"{user_id}: no refresh_token in response, scheduling expiry in {expires_in}s")
++        log(f"{user_id}: no refresh_token in response (Intervals.icu tokens are perpetual)")
+     athlete = tok.get("athlete") or {}
+     with LOCK:
+         CONNECTIONS[user_id] = {
+             "athlete_id": athlete.get("id"), "athlete_name": athlete.get("name"),
+             "access_token": tok["access_token"], "refresh_token": refresh,
+-            "scope": tok.get("scope"), "expires_at": time.time() + expires_in, "status": "connected",
++            "scope": tok.get("scope"), "expires_at": (time.time() + expires_in) if expires_in else None,
++            "status": "connected",
+         }
+-    log(f"{user_id}: connected as athlete {athlete.get('id')} (expires in {expires_in}s)")
++    log(f"{user_id}: connected as athlete {athlete.get('id')}")
+ 
+ 
+ def refresh_tokens():
+-    """Background pass: renew access tokens shortly before they expire."""
++    """Background pass: renew access tokens shortly before they expire (if applicable)."""
+     while True:
+         time.sleep(config.REFRESH_INTERVAL)
+         now = time.time()
+         with LOCK:
+-            for uid, c in CONNECTIONS.items():
+-                if c["status"] != "connected" or c["expires_at"] - now > 300:
++            for uid, c in list(CONNECTIONS.items()):
++                if c["status"] != "connected" or not c.get("expires_at") or c["expires_at"] - now > 300:
+                     continue
+                 if not c["refresh_token"]:
+                     log(f"{uid}: token expiry passed and no refresh token on file -> expired, reconnect")
+@@ -95,9 +96,10 @@ def refresh_tokens():
+                         "grant_type": "refresh_token", "refresh_token": c["refresh_token"],
+                         "client_id": config.CLIENT_ID, "client_secret": config.CLIENT_SECRET,
+                     })
++                    expires_in = int(tok["expires_in"]) if tok.get("expires_in") else None
+                     c.update(access_token=tok["access_token"],
+                              refresh_token=tok.get("refresh_token", c["refresh_token"]),
+-                             expires_at=now + int(tok["expires_in"]))
++                             expires_at=(now + expires_in) if expires_in else None)
+                     log(f"{uid}: token refreshed")
+                 except Exception as e:
+                     log(f"{uid}: refresh failed ({e}) -> expired, reconnect")
+@@ -192,7 +194,10 @@ class Handler(BaseHTTPRequestHandler):
+             return
+         params = {"client_id": config.CLIENT_ID, "redirect_uri": config.REDIRECT_URI,
+                   "scope": config.SCOPES, "state": sign_state(user["id"])}
+-        self.redirect(AUTHORIZE_URL + "?" + urllib.parse.urlencode(params, safe=":,"))
++        auth_url = AUTHORIZE_URL + "?" + urllib.parse.urlencode(params, safe=":,")
++        if "application/json" in self.headers.get("Accept", ""):
++            return self.send_json(200, {"url": auth_url})
++        self.redirect(auth_url)
+ 
+     # Step 2: Intervals redirects back here with ?code=&state=.
+     def callback(self, q):
+@@ -233,6 +238,10 @@ class Handler(BaseHTTPRequestHandler):
+             code, data = intervals_get(c, "/wellness")
+             self.send_json(code, data)
+         except urllib.error.HTTPError as e:
++            if e.code == 401:
++                with LOCK:
++                    c.update(status="expired, reconnect", access_token=None)
++                log(f"{user['id']}: intervals returned 401, marked as expired, reconnect")
+             self.send_json(e.code, {"error": f"intervals returned {e.code}"})
+         except Exception as e:
+             self.send_json(502, {"error": str(e)})
+diff --git a/static/app.js b/static/app.js
+index 368922e..0254261 100644
+--- a/static/app.js
++++ b/static/app.js
+@@ -25,10 +25,21 @@ async function render() {
+     } else {
+       const why = st.status && st.status !== "disconnected" ? `<p class="muted">Status: ${esc(st.status)}</p>` : "";
+       card = `<div class="card">Intervals.icu is not connected.${why}
+-        <p><a class="btn" href="/api/intervals/auth/init">Connect Intervals.icu</a></p></div>`;
++        <p><button class="btn" id="connect">Connect Intervals.icu</button></p></div>`;
+     }
+     root.className = "";
+     root.innerHTML = `<p>Signed in as <b>${esc(me.name)}</b>.</p>${card}`;
++    const c = document.getElementById("connect");
++    if (c) c.onclick = async () => {
++      try {
++        const data = await api("/api/intervals/auth/init");
++        if (data.url) {
++          window.location.href = data.url;
++        }
++      } catch (err) {
++        alert("Failed to initiate connection: " + err.message);
++      }
++    };
+     const d = document.getElementById("disconnect");
+     if (d) d.onclick = async () => { await api("/api/intervals/disconnect", { method: "POST" }); render(); };
+   } catch (e) {

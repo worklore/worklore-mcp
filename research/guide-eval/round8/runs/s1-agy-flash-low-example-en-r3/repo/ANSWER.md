@@ -1,0 +1,26 @@
+# Fix for HR Range Clamping on Watch
+
+## What Was Changed
+In `gen.py`, updated the `hr_target` function to use the key `"start"` instead of `"value"` for the lower bound of the heart rate target dictionary:
+
+```python
+def hr_target(step):
+    """HR corridor for a step, as a percentage of the athlete's LTHR."""
+    lo, hi = step["hr_pct"]
+    return {"units": "%lthr", "start": lo, "end": hi}
+```
+
+## Why
+When Intervals.icu FIT-exports a structured workout to Garmin devices:
+- A target dictionary using `{"value": ..., "end": ...}` is treated as a Lap-HR / zone-mapped target. In this mode, the Garmin watch clamps the target corridor to its locally stored HR zone boundaries rather than honoring the exact planned range.
+- Using `{"start": ..., "end": ...}` signals an Instant-HR corridor. In this mode, Intervals.icu computes the exact bpm bounds from its stored threshold (LTHR) and Garmin displays the raw target corridor without snapping/clamping to watch zones.
+
+## Colleague's Note: What Applied and What Was Ignored
+
+### What Applied:
+- **Corridor schema key rename (`value` -> `start`)**: The finding that switching `{value, end}` to `{start, end}` changes Intervals.icu FIT export behavior from zone-mapped/lap HR targets to instant HR corridors.
+- **Unit specification**: Keeping `"units": "%lthr"` so Intervals.icu calculates exact bpm values from its stored LTHR threshold at FIT export time, rather than passing raw bpm or custom fields like `start_bpm`/`end_bpm` which are mishandled or dropped.
+
+### What Did Not Apply / Was Ignored:
+- **Intervals.icu text grammar description parser notes**: The notes regarding top-level `description` text syntax (`m` meaning minutes, `mtr`/`km`, repeat blocks, power zone resolution, etc.) do not apply because `gen.py` directly constructs the structured `workout_doc.steps` JSON payload rather than relying on Intervals' text description parser.
+- **Account setup & interactive API reproduction steps**: The manual verification instructions involving creating live test events via curl/OAuth, Garmin Connect syncing, and deleting test calendar events were ignored as per the instructions to work only locally inside the current directory without deploying or connecting to external services.

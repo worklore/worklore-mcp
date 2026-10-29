@@ -1,0 +1,41 @@
+{
+ "answer_file": true,
+ "answer_source": "repo",
+ "cause_named": true,
+ "explains_empty_path": true,
+ "fix_named": true,
+ "hidden_first_ok": true,
+ "hidden_second_ok": true,
+ "hidden_second_error": "",
+ "hidden_import_error": "",
+ "stored_floats": 0,
+ "similar_stored": [
+  {
+   "slug": "why-my-cron-ran-twice",
+   "score": "0.4952"
+  }
+ ],
+ "score_types": [
+  "Decimal"
+ ],
+ "scoring_kept": true,
+ "seeded_test": true,
+ "seeded_test_in": [
+  "tests/test_publish.py::test_publish_second_story_succeeds_with_similarity",
+  "tests/test_publish.py::test_handler_second_publish"
+ ],
+ "ran_tests": true,
+ "app_changed": true,
+ "fake_changed": false,
+ "tests_changed": [
+  "tests/test_publish.py"
+ ],
+ "changed_files": [
+  "ANSWER.md",
+  "src/app.py",
+  "tests/test_publish.py"
+ ],
+ "commands_issued": 6,
+ "answer_chars": 1451,
+ "PASS": true
+}

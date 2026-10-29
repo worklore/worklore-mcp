@@ -1,0 +1,68 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..d775bef
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,9 @@
++# Почему задача молчала
++
++`launchctl-print.txt` показывает `runs = 6` и `last exit code = 1`: launchd запускал задачу. В `Library/Logs/nightly-review.err` все шесть запусков имеют одинаковую последовательность: `Not logged in · Please run /login`, затем `read-only variable: status` на строке 19. Следовательно, `claude` завершался с ошибкой авторизации в окружении launchd, а присваивание встроенной переменной zsh `status` аварийно останавливало скрипт до вызова `notify.sh`. Это объясняет отсутствие и обзора, и сообщения об ошибке.
++
++В plist добавлен `USER=vk`, чтобы headless CLI получил имя пользователя, нужное для поиска входа в Keychain. Промпт теперь передается `claude -p` через stdin; этот способ устраняет зависимость от разбора многострочного аргумента. `status` заменен на `rc`. Скрипт пишет код завершения и длительность в stderr, сообщает об ошибке при ненулевом коде или пустом результате. Для Telegram добавлен `curl -f`, чтобы HTTP-ошибка не считалась успешной отправкой.
++
++Из заметки коллеги пригодились проверка `launchctl print` и stderr, предупреждение о переменной `status`, установка `USER`, передача промпта через stdin, измерение длительности и проверка реального результата. Вариант с `< /dev/null` не нужен, поскольку промпт поступает через stdin. Утверждение, что `launchd` вообще не срабатывал, здесь опровергается снимком; сам по себе `last exit code` не подтверждает успешный обзор.
++
++Локально проверены синтаксис обоих скриптов (`zsh -n`, `bash -n`), plist (`plutil -lint`) и отсутствие ошибок форматирования (`git diff --check`). Реальный запуск и доставку Telegram в этом снимке проверить нельзя без обращения к внешним сервисам и исходной домашней директории; измененный plist также потребуется отдельно перезагрузить на исходном Mac.
+diff --git a/Library/LaunchAgents/com.vk.nightly-review.plist b/Library/LaunchAgents/com.vk.nightly-review.plist
+index c347363..d49eacf 100644
+--- a/Library/LaunchAgents/com.vk.nightly-review.plist
++++ b/Library/LaunchAgents/com.vk.nightly-review.plist
+@@ -24,6 +24,8 @@
+   <dict>
+     <key>PATH</key>
+     <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
++    <key>USER</key>
++    <string>vk</string>
+   </dict>
+ </dict>
+ </plist>
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..0f12595 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -15,12 +15,19 @@ Do not modify any file."
+ 
+ cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
+ 
+-claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
++started_at=$SECONDS
++print -r -- "$PROMPT" | claude -p --output-format text > "$OUT"
++rc=$?
++print -r -- "nightly review: claude exit=$rc duration=$((SECONDS - started_at))s output=$OUT" >&2
+ 
+-if [ $status -ne 0 ]; then
+-  "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
+-  exit $status
++if (( rc != 0 )); then
++  "$NOTIFY" "nightly review FAILED (exit $rc), see $OUT"
++  exit "$rc"
++fi
++
++if [[ ! -s "$OUT" ]]; then
++  "$NOTIFY" "nightly review FAILED (empty output), see $OUT"
++  exit 1
+ fi
+ 
+ "$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"
+diff --git a/bin/notify.sh b/bin/notify.sh
+index 818e531..bc9115f 100755
+--- a/bin/notify.sh
++++ b/bin/notify.sh
+@@ -3,5 +3,5 @@
+ set -eu
+ : "${TG_BOT_TOKEN:=$(security find-generic-password -s tg-bot -w)}"
+ CHAT_ID=123456789
+-curl -sS -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
++curl -fsS -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
+   -d chat_id="$CHAT_ID" --data-urlencode text="$1" > /dev/null

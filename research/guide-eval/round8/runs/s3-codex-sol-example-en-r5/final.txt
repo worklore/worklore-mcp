@@ -1,0 +1,3 @@
+The job was running: the snapshot records six runs, all exiting with code 1. Its log shows two causes of the silence: `claude` could not find its login in the launchd environment, and the wrapper then stopped at zsh’s read-only `status` variable before sending a failure note.
+
+I fixed the plist and scripts, and documented the causes and which parts of your colleague’s note applied in [ANSWER.md](/tmp/h-KvIRKg/ANSWER.md). Syntax and plist checks passed; local stub tests confirmed success, agent failure, empty-output, and notifier-failure paths. The installed LaunchAgent was not changed, and no external requests were made.

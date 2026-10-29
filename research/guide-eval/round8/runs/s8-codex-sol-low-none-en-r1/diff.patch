@@ -1,0 +1,65 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..31149a7
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,5 @@
++# Cache fix
++
++`build_system` now sends the coaching instructions as a cached system block and the athlete context as a separate, unmarked block. A `save_fact` changes only the athlete block, so the next request can reuse the static instruction prefix when the selected tools and cache window match. I added stable coaching examples to give that prefix enough content for the model's cache threshold, and updated the README to describe the new layout.
++
++Verified locally that a new fact changes the athlete block while the cached block and selected tools stay identical. `python3 -m py_compile bot.py` and `git diff --check` passed. No live API call was made, so cache-read token counts were not measured.
+diff --git a/README.md b/README.md
+index ebd390e..9d94534 100644
+--- a/README.md
++++ b/README.md
+@@ -11,6 +11,7 @@ its system prompt. Every API call appends its `usage` object to `logs/usage.json
+ Run it locally with `COACH_ANTHROPIC_KEY=sk-ant-... python3 bot.py 42` and type
+ messages on stdin (the Telegram long-polling transport, which needs
+ `COACH_TELEGRAM_TOKEN`, lives in a separate deploy repo and just calls `reply()`).
+-Requires Python 3.11+ and `pip install anthropic`. Prompt caching is on: the system
+-prompt carries a `cache_control` marker so the tool-loop rounds and follow-up
+-messages inside the 5-minute window read it from cache.
++Requires Python 3.11+ and `pip install anthropic`. Prompt caching marks the
++stable coaching instructions before the athlete context, so changes to saved
++facts do not change the cached prefix. Calls with the same selected tools can
++reuse that prefix within the cache window.
+diff --git a/__pycache__/bot.cpython-314.pyc b/__pycache__/bot.cpython-314.pyc
+new file mode 100644
+index 0000000..77c6a10
+Binary files /dev/null and b/__pycache__/bot.cpython-314.pyc differ
+diff --git a/bot.py b/bot.py
+index e2ff241..9a22287 100644
+--- a/bot.py
++++ b/bot.py
+@@ -111,6 +111,14 @@ Formatting:
+ - Plain text. No markdown headings, no tables.
+ - Lists only for a session structure (warm-up / main / cool-down).
+ - Numbers with units: 45 min, 12 km, 150 bpm.
++
++Coaching examples and interpretation:
++- If a runner asks whether to make up a missed easy run, answer the question first. A missed easy run does not need to be squeezed into a rest day. Keep the next planned session in its intended zone.
++- If an athlete gives a new recurring availability constraint, remember it as one durable fact. A single busy Tuesday is a one-off plan and should not be saved.
++- If the athlete mentions a completed workout and a new durable preference together, log the workout and save the preference. Then respond to the athlete's question or report in a short message.
++- If the athlete asks for a training week, use plan_week before describing the structure. Respect the athlete's zones, goal, recovery days, and available information when commenting on its result.
++- If the athlete asks for a finish-time estimate without a recent effort, ask for that effort rather than inventing one. The same applies to unknown recent training volume.
++- If symptoms meet the pain or safety rules above, address that concern before suggesting training. Keep the advice within the stated safety boundaries.
+ """
+ 
+ 
+@@ -128,9 +136,12 @@ def athlete_context(a, today):
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    # Keep the cache breakpoint before mutable athlete data. A saved fact then
++    # changes only the uncached suffix, leaving the coaching rules reusable.
++    return [
++        {"type": "text", "text": INSTRUCTIONS, "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": athlete_context(a, today)},
++    ]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [

@@ -1,0 +1,118 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..d0d1a0d
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,13 @@
++# Исправление кеширования
++
++Причина: `build_system()` отправлял инструкции и профиль с долговременными фактами одним блоком с одним маркером кеша. После `save_fact` менялся текст блока целиком. В `logs/usage.jsonl` это видно, например, для спортсмена `42`: после записи факта следующий вызов создал кеш на 1061 токен заново, при `cache_read_input_tokens: 0`.
++
++Что изменено:
++
++- В `bot.py` системный промпт разделён на два текстовых блока, оба с `cache_control: {"type": "ephemeral"}`. Первый содержит одинаковые для всех инструкции; второй — дату, профиль, зоны, цель, факты и язык спортсмена. После записи факта прежний первый префикс остаётся пригодным для чтения из кеша.
++- В постоянный блок добавлены пояснения уже действующих правил работы с профилем и инструментами. Это увеличивает первый префикс: для `claude-sonnet-4-5` кешируемый префикс должен достигать минимального размера, а одних прежних инструкций с базовыми схемами инструментов могло не хватить.
++- Отбор инструментов по ключевым словам оставлен прежним; список стабилен внутри цикла одного сообщения. README обновлён.
++
++Из заметки коллеги пригодились разделение постоянного и изменяемого контекста двумя маркерами, требование стабильного префикса и проверка по `cache_creation_input_tokens` / `cache_read_input_tokens`. Не применял отбор отдельных фактов для каждого сообщения: он менял бы второй блок при каждом запросе. Не менял отбор инструментов: он уже работает, а `NOTES.md` отмечает снижение числа токенов на коротких сообщениях.
++
++Проверка: `python3 -m unittest -v` — два теста прошли. Они проверяют, что `save_fact` меняет только второй блок, а первый одинаков у разных спортсменов и в разные даты. `git diff --check` прошёл. Запросов к внешнему API не делал по условию задачи, поэтому фактические показатели кеша после изменения пока не измерены. При локальном запуске с API ожидается, что после `save_fact` `cache_read_input_tokens` покрывает постоянный префикс, а `cache_creation_input_tokens` — изменившийся хвост; смена набора инструментов или истечение TTL могут дать отдельный промах кеша.
+diff --git a/README.md b/README.md
+index ebd390e..9fe159d 100644
+--- a/README.md
++++ b/README.md
+@@ -11,6 +11,8 @@ its system prompt. Every API call appends its `usage` object to `logs/usage.json
+ Run it locally with `COACH_ANTHROPIC_KEY=sk-ant-... python3 bot.py 42` and type
+ messages on stdin (the Telegram long-polling transport, which needs
+ `COACH_TELEGRAM_TOKEN`, lives in a separate deploy repo and just calls `reply()`).
+-Requires Python 3.11+ and `pip install anthropic`. Prompt caching is on: the system
+-prompt carries a `cache_control` marker so the tool-loop rounds and follow-up
+-messages inside the 5-minute window read it from cache.
++Requires Python 3.11+ and `pip install anthropic`. Prompt caching uses two
++`cache_control` markers: one after the stable coaching instructions and one
++after the athlete context. A new saved fact changes the second segment while
++the instruction prefix can still be read from cache. Tool selection stays
++constant within each message's tool loop.
+diff --git a/bot.py b/bot.py
+index e2ff241..fd6dc94 100644
+--- a/bot.py
++++ b/bot.py
+@@ -111,6 +111,20 @@ Formatting:
+ - Plain text. No markdown headings, no tables.
+ - Lists only for a session structure (warm-up / main / cool-down).
+ - Numbers with units: 45 min, 12 km, 150 bpm.
++
++Applying the coaching rules:
++- Treat the athlete profile as the source for their name, sport, zones, goal, and language. Use
++  saved facts as background when they matter to the question; do not repeat the whole profile.
++- A completed workout is something the athlete says they have already done. Record it with
++  log_session before commenting on it. A proposed workout is not a completed workout.
++- A durable fact describes the athlete beyond this conversation. Save it once when it is new;
++  a temporary feeling, a single workout, or a tentative plan is not a durable fact.
++- A weekly structure means a set of sessions across a week. Use plan_week to draft it, then
++  explain the result in the athlete's language while respecting their zones and rest days.
++- When essential training history is missing, ask for it before giving a numeric prediction
++  or an increase in volume. Keep the question short and specific.
++- The safety rules apply before any training suggestion, including suggestions based on a
++  tool result. If a tool result conflicts with a safety rule, follow the safety rule.
+ """
+ 
+ 
+@@ -128,9 +142,12 @@ def athlete_context(a, today):
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    # Keep the stable prefix cacheable when a memory write changes the athlete tail.
++    return [
++        {"type": "text", "text": INSTRUCTIONS, "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": "\n\n" + athlete_context(a, today),
++         "cache_control": {"type": "ephemeral"}},
++    ]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [
+diff --git a/test_bot.py b/test_bot.py
+new file mode 100644
+index 0000000..9359656
+--- /dev/null
++++ b/test_bot.py
+@@ -0,0 +1,36 @@
++import datetime as dt
++import unittest
++from unittest.mock import patch
++
++import bot
++
++
++class PromptCacheTests(unittest.TestCase):
++    def test_memory_write_changes_only_athlete_cache_segment(self):
++        athlete = bot.Athlete(user_id="42", name="Marta", facts=["Owns a Garmin 255"])
++        today = dt.date(2026, 4, 18)
++        tools = bot.select_tools("hello")
++        before = bot.build_request(athlete, [{"role": "user", "content": "hello"}], tools, today)
++
++        with patch.object(bot, "save_athlete"):
++            bot.run_tool(athlete, "save_fact", {"fact": "Runs before work"})
++
++        after = bot.build_request(athlete, [{"role": "user", "content": "hello"}], tools, today)
++        self.assertEqual(len(before["system"]), 2)
++        self.assertEqual(before["system"][0], after["system"][0])
++        self.assertNotEqual(before["system"][1]["text"], after["system"][1]["text"])
++        self.assertIn("Runs before work", after["system"][1]["text"])
++        self.assertEqual(before["tools"], after["tools"])
++        for block in after["system"]:
++            self.assertEqual(block["cache_control"], {"type": "ephemeral"})
++
++    def test_static_segment_is_identical_across_athletes_and_dates(self):
++        first = bot.build_system(bot.Athlete(user_id="1", name="Marta"), dt.date(2026, 4, 18))
++        second = bot.build_system(bot.Athlete(user_id="2", name="Jonas"), dt.date(2026, 4, 19))
++        self.assertEqual(first[0], second[0])
++        self.assertNotEqual(first[1]["text"], second[1]["text"])
++        self.assertEqual(first[0]["text"], bot.INSTRUCTIONS)
++
++
++if __name__ == "__main__":
++    unittest.main()

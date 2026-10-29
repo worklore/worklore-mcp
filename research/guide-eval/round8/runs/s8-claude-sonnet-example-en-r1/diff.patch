@@ -1,0 +1,86 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..1142fa0
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,29 @@
++# Fix: memory writes no longer evict the static system prompt
++
++## Cause
++`build_system` (bot.py) sent one text block, `INSTRUCTIONS + athlete_context`, with a single `cache_control` marker.
++`save_fact` changes the facts list. The next loop round rebuilds the block, so the prefix hash changes and the whole prompt
++is re-created (see `logs/usage.jsonl`: `cache_read 0`, `cache_creation ~1060` right after each `save_fact`).
++
++## Changes (bot.py)
++1. `build_system` now returns two blocks, each with `cache_control: ephemeral`:
++   - `INSTRUCTIONS`: static, byte-identical for every user and day.
++   - `athlete_context(...)`: date, profile, zones, goal, facts, language. A memory write now invalidates only this tail.
++2. I added a static "Reference" section (RPE scale, session types, return-from-break, heat, taper) to `INSTRUCTIONS`.
++   This is not in the colleague's note. It is needed here. The whole prompt was only ~1046 tokens, and the
++   tail is ~100 of those. The static prefix (tools + instructions) would have been about 930 tokens, under the 1024-token
++   minimum cacheable length for Sonnet 4.5. Below that minimum the first marker is silently ignored, so the
++   two-marker split alone would have changed nothing. The static prefix is now about 1500 tokens by my estimate (~3 chars/token, from the
++   logged 1046 tokens vs ~3200 chars). The extra text is not free: it is written once per 5-minute window, then read at ~10%.
++
++## Colleague's note: what applied
++- Applied: two markers (static + per-user tail), keeping the static block free of interpolated values, and reading `usage` to verify.
++- Already true / left alone: tool filtering by keyword stays as is. Tools sit above the system prompt, and the core set is constant, so within a message's loop the prefix is stable.
++- Not applicable: top-N fact selection. The bot loads all facts, and I kept that, since selection would defeat the tail cache.
++- Ignored: the numbers (780/240 tokens, 55 tools). They are for a different bot.
++
++## Not verified
++I did not call the API (no key, and the rules forbid external calls). To check, send two messages within 5 minutes, then one that triggers `save_fact`,
++then another. Look at `logs/usage.jsonl`: after the write, `cache_read_input_tokens` should still cover about 1500 tokens and
++`cache_creation_input_tokens` should be only about 100-150. If creation is still the full prompt, the static prefix is under the minimum; add more static text.
++Note that a message that pulls in the `plan` or `race` tool group changes the tools prefix and costs one full re-read.
+diff --git a/__pycache__/bot.cpython-314.pyc b/__pycache__/bot.cpython-314.pyc
+new file mode 100644
+index 0000000..8c305cb
+Binary files /dev/null and b/__pycache__/bot.cpython-314.pyc differ
+diff --git a/bot.py b/bot.py
+index e2ff241..b5b7f0e 100644
+--- a/bot.py
++++ b/bot.py
+@@ -111,6 +111,24 @@ Formatting:
+ - Plain text. No markdown headings, no tables.
+ - Lists only for a session structure (warm-up / main / cool-down).
+ - Numbers with units: 45 min, 12 km, 150 bpm.
++
++Reference (use when prescribing or interpreting sessions):
++- RPE scale, 1-10: 1-2 very easy, 3-4 easy conversational (Z1/Z2), 5-6 steady (Z3), 7-8 hard, threshold (Z4),
++  9 very hard (Z5), 10 all-out. A conversational effort means full sentences without gasping.
++- Session types: recovery (20-40 min, Z1), easy aerobic (30-90 min, Z2), long run or ride (the longest session
++  of the week, Z2, never more than 30% of weekly volume for runners), tempo (15-30 min in Z3/Z4 inside a
++  warm-up and cool-down), intervals (3-6 repeats of 3-5 min in Z4/Z5 with equal-length easy recovery),
++  strides (4-6 x 20 s relaxed fast, after an easy run), hills (6-10 x 45 s uphill, jog down).
++- Warm-up is 10-15 min easy plus 3-4 strides before any hard session; cool-down is 5-10 min easy.
++- Cycling: use the same zones; cadence 85-95 rpm for endurance rides, and keep intervals on flat or steady climbs.
++- Weekly volume steps: build for three weeks, then one lighter week at about 70% of the previous peak.
++- Returning after a break: under two weeks off, resume at 80% volume; two to four weeks, 60%; longer, restart
++  with easy sessions only and rebuild over three weeks.
++- Heat above 25 C: add 5-10 bpm of drift to expected heart rate, drink early, shorten the session before
++  raising effort. Altitude above 1500 m: use RPE instead of heart rate for the first week.
++- Races: for 5-10 km two quality sessions in the last 10 days; for half marathon and longer, one quality session
++  and a long run 10-14 days out. Race-day fuelling should be rehearsed in training, nothing new on the day.
++- Strength work: two short sessions per week (20-30 min) are welcome in base phases; drop to one in a taper.
+ """
+ 
+ 
+@@ -128,9 +146,14 @@ def athlete_context(a, today):
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    # Two cached segments. INSTRUCTIONS must stay byte-stable (no per-user or per-day values) so a
++    # save_fact, which rewrites the tail, only invalidates the tail. The static prefix (tools +
++    # INSTRUCTIONS) must also exceed the model's minimum cacheable length (1024 tokens for Sonnet 4.5),
++    # or its marker is silently ignored and the whole prompt is re-created on every memory write.
++    return [
++        {"type": "text", "text": INSTRUCTIONS, "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": athlete_context(a, today), "cache_control": {"type": "ephemeral"}},
++    ]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [

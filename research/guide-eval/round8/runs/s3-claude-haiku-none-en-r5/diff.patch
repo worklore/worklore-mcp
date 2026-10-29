@@ -1,0 +1,185 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..d242f41
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,108 @@
++# Why the nightly review never reported anything
++
++Short version: the job dies on line 19 of `nightly-review.zsh` before it ever
++calls `notify.sh`, so neither a summary nor a failure note is sent. Behind
++that, `claude -p` also cannot log in when launchd runs it. The notifier also
++fails silently, so even a correct failure note could be lost.
++
++## Causes
++
++### 1. `status` is a read-only variable in zsh (the job aborts before notifying)
++
++`bin/nightly-review.zsh` does `status=$?`. In zsh, `status` is a special
++read-only parameter (a synonym for `$?`), so the assignment is a fatal error:
++
++    /Users/vk/bin/nightly-review.zsh:19: read-only variable: status
++
++The script exits there, so the `notify.sh` calls on lines 22 and 26 never run.
++That is why there is no summary and no failure message, even though the job
++ran. Evidence:
++
++- `Library/Logs/nightly-review.err` has this error six times.
++- `launchctl-print.txt` shows `runs = 6` and `last exit code = 1`.
++- I reproduced it with zsh 5.9: `status=$?` exits with status 1 and never
++  reaches the next line.
++
++Fix: renamed the variable to `claude_rc`, and the script now always notifies
++on failure.
++
++### 2. `claude -p` is not logged in under launchd
++
++`Library/Logs/nightly-review.err` also shows, from the same runs:
++
++    Not logged in · Please run /login
++
++The job runs `claude` from launchd, and launchd does not see the interactive
++login. Even with cause 1 fixed, every run would have failed here. Claude Code
++on this machine reads `CLAUDE_CODE_OAUTH_TOKEN` (the binary contains that
++name), so the fixed script takes a long-lived token from the keychain item
++`claude-nightly-oauth`. I did not create that token: `claude setup-token` is
++interactive and needs your subscription. See "What you need to do" below.
++
++### 3. `notify.sh` can fail silently (affects every message, including failure notes)
++
++`bin/notify.sh` had two problems:
++
++- `: "${TG_BOT_TOKEN:=$(security find-generic-password -s tg-bot -w)}"`
++  does not trigger `set -e` when the keychain lookup fails. The token ends up
++  empty, and curl posts to `https://api.telegram.org/bot/sendMessage`.
++  I reproduced this with a stub `security` that fails: the script reached the
++  curl call with an empty token.
++- `curl -sS` exits 0 on an HTTP error from Telegram (bad token, bad chat), and
++  its output went to `/dev/null`. A rejected message looked like success.
++
++The keychain lookup may also behave differently under launchd than in a
++terminal. The notifier "works when run by hand", but I could not test it
++from launchd, so this one is unconfirmed on your machine.
++
++Fix: the token lookup now fails loudly to stderr (which launchd records in
++`nightly-review.err`), and curl uses `-f`, so Telegram HTTP errors are
++reported.
++
++## What changed
++
++- `bin/nightly-review.zsh`
++  - `status` renamed to `claude_rc`, so the script no longer aborts.
++  - Auth comes from `CLAUDE_CODE_OAUTH_TOKEN`, read from the keychain item
++    `claude-nightly-oauth`. If it is missing, the job sends a failure note and exits 1.
++  - claude's stderr goes to `~/Library/Logs/nightly-review-<date>.err`
++    instead of only the launchd log, and the first 200 bytes of it are quoted
++    in the failure note.
++  - A zero exit with empty output counts as a failure.
++- `bin/notify.sh`
++  - Missing token: prints an error and exits 1 instead of posting an empty token.
++  - `curl -fsS`: Telegram rejections exit non-zero.
++- The plist is unchanged. The scripts are read fresh on each run, so copying
++  them into `~/bin` is enough; no `launchctl` reload is needed.
++
++## Verification
++
++I ran the original and fixed scripts in a sandbox with stub `claude`,
++`security`, and `curl`, so nothing reached Telegram or Anthropic:
++
++| Case | Original | Fixed |
++|---|---|---|
++| claude succeeds | aborts at line 19, no notify | sends "done" with the summary |
++| claude "Not logged in", exit 1 | aborts at line 19, no notify | sends "FAILED (exit 1): Not logged in …" |
++| claude exit 0, empty output | (not reached) | sends "FAILED … no output from claude" |
++| no `claude-nightly-oauth` token | (not reached) | sends "FAILED: no claude-nightly-oauth token" |
++| no `tg-bot` token (notify alone) | posts to `/bot/sendMessage` | prints error, exit 1, no curl call |
++| Telegram returns HTTP error | exit 0, silent | exit 22 (non-zero) |
++
++Both scripts pass `zsh -n` / `bash -n`. I did not run the job against the
++real `~/projects/shop`, claude, or Telegram.
++
++## What you need to do
++
++1. Create the Claude token in a terminal:
++   `claude setup-token`
++2. Store it in the keychain for the job:
++   `security add-generic-password -s claude-nightly-oauth -a "$USER" -w`
++   (paste the token at the prompt)
++3. Copy `bin/nightly-review.zsh` and `bin/notify.sh` into `~/bin/`.
++4. Test the real path once:
++   `launchctl kickstart -k gui/501/com.vk.nightly-review`
++   This sends a real Telegram message. Either a summary or a `FAILED` note
++   should arrive. If neither does, check `~/Library/Logs/nightly-review.err`.
++   If the failure is in the keychain lookup of `tg-bot` (cause 3), that log
++   will say so.
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..5cdd73f 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -4,8 +4,21 @@ set -u
+ 
+ REPO="$HOME/projects/shop"
+ OUT="$HOME/Library/Logs/nightly-review-$(date +%F).md"
++ERR="$HOME/Library/Logs/nightly-review-$(date +%F).err"
+ NOTIFY="$HOME/bin/notify.sh"
+ 
++# launchd does not get the login session's Claude login ("Not logged in"),
++# so the token comes from the keychain: `claude setup-token`, then
++# `security add-generic-password -s claude-nightly-oauth -a "$USER" -w`.
++if [ -z "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]; then
++  CLAUDE_CODE_OAUTH_TOKEN=$(security find-generic-password -s claude-nightly-oauth -w 2>/dev/null) || CLAUDE_CODE_OAUTH_TOKEN=""
++fi
++if [ -z "$CLAUDE_CODE_OAUTH_TOKEN" ]; then
++  "$NOTIFY" "nightly review FAILED: no claude-nightly-oauth token in keychain"
++  exit 1
++fi
++export CLAUDE_CODE_OAUTH_TOKEN
++
+ SINCE=$(date -v-1d +%F)
+ PROMPT="Review the commits in this repository since $SINCE.
+ For each commit: one line on what it changes and whether anything looks risky
+@@ -15,12 +28,18 @@ Do not modify any file."
+ 
+ cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
+ 
+-claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
++# stderr goes to its own file: launchd's err log is the only place it lands otherwise.
++claude -p "$PROMPT" --output-format text > "$OUT" 2> "$ERR"
++claude_rc=$?
+ 
+-if [ $status -ne 0 ]; then
+-  "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
+-  exit $status
++# A zero exit with no output is still a failure: nothing to summarize.
++if [ $claude_rc -ne 0 ] || [ ! -s "$OUT" ]; then
++  code=$claude_rc
++  [ $code -eq 0 ] && code=1
++  reason=$(head -c 200 "$ERR")
++  [ -n "$reason" ] || reason="no output from claude"
++  "$NOTIFY" "nightly review FAILED (exit $code): $reason -- see $ERR"
++  exit $code
+ fi
+ 
+ "$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"
+diff --git a/bin/notify.sh b/bin/notify.sh
+index 818e531..160a475 100755
+--- a/bin/notify.sh
++++ b/bin/notify.sh
+@@ -1,7 +1,14 @@
+ #!/bin/bash
+ # usage: notify.sh "message"  — sends a Telegram message to me.
+ set -eu
+-: "${TG_BOT_TOKEN:=$(security find-generic-password -s tg-bot -w)}"
++if [ -z "${TG_BOT_TOKEN:-}" ]; then
++  TG_BOT_TOKEN=$(security find-generic-password -s tg-bot -w 2>/dev/null) || TG_BOT_TOKEN=""
++fi
++if [ -z "$TG_BOT_TOKEN" ]; then
++  echo "notify.sh: no tg-bot token (TG_BOT_TOKEN unset, keychain lookup failed)" >&2
++  exit 1
++fi
+ CHAT_ID=123456789
+-curl -sS -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
++# -f: non-2xx from Telegram (bad token, bad chat) is an error, not silence.
++curl -fsS -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
+   -d chat_id="$CHAT_ID" --data-urlencode text="$1" > /dev/null

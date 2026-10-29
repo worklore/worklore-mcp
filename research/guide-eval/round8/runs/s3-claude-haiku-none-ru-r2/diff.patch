@@ -1,0 +1,64 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..3e26369
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,38 @@
++# Почему nightly-review ничего не сообщал
++
++## Причина 1 (основная): `status` нельзя присваивать в zsh
++
++В `bin/nightly-review.zsh` строка 19 была `status=$?`. В zsh `status` — встроенный синоним `$?`, то есть только для чтения. Присваивание падает с ошибкой:
++
++```
++/Users/vk/bin/nightly-review.zsh:19: read-only variable: status
++```
++
++В неинтерактивном zsh такая ошибка прерывает скрипт. Поэтому до блока `if [ $status -ne 0 ]` выполнение не доходит: уведомление «FAILED» не отправляется, и успешное уведомление тоже. Скрипт завершается с кодом 1 — это совпадает с `last exit code = 1` в `launchctl-print.txt`.
++
++Ошибка видна только в `~/Library/Logs/nightly-review.err`, в Telegram она не попадает, поэтому сбой молчит. Лог `.err` содержит 6 пар строк — ровно по одной на каждый из 6 запусков (`runs = 6`).
++
++**Исправление:** переменная переименована в `rc` (`bin/nightly-review.zsh`, строки 19–23).
++
++Проверено в песочнице с подменёнными `HOME`, `claude` и `notify.sh`:
++- при сбое `claude` (exit 1) уходит `nightly review FAILED (exit 1), see ...`, скрипт выходит с кодом 1;
++- при успехе уходит `nightly review done: ...`, код 0.
++
++## Причина 2 (вероятная, не проверена): `claude -p` видит «Not logged in» под launchd
++
++В `.err` каждый запуск начинается с `Not logged in · Please run /login`. Это значит, что даже после исправления причины 1 задание, скорее всего, завершится ошибкой авторизации. Тогда придёт сообщение «FAILED (exit 1)», и это уже будет видимая ошибка.
++
++Почему так: интерактивный вход Claude Code хранит учётные данные в связке ключей macOS, а агент launchd может работать с ней иначе, чем Терминал. Из снимка папки я не могу это подтвердить. `PATH` и сама `claude` при этом в порядке: команда найдена, иначе была бы ошибка «command not found».
++
++Как проверить на вашей машине:
++1. Запустить `claude -p "ping"` в Терминале — если работает, вход есть в интерактивной сессии.
++2. Перезапустить задание вручную: `launchctl kickstart -k gui/501/com.vk.nightly-review`, затем смотреть `~/Library/Logs/nightly-review.err`.
++3. Если снова «Not logged in», нужен другой способ аутентификации для фонового запуска. Ключ API в plist класть не стоит — это секрет в открытом виде.
++
++## Замечание (не исправлено): сбой уведомления не виден
++
++`bin/notify.sh` при ошибке `curl` завершается с ненулевым кодом, но `nightly-review.zsh` его код не проверяет. Если Telegram недоступен, это молча потеряется; единственный след — тот же `.err`. Можно добавить проверку, но это отдельное решение.
++
++## Что сделать вам
++
++Файлы в этой папке — снимок. Настоящий `~/bin/nightly-review.zsh` нужно заменить исправленной версией из `bin/nightly-review.zsh` (только переименование переменной). Перезагружать plist не требуется.
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..bf005f5 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -16,11 +16,11 @@ Do not modify any file."
+ cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
+ 
+ claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
++rc=$?
+ 
+-if [ $status -ne 0 ]; then
+-  "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
+-  exit $status
++if [ $rc -ne 0 ]; then
++  "$NOTIFY" "nightly review FAILED (exit $rc), see $OUT"
++  exit $rc
+ fi
+ 
+ "$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"

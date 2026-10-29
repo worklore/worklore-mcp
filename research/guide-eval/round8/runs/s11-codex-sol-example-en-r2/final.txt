@@ -1,0 +1,3 @@
+The second publish failed because it added a Python float similarity score to the DynamoDB item; the first publish had no related stories, so it never reached that path.
+
+I changed score calculations to use `Decimal` and added a two-publish regression test. Both tests pass locally. [ANSWER.md](/tmp/h-4gvFFF/ANSWER.md) records the cause, fix, verification, and which parts of the colleague’s note applied.

@@ -1,0 +1,3 @@
+Updated [bot.py](/tmp/h-IdqEyh/bot.py) so `save_fact` changes only the athlete-context cache block while the fixed instructions keep their own cache marker. I also added stable coaching guidance to help the static prefix meet Sonnet 4.5’s [1,024-token cache minimum](https://platform.claude.com/docs/en/build-with-claude/prompt-caching).
+
+[ANSWER.md](/tmp/h-IdqEyh/ANSWER.md) records the changes, which parts of the colleague’s note applied, and the remaining live check. Both local tests pass; actual cache usage could not be checked without a Claude API call.

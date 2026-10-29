@@ -1,0 +1,108 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..bf9db1c
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,62 @@
++# Fix: save_fact evicts the cached system prompt
++
++## Cause
++
++`build_system()` put the coaching instructions and the per-athlete context
++(including the long-term facts list and today's date) into one system block, and
++put the `cache_control` marker on that whole block. The cache is keyed on the exact
++prefix up to the marker, so any change to the facts list invalidated the whole
++cached prefix. `save_fact` appends to that list, so the next call wrote the cache
++again (`cache_creation_input_tokens` ~1000) and read nothing (`cache_read_input_tokens: 0`).
++That is the pattern in `logs/usage.jsonl` and `NOTES.md`. The date changing each day
++had the same effect.
++
++## Change
++
++`bot.py`, `build_system()`: the system prompt is now two blocks.
++
++1. `INSTRUCTIONS`, static, with `cache_control: ephemeral`.
++2. `athlete_context(...)` (name, zones, goal, facts, date, language), no cache marker.
++
++A `save_fact` now changes only block 2, which sits after the breakpoint, so block 1
++still hits the cache. Rule 16 ("do not save a fact already in the list below") still
++holds, because block 2 is still in the same system prompt after the instructions.
++
++`README.md`: the caching paragraph now describes the split.
++
++No change to tool selection (`select_tools`), per the NOTES.md decision.
++
++## Verification
++
++- Checked in memory without calling the API or writing to `logs/usage.jsonl` or
++  `data/athletes.json`: the cached block (block 1) is identical before and after a
++  `save_fact` and a date change; the athlete block changes; the marker is only on block 1.
++- Not verified against the real API. There is no `anthropic` SDK or
++  `COACH_ANTHROPIC_KEY` in this environment, and I did not make API calls.
++
++## Open risk: the cached prefix may be under the minimum size
++
++Caching only happens if the prefix up to the marker is at least 1024 tokens on
++Sonnet models. The prefix is tool definitions plus block 1. Block 1 is about
++2,500 characters, and the core tools are about 400 characters more. My rough
++estimate is around 700 to 1000 tokens, and the logged first cache writes (~1,046
++tokens with the facts block included) suggest the static part is close to or
++just under 1024. If it is under, the breakpoint is ignored and this change would
++turn caching off for every call, not just after `save_fact`.
++
++To check after deploy, look at the next few `usage.jsonl` lines:
++
++- A first call should show `cache_creation_input_tokens` ~ the static size, and the
++  next call in the window should show `cache_read_input_tokens` ~ the same and
++  `cache_creation_input_tokens` near 0.
++- After a `save_fact`, the next call should still show `cache_read_input_tokens` > 0.
++- If `cache_creation_input_tokens` and `cache_read_input_tokens` are both 0 on the
++  static part, the prefix is below the minimum. The fix there is to make the static
++  prefix longer with useful content, not to pad it.
++
++## Other notes
++
++- Keyword tool selection changes the tool list, which is part of the prefix, so
++  messages that add a group (e.g. `plan_week`) still miss the cache. That was already
++  true and was judged worth it in March; this change does not affect it.
++- Nothing was deployed, published or reported to any external service.
+diff --git a/README.md b/README.md
+index ebd390e..624cc7e 100644
+--- a/README.md
++++ b/README.md
+@@ -11,6 +11,7 @@ its system prompt. Every API call appends its `usage` object to `logs/usage.json
+ Run it locally with `COACH_ANTHROPIC_KEY=sk-ant-... python3 bot.py 42` and type
+ messages on stdin (the Telegram long-polling transport, which needs
+ `COACH_TELEGRAM_TOKEN`, lives in a separate deploy repo and just calls `reply()`).
+-Requires Python 3.11+ and `pip install anthropic`. Prompt caching is on: the system
+-prompt carries a `cache_control` marker so the tool-loop rounds and follow-up
+-messages inside the 5-minute window read it from cache.
++Requires Python 3.11+ and `pip install anthropic`. Prompt caching is on: the static
++coaching instructions are their own system block with a `cache_control` marker, and
++the per-athlete block (facts, date) follows it uncached, so a `save_fact` does not
++evict the instructions from cache.
+diff --git a/__pycache__/bot.cpython-314.pyc b/__pycache__/bot.cpython-314.pyc
+new file mode 100644
+index 0000000..2030bf0
+Binary files /dev/null and b/__pycache__/bot.cpython-314.pyc differ
+diff --git a/bot.py b/bot.py
+index e2ff241..da127f9 100644
+--- a/bot.py
++++ b/bot.py
+@@ -128,9 +128,13 @@ def athlete_context(a, today):
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    # Two blocks. The cache breakpoint sits on the static instructions only, so a
++    # save_fact (or the date rolling over) changes the uncached athlete block and
++    # leaves the cached prefix intact. Cache hits need an identical prefix up to the marker.
++    return [
++        {"type": "text", "text": INSTRUCTIONS, "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": athlete_context(a, today)},
++    ]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [

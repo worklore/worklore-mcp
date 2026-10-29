@@ -1,0 +1,36 @@
+# Root Cause Analysis and Fixes
+
+## 1. What Went Wrong (Causes)
+
+Inspection of `Library/Logs/nightly-review.err` and `launchctl-print.txt` revealed two distinct stacked failures that made the job fail silently on every scheduled run:
+
+1. **Authentication failure due to missing `USER` environment variable (`Not logged in · Please run /login`)**:
+   Under launchd user agent execution, `USER` is not populated by default unless explicitly configured in the plist's `EnvironmentVariables`. The `claude` CLI relies on `$USER` to resolve credentials and session tokens from the macOS Keychain. Without `$USER`, `claude` failed immediately with `Not logged in · Please run /login`.
+
+2. **Messenger killed by assigning to read-only built-in `status` in zsh (`read-only variable: status`)**:
+   In `bin/nightly-review.zsh`, line 19 assigned the exit code using `status=$?`. In `zsh`, `status` is a special read-only built-in variable aliasing `$?`. Attempting to assign to `status` causes zsh to throw a fatal error and terminate script execution immediately. Because this assignment occurred directly between `claude` and the failure reporting block (`"$NOTIFY" "nightly review FAILED..."`), the script terminated before sending the failure notification to Telegram.
+
+---
+
+## 2. Applicability of the Colleague's Note
+
+The colleague's note described several pitfalls when running unattended CLI agents under launchd:
+
+- **Applied**:
+  - **`status=$?` killing the script**: Exactly matched. In zsh, `status` is read-only, which killed the script right before calling `$NOTIFY`. Replacing `status` with `rc` fixes this.
+  - **Setting `USER` in `EnvironmentVariables` in the plist**: Exactly matched. Launchd did not export `USER=vk`, causing `claude` to fail with `Not logged in · Please run /login`.
+  - **Closing stdin (`< /dev/null`) when running `claude -p` under launchd**: Applied as a preventative measure to prevent `claude` from blocking on stdin in automated contexts.
+
+- **Did Not Apply / Ignored**:
+  - **Piping prompt via stdin (`print -r -- "$PROMPT" | claude -p ...`) due to "Input must be provided either through stdin or as a prompt argument"**: Did not apply. The script was already passing the prompt as an argument (`claude -p "$PROMPT"`), and the actual failure logged was authentication (`Not logged in`), not missing input arguments.
+
+---
+
+## 3. Fixes Applied
+
+1. **`Library/LaunchAgents/com.vk.nightly-review.plist`**:
+   - Added `<key>USER</key><string>vk</string>` under `EnvironmentVariables` so `claude` can access its credentials in the macOS keychain.
+
+2. **`bin/nightly-review.zsh`**:
+   - Replaced `status=$?` and subsequent `$status` references with `rc=$?` and `$rc`.
+   - Added `< /dev/null` to the `claude` invocation to avoid stdin hangs under launchd.

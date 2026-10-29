@@ -1,0 +1,63 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..a00e069
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,22 @@
++# Что изменено
++
++**Причина.** В `build_system` (bot.py) инструкции и контекст атлета (дата, профиль, зоны, цель, факты, язык) склеивались в один блок с одним `cache_control`. `save_fact` меняет факты, значит меняется хеш префикса, и вместе с хвостом пересоздаются ~800 токенов неизменных инструкций. В `logs/usage.jsonl` это видно: после `save_fact` `cache_read_input_tokens: 0` и `cache_creation_input_tokens` ≈ 1100–1300.
++
++**Исправление.** `build_system` теперь возвращает два текстовых блока, у каждого `cache_control: ephemeral`:
++1. `INSTRUCTIONS`. Это константа без подстановок (ни даты, ни имён), она одинакова байт в байт.
++2. `athlete_context(...)`. Это изменчивый хвост, и запись в память инвалидирует только его.
++
++Инструменты стоят выше системного промпта и не менялись (фильтрация по ключевым словам осталась как есть). Из логики памяти ничего не менял.
++
++**Что пригодилось из заметки коллеги:**
++- Идея двух маркеров: статика отдельно, изменчивое отдельно.
++- Проверка, что статический блок не содержит подставленных значений. Я проверил, что в `INSTRUCTIONS` их нет.
++- Не отбирать факты под сообщение: по-прежнему грузим все, чтобы хвост был стабилен между сообщениями.
++- Не трогать порядок и формулировки схем инструментов.
++- Проверка по `usage`.
++
++**Что пропущено:**
++- Фильтрация инструментов: она уже есть.
++- Конкретные числа токенов: у нас свои.
++
++**Проверка.** Я не запускал код с реальным API (ключа и вызовов наружу нет). Ожидаемо в логе: после `save_fact` `cache_read` ≈ размер инструкций, а `cache_creation` — только размер хвоста (сотни токенов, а не ~1100). Дату в хвосте это тоже касается: она меняется раз в сутки и пересоздаёт только хвост.
+diff --git a/README.md b/README.md
+index ebd390e..ed64f45 100644
+--- a/README.md
++++ b/README.md
+@@ -12,5 +12,5 @@ Run it locally with `COACH_ANTHROPIC_KEY=sk-ant-... python3 bot.py 42` and type
+ messages on stdin (the Telegram long-polling transport, which needs
+ `COACH_TELEGRAM_TOKEN`, lives in a separate deploy repo and just calls `reply()`).
+ Requires Python 3.11+ and `pip install anthropic`. Prompt caching is on: the system
+-prompt carries a `cache_control` marker so the tool-loop rounds and follow-up
++prompt carries two `cache_control` markers (static instructions, per-athlete context) so the tool-loop rounds and follow-up
+ messages inside the 5-minute window read it from cache.
+diff --git a/__pycache__/bot.cpython-314.pyc b/__pycache__/bot.cpython-314.pyc
+new file mode 100644
+index 0000000..dc03f9f
+Binary files /dev/null and b/__pycache__/bot.cpython-314.pyc differ
+diff --git a/bot.py b/bot.py
+index e2ff241..02575da 100644
+--- a/bot.py
++++ b/bot.py
+@@ -128,9 +128,12 @@ def athlete_context(a, today):
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    # Two cached segments: the static instructions stay byte-identical for everyone,
++    # so a save_fact (which rewrites the athlete context) only invalidates the tail.
++    return [
++        {"type": "text", "text": INSTRUCTIONS, "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": athlete_context(a, today), "cache_control": {"type": "ephemeral"}},
++    ]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [

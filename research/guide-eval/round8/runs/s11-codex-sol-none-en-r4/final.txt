@@ -1,0 +1,3 @@
+The second publish failed because it generated a float in `similar[0].score`, which DynamoDB rejects. The first publish had no related stories, so it never stored a score.
+
+I changed the score calculation to use `Decimal` throughout and added a regression test that publishes twice. The cause and fix are documented in [ANSWER.md](/tmp/h-UpstGM/ANSWER.md). Both tests pass.

@@ -1,0 +1,145 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..51f0031
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,64 @@
++# Why the nightly review never reported anything
++
++The evidence is in `Library/Logs/nightly-review.err`. It holds 6 identical pairs of lines, matching
++`runs = 6` / `last exit code = 1` in `launchctl-print.txt`. So launchd **is** running the job
++every night. The job just fails before it can tell you.
++
++## Cause 1: the failure path itself crashes (why you never got a failure note)
++
++```
++/Users/vk/bin/nightly-review.zsh:19: read-only variable: status
++```
++
++The script runs under `/bin/zsh`, and in zsh `status` is a read-only special
++parameter (an alias of `$?`). The line `status=$?` is a fatal error, so the script exits
++with code 1 right there, before either `notify.sh` call. Success and failure both end
++the same way: silently. (This would work in bash, which is probably why it looked fine.)
++
++**Fix:** use `rc=$?` instead (`bin/nightly-review.zsh`).
++
++## Cause 2: `claude` isn't authenticated under launchd (why the review fails)
++
++```
++Not logged in · Please run /login
++```
++
++launchd doesn't start a login shell and never reads `~/.zshrc`/`~/.zprofile`. Its
++environment has only the plist's `PATH` (see `environment = {...}` in the
++launchctl output). Whatever authenticates `claude` in your terminal (for example an exported
++`ANTHROPIC_API_KEY`/token in your shell profile) isn't there, so `claude -p` exits
++non-zero immediately. You can't see that because of Cause 1.
++
++**Fix:** the script now loads a long-lived token from the keychain when none is in the
++environment, the same way `notify.sh` gets the Telegram token. If the token is missing, it sends a clear
++failure note. One-time setup on your Mac:
++
++```sh
++claude setup-token          # prints a long-lived OAuth token
++security add-generic-password -s claude-nightly-token -a "$USER" -w '<token>'
++```
++
++## Problems that would have bitten next (also fixed)
++
++3. **Headless `claude -p` can't approve tool use.** The prompt needs `git log`/`git show`,
++   but in `-p` mode nobody is there to approve a Bash call, so it gets denied and the
++   "review" would see no commits. Read-only tools are now pre-approved with
++   `--allowedTools "Read" "Grep" "Glob" "Bash(git log:*)" "Bash(git show:*)" "Bash(git diff:*)"`.
++   Nothing that can write is allowed, so "Do not modify any file" is enforced, not just
++   requested.
++4. **Telegram errors were swallowed.** `curl -sS` without `--fail` exits 0 on HTTP
++   400/401, and the response was sent to `/dev/null`. A bad token or a rejected message
++   would look like success. `notify.sh` now uses `--fail-with-body` and prints Telegram's
++   error to stderr, which lands in `nightly-review.err` under launchd.
++5. **The summary could be cut mid-character.** `head -c 300` cuts at byte 300, which can split a
++   multi-byte UTF-8 character, and Telegram rejects invalid UTF-8. The script now sets
++   a UTF-8 locale (launchd sets none) and cuts at 300 *characters* with
++   `${summary[1,300]}`.
++6. Every `notify` call in the script now logs to stderr if `notify.sh` fails, so a broken
++   notifier also leaves a trace in `nightly-review.err`.
++
++## After deploying
++
++Copy `bin/*` back to `~/bin`. The plist didn't need changes, so no reload is required.
++To test without waiting for 02:30, run `launchctl kickstart gui/$UID/com.vk.nightly-review`,
++then check Telegram and `~/Library/Logs/nightly-review.err`.
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..6075e52 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -2,10 +2,29 @@
+ # Nightly review of yesterday's commits, summary to Telegram.
+ set -u
+ 
++# launchd gives us no locale; needed so the summary is truncated on
++# character (not byte) boundaries and stays valid UTF-8 for Telegram.
++export LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8
++
+ REPO="$HOME/projects/shop"
+ OUT="$HOME/Library/Logs/nightly-review-$(date +%F).md"
+ NOTIFY="$HOME/bin/notify.sh"
+ 
++notify() {
++  "$NOTIFY" "$1" || print -u2 "nightly review: notify.sh failed (exit $?)"
++}
++
++# launchd does not read ~/.zshrc, so claude has no credentials here.
++# Long-lived token from `claude setup-token`, stored once with:
++#   security add-generic-password -s claude-nightly-token -a "$USER" -w '<token>'
++if [[ -z "${CLAUDE_CODE_OAUTH_TOKEN:-}" && -z "${ANTHROPIC_API_KEY:-}" ]]; then
++  CLAUDE_CODE_OAUTH_TOKEN=$(security find-generic-password -s claude-nightly-token -w 2>/dev/null) || {
++    notify "nightly review FAILED: no Claude token in keychain (claude-nightly-token)"
++    exit 1
++  }
++  export CLAUDE_CODE_OAUTH_TOKEN
++fi
++
+ SINCE=$(date -v-1d +%F)
+ PROMPT="Review the commits in this repository since $SINCE.
+ For each commit: one line on what it changes and whether anything looks risky
+@@ -13,14 +32,19 @@ For each commit: one line on what it changes and whether anything looks risky
+ End with a three-line summary I can read on my phone.
+ Do not modify any file."
+ 
+-cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
++cd "$REPO" || { notify "nightly review: repo missing"; exit 1; }
+ 
+-claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
++# Headless mode can't ask for permission: pre-approve read-only tools only,
++# otherwise every `git log` is denied and the review sees nothing.
++claude -p "$PROMPT" --output-format text \
++  --allowedTools "Read" "Grep" "Glob" "Bash(git log:*)" "Bash(git show:*)" "Bash(git diff:*)" \
++  > "$OUT"
++rc=$?   # `status` is a read-only special parameter in zsh
+ 
+-if [ $status -ne 0 ]; then
+-  "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
+-  exit $status
++if (( rc != 0 )); then
++  notify "nightly review FAILED (exit $rc), see $OUT and ~/Library/Logs/nightly-review.err"
++  exit $rc
+ fi
+ 
+-"$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"
++summary=$(<"$OUT")
++notify "nightly review done: ${summary[1,300]}"
+diff --git a/bin/notify.sh b/bin/notify.sh
+index 818e531..d4c7237 100755
+--- a/bin/notify.sh
++++ b/bin/notify.sh
+@@ -3,5 +3,7 @@
+ set -eu
+ : "${TG_BOT_TOKEN:=$(security find-generic-password -s tg-bot -w)}"
+ CHAT_ID=123456789
+-curl -sS -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
+-  -d chat_id="$CHAT_ID" --data-urlencode text="$1" > /dev/null
++# --fail-with-body: Telegram API errors (bad token, bad text) become a non-zero
++# exit, and the reason goes to stderr instead of /dev/null.
++resp=$(curl -sS --fail-with-body -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
++  -d chat_id="$CHAT_ID" --data-urlencode text="$1") || { echo "notify.sh: $resp" >&2; exit 1; }

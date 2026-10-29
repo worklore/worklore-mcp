@@ -1,0 +1,26 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..c1855d8
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,7 @@
++# HR range fix
++
++Changed `gen.py` to emit each heart rate corridor as `hr: {"units": "%lthr", "start": low, "end": high}`. Intervals.icu represents a range with `start` and `end`; `value` represents a single target. The generator had mixed `value` with `end`, so the intended lower bound was not encoded as a range and the watch displayed its own zone band.
++
++The plan remains in percent of LTHR, so Intervals.icu can resolve it against the athlete's threshold. The earlier absolute BPM and `start_bpm`/`end_bpm` attempts do not use this range representation.
++
++Verified locally that all four generated targets, including steps inside the repeat block, contain `start`/`end` and no `value`. A watch sync was not performed.
+diff --git a/gen.py b/gen.py
+index be0b3bc..4aeba5a 100755
+--- a/gen.py
++++ b/gen.py
+@@ -10,7 +10,7 @@ import sys
+ def hr_target(step):
+     """HR corridor for a step, as a percentage of the athlete's LTHR."""
+     lo, hi = step["hr_pct"]
+-    return {"units": "%lthr", "value": lo, "end": hi}
++    return {"units": "%lthr", "start": lo, "end": hi}
+ 
+ 
+ def build_step(step):

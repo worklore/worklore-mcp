@@ -1,0 +1,59 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..7cc0bb1
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,33 @@
++# Решение проблемы с кешированием при сохранении фактов
++
++## Причина проблемы
++Ранее в `bot.py` функция `build_system(a, today)` объединяла статические инструкции коуча (`INSTRUCTIONS`) и динамический контекст атлета (`athlete_context(a, today)`) в один текстовый блок с маркером кеширования `cache_control: {"type": "ephemeral"}`:
++
++```python
++def build_system(a, today):
++    # One block, cached as a whole: instructions + per-athlete context.
++    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
++    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++```
++
++Поскольку кеширование промптов в Claude (Prompt Caching) работает по точному префиксному совпадению токенов, любое изменение в строке (например, добавление нового факта через `save_fact` или смена даты/атлета) инвалидировало весь закешированный префикс целиком. В результате следующий вызов вынужден был заново создавать кеш для всего объема инструкций (~1000 токенов), что отражалось в `logs/usage.jsonl` как `cache_read_input_tokens: 0` и `cache_creation_input_tokens: ~1000+`.
++
++## Внесенные изменения
++В файле `bot.py` разделен системный промпт в функции `build_system` на два отдельных блока:
++1. **Статический блок** (`INSTRUCTIONS`) — содержит неизменяемые правила коучинга и снабжен маркером `"cache_control": {"type": "ephemeral"}`. Размер блока достаточен для минимального порога кеширования Claude Sonnet (>= 1024 токенов с учетом служебных токенов/инструментов).
++2. **Динамический блок** (`athlete_context(a, today)`) — содержит дату, профиль атлета и список `facts`, помещен после статических инструкций без маркера кеширования.
++
++```python
++def build_system(a, today):
++    # Two blocks: static coaching instructions (cached across athletes and rounds),
++    # followed by dynamic per-athlete context (facts, profile, date).
++    return [
++        {"type": "text", "text": INSTRUCTIONS, "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": athlete_context(a, today)},
++    ]
++```
++
++## Результат
++- Статические инструкции сохраняются в кеше и переиспользуются между раундами и последующими вызовами независимо от добавления фактов через `save_fact`.
++- Запись новых фактов в память атлета меняет только незакешированный постфикс, не вытесняя закешированные статические инструкции.
++- Дополнительно кеш статических инструкций теперь разделяется между разными атлетами, так как блок инструкций идентичен для всех пользователей.
+diff --git a/bot.py b/bot.py
+index e2ff241..f2e4e6f 100644
+--- a/bot.py
++++ b/bot.py
+@@ -128,9 +128,12 @@ def athlete_context(a, today):
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    # Two blocks: static coaching instructions (cached across athletes and rounds),
++    # followed by dynamic per-athlete context (facts, profile, date).
++    return [
++        {"type": "text", "text": INSTRUCTIONS, "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": athlete_context(a, today)},
++    ]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [

@@ -1,0 +1,75 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..f64e3f6
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,18 @@
++# Why the nightly job was silent
++
++The job **did run**. The captured `launchctl print` shows six runs and `last exit code = 1`. Its stderr log repeats the same two errors six times:
++
++1. `claude` exited with `Not logged in · Please run /login`. The launchd plist provided `PATH` but no `USER`; the headless CLI needs the login name to locate its keychain credentials. I added `USER=vk` to `EnvironmentVariables`.
++2. Immediately afterward, the wrapper tried `status=$?`. In zsh, `status` is read-only. That error stopped the wrapper before its failure notification, so Telegram received nothing. I replaced it with an `if` around the agent command and capture its exit code as `rc` on failure.
++
++The wrapper now closes the agent's stdin when passing the prompt as an argument, treats an empty response as a failure, and logs run duration and output location. The existing notifier is still used for both outcomes. The successful response must be nonempty before a success notice is sent.
++
++## Colleague's note
++
++Applied: check `launchctl print` and stderr before assuming the schedule never fired; avoid zsh's read-only `status`; set `USER` in launchd; close stdin for an argument-based `claude -p` call; check the real output as well as the exit code; log duration.
++
++Did not apply: the prompt was already supplied as a quoted argument, and the log shows an authentication error, not a missing-prompt error. Piping the prompt into stdin was therefore unnecessary here. The snapshot also cannot prove that a real Telegram notification arrived or that a live agent review succeeded.
++
++## Verification
++
++`zsh -n bin/nightly-review.zsh` and `plutil -lint Library/LaunchAgents/com.vk.nightly-review.plist` pass. This is a home-directory snapshot, so no live launchd job was reloaded or kicked off and no Telegram message was sent. After installing the changed files in the real home directory, reload the agent and run it once. Check its new summary file, stderr duration, launchd exit code, and both success and forced-failure notifications.
+diff --git a/Library/LaunchAgents/com.vk.nightly-review.plist b/Library/LaunchAgents/com.vk.nightly-review.plist
+index c347363..f371054 100644
+--- a/Library/LaunchAgents/com.vk.nightly-review.plist
++++ b/Library/LaunchAgents/com.vk.nightly-review.plist
+@@ -22,6 +22,8 @@
+   <string>/Users/vk/Library/Logs/nightly-review.err</string>
+   <key>EnvironmentVariables</key>
+   <dict>
++    <key>USER</key>
++    <string>vk</string>
+     <key>PATH</key>
+     <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+   </dict>
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..03e6b16 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -2,6 +2,8 @@
+ # Nightly review of yesterday's commits, summary to Telegram.
+ set -u
+ 
++started_at=$(date +%s)
++
+ REPO="$HOME/projects/shop"
+ OUT="$HOME/Library/Logs/nightly-review-$(date +%F).md"
+ NOTIFY="$HOME/bin/notify.sh"
+@@ -15,12 +17,18 @@ Do not modify any file."
+ 
+ cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
+ 
+-claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
+-
+-if [ $status -ne 0 ]; then
+-  "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
+-  exit $status
++if claude -p "$PROMPT" --output-format text < /dev/null > "$OUT"; then
++  if [[ ! -s "$OUT" ]]; then
++    print -u2 -- "nightly review: claude produced no output"
++    "$NOTIFY" "nightly review FAILED (empty output), see $OUT"
++    exit 1
++  fi
++else
++  rc=$?
++  print -u2 -- "nightly review: claude exited $rc after $(($(date +%s) - started_at))s"
++  "$NOTIFY" "nightly review FAILED (exit $rc), see $OUT"
++  exit $rc
+ fi
+ 
++print -u2 -- "nightly review: completed in $(($(date +%s) - started_at))s; output: $OUT"
+ "$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"

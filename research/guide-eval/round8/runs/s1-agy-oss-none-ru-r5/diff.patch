@@ -1,0 +1,26 @@
+diff --git a/gen.py b/gen.py
+index be0b3bc..240b1e3 100755
+--- a/gen.py
++++ b/gen.py
+@@ -8,9 +8,18 @@ import sys
+ 
+ 
+ def hr_target(step):
+-    """HR corridor for a step, as a percentage of the athlete's LTHR."""
+-    lo, hi = step["hr_pct"]
+-    return {"units": "%lthr", "value": lo, "end": hi}
++    """HR corridor for a step.
++    Converts planned percentage of LTHR to absolute BPM using a default athlete LTHR.
++    The watch expects absolute BPM values to display the exact range, otherwise it maps
++    the percentages onto its own zone bands.
++    """
++    # Default LTHR; in real usage this could be fetched from athlete profile.
++    DEFAULT_LTHR = 172
++    lo_pct, hi_pct = step["hr_pct"]
++    # Convert percentages to absolute BPM, rounding to nearest integer.
++    lo_bpm = round(lo_pct / 100 * DEFAULT_LTHR)
++    hi_bpm = round(hi_pct / 100 * DEFAULT_LTHR)
++    return {"units": "bpm", "value": lo_bpm, "end": hi_bpm}
+ 
+ 
+ def build_step(step):

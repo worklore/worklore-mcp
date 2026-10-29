@@ -1,0 +1,69 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..78856e1
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,11 @@
++# Причина
++
++В `logs/error.log` вторая публикация падает в `table.put_item` с `TypeError: Float types are not supported. Use Decimal types instead.` При первой публикации таблица пуста, поэтому `similar` пуст. При следующей `related()` добавляет вычисленный `similarity()` показатель типа `float` в `similar[*].score`; сериализатор DynamoDB такой тип не принимает, и обработчик возвращает 500.
++
++# Исправление
++
++Перед включением показателя в сохраняемый элемент преобразовал его в `Decimal` через строку. Значение и диапазон оценки сохраняются, а в DynamoDB больше не передаётся `float` по этому пути. Добавил тест двух последовательных вызовов `handler()` с непустой таблицей: оба должны вернуть 201, второй элемент должен содержать `Decimal` в `similar`. Локальный `FakeTable` отклоняет `float` так же, как boto3.
++
++# Что пригодилось из заметки коллеги
++
++Пригодились указание на ограничение DynamoDB для `float`, объяснение разницы между пустой и заполненной таблицей и идея тестировать запись после предварительного заполнения. Не использовал перевод показателя в целый процент: это изменило бы формат и точность уже существующей оценки. Публикацию в настоящую таблицу не выполнял по условию задачи.
+diff --git a/src/app.py b/src/app.py
+index db49c5e..d3d8129 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -8,6 +8,7 @@ import json
+ import logging
+ import re
+ import time
++from decimal import Decimal
+ 
+ log = logging.getLogger("stories")
+ 
+@@ -35,7 +36,7 @@ def related(story, existing):
+     for other in existing:
+         if other["slug"] == story["slug"]:
+             continue
+-        scored.append({"slug": other["slug"], "score": similarity(story, other)})
++        scored.append({"slug": other["slug"], "score": Decimal(str(similarity(story, other)))})
+     scored.sort(key=lambda s: s["score"], reverse=True)
+     return scored[:TOP_N]
+ 
+diff --git a/tests/test_publish.py b/tests/test_publish.py
+index 6c9ac44..0accfe7 100644
+--- a/tests/test_publish.py
++++ b/tests/test_publish.py
+@@ -1,6 +1,8 @@
+ import os
+ import sys
+ import unittest
++import json
++from decimal import Decimal
+ 
+ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+ sys.path.insert(0, os.path.dirname(__file__))
+@@ -23,6 +25,17 @@ class PublishTest(unittest.TestCase):
+         self.assertEqual(table.get_item(Key={"slug": "why-my-cron-ran-twice"})["Item"]["title"], "Why my cron ran twice")
+         self.assertEqual(table.scan()["Count"], 1)
+ 
++    def test_second_publish_stores_related_scores(self):
++        table = FakeTable()
++        first = {"slug": "first-story", "title": "First", "tags": ["python"], "body": "Python publishing"}
++        second = {"slug": "second-story", "title": "Second", "tags": ["python"], "body": "Python publishing"}
++        for story in (first, second):
++            response = app.handler({"body": json.dumps(story)}, table)
++            self.assertEqual(response["statusCode"], 201)
++        stored = table.get_item(Key={"slug": "second-story"})["Item"]
++        self.assertEqual(table.scan()["Count"], 2)
++        self.assertEqual(stored["similar"], [{"slug": "first-story", "score": Decimal("1.0")}])
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

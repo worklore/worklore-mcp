@@ -1,0 +1,3 @@
+Implemented all six events in `docs/EVENTS.md` on the registration and offers screens using the existing `Analytics.capture` wrapper. Input events fire once per screen visit, the slider event fires when a changed interaction ends, and the offers scroll event fires after the first completed scroll. No email or phone values are sent.
+
+[ANSWER.md](/tmp/h-acgdPz/ANSWER.md) records the changes and which parts of the colleague’s note applied. `flutter analyze` passed with no issues.

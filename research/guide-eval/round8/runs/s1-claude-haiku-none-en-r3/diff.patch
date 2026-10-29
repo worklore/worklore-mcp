@@ -1,0 +1,124 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..fee8da1
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,45 @@
++# Answer: HR targets clamped to the watch's zones
++
++## What changed
++
++`gen.py`, `build_step()`: when a step has `hr_pct`, the output now sets
++`"target": "HR"` alongside the `hr` object. Nothing else changed.
++
++Regenerating `plans/tempo-run.json` now produces the same payload as
++`readback/event-184233-as-sent.json` plus four `"target": "HR"` lines, one per
++HR step (the warm-up, both tempo/float steps inside the repeat, and cool-down).
++
++## Why
++
++The sent payload had an `hr` object with `units: "%lthr"` but no step-level
++target type. Intervals.icu's workout model keys each step's target by type
++(`HR`, `POWER`, `PACE`), and without it the step has no explicit HR target.
++The watch then shows Garmin's zone-band target instead of the planned corridor,
++which matches what `readback/watch-notes.md` reports: every planned range
++came back as a zone edge (118–137, 151–162, 137–151), and changing LTHR only
++moved the bands.
++
++## What I could not verify
++
++- **The fix is not confirmed on the watch.** I did not push anything. Pushing or
++  checking the event against the live API would be an external action, and the
++  brief was to fix the generator only. The next step is to push a regenerated
++  event (`python3 gen.py plans/tempo-run.json > event.json && ./push.sh event.json`),
++  re-sync, and check the displayed ranges against 117–129 / 151–160 / 129–141 / 112–124.
++- **I could not confirm the `units` enum.** A web search did not turn up the
++  official schema for HR `units` or how Intervals exports `%lthr` targets to
++  Garmin. If the watch still shows zone bands after the `target` fix, the
++  remaining suspect is the export mapping of `%lthr` ranges to Garmin zone
++  targets. The earlier `units: "bpm"` attempt produced 214–249 bpm, which
++  suggests those values were computed incorrectly. Recomputing bpm from LTHR
++  (`round(172 * pct / 100)`) in `gen.py` is the fallback to try, but it needs
++  checking against the API output before it is trusted.
++- The `start_bpm` / `end_bpm` attempt is not something this generator emits, so
++  it is not addressed here.
++
++## Files
++
++- `gen.py`: added `"target": "HR"` for steps with `hr_pct`.
++- `ANSWER.md`: this note.
++
++Nothing was committed, pushed, or sent to any external service.
+diff --git a/event-new.json b/event-new.json
+new file mode 100644
+index 0000000..77721a7
+--- /dev/null
++++ b/event-new.json
+@@ -0,0 +1,55 @@
++{
++  "category": "WORKOUT",
++  "type": "Run",
++  "name": "Tempo run 45",
++  "start_date_local": "2026-10-20T00:00:00",
++  "workout_doc": {
++    "steps": [
++      {
++        "duration": 600,
++        "target": "HR",
++        "hr": {
++          "units": "%lthr",
++          "value": 68,
++          "end": 75
++        },
++        "text": "Warm-up easy"
++      },
++      {
++        "reps": 3,
++        "steps": [
++          {
++            "duration": 480,
++            "target": "HR",
++            "hr": {
++              "units": "%lthr",
++              "value": 88,
++              "end": 93
++            },
++            "text": "Tempo"
++          },
++          {
++            "duration": 120,
++            "target": "HR",
++            "hr": {
++              "units": "%lthr",
++              "value": 75,
++              "end": 82
++            },
++            "text": "Float"
++          }
++        ]
++      },
++      {
++        "duration": 300,
++        "target": "HR",
++        "hr": {
++          "units": "%lthr",
++          "value": 65,
++          "end": 72
++        },
++        "text": "Cool-down"
++      }
++    ]
++  }
++}
+diff --git a/gen.py b/gen.py
+index be0b3bc..8d445cc 100755
+--- a/gen.py
++++ b/gen.py
+@@ -16,6 +16,7 @@ def hr_target(step):
+ def build_step(step):
+     out = {"duration": step["minutes"] * 60}
+     if "hr_pct" in step:
++        out["target"] = "HR"
+         out["hr"] = hr_target(step)
+     if "label" in step:
+         out["text"] = step["label"]

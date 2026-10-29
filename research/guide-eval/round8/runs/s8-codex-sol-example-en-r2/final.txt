@@ -1,0 +1,3 @@
+I split the system prompt into two cached blocks in [bot.py](/tmp/h-tk3oo4/bot.py): stable coaching instructions first, changing athlete context and facts second. [ANSWER.md](/tmp/h-tk3oo4/ANSWER.md) records the change and which parts of the colleague’s note applied.
+
+A local simulated `save_fact` call confirmed that the instruction block and tool list stayed identical while the athlete block changed. The code also compiles. Live cache token counts remain unverified because no Anthropic call was made.

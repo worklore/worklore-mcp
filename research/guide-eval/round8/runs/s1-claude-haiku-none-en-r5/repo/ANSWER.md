@@ -1,0 +1,37 @@
+# HR ranges clamped to watch zones: fix
+
+## Cause
+
+`gen.py` wrote every HR range as `{"units": "%lthr", "value": lo, "end": hi}`.
+The range's lower bound was under `value`, not `start`. Intervals.icu's
+`workout_doc` uses `start`/`end` for a target range (the forum examples I found
+use this shape with `units`). With no `start` field, the range apparently isn't
+read as a corridor, and the watch falls back to its own zone bands. That matches
+`readback/watch-notes.md`: every planned corridor showed up as a zone edge
+(Tempo 88–93% × 172 = 151–160 bpm became the watch's Z4 151–162).
+
+## Change
+
+`gen.py`, `hr_target()`: `"value": lo` → `"start": lo`. Nothing else changed.
+
+Generated `workout_doc` for `plans/tempo-run.json` now has, for example:
+
+```json
+"hr": {"units": "%lthr", "start": 88, "end": 93}
+```
+
+Every HR target in the output uses `start`/`end`; no `value` keys remain.
+
+## Not verified
+
+- **Not checked against the live API or the watch.** I had no API key and did
+  not push anything. The fix rests on forum examples, not Intervals.icu's
+  official schema, which I could not access. Confirm by pushing a new event and
+  checking the watch, or by fetching it with `resolve=true` and confirming the
+  bpm values (expected: Tempo ≈ 151–160 bpm at LTHR 172).
+- `readback/event-184233-as-sent.json` still holds the old payload. It is the
+  record of what was sent, so I left it alone; the next push will produce a new
+  file.
+- If the watch still clamps after this change, the next thing to check is the
+  unit string (`%lthr` vs `%hr`) and whether Intervals resolves the range on
+  export.

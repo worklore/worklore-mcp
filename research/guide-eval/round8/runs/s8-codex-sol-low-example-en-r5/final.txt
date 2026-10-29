@@ -1,0 +1,3 @@
+Fixed the prompt caching in [bot.py](/tmp/h-oOw8Gh/bot.py): static coaching instructions and changing athlete context now have separate cache markers, so a `save_fact` write should leave the instructions cached.
+
+I documented the change, which parts of the colleague’s note applied, and the verification limits in [ANSWER.md](/tmp/h-oOw8Gh/ANSWER.md). Local checks passed; live cache counts still need to be observed on the next normal run.

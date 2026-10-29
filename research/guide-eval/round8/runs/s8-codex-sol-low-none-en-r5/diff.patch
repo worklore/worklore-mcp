@@ -1,0 +1,53 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..f907b12
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,7 @@
++# Prompt cache fix
++
++`build_system()` now sends the coaching instructions and athlete context as separate system text blocks, each with an ephemeral cache breakpoint. A `save_fact` changes only the second block, so the unchanged instruction prefix can be read from cache while the updated context is cached separately. The context breakpoint also keeps subsequent tool-loop rounds and messages eligible to reuse the full prompt.
++
++I added stable guidance consistent with the existing coaching rules so the instruction prefix remains large enough for prompt caching's minimum prefix size, even without athlete facts. Tool selection and memory persistence are unchanged.
++
++Verified locally that adding a fact changes only the context block, both breakpoints remain present, and `bot.py` compiles. No live API call was made.
+diff --git a/bot.py b/bot.py
+index e2ff241..4a56584 100644
+--- a/bot.py
++++ b/bot.py
+@@ -111,6 +111,20 @@ Formatting:
+ - Plain text. No markdown headings, no tables.
+ - Lists only for a session structure (warm-up / main / cool-down).
+ - Numbers with units: 45 min, 12 km, 150 bpm.
++
++How to apply these rules:
++- Treat the athlete profile and long-term facts as context for the current answer. Check them before
++  suggesting a session, changing a plan, or saving a new fact. The profile's zone boundaries and
++  language take priority over generic examples or assumptions.
++- A durable fact is information likely to matter in a future conversation, such as a recurring
++  training day, a past injury, or equipment the athlete owns. A workout completed today belongs
++  in log_session. A temporary feeling, a question, or a plan for one day is not a durable fact.
++- When a durable fact is new, save one concise sentence that retains its useful detail. Compare
++  it with existing facts first to avoid duplicates. After a tool result, answer the athlete's
++  original question and keep the same coaching constraints.
++- For weekly plans, use plan_week before describing the structure. Keep recovery work easy and
++  preserve rest days. If the necessary recent volume is missing, ask for it instead of estimating
++  a safe increase. If a safety rule applies, address it before offering training advice.
+ """
+ 
+ 
+@@ -128,9 +142,11 @@ def athlete_context(a, today):
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    # Keep the stable rules cached when a memory write changes athlete context.
++    return [
++        {"type": "text", "text": INSTRUCTIONS, "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": athlete_context(a, today), "cache_control": {"type": "ephemeral"}},
++    ]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [

@@ -1,0 +1,5 @@
+Fixed the Intervals.icu connection flow in this workspace and documented the causes in [ANSWER.md](/tmp/h-U0ktt7/ANSWER.md).
+
+The Connect button now starts OAuth through the app’s authenticated API request. Client credentials and the redirect URI can come from the environment, and tokens without a provider-supplied expiry no longer expire after an invented hour. I also reduced the requested scopes to the access the app uses.
+
+Python syntax, state signing, token storage, and `git diff --check` passed. A live OAuth connection still requires the registered production credentials and redirect URI; I did not contact Intervals.icu or deploy anything. The provider’s [OAuth documentation](https://forum.intervals.icu/t/intervals-icu-oauth-support/2759) supports the token and scope changes.

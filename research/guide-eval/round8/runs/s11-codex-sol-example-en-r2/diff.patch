@@ -1,0 +1,97 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..92b0996
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,15 @@
++# Why the second publish failed
++
++`logs/error.log` shows `put_item` failing with `TypeError: Float types are not supported. Use Decimal types instead.` The first publish scans an empty table, so `related()` returns an empty list. On the second publish, the scan finds the first story; `similarity()` computes a Python `float` and `related()` puts it in `item["similar"][0]["score"]`. boto3 rejects that nested float while serializing the item, and `handler()` returns 500.
++
++# Fix
++
++`similarity()` now uses `Decimal` for both ratios and weights, then rounds to four decimal places with `quantize()`. Scores keep their existing 0–1 scale and four-place precision, and the item sent to DynamoDB contains a supported numeric type. A regression test publishes two stories through `handler()` using the local DynamoDB stand-in, checks both 201 responses, and verifies the persisted fractional score. The stand-in rejects floats as boto3 does.
++
++# Verification
++
++`python3 -m unittest discover tests -v` passes both tests. No external table was used.
++
++# Colleague's note
++
++The empty-table versus populated-table explanation, boto3's rejection of floats, and the need for a seeded write-path test applied directly. The suggested integer-percentage conversion was unnecessary here: `Decimal` fixes serialization while preserving the existing score scale and precision. Publishing twice against a real table was outside this task's local-only ground rules; the local stand-in exercised the same type check.
+diff --git a/src/app.py b/src/app.py
+index db49c5e..6b22345 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -8,6 +8,7 @@ import json
+ import logging
+ import re
+ import time
++from decimal import Decimal
+ 
+ log = logging.getLogger("stories")
+ 
+@@ -15,6 +16,7 @@ TABLE_NAME = "stories"
+ TOP_N = 3
+ 
+ _WORD = re.compile(r"[a-z0-9]+")
++_SCORE_PRECISION = Decimal("0.0001")
+ 
+ 
+ def words(text):
+@@ -24,10 +26,10 @@ def words(text):
+ def similarity(a, b):
+     """Shared-tag ratio (Jaccard), blended with shared words of the two bodies."""
+     ta, tb = set(a.get("tags", [])), set(b.get("tags", []))
+-    tag_score = len(ta & tb) / len(ta | tb) if (ta | tb) else 0
++    tag_score = Decimal(len(ta & tb)) / len(ta | tb) if (ta | tb) else Decimal(0)
+     wa, wb = words(a.get("body")), words(b.get("body"))
+-    word_score = len(wa & wb) / len(wa | wb) if (wa | wb) else 0
+-    return round(0.7 * tag_score + 0.3 * word_score, 4)
++    word_score = Decimal(len(wa & wb)) / len(wa | wb) if (wa | wb) else Decimal(0)
++    return (Decimal("0.7") * tag_score + Decimal("0.3") * word_score).quantize(_SCORE_PRECISION)
+ 
+ 
+ def related(story, existing):
+diff --git a/tests/test_publish.py b/tests/test_publish.py
+index 6c9ac44..c8707d6 100644
+--- a/tests/test_publish.py
++++ b/tests/test_publish.py
+@@ -1,6 +1,8 @@
++import json
+ import os
+ import sys
+ import unittest
++from decimal import Decimal
+ 
+ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+ sys.path.insert(0, os.path.dirname(__file__))
+@@ -23,6 +25,28 @@ class PublishTest(unittest.TestCase):
+         self.assertEqual(table.get_item(Key={"slug": "why-my-cron-ran-twice"})["Item"]["title"], "Why my cron ran twice")
+         self.assertEqual(table.scan()["Count"], 1)
+ 
++    def test_second_publish_stores_related_score(self):
++        table = FakeTable()
++        first = {
++            "slug": "first-story",
++            "title": "First story",
++            "tags": ["cron", "linux"],
++            "body": "A shared body",
++        }
++        second = {
++            "slug": "second-story",
++            "title": "Second story",
++            "tags": ["cron", "python"],
++            "body": "A shared body",
++        }
++
++        self.assertEqual(app.handler({"body": json.dumps(first)}, table)["statusCode"], 201)
++        self.assertEqual(app.handler({"body": json.dumps(second)}, table)["statusCode"], 201)
++
++        stored = table.get_item(Key={"slug": "second-story"})["Item"]
++        self.assertEqual(stored["similar"], [{"slug": "first-story", "score": Decimal("0.5333")}])
++        self.assertEqual(table.scan()["Count"], 2)
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

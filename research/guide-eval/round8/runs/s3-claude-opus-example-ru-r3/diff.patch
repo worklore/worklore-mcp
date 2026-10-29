@@ -1,0 +1,177 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..d08f42d
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,89 @@
++# Почему nightly-review молчал
++
++## Что было на самом деле
++
++Задача **запускалась**. В `launchctl-print.txt` видно `runs = 6` и `last exit code = 1`.
++Агент загружен 2026-10-12, снимок сделан 2026-10-18 утром, то есть все шесть ночей
++по расписанию в 02:30 отработали. launchd ни при чём: скрипт каждый раз падал и не мог об этом сообщить.
++В `Library/Logs/nightly-review.err` одна и та же пара строк повторяется 6 раз:
++
++```
++Not logged in · Please run /login
++/Users/vk/bin/nightly-review.zsh:19: read-only variable: status
++```
++
++## Причина 1: `claude` не залогинен в окружении launchd
++
++В окружении launchd есть только `PATH` (это видно в `launchctl print` и в plist), а переменной `USER` нет.
++Без `USER` CLI не находит свою учётную запись в связке ключей и падает с
++`Not logged in`. В терминале всё работает, потому что там `USER` задан.
++
++**Исправление:** в `EnvironmentVariables` в plist добавлен `USER = vk`.
++
++## Причина 2 (из-за неё и была тишина): `status=$?` в zsh
++
++В zsh `status` — специальный параметр только для чтения (синоним `$?`).
++Присваивание `status=$?` даёт ошибку `read-only variable: status`, и неинтерактивный zsh
++тут же завершается с кодом 1. Отсюда и `last exit code = 1`. Строка 19 стоит
++**между** вызовом `claude` и вызовом `notify.sh`, поэтому код уведомления о сбое не выполнялся
++ни разу. Проверено локально: `zsh -c 'false; status=$?; echo reached'` печатает ошибку,
++`reached` не выводит и завершается с кодом 1.
++
++**Исправление:** вместо `status` используется `rc=$?`.
++
++## Что ещё изменено, чтобы тишина была невозможна
++
++- `bin/nightly-review.zsh`:
++  - промпт передаётся через stdin (`print -r -- "$PROMPT" | claude -p ...`), так что
++    CLI не будет ждать открытый stdin и не будет проблем с многострочным аргументом;
++  - в лог пишутся время начала, код выхода, длительность и размер отчёта;
++  - в уведомление о сбое попадают первые 300 байт stderr от `claude`, и причина видна прямо в Telegram;
++  - код выхода 0 при пустом отчёте тоже считается сбоем и приходит уведомление;
++  - если упал сам `notify.sh`, об этом остаётся запись в `nightly-review.err`.
++- `bin/notify.sh`: у `curl` добавлен `--fail-with-body`. Раньше ответ Telegram с HTTP-ошибкой
++  (неверный токен или chat_id) считался успехом, потому что `-sS` без `-f` не меняет код выхода.
++
++Проверка с заглушками `claude` и `notify.sh` во временном HOME (без сети):
++сбой, успех и «exit 0, но пустой отчёт» дают по одному уведомлению с правильным текстом.
++
++## Что сделать на машине (я ничего не запускал и не перезагружал)
++
++```sh
++launchctl bootout gui/$UID/com.vk.nightly-review
++launchctl bootstrap gui/$UID ~/Library/LaunchAgents/com.vk.nightly-review.plist
++launchctl kickstart -k gui/$UID/com.vk.nightly-review
++launchctl print gui/$UID/com.vk.nightly-review | grep -E 'runs|last exit'
++tail ~/Library/Logs/nightly-review.err
++```
++
++Ожидаемый результат: `last exit code = 0`, свежий непустой `nightly-review-YYYY-MM-DD.md`,
++правдоподобная длительность в логе (секунды, а не 0–2 с) и сообщение в Telegram.
++После этого стоит один раз сломать что-нибудь нарочно (например, временно поменять `REPO`)
++и убедиться, что приходит уведомление о сбое.
++Если `Not logged in` останется, проверьте, что в терминале под тем же пользователем
++работает `claude -p "hi"`. Если не работает, нужно заново выполнить `/login`.
++Если не придёт само уведомление, `nightly-review.err` теперь покажет ошибку `notify.sh`
++(например, `security find-generic-password` без доступа к связке ключей).
++
++## Какие части заметки коллеги пригодились
++
++Пригодились:
++- **Сначала доказать, что задача запускалась** через `launchctl print` (runs и last exit code).
++  Это сразу сняло версию «launchd не срабатывает».
++- **Читать лог StandardErrorPath до того, как строить теории.** Обе причины были в нём.
++- **`status` в zsh только для чтения, использовать `rc=$?`.** Это ровно моя причина 2,
++  и уведомление о сбое тоже стояло после места падения.
++- **Задать `USER` в `EnvironmentVariables`, иначе `Not logged in`** (из поправки от 2026-09-30).
++  Это моя причина 1.
++- **Код выхода показывает, что задача запустилась, а не что она сработала.** Поэтому пустой отчёт
++  при exit 0 тоже считается сбоем, а длительность пишется в лог.
++- **Логировать длительность и проверить уведомление, сломав скрипт нарочно.** Длительность
++  добавлена в лог, проверка сбоя описана в шагах выше.
++- **Передавать промпт через stdin.** Применено как защитная мера, хотя здесь причиной это не было.
++
++Не подошло или не применимо:
++- Ошибка `Input must be provided either through stdin or as a prompt argument`. В моих логах
++  её нет: промпт доходил, падение было из-за входа в аккаунт.
++- Совет про `< /dev/null`. Он нужен, только если промпт передаётся аргументом. Здесь промпт
++  теперь идёт через stdin, а launchd и так по умолчанию подключает stdin к `/dev/null`.
++- Внешняя статья по ссылке. Я её не открывал, заметки хватило.
+diff --git a/Library/LaunchAgents/com.vk.nightly-review.plist b/Library/LaunchAgents/com.vk.nightly-review.plist
+index c347363..d49eacf 100644
+--- a/Library/LaunchAgents/com.vk.nightly-review.plist
++++ b/Library/LaunchAgents/com.vk.nightly-review.plist
+@@ -24,6 +24,8 @@
+   <dict>
+     <key>PATH</key>
+     <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
++    <key>USER</key>
++    <string>vk</string>
+   </dict>
+ </dict>
+ </plist>
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..8828ab9 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -6,6 +6,16 @@ REPO="$HOME/projects/shop"
+ OUT="$HOME/Library/Logs/nightly-review-$(date +%F).md"
+ NOTIFY="$HOME/bin/notify.sh"
+ 
++log() { print -r -- "$(date '+%F %T') nightly-review: $*" >&2; }
++
++# Never stay silent: if the notifier itself fails, at least leave a trace in the log.
++notify() {
++  "$NOTIFY" "$1" || log "notify.sh FAILED (exit $?) for message: $1"
++}
++
++log "start (USER=${USER:-<unset>} HOME=$HOME)"
++START=$SECONDS
++
+ SINCE=$(date -v-1d +%F)
+ PROMPT="Review the commits in this repository since $SINCE.
+ For each commit: one line on what it changes and whether anything looks risky
+@@ -13,14 +23,29 @@ For each commit: one line on what it changes and whether anything looks risky
+ End with a three-line summary I can read on my phone.
+ Do not modify any file."
+ 
+-cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
++cd "$REPO" || { log "repo missing: $REPO"; notify "nightly review: repo missing ($REPO)"; exit 1; }
+ 
+-claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
++ERR_TMP=$(mktemp -t nightly-review) || ERR_TMP=/dev/null
++# Prompt goes in via stdin: no hanging on an open stdin, no multi-line argument issues.
++print -r -- "$PROMPT" | claude -p --output-format text > "$OUT" 2> "$ERR_TMP"
++rc=$?   # NOT "status": in zsh it is a read-only special parameter, assigning to it kills the script
++ELAPSED=$(( SECONDS - START ))
++CLAUDE_ERR=$(head -c 300 "$ERR_TMP" 2>/dev/null)
++cat "$ERR_TMP" >&2 2>/dev/null
++[ "$ERR_TMP" != /dev/null ] && rm -f "$ERR_TMP"
++
++log "claude exit=$rc after ${ELAPSED}s, output $(wc -c < "$OUT" | tr -d ' ') bytes"
++
++if [ $rc -ne 0 ]; then
++  notify "nightly review FAILED (exit $rc, ${ELAPSED}s): ${CLAUDE_ERR:-no stderr}. See $OUT and ~/Library/Logs/nightly-review.err"
++  exit $rc
++fi
+ 
+-if [ $status -ne 0 ]; then
+-  "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
+-  exit $status
++# Exit 0 is not proof of work: an empty report is a failure too.
++if [ ! -s "$OUT" ]; then
++  notify "nightly review FAILED: claude exited 0 after ${ELAPSED}s but $OUT is empty"
++  exit 1
+ fi
+ 
+-"$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"
++notify "nightly review done (${ELAPSED}s): $(head -c 300 "$OUT")"
++log "done"
+diff --git a/bin/notify.sh b/bin/notify.sh
+index 818e531..b0b56d1 100755
+--- a/bin/notify.sh
++++ b/bin/notify.sh
+@@ -3,5 +3,5 @@
+ set -eu
+ : "${TG_BOT_TOKEN:=$(security find-generic-password -s tg-bot -w)}"
+ CHAT_ID=123456789
+-curl -sS -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
++curl -sS --fail-with-body -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
+   -d chat_id="$CHAT_ID" --data-urlencode text="$1" > /dev/null

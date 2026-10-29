@@ -1,0 +1,66 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..f664441
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,40 @@
++# Причины сбоя ночной задачи launchd
++
++В ходе анализа файлов (`bin/nightly-review.zsh`, логов `Library/Logs/nightly-review.err`, `launchctl-print.txt`) были выявлены следующие причины:
++
++1. **Ошибка авторизации Claude Code CLI:**
++   При вызове команды `claude -p ...` агент завершался с ошибкой:
++   ```
++   Not logged in · Please run /login
++   ```
++   Команда `claude` возвращала ненулевой код выхода (1).
++
++2. **Критическая ошибка zsh при попытке отправить уведомление о сбое:**
++   В скрипте `bin/nightly-review.zsh` на строке 19 выполнялась инструкция:
++   ```zsh
++   status=$?
++   ```
++   В оболочке `zsh` переменная `status` является специальной предопределённой переменной (псевдонимом для `$?`) и защищена от записи (read-only variable).
++   Попытка присвоения `status=$?` вызывала фатальную ошибку интерпретатора:
++   ```
++   /Users/vk/bin/nightly-review.zsh:19: read-only variable: status
++   ```
++   Из-за этой ошибки выполнение скрипта немедленно прерывалось до вызова блока:
++   ```zsh
++   if [ $status -ne 0 ]; then
++     "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
++     exit $status
++   fi
++   ```
++   В результате скрипт падал, не доходя до отправки Telegram-уведомления через `bin/notify.sh`.
++
++---
++
++## Что исправлено
++
++В файле `bin/nightly-review.zsh`:
++- Переменная `status` переименована в `exit_code`, что устранило конфликт со встроенной переменной `zsh`. Теперь при любых ошибках выполнения `claude` скрипт корректно переходит к блоку обработки ошибок и отправляет уведомление о сбое через `bin/notify.sh`.
++
++## Дополнительная рекомендация пользователю
++
++Чтобы задача завершалась успешно (а не только сообщала об ошибке), необходимо авторизовать CLI-утилиту `claude` (выполнив вход в систему под пользователем, например через `claude login` или настроив соответствующую переменную окружения/ключ API в plist/окружении).
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..f9f7692 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -16,11 +16,11 @@ Do not modify any file."
+ cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
+ 
+ claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
++exit_code=$?
+ 
+-if [ $status -ne 0 ]; then
+-  "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
+-  exit $status
++if [ $exit_code -ne 0 ]; then
++  "$NOTIFY" "nightly review FAILED (exit $exit_code), see $OUT"
++  exit $exit_code
+ fi
+ 
+ "$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"

@@ -1,0 +1,1026 @@
+diff --git a/.dart_tool/package_config.json b/.dart_tool/package_config.json
+new file mode 100644
+index 0000000..9e8483a
+--- /dev/null
++++ b/.dart_tool/package_config.json
+@@ -0,0 +1,232 @@
++{
++  "configVersion": 2,
++  "packages": [
++    {
++      "name": "async",
++      "rootUri": "file:///Users/valentinakoniukhova/.pub-cache/hosted/pub.dev/async-2.13.1",
++      "packageUri": "lib/",
++      "languageVersion": "3.4"
++    },
++    {
++      "name": "boolean_selector",
++      "rootUri": "file:///Users/valentinakoniukhova/.pub-cache/hosted/pub.dev/boolean_selector-2.1.2",
++      "packageUri": "lib/",
++      "languageVersion": "3.1"
++    },
++    {
++      "name": "characters",
++      "rootUri": "file:///Users/valentinakoniukhova/.pub-cache/hosted/pub.dev/characters-1.4.1",
++      "packageUri": "lib/",
++      "languageVersion": "3.4"
++    },
++    {
++      "name": "clock",
++      "rootUri": "file:///Users/valentinakoniukhova/.pub-cache/hosted/pub.dev/clock-1.1.3",
++      "packageUri": "lib/",
++      "languageVersion": "3.4"
++    },
++    {
++      "name": "collection",
++      "rootUri": "file:///Users/valentinakoniukhova/.pub-cache/hosted/pub.dev/collection-1.19.1",
++      "packageUri": "lib/",
++      "languageVersion": "3.4"
++    },
++    {
++      "name": "fake_async",
++      "rootUri": "file:///Users/valentinakoniukhova/.pub-cache/hosted/pub.dev/fake_async-1.3.3",
++      "packageUri": "lib/",
++      "languageVersion": "3.3"
++    },
++    {
++      "name": "ffi",
++      "rootUri": "file:///Users/valentinakoniukhova/.pub-cache/hosted/pub.dev/ffi-2.2.0",
++      "packageUri": "lib/",
++      "languageVersion": "3.7"
++    },
++    {
++      "name": "flutter",
++      "rootUri": "file:///Users/valentinakoniukhova/development/flutter/packages/flutter",
++      "packageUri": "lib/",
++      "languageVersion": "3.11"
++    },
++    {
++      "name": "flutter_lints",
++      "rootUri": "file:///Users/valentinakoniukhova/.pub-cache/hosted/pub.dev/flutter_lints-5.0.0",
++      "packageUri": "lib/",
++      "languageVersion": "3.5"
++    },
++    {
++      "name": "flutter_test",
++      "rootUri": "file:///Users/valentinakoniukhova/development/flutter/packages/flutter_test",
++      "packageUri": "lib/",
++      "languageVersion": "3.11"
++    },
++    {
++      "name": "flutter_web_plugins",
++      "rootUri": "file:///Users/valentinakoniukhova/development/flutter/packages/flutter_web_plugins",
++      "packageUri": "lib/",
++      "languageVersion": "3.11"
++    },
++    {
++      "name": "leak_tracker",
++      "rootUri": "file:///Users/valentinakoniukhova/.pub-cache/hosted/pub.dev/leak_tracker-11.0.2",
++      "packageUri": "lib/",
++      "languageVersion": "3.2"
++    },
++    {
++      "name": "leak_tracker_flutter_testing",
++      "rootUri": "file:///Users/valentinakoniukhova/.pub-cache/hosted/pub.dev/leak_tracker_flutter_testing-3.0.10",
++      "packageUri": "lib/",
++      "languageVersion": "3.2"
++    },
++    {
++      "name": "leak_tracker_testing",
++      "rootUri": "file:///Users/valentinakoniukhova/.pub-cache/hosted/pub.dev/leak_tracker_testing-3.0.2",
++      "packageUri": "lib/",
++      "languageVersion": "3.2"
++    },
++    {
++      "name": "lints",
++      "rootUri": "file:///Users/valentinakoniukhova/.pub-cache/hosted/pub.dev/lints-5.1.1",
++      "packageUri": "lib/",
++      "languageVersion": "3.6"
++    },
++    {
++      "name": "matcher",
++      "rootUri": "file:///Users/valentinakoniukhova/.pub-cache/hosted/pub.dev/matcher-0.12.20",
++      "packageUri": "lib/",
++      "languageVersion": "3.10"
++    },
++    {
++      "name": "material_color_utilities",
++      "rootUri": "file:///Users/valentinakoniukhova/.pub-cache/hosted/pub.dev/material_color_utilities-0.13.0",
++      "packageUri": "lib/",
++      "languageVersion": "3.5"
++    },
++    {
++      "name": "meta",
++      "rootUri": "file:///Users/valentinakoniukhova/.pub-cache/hosted/pub.dev/meta-1.19.0",
++      "packageUri": "lib/",
++      "languageVersion": "3.5"
++    },
++    {
++      "name": "path",
++      "rootUri": "file:///Users/valentinakoniukhova/.pub-cache/hosted/pub.dev/path-1.9.1",
++      "packageUri": "lib/",
++      "languageVersion": "3.4"
++    },
++    {
++      "name": "path_provider_linux",
++      "rootUri": "file:///Users/valentinakoniukhova/.pub-cache/hosted/pub.dev/path_provider_linux-2.2.2",
++      "packageUri": "lib/",
++      "languageVersion": "3.10"
++    },
++    {
++      "name": "path_provider_platform_interface",
++      "rootUri": "file:///Users/valentinakoniukhova/.pub-cache/hosted/pub.dev/path_provider_platform_interface-2.1.3",
++      "packageUri": "lib/",
++      "languageVersion": "3.10"
++    },
++    {
++      "name": "path_provider_windows",
++      "rootUri": "file:///Users/valentinakoniukhova/.pub-cache/hosted/pub.dev/path_provider_windows-2.3.0",
++      "packageUri": "lib/",
++      "languageVersion": "3.2"
++    },
++    {
++      "name": "platform",
++      "rootUri": "file:///Users/valentinakoniukhova/.pub-cache/hosted/pub.dev/platform-3.2.0",
++      "packageUri": "lib/",
++      "languageVersion": "3.10"
++    },
++    {
++      "name": "plugin_platform_interface",
++      "rootUri": "file:///Users/valentinakoniukhova/.pub-cache/hosted/pub.dev/plugin_platform_interface-2.1.8",
++      "packageUri": "lib/",
++      "languageVersion": "3.0"
++    },
++    {
++      "name": "posthog_flutter",
++      "rootUri": "file:///Users/valentinakoniukhova/.pub-cache/hosted/pub.dev/posthog_flutter-5.57.1",
++      "packageUri": "lib/",
++      "languageVersion": "3.6"
++    },
++    {
++      "name": "sky_engine",
++      "rootUri": "file:///Users/valentinakoniukhova/development/flutter/bin/cache/pkg/sky_engine",
++      "packageUri": "lib/",
++      "languageVersion": "3.11"
++    },
++    {
++      "name": "source_span",
++      "rootUri": "file:///Users/valentinakoniukhova/.pub-cache/hosted/pub.dev/source_span-1.10.2",
++      "packageUri": "lib/",
++      "languageVersion": "3.1"
++    },
++    {
++      "name": "stack_trace",
++      "rootUri": "file:///Users/valentinakoniukhova/.pub-cache/hosted/pub.dev/stack_trace-1.12.2",
++      "packageUri": "lib/",
++      "languageVersion": "3.4"
++    },
++    {
++      "name": "stream_channel",
++      "rootUri": "file:///Users/valentinakoniukhova/.pub-cache/hosted/pub.dev/stream_channel-2.1.4",
++      "packageUri": "lib/",
++      "languageVersion": "3.3"
++    },
++    {
++      "name": "string_scanner",
++      "rootUri": "file:///Users/valentinakoniukhova/.pub-cache/hosted/pub.dev/string_scanner-1.4.1",
++      "packageUri": "lib/",
++      "languageVersion": "3.1"
++    },
++    {
++      "name": "term_glyph",
++      "rootUri": "file:///Users/valentinakoniukhova/.pub-cache/hosted/pub.dev/term_glyph-1.2.2",
++      "packageUri": "lib/",
++      "languageVersion": "3.1"
++    },
++    {
++      "name": "test_api",
++      "rootUri": "file:///Users/valentinakoniukhova/.pub-cache/hosted/pub.dev/test_api-0.7.12",
++      "packageUri": "lib/",
++      "languageVersion": "3.10"
++    },
++    {
++      "name": "vector_math",
++      "rootUri": "file:///Users/valentinakoniukhova/.pub-cache/hosted/pub.dev/vector_math-2.4.4",
++      "packageUri": "lib/",
++      "languageVersion": "3.10"
++    },
++    {
++      "name": "vm_service",
++      "rootUri": "file:///Users/valentinakoniukhova/.pub-cache/hosted/pub.dev/vm_service-15.4.0",
++      "packageUri": "lib/",
++      "languageVersion": "3.5"
++    },
++    {
++      "name": "web",
++      "rootUri": "file:///Users/valentinakoniukhova/.pub-cache/hosted/pub.dev/web-1.1.2",
++      "packageUri": "lib/",
++      "languageVersion": "3.13"
++    },
++    {
++      "name": "xdg_directories",
++      "rootUri": "file:///Users/valentinakoniukhova/.pub-cache/hosted/pub.dev/xdg_directories-1.1.0",
++      "packageUri": "lib/",
++      "languageVersion": "3.3"
++    },
++    {
++      "name": "kredito",
++      "rootUri": "../",
++      "packageUri": "lib/",
++      "languageVersion": "3.5"
++    }
++  ],
++  "generator": "pub",
++  "generatorVersion": "3.13.0",
++  "flutterRoot": "file:///Users/valentinakoniukhova/development/flutter",
++  "flutterVersion": "3.47.0",
++  "pubCache": "file:///Users/valentinakoniukhova/.pub-cache"
++}
+diff --git a/.dart_tool/package_graph.json b/.dart_tool/package_graph.json
+new file mode 100644
+index 0000000..503961b
+--- /dev/null
++++ b/.dart_tool/package_graph.json
+@@ -0,0 +1,309 @@
++{
++  "roots": [
++    "kredito"
++  ],
++  "packages": [
++    {
++      "name": "kredito",
++      "version": "1.3.0+27",
++      "dependencies": [
++        "flutter",
++        "posthog_flutter"
++      ],
++      "devDependencies": [
++        "flutter_lints",
++        "flutter_test"
++      ]
++    },
++    {
++      "name": "flutter_lints",
++      "version": "5.0.0",
++      "dependencies": [
++        "lints"
++      ]
++    },
++    {
++      "name": "flutter_test",
++      "version": "0.0.0",
++      "dependencies": [
++        "clock",
++        "collection",
++        "fake_async",
++        "flutter",
++        "leak_tracker_flutter_testing",
++        "matcher",
++        "meta",
++        "path",
++        "stack_trace",
++        "stream_channel",
++        "test_api",
++        "vector_math"
++      ]
++    },
++    {
++      "name": "flutter",
++      "version": "0.0.0",
++      "dependencies": [
++        "characters",
++        "collection",
++        "material_color_utilities",
++        "meta",
++        "sky_engine",
++        "vector_math"
++      ]
++    },
++    {
++      "name": "test_api",
++      "version": "0.7.12",
++      "dependencies": [
++        "async",
++        "boolean_selector",
++        "collection",
++        "meta",
++        "source_span",
++        "stack_trace",
++        "stream_channel",
++        "string_scanner",
++        "term_glyph"
++      ]
++    },
++    {
++      "name": "stream_channel",
++      "version": "2.1.4",
++      "dependencies": [
++        "async"
++      ]
++    },
++    {
++      "name": "path",
++      "version": "1.9.1",
++      "dependencies": []
++    },
++    {
++      "name": "matcher",
++      "version": "0.12.20",
++      "dependencies": [
++        "async",
++        "meta",
++        "stack_trace",
++        "term_glyph",
++        "test_api"
++      ]
++    },
++    {
++      "name": "leak_tracker_flutter_testing",
++      "version": "3.0.10",
++      "dependencies": [
++        "flutter",
++        "leak_tracker",
++        "leak_tracker_testing",
++        "matcher",
++        "meta"
++      ]
++    },
++    {
++      "name": "fake_async",
++      "version": "1.3.3",
++      "dependencies": [
++        "clock",
++        "collection"
++      ]
++    },
++    {
++      "name": "collection",
++      "version": "1.19.1",
++      "dependencies": []
++    },
++    {
++      "name": "sky_engine",
++      "version": "0.0.0",
++      "dependencies": []
++    },
++    {
++      "name": "material_color_utilities",
++      "version": "0.13.0",
++      "dependencies": [
++        "collection"
++      ]
++    },
++    {
++      "name": "characters",
++      "version": "1.4.1",
++      "dependencies": []
++    },
++    {
++      "name": "stack_trace",
++      "version": "1.12.2",
++      "dependencies": [
++        "path"
++      ]
++    },
++    {
++      "name": "meta",
++      "version": "1.19.0",
++      "dependencies": []
++    },
++    {
++      "name": "clock",
++      "version": "1.1.3",
++      "dependencies": []
++    },
++    {
++      "name": "leak_tracker_testing",
++      "version": "3.0.2",
++      "dependencies": [
++        "leak_tracker",
++        "matcher",
++        "meta"
++      ]
++    },
++    {
++      "name": "leak_tracker",
++      "version": "11.0.2",
++      "dependencies": [
++        "clock",
++        "collection",
++        "meta",
++        "path",
++        "vm_service"
++      ]
++    },
++    {
++      "name": "lints",
++      "version": "5.1.1",
++      "dependencies": []
++    },
++    {
++      "name": "term_glyph",
++      "version": "1.2.2",
++      "dependencies": []
++    },
++    {
++      "name": "boolean_selector",
++      "version": "2.1.2",
++      "dependencies": [
++        "source_span",
++        "string_scanner"
++      ]
++    },
++    {
++      "name": "vector_math",
++      "version": "2.4.4",
++      "dependencies": []
++    },
++    {
++      "name": "async",
++      "version": "2.13.1",
++      "dependencies": [
++        "collection",
++        "meta"
++      ]
++    },
++    {
++      "name": "string_scanner",
++      "version": "1.4.1",
++      "dependencies": [
++        "source_span"
++      ]
++    },
++    {
++      "name": "source_span",
++      "version": "1.10.2",
++      "dependencies": [
++        "collection",
++        "path",
++        "term_glyph"
++      ]
++    },
++    {
++      "name": "vm_service",
++      "version": "15.4.0",
++      "dependencies": []
++    },
++    {
++      "name": "posthog_flutter",
++      "version": "5.57.1",
++      "dependencies": [
++        "flutter",
++        "flutter_web_plugins",
++        "meta",
++        "path_provider_linux",
++        "path_provider_platform_interface",
++        "path_provider_windows",
++        "plugin_platform_interface",
++        "stack_trace",
++        "web"
++      ]
++    },
++    {
++      "name": "path_provider_windows",
++      "version": "2.3.0",
++      "dependencies": [
++        "ffi",
++        "flutter",
++        "path",
++        "path_provider_platform_interface"
++      ]
++    },
++    {
++      "name": "flutter_web_plugins",
++      "version": "0.0.0",
++      "dependencies": [
++        "flutter"
++      ]
++    },
++    {
++      "name": "path_provider_platform_interface",
++      "version": "2.1.3",
++      "dependencies": [
++        "flutter",
++        "platform",
++        "plugin_platform_interface"
++      ]
++    },
++    {
++      "name": "plugin_platform_interface",
++      "version": "2.1.8",
++      "dependencies": [
++        "meta"
++      ]
++    },
++    {
++      "name": "path_provider_linux",
++      "version": "2.2.2",
++      "dependencies": [
++        "ffi",
++        "flutter",
++        "path",
++        "path_provider_platform_interface",
++        "xdg_directories"
++      ]
++    },
++    {
++      "name": "web",
++      "version": "1.1.2",
++      "dependencies": []
++    },
++    {
++      "name": "ffi",
++      "version": "2.2.0",
++      "dependencies": []
++    },
++    {
++      "name": "platform",
++      "version": "3.2.0",
++      "dependencies": [
++        "meta"
++      ]
++    },
++    {
++      "name": "xdg_directories",
++      "version": "1.1.0",
++      "dependencies": [
++        "meta",
++        "path"
++      ]
++    }
++  ],
++  "configVersion": 1
++}
+\ No newline at end of file
+diff --git a/.dart_tool/version b/.dart_tool/version
+new file mode 100644
+index 0000000..9104e19
+--- /dev/null
++++ b/.dart_tool/version
+@@ -0,0 +1 @@
++3.47.0
+\ No newline at end of file
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..ff6139a
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,34 @@
++# Реализация событий аналитики
++
++В соответствии со спецификацией [docs/EVENTS.md](file:///tmp/h-D98uop/docs/EVENTS.md) реализованы продуктовые события воронки регистрации на экранах `RegistrationScreen` ([lib/screens/registration_screen.dart](file:///tmp/h-D98uop/lib/screens/registration_screen.dart)) и `OfferScreen` ([lib/screens/offer_screen.dart](file:///tmp/h-D98uop/lib/screens/offer_screen.dart)) с использованием существующей обёртки [`Analytics.capture`](file:///tmp/h-D98uop/lib/analytics.dart#L13-L14).
++
++## Что сделано
++
++1. **Экран регистрации (`RegistrationScreen`)**:
++   - `registration_email_started`: отправляется при начале ввода email (при первом непустом вводе в текстовом поле email). Поле защищено флагом `_emailStartedFired`, чтобы событие отправлялось один раз за посещение экрана, а не на каждое нажатие клавиши. Значение email не передаётся в свойствах (PII).
++   - `registration_phone_started`: отправляется при начале ввода номера телефона (при первом непустом вводе). Защищено флагом `_phoneStartedFired`, чтобы событие отправлялось один раз за посещение экрана. Значение телефона не передаётся (PII).
++   - `loan_amount_changed`: отправляется при завершении перемещения слайдера (`onChangeEnd`), передавая свойство `amount` (int: `v.round()`). Слайдер по-прежнему обновляет UI в `onChanged`, но аналитика не шлёт событие на каждый промежуточный шаг.
++   - `terms_accepted`: отправляется при установке чекбокса согласия с условиями (`v == true && !_terms`).
++   - `registration_continue_tapped`: отправляется при нажатии кнопки «Continue» с передачей свойств `'amount': _amount.round()` (int) и `'terms': _terms` (bool).
++
++2. **Экран списка предложений (`OfferScreen`)**:
++   - `offers_scrolled`: отслеживается с помощью `NotificationListener<ScrollEndNotification>` вокруг `ListView.builder`. Событие отправляется один раз при завершении жеста скролла с передачей свойства `'offset': notification.metrics.pixels` (double), предотвращая спам событий на каждый пиксель обновления скролла.
++
++---
++
++## Какие части заметки коллеги пригодились
++
++Из заметки коллеги были использованы следующие ключевые практики предотвращения перерасхода лимитов PostHog:
++
++- **Текстовые поля (пункт 2 заметки):**
++  - Использованы флаги `_emailStartedFired` и `_phoneStartedFired` в состоянии виджета, чтобы события старта ввода (`registration_email_started` и `registration_phone_started`) срабатывали один раз за посещение экрана, а не спамили PostHog на каждое нажатие клавиши в `onChanged`.
++- **Слайдер (пункт 5 заметки):**
++  - Коллбэк аналитики для `loan_amount_changed` вынесен в `onChangeEnd`, оставив `onChanged` исключительно для локального обновления UI (`setState`). Это гарантирует ровно одно событие на жест перетаскивания вместо десятков промежуточных шагов.
++- **Скролл (пункт 6 заметки):**
++  - Отслеживание скролла списка предложений обёрнуто в `NotificationListener<ScrollEndNotification>`, что позволяет фиксировать `offers_scrolled` с итоговым смещением (`offset`) только по завершении прокрутки, исключая спам событий через `ScrollUpdateNotification` или непрерывный слушатель контроллера.
++- **Сохранение контрактов (пункт 7 заметки):**
++  - Точное сохранение названий событий (`snake_case`) и типов их свойств (`int`, `bool`, `double`) в строгом соответствии с документацией `docs/EVENTS.md`.
++
++### Что не понадобилось из заметки:
++- Отслеживание тапа/фокуса через `FocusNode` и захват значений при потере фокуса (`!hasFocus`), так как спецификация требует события старта ввода без передачи введенных значений (PII запрещены).
++- Сброс флагов между шагами многостраничного мастера (всё состояние формы находится в рамках одного экрана `RegistrationScreen`).
+diff --git a/lib/screens/offer_screen.dart b/lib/screens/offer_screen.dart
+index 921ee59..c9a10ae 100644
+--- a/lib/screens/offer_screen.dart
++++ b/lib/screens/offer_screen.dart
+@@ -1,5 +1,7 @@
+ import 'package:flutter/material.dart';
+ 
++import '../analytics.dart';
++
+ class Offer {
+   const Offer(this.bank, this.months, this.rate);
+   final String bank;
+@@ -27,18 +29,26 @@ class OfferScreen extends StatelessWidget {
+   Widget build(BuildContext context) {
+     return Scaffold(
+       appBar: AppBar(title: const Text('Offers')),
+-      body: ListView.builder(
+-        itemCount: _offers.length,
+-        itemBuilder: (context, i) {
+-          final o = _offers[i];
+-          return ListTile(
+-            leading: const Icon(Icons.account_balance),
+-            title: Text('${o.bank}, ${o.months} months'),
+-            subtitle: Text('${o.rate.toStringAsFixed(1)}% APR'),
+-            trailing: const Icon(Icons.chevron_right),
+-            onTap: () {},
+-          );
++      body: NotificationListener<ScrollEndNotification>(
++        onNotification: (notification) {
++          Analytics.capture('offers_scrolled', {
++            'offset': notification.metrics.pixels,
++          });
++          return false;
+         },
++        child: ListView.builder(
++          itemCount: _offers.length,
++          itemBuilder: (context, i) {
++            final o = _offers[i];
++            return ListTile(
++              leading: const Icon(Icons.account_balance),
++              title: Text('${o.bank}, ${o.months} months'),
++              subtitle: Text('${o.rate.toStringAsFixed(1)}% APR'),
++              trailing: const Icon(Icons.chevron_right),
++              onTap: () {},
++            );
++          },
++        ),
+       ),
+     );
+   }
+diff --git a/lib/screens/registration_screen.dart b/lib/screens/registration_screen.dart
+index 059a250..6a158fb 100644
+--- a/lib/screens/registration_screen.dart
++++ b/lib/screens/registration_screen.dart
+@@ -1,5 +1,7 @@
+ import 'package:flutter/material.dart';
+ 
++import '../analytics.dart';
++
+ class RegistrationScreen extends StatefulWidget {
+   const RegistrationScreen({super.key});
+ 
+@@ -13,6 +15,9 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
+   double _amount = 50000;
+   bool _terms = false;
+ 
++  bool _emailStartedFired = false;
++  bool _phoneStartedFired = false;
++
+   @override
+   void dispose() {
+     _email.dispose();
+@@ -36,14 +41,26 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
+               controller: _email,
+               keyboardType: TextInputType.emailAddress,
+               decoration: const InputDecoration(labelText: 'Email'),
+-              onChanged: (_) => setState(() {}),
++              onChanged: (text) {
++                if (!_emailStartedFired && text.isNotEmpty) {
++                  _emailStartedFired = true;
++                  Analytics.capture('registration_email_started');
++                }
++                setState(() {});
++              },
+             ),
+             const SizedBox(height: 12),
+             TextField(
+               controller: _phone,
+               keyboardType: TextInputType.phone,
+               decoration: const InputDecoration(labelText: 'Phone'),
+-              onChanged: (_) => setState(() {}),
++              onChanged: (text) {
++                if (!_phoneStartedFired && text.isNotEmpty) {
++                  _phoneStartedFired = true;
++                  Analytics.capture('registration_phone_started');
++                }
++                setState(() {});
++              },
+             ),
+             const SizedBox(height: 24),
+             Text('Loan amount: ${_amount.round()}'),
+@@ -54,17 +71,32 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
+               value: _amount,
+               label: _amount.round().toString(),
+               onChanged: (v) => setState(() => _amount = v),
++              onChangeEnd: (v) {
++                Analytics.capture('loan_amount_changed', {'amount': v.round()});
++              },
+             ),
+             CheckboxListTile(
+               value: _terms,
+               title: const Text('I accept the terms and conditions'),
+               controlAffinity: ListTileControlAffinity.leading,
+-              onChanged: (v) => setState(() => _terms = v ?? false),
++              onChanged: (v) {
++                final accepted = v ?? false;
++                if (accepted && !_terms) {
++                  Analytics.capture('terms_accepted');
++                }
++                setState(() => _terms = accepted);
++              },
+             ),
+             const Spacer(),
+             FilledButton(
+               onPressed: _canContinue
+-                  ? () => Navigator.of(context).pushNamed('/offers')
++                  ? () {
++                      Analytics.capture('registration_continue_tapped', {
++                        'amount': _amount.round(),
++                        'terms': _terms,
++                      });
++                      Navigator.of(context).pushNamed('/offers');
++                    }
+                   : null,
+               child: const Text('Continue'),
+             ),
+diff --git a/pubspec.lock b/pubspec.lock
+new file mode 100644
+index 0000000..99f63c1
+--- /dev/null
++++ b/pubspec.lock
+@@ -0,0 +1,282 @@
++# Generated by pub
++# See https://dart.dev/tools/pub/glossary#lockfile
++packages:
++  async:
++    dependency: transitive
++    description:
++      name: async
++      sha256: e2eb0491ba5ddb6177742d2da23904574082139b07c1e33b8503b9f46f3e1a37
++      url: "https://pub.dev"
++    source: hosted
++    version: "2.13.1"
++  boolean_selector:
++    dependency: transitive
++    description:
++      name: boolean_selector
++      sha256: "8aab1771e1243a5063b8b0ff68042d67334e3feab9e95b9490f9a6ebf73b42ea"
++      url: "https://pub.dev"
++    source: hosted
++    version: "2.1.2"
++  characters:
++    dependency: transitive
++    description:
++      name: characters
++      sha256: faf38497bda5ead2a8c7615f4f7939df04333478bf32e4173fcb06d428b5716b
++      url: "https://pub.dev"
++    source: hosted
++    version: "1.4.1"
++  clock:
++    dependency: transitive
++    description:
++      name: clock
++      sha256: e51d50bca3217c9a9fa2b41a30e4a38971133f5f9ec7a3d57bae095007f1d28e
++      url: "https://pub.dev"
++    source: hosted
++    version: "1.1.3"
++  collection:
++    dependency: transitive
++    description:
++      name: collection
++      sha256: "2f5709ae4d3d59dd8f7cd309b4e023046b57d8a6c82130785d2b0e5868084e76"
++      url: "https://pub.dev"
++    source: hosted
++    version: "1.19.1"
++  fake_async:
++    dependency: transitive
++    description:
++      name: fake_async
++      sha256: "5368f224a74523e8d2e7399ea1638b37aecfca824a3cc4dfdf77bf1fa905ac44"
++      url: "https://pub.dev"
++    source: hosted
++    version: "1.3.3"
++  ffi:
++    dependency: transitive
++    description:
++      name: ffi
++      sha256: "6d7fd89431262d8f3125e81b50d3847a091d846eafcd4fdb88dd06f36d705a45"
++      url: "https://pub.dev"
++    source: hosted
++    version: "2.2.0"
++  flutter:
++    dependency: "direct main"
++    description: flutter
++    source: sdk
++    version: "0.0.0"
++  flutter_lints:
++    dependency: "direct dev"
++    description:
++      name: flutter_lints
++      sha256: "5398f14efa795ffb7a33e9b6a08798b26a180edac4ad7db3f231e40f82ce11e1"
++      url: "https://pub.dev"
++    source: hosted
++    version: "5.0.0"
++  flutter_test:
++    dependency: "direct dev"
++    description: flutter
++    source: sdk
++    version: "0.0.0"
++  flutter_web_plugins:
++    dependency: transitive
++    description: flutter
++    source: sdk
++    version: "0.0.0"
++  leak_tracker:
++    dependency: transitive
++    description:
++      name: leak_tracker
++      sha256: "33e2e26bdd85a0112ec15400c8cbffea70d0f9c3407491f672a2fad47915e2de"
++      url: "https://pub.dev"
++    source: hosted
++    version: "11.0.2"
++  leak_tracker_flutter_testing:
++    dependency: transitive
++    description:
++      name: leak_tracker_flutter_testing
++      sha256: "1dbc140bb5a23c75ea9c4811222756104fbcd1a27173f0c34ca01e16bea473c1"
++      url: "https://pub.dev"
++    source: hosted
++    version: "3.0.10"
++  leak_tracker_testing:
++    dependency: transitive
++    description:
++      name: leak_tracker_testing
++      sha256: "8d5a2d49f4a66b49744b23b018848400d23e54caf9463f4eb20df3eb8acb2eb1"
++      url: "https://pub.dev"
++    source: hosted
++    version: "3.0.2"
++  lints:
++    dependency: transitive
++    description:
++      name: lints
++      sha256: c35bb79562d980e9a453fc715854e1ed39e24e7d0297a880ef54e17f9874a9d7
++      url: "https://pub.dev"
++    source: hosted
++    version: "5.1.1"
++  matcher:
++    dependency: transitive
++    description:
++      name: matcher
++      sha256: "31bd099b47c10cd1aeb55146a2d46ce0277630ecef3f7dae54ad7873f36696cd"
++      url: "https://pub.dev"
++    source: hosted
++    version: "0.12.20"
++  material_color_utilities:
++    dependency: transitive
++    description:
++      name: material_color_utilities
++      sha256: "9c337007e82b1889149c82ed242ed1cb24a66044e30979c44912381e9be4c48b"
++      url: "https://pub.dev"
++    source: hosted
++    version: "0.13.0"
++  meta:
++    dependency: transitive
++    description:
++      name: meta
++      sha256: "307249ce4ff29d58a18e97f6345f539382eb9c9c29ecda628900f31de0443dd9"
++      url: "https://pub.dev"
++    source: hosted
++    version: "1.19.0"
++  path:
++    dependency: transitive
++    description:
++      name: path
++      sha256: "75cca69d1490965be98c73ceaea117e8a04dd21217b37b292c9ddbec0d955bc5"
++      url: "https://pub.dev"
++    source: hosted
++    version: "1.9.1"
++  path_provider_linux:
++    dependency: transitive
++    description:
++      name: path_provider_linux
++      sha256: "58c2005f147315b11e9b4a7bc889cd5203e250cba8e3f012dae259b4972b5c16"
++      url: "https://pub.dev"
++    source: hosted
++    version: "2.2.2"
++  path_provider_platform_interface:
++    dependency: transitive
++    description:
++      name: path_provider_platform_interface
++      sha256: "484838772624c3a4b94f1e44a3e19897fee738f2d5c4ce448443b0417f7c9dda"
++      url: "https://pub.dev"
++    source: hosted
++    version: "2.1.3"
++  path_provider_windows:
++    dependency: transitive
++    description:
++      name: path_provider_windows
++      sha256: bd6f00dbd873bfb70d0761682da2b3a2c2fccc2b9e84c495821639601d81afe7
++      url: "https://pub.dev"
++    source: hosted
++    version: "2.3.0"
++  platform:
++    dependency: transitive
++    description:
++      name: platform
++      sha256: a36d119c13416516a7b5913fbe8af8531e11633d784c550b2125f76c758524ec
++      url: "https://pub.dev"
++    source: hosted
++    version: "3.2.0"
++  plugin_platform_interface:
++    dependency: transitive
++    description:
++      name: plugin_platform_interface
++      sha256: "4820fbfdb9478b1ebae27888254d445073732dae3d6ea81f0b7e06d5dedc3f02"
++      url: "https://pub.dev"
++    source: hosted
++    version: "2.1.8"
++  posthog_flutter:
++    dependency: "direct main"
++    description:
++      name: posthog_flutter
++      sha256: b2152f8eaea419b6ee9546b57e412df43a508830ea3352ce9039aff15841d10f
++      url: "https://pub.dev"
++    source: hosted
++    version: "5.57.1"
++  sky_engine:
++    dependency: transitive
++    description: flutter
++    source: sdk
++    version: "0.0.0"
++  source_span:
++    dependency: transitive
++    description:
++      name: source_span
++      sha256: "56a02f1f4cd1a2d96303c0144c93bd6d909eea6bee6bf5a0e0b685edbd4c47ab"
++      url: "https://pub.dev"
++    source: hosted
++    version: "1.10.2"
++  stack_trace:
++    dependency: transitive
++    description:
++      name: stack_trace
++      sha256: "277654b3034d17ac6f9f1cb5595db011b1d5d41e8806866db28e0abaa101c490"
++      url: "https://pub.dev"
++    source: hosted
++    version: "1.12.2"
++  stream_channel:
++    dependency: transitive
++    description:
++      name: stream_channel
++      sha256: "969e04c80b8bcdf826f8f16579c7b14d780458bd97f56d107d3950fdbeef059d"
++      url: "https://pub.dev"
++    source: hosted
++    version: "2.1.4"
++  string_scanner:
++    dependency: transitive
++    description:
++      name: string_scanner
++      sha256: "921cd31725b72fe181906c6a94d987c78e3b98c2e205b397ea399d4054872b43"
++      url: "https://pub.dev"
++    source: hosted
++    version: "1.4.1"
++  term_glyph:
++    dependency: transitive
++    description:
++      name: term_glyph
++      sha256: "7f554798625ea768a7518313e58f83891c7f5024f88e46e7182a4558850a4b8e"
++      url: "https://pub.dev"
++    source: hosted
++    version: "1.2.2"
++  test_api:
++    dependency: transitive
++    description:
++      name: test_api
++      sha256: "2a122cbe059f8b610d3a5415f42e255b6c17b1f21eee1d960f31080237fb4f11"
++      url: "https://pub.dev"
++    source: hosted
++    version: "0.7.12"
++  vector_math:
++    dependency: transitive
++    description:
++      name: vector_math
++      sha256: fa49e1674cb84acb900141714e6c6e1f9ae099827c24d141430ff6819db4e1bc
++      url: "https://pub.dev"
++    source: hosted
++    version: "2.4.4"
++  vm_service:
++    dependency: transitive
++    description:
++      name: vm_service
++      sha256: "89b11d62e1040ee681af3b4f1c97a803ecbf010c6e8b9c5896ee5b08c3bf7b78"
++      url: "https://pub.dev"
++    source: hosted
++    version: "15.4.0"
++  web:
++    dependency: transitive
++    description:
++      name: web
++      sha256: e119e82ac4795c7925103b7cf3768191f33941b99e7ccffbd6c645201d9f606b
++      url: "https://pub.dev"
++    source: hosted
++    version: "1.1.2"
++  xdg_directories:
++    dependency: transitive
++    description:
++      name: xdg_directories
++      sha256: "7a3f37b05d989967cdddcbb571f1ea834867ae2faa29725fd085180e0883aa15"
++      url: "https://pub.dev"
++    source: hosted
++    version: "1.1.0"
++sdks:
++  dart: ">=3.13.0 <4.0.0"
++  flutter: ">=3.38.0"

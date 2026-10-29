@@ -1,0 +1,81 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..38ddc43
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,18 @@
++# Root Cause and Fix
++
++## Root Cause
++When the first story is published to an empty DynamoDB table, `table.scan()` returns no existing items (`existing = []`). Consequently, `related(story, existing)` returns an empty list (`similar: []`), and the item is stored successfully without calculating any similarity scores.
++
++When a second story is published, existing stories exist in the table. `publish()` calls `related(story, existing)`, which invokes `similarity(a, b)`. `similarity()` computed the similarity score as a Python `float` using `round(0.7 * tag_score + 0.3 * word_score, 4)`.
++
++DynamoDB (and boto3's `TypeSerializer`) does not support Python `float` types and strictly requires `Decimal` for floating-point numbers:
++`TypeError: Float types are not supported. Use Decimal types instead.`
++
++This caused `table.put_item(Item=item)` to raise a `TypeError`, which was caught by the general `except Exception:` block in `handler()` and returned a `500 Internal Server Error`.
++
++## Fix
++1. In `src/app.py`:
++   - Imported `Decimal` from standard library `decimal`.
++   - Updated `similarity(a, b)` to return a `Decimal` representation of the rounded score (`Decimal(str(round(0.7 * tag_score + 0.3 * word_score, 4)))`).
++2. In `tests/test_publish.py`:
++   - Added a regression unit test `test_publish_multiple_stories_with_similarity` that publishes consecutive stories, triggering the similarity calculation and verifying that the `similar` list contains items with `Decimal` scores and succeeds with HTTP 201.
+diff --git a/src/app.py b/src/app.py
+index db49c5e..af4bb08 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -8,6 +8,7 @@ import json
+ import logging
+ import re
+ import time
++from decimal import Decimal
+ 
+ log = logging.getLogger("stories")
+ 
+@@ -27,7 +28,7 @@ def similarity(a, b):
+     tag_score = len(ta & tb) / len(ta | tb) if (ta | tb) else 0
+     wa, wb = words(a.get("body")), words(b.get("body"))
+     word_score = len(wa & wb) / len(wa | wb) if (wa | wb) else 0
+-    return round(0.7 * tag_score + 0.3 * word_score, 4)
++    return Decimal(str(round(0.7 * tag_score + 0.3 * word_score, 4)))
+ 
+ 
+ def related(story, existing):
+diff --git a/tests/test_publish.py b/tests/test_publish.py
+index 6c9ac44..e3dcd39 100644
+--- a/tests/test_publish.py
++++ b/tests/test_publish.py
+@@ -23,6 +23,31 @@ class PublishTest(unittest.TestCase):
+         self.assertEqual(table.get_item(Key={"slug": "why-my-cron-ran-twice"})["Item"]["title"], "Why my cron ran twice")
+         self.assertEqual(table.scan()["Count"], 1)
+ 
++    def test_publish_multiple_stories_with_similarity(self):
++        table = FakeTable()
++        story1 = {
++            "slug": "why-my-cron-ran-twice",
++            "title": "Why my cron ran twice",
++            "tags": ["cron", "linux"],
++            "body": "Two crontabs, one for root and one for me, both had the line.",
++        }
++        story2 = {
++            "slug": "cron-tips-and-tricks",
++            "title": "Cron tips and tricks",
++            "tags": ["cron"],
++            "body": "Here are tips for writing crontabs on linux.",
++        }
++        resp1 = app.handler({"body": __import__("json").dumps(story1)}, table)
++        self.assertEqual(resp1["statusCode"], 201)
++
++        resp2 = app.handler({"body": __import__("json").dumps(story2)}, table)
++        self.assertEqual(resp2["statusCode"], 201)
++
++        stored2 = table.get_item(Key={"slug": "cron-tips-and-tricks"})["Item"]
++        self.assertEqual(len(stored2["similar"]), 1)
++        self.assertEqual(stored2["similar"][0]["slug"], "why-my-cron-ran-twice")
++        self.assertIsInstance(stored2["similar"][0]["score"], app.Decimal)
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

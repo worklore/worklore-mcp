@@ -1,0 +1,41 @@
+diff --git a/src/app.py b/src/app.py
+index db49c5e..267aaf2 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -7,6 +7,7 @@ stories already in the library (``similar``), so the reader page can show
+ import json
+ import logging
+ import re
++from decimal import Decimal
+ import time
+ 
+ log = logging.getLogger("stories")
+@@ -48,6 +49,17 @@ def validate(story):
+         raise ValueError("bad slug")
+ 
+ 
++def _convert_floats(obj):
++    """Recursively convert float values to Decimal for DynamoDB compatibility."""
++    if isinstance(obj, float):
++        # Use str to avoid binary floating point representation issues
++        return Decimal(str(obj))
++    if isinstance(obj, dict):
++        return {k: _convert_floats(v) for k, v in obj.items()}
++    if isinstance(obj, list):
++        return [_convert_floats(v) for v in obj]
++    return obj
++
+ def publish(table, story):
+     """Store ``story`` with its related stories. Returns the stored item."""
+     validate(story)
+@@ -60,7 +72,9 @@ def publish(table, story):
+         "published_at": int(time.time()),
+         "similar": related(story, existing),
+     }
+-    table.put_item(Item=item)
++    # Ensure DynamoDB compatibility by converting any float values to Decimal
++    safe_item = _convert_floats(item)
++    table.put_item(Item=safe_item)
+     log.info("publish slug=%s similar=%d stored", item["slug"], len(item["similar"]))
+     return item
+ 

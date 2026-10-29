@@ -1,0 +1,3 @@
+Fixed the Intervals.icu connection flow. Connect now uses an authenticated POST, the requested scopes no longer repeat an area, and the app no longer expires tokens after an invented hour. A provider 401 now clears the connection and prompts a reconnect.
+
+The causes and which parts of the colleague’s note applied are in [ANSWER.md](/tmp/h-xMmPe1/ANSWER.md). Local checks passed for state validation, token exchange fields, scope uniqueness, and the reconnect account guard. A live OAuth flow remains unverified because it requires working Intervals credentials and an athlete account.

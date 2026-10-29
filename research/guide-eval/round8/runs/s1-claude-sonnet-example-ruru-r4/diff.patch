@@ -1,0 +1,52 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..8edb5d2
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,30 @@
++# Что изменено
++
++В `gen.py`, `hr_target()`: нижняя граница пульсового коридора теперь передаётся
++ключом `start`, а не `value`:
++
++    {"units": "%lthr", "start": lo, "end": hi}
++
++## Почему
++
++В `readback/event-184233-as-sent.json` видно, что мы отправляли `{value, end}`.
++При экспорте в FIT Intervals.icu превращает такую пару в цель Lap-HR / по зонам,
++и часы обрезают её под свои зоны (поэтому 117–129 показывалось как 118–137, а
++смена LTHR на часах лишь сдвигала границы зон). Пара `{start, end}` экспортируется
++как коридор Instant-HR с сырыми bpm, посчитанными Intervals из % × LTHR (172),
++то есть 129–141, 151–160 и т. д. Единицы остаются `%lthr`: пересчёт делает Intervals.
++
++## Что пригодилось из заметки коллеги
++- Переименование `value` → `start` — это и есть исправление.
++- Оставили проценты (`%lthr`), а не абсолютные bpm: попытки с `bpm` и
++  `start_bpm`/`end_bpm` уже давали 214–249 и константу 101 (совпадает с watch-notes.md).
++- Проверка после отправки: `GET /events/{id}` должен вернуть непустой
++  `workout_doc.steps` и в `hr` ключи `start`/`end`.
++
++## Что пропущено
++- Поле верхнего уровня `description` (грамматика Intervals, ловушки с `m`/`Z2`):
++  у нас шаги уже принимаются и `steps` непустой, генератор `description` не
++  формирует; добавление риск парсера не оправдано этим багом.
++- Шаги воспроизведения про UI/Garmin: у меня нет доступа к API и часам, поэтому
++  **на часах исправление не проверено** — нужно отправить тестовое событие и
++  сверить ожидаемые 129–141 для Float.
+diff --git a/gen.py b/gen.py
+index be0b3bc..e5b1e22 100755
+--- a/gen.py
++++ b/gen.py
+@@ -9,8 +9,10 @@ import sys
+ 
+ def hr_target(step):
+     """HR corridor for a step, as a percentage of the athlete's LTHR."""
++    # Key must be "start", not "value": "value" exports to FIT as a zone-based
++    # (Lap-HR) target the watch clips to its own zones; "start" gives Instant-HR.
+     lo, hi = step["hr_pct"]
+-    return {"units": "%lthr", "value": lo, "end": hi}
++    return {"units": "%lthr", "start": lo, "end": hi}
+ 
+ 
+ def build_step(step):

@@ -1,0 +1,238 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..d5acbdf
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,67 @@
++# Prompt cache eviction on `save_fact`
++
++## Cause
++
++`build_system()` returned the system prompt as one text block with one
++`cache_control` marker: `INSTRUCTIONS` + date + profile + the list of facts +
++language. Prompt caching matches exact prefixes up to a breakpoint, and that
++block ended in the facts list. So every `save_fact` changed the cached block and
++the whole ~1000-token prefix (tools + instructions + profile) missed and had to
++be written again. That happened twice: in round 2 of the same message, because
++`run_tool` mutates `a.facts` and the loop rebuilds the system prompt every round,
++and again on the next message. `logs/usage.jsonl` shows it: after every
++`save_fact` the next call has `cache_read_input_tokens: 0` and
++`cache_creation_input_tokens` ≈ 1046→1061→1075→… That is the full prefix, about
++15 tokens bigger each time.
++
++## Fix (`bot.py`, `build_system` / `athlete_profile`)
++
++The system prompt is now several blocks, ordered from most stable to least:
++
++1. `INSTRUCTIONS` + today's date + profile (name, sport, zones, goal, language)
++   + the facts header. Breakpoint #1 goes here.
++2. One text block per long-term fact (`"- fact\n"`), append-only, oldest first.
++   Breakpoint #2 goes on the last fact.
++
++`save_fact` only ever appends, so the new request still starts with exactly the
++prefix the previous request cached. The API checks earlier block boundaries
++(up to about 20 blocks) before a breakpoint, so it finds the entry written at
++the old last fact. It reads ~1000 tokens from cache and writes only the new
++fact (~15 tokens). This holds for the tool-loop round right after the save and
++for the following messages.
++
++Notes on the choices:
++- The model sees the same text as before, in a slightly different order:
++  "Language" moved into the profile, and the facts are listed last. The
++  instruction "language from the profile below" still holds.
++- I kept the date in the stable block and did not move it after the facts.
++  Anything after the facts would break the append-only prefix. And everything
++  after breakpoint #1 is too short to cache by itself: Sonnet 4.5 needs at
++  least 1024 tokens per cached prefix, and tools + instructions alone come to
++  about 970, which is under that. The date changes once a day, and the first
++  message of a day is almost always a cold write anyway because of the
++  5-minute TTL.
++- Breakpoint #1 is a safety net in case facts are ever edited or removed
++  instead of appended. For short profiles it may fall under the 1024-token
++  minimum, in which case the API just skips it. That's harmless.
++- I left keyword tool filtering alone, as NOTES.md asks. Be aware that tools
++  come before the system prompt in the cache prefix. A message that adds
++  `plan_week`/`predict_race` therefore still pays one full write for that
++  tool set. You can see this as the 1305/1334 writes in the log. It is a
++  separate cost from the memory issue.
++
++## Verification
++
++`tests/test_prompt_cache.py` (new, offline, no API calls) uses a fake LLM. The
++fake applies the prefix/breakpoint/lookback rules and runs four messages,
++including two `save_fact` calls. With the new layout, every call after the
++first reads the full static prefix and writes fewer than 30 tokens. The test
++passes. Against the original `bot.py` it fails with the symptom from the log:
++round 2 after `save_fact` shows `cache_read 0` and a full re-write.
++
++I did not make real API calls, so I haven't measured the actual numbers. Once
++it is deployed, check `logs/usage.jsonl`: after a `save_fact` you should see
++`cache_read_input_tokens` ≈ the previous prefix size and
++`cache_creation_input_tokens` ≈ 15.
++
++Also changed: the README paragraph on caching.
+diff --git a/README.md b/README.md
+index ebd390e..a0464f5 100644
+--- a/README.md
++++ b/README.md
+@@ -12,5 +12,8 @@ Run it locally with `COACH_ANTHROPIC_KEY=sk-ant-... python3 bot.py 42` and type
+ messages on stdin (the Telegram long-polling transport, which needs
+ `COACH_TELEGRAM_TOKEN`, lives in a separate deploy repo and just calls `reply()`).
+ Requires Python 3.11+ and `pip install anthropic`. Prompt caching is on: the system
+-prompt carries a `cache_control` marker so the tool-loop rounds and follow-up
+-messages inside the 5-minute window read it from cache.
++prompt is the instructions + profile block followed by one append-only block per
++long-term fact, with `cache_control` on the profile block and on the last fact, so
++the tool-loop rounds and follow-up messages inside the 5-minute window read it from
++cache, also right after a `save_fact` (see the comment in `build_system`).
++`python3 -m unittest tests/test_prompt_cache.py` checks the layout offline.
+diff --git a/bot.py b/bot.py
+index e2ff241..3a81b66 100644
+--- a/bot.py
++++ b/bot.py
+@@ -114,23 +114,35 @@ Formatting:
+ """
+ 
+ 
+-def athlete_context(a, today):
++def athlete_profile(a, today):
++    """The part of the athlete context that only changes when the profile or the date does."""
+     lines = [
+         f"Today: {today.isoformat()} ({today.strftime('%A')})",
+         f"Athlete: {a.name} (id {a.user_id}), sport: {a.sport}",
+         "Zones: " + ", ".join(f"{k} {v}" for k, v in a.zones.items()),
+         f"Goal: {a.goal}",
+-        "Long-term facts:",
++        f"Language: {a.lang}",
++        "Long-term facts (oldest first; empty if none recorded yet):",
+     ]
+-    lines += [f"- {f}" for f in a.facts] or ["- (none yet)"]
+-    lines.append(f"Language: {a.lang}")
+-    return "\n".join(lines)
++    return "\n".join(lines) + "\n"
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    # Prompt caching matches on exact prefixes, so the order here matters:
++    #   1. instructions + profile: stable for the day, cache breakpoint #1
++    #   2. one block per long-term fact, append-only, breakpoint #2 on the last one
++    # save_fact only appends a block, so the next request still starts with the
++    # previous request's cached prefix; the API's lookback finds the entry written at
++    # the old last fact and only the new fact is written to cache. Putting the facts
++    # inside the instructions block (as before) changed the whole block on every save
++    # and re-wrote ~1000 tokens. Do not insert anything volatile above the facts.
++    # The tools sit in front of the system prompt in the cache prefix as well.
++    system = [{"type": "text", "text": INSTRUCTIONS + "\n\n" + athlete_profile(a, today),
++               "cache_control": {"type": "ephemeral"}}]
++    system += [{"type": "text", "text": f"- {f}\n"} for f in a.facts]
++    if a.facts:
++        system[-1]["cache_control"] = {"type": "ephemeral"}
++    return system
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [
+diff --git a/tests/test_prompt_cache.py b/tests/test_prompt_cache.py
+new file mode 100644
+index 0000000..4677ecc
+--- /dev/null
++++ b/tests/test_prompt_cache.py
+@@ -0,0 +1,96 @@
++"""Offline check of the cache layout: a fake LLM that mimics prefix caching.
++
++The fake splits each request into blocks (tools, then system blocks, then message
++blocks), writes a cache entry at every cache_control breakpoint and, like the API,
++looks back up to 20 block boundaries before a breakpoint for an earlier entry.
++Token counts are approximated as chars/4; only the ratios matter here.
++"""
++import json
++import os
++import sys
++import tempfile
++import types
++import unittest
++
++sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
++import bot  # noqa: E402
++
++
++def _blocks(req):
++    out = [(json.dumps(req["tools"]), False)]
++    out += [(b["text"], "cache_control" in b) for b in req["system"]]
++    for m in req["messages"]:
++        content = m["content"] if isinstance(m["content"], list) else [{"type": "text", "text": m["content"]}]
++        out += [(json.dumps(c), "cache_control" in c) for c in content]
++    return out
++
++
++class FakeLLM:
++    def __init__(self, script):
++        self.cache = set()
++        self.script = list(script)  # per call: None (text reply) or a save_fact string
++
++    def create(self, **req):
++        blocks = _blocks(req)
++        toks = [len(t) // 4 for t, _ in blocks]
++        prefixes = ["\x00".join(t for t, _ in blocks[:i + 1]) for i in range(len(blocks))]
++        before, read = set(self.cache), 0
++        for i, (_, bp) in enumerate(blocks):
++            if not bp:
++                continue
++            for j in range(i, max(-1, i - 20), -1):
++                if prefixes[j] in before:
++                    read = max(read, sum(toks[:j + 1]))
++                    break
++            self.cache.add(prefixes[i])
++        last_bp = max([i for i, (_, bp) in enumerate(blocks) if bp], default=-1)
++        cached_total = sum(toks[:last_bp + 1])
++        usage = types.SimpleNamespace(input_tokens=sum(toks) - cached_total, cache_read_input_tokens=read,
++                                      cache_creation_input_tokens=cached_total - read, output_tokens=10)
++        step = self.script.pop(0)
++        if step is None:
++            content = [types.SimpleNamespace(type="text", text="ok", model_dump=lambda: {"type": "text", "text": "ok"})]
++            stop = "end_turn"
++        else:
++            d = {"type": "tool_use", "id": f"t{len(self.script)}", "name": "save_fact", "input": {"fact": step}}
++            content = [types.SimpleNamespace(type="tool_use", id=d["id"], name="save_fact", input=d["input"],
++                                             model_dump=lambda d=d: d)]
++            stop = "tool_use"
++        return types.SimpleNamespace(content=content, stop_reason=stop, usage=usage)
++
++
++class CacheLayoutTest(unittest.TestCase):
++    def setUp(self):
++        self.tmp = tempfile.mkdtemp()
++        bot.ATHLETES_FILE = os.path.join(self.tmp, "athletes.json")
++        bot.USAGE_LOG = os.path.join(self.tmp, "usage.jsonl")
++        bot.save_athlete(bot.Athlete(user_id="1", name="Test", facts=["Owns a Garmin 255"]))
++
++    def usage(self):
++        with open(bot.USAGE_LOG) as f:
++            return [json.loads(l) for l in f]
++
++    def test_save_fact_keeps_prefix_cached(self):
++        llm = FakeLLM([None, "Runs Mon/Wed/Fri", None, None, "Has a smart trainer", None])
++        bot.reply("1", "hi", llm)
++        bot.reply("1", "I run on Mon/Wed/Fri", llm)   # save_fact, then a second round
++        bot.reply("1", "how was that", llm)
++        bot.reply("1", "I bought a trainer", llm)    # save_fact again
++        u = self.usage()
++        static = u[0]["cache_creation_input_tokens"]
++        self.assertGreater(static, 500)
++        for rec in u[1:]:
++            # after the first write nothing re-writes more than one fact's worth of tokens
++            self.assertLess(rec["cache_creation_input_tokens"], 30, rec)
++            self.assertGreaterEqual(rec["cache_read_input_tokens"], static, rec)
++
++    def test_facts_are_in_the_prompt(self):
++        a = bot.load_athlete("1")
++        text = "".join(b["text"] for b in bot.build_system(a, bot.dt.date(2026, 4, 18)))
++        self.assertIn("- Owns a Garmin 255\n", text)
++        self.assertIn("Language: en", text)
++        self.assertLessEqual(sum("cache_control" in b for b in bot.build_system(a, bot.dt.date.today())), 2)
++
++
++if __name__ == "__main__":
++    unittest.main()

@@ -1,0 +1,122 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..92c476e
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,9 @@
++# Причины и исправления
++
++1. Кнопка Connect была обычной ссылкой. Переход браузера по ссылке не добавляет `Authorization: Bearer`, который приложение добавляет только через `fetch`. Поэтому `/api/intervals/auth/init` возвращал 401 каждому атлету. Теперь кнопка получает URL авторизации через API с токеном, затем переводит браузер на Intervals.icu.
++
++2. После добавления синхронизации календаря в OAuth-запрос включили `CALENDAR:READ` и `CALENDAR:WRITE`. Лог показывает, что запрос с этими scope Intervals.icu отвергал с `invalid_request` до экрана согласия. Эти scope удалены; сохранены `ACTIVITY:READ`, `ACTIVITY:WRITE` и `WELLNESS:READ`. Запись запланированных тренировок относится к activity-доступу.
++
++3. В успешном ответе на обмен кода не было ни `expires_in`, ни `refresh_token`. Сервер сам назначал срок действия в 3600 секунд, затем объявлял соединение истёкшим, хотя провайдер такого срока не указывал. Теперь отсутствие `expires_in` означает, что локальный таймер истечения не создаётся. Если провайдер явно задаёт срок, существующий механизм обновления или переподключения продолжает работать.
++
++Проверка: локальный HTTP-запрос к `/api/intervals/auth/init` вернул URL с ожидаемыми scope; сохранение ответов с `expires_in` и без него дало соответствующие сроки. Внешних запросов и развёртывания не выполнялось.
+diff --git a/config.py b/config.py
+index 54a8144..41eb31a 100644
+--- a/config.py
++++ b/config.py
+@@ -8,6 +8,6 @@ INTERVALS_BASE = os.environ.get("INTERVALS_BASE", "https://intervals.icu")
+ CLIENT_ID = "tricoach-dev"
+ CLIENT_SECRET = "s3cr3t-placeholder-0000"
+ REDIRECT_URI = f"http://localhost:{PORT}/api/intervals/callback"
+-SCOPES = "ACTIVITY:READ,ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:READ,CALENDAR:WRITE"
++SCOPES = "ACTIVITY:READ,ACTIVITY:WRITE,WELLNESS:READ"
+ 
+ REFRESH_INTERVAL = 60      # seconds between passes of the token refresher
+diff --git a/server.py b/server.py
+index 351cbb7..5ed556d 100644
+--- a/server.py
++++ b/server.py
+@@ -12,7 +12,6 @@ import config
+ STATIC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
+ TOKEN_URL = config.INTERVALS_BASE + "/api/oauth/token"
+ AUTHORIZE_URL = config.INTERVALS_BASE + "/oauth/authorize"
+-DEFAULT_TOKEN_TTL = 3600   # seconds; used when the provider does not say how long a token lives
+ 
+ # --- in-memory store -------------------------------------------------------
+ USERS = {
+@@ -42,7 +41,8 @@ def verify_state(state, max_age=900):
+         return None
+     payload = f"{user_id}:{ts}"
+     good = hmac.new(config.APP_SECRET.encode(), payload.encode(), hashlib.sha256).hexdigest()[:32]
+-    if not hmac.compare_digest(good, sig) or time.time() - int(ts) > max_age:
++    age = time.time() - int(ts)
++    if not hmac.compare_digest(good, sig) or not 0 <= age <= max_age:
+         return None
+     return user_id
+ 
+@@ -63,18 +63,21 @@ def exchange_code(code):
+ 
+ 
+ def store_connection(user_id, tok):
+-    expires_in = int(tok.get("expires_in") or DEFAULT_TOKEN_TTL)
++    expires_in = tok.get("expires_in")
+     refresh = tok.get("refresh_token")
+     if not refresh:
+-        log(f"{user_id}: no refresh_token in response, scheduling expiry in {expires_in}s")
++        log(f"{user_id}: no refresh_token in response")
+     athlete = tok.get("athlete") or {}
+     with LOCK:
+         CONNECTIONS[user_id] = {
+             "athlete_id": athlete.get("id"), "athlete_name": athlete.get("name"),
+             "access_token": tok["access_token"], "refresh_token": refresh,
+-            "scope": tok.get("scope"), "expires_at": time.time() + expires_in, "status": "connected",
++            "scope": tok.get("scope"),
++            "expires_at": time.time() + int(expires_in) if expires_in is not None else None,
++            "status": "connected",
+         }
+-    log(f"{user_id}: connected as athlete {athlete.get('id')} (expires in {expires_in}s)")
++    lifetime = f"expires in {expires_in}s" if expires_in is not None else "no expiry supplied"
++    log(f"{user_id}: connected as athlete {athlete.get('id')} ({lifetime})")
+ 
+ 
+ def refresh_tokens():
+@@ -84,7 +87,7 @@ def refresh_tokens():
+         now = time.time()
+         with LOCK:
+             for uid, c in CONNECTIONS.items():
+-                if c["status"] != "connected" or c["expires_at"] - now > 300:
++                if c["status"] != "connected" or c["expires_at"] is None or c["expires_at"] - now > 300:
+                     continue
+                 if not c["refresh_token"]:
+                     log(f"{uid}: token expiry passed and no refresh token on file -> expired, reconnect")
+@@ -192,7 +195,7 @@ class Handler(BaseHTTPRequestHandler):
+             return
+         params = {"client_id": config.CLIENT_ID, "redirect_uri": config.REDIRECT_URI,
+                   "scope": config.SCOPES, "state": sign_state(user["id"])}
+-        self.redirect(AUTHORIZE_URL + "?" + urllib.parse.urlencode(params, safe=":,"))
++        self.send_json(200, {"authorize_url": AUTHORIZE_URL + "?" + urllib.parse.urlencode(params)})
+ 
+     # Step 2: Intervals redirects back here with ?code=&state=.
+     def callback(self, q):
+diff --git a/static/app.js b/static/app.js
+index 368922e..adfa5b6 100644
+--- a/static/app.js
++++ b/static/app.js
+@@ -25,12 +25,23 @@ async function render() {
+     } else {
+       const why = st.status && st.status !== "disconnected" ? `<p class="muted">Status: ${esc(st.status)}</p>` : "";
+       card = `<div class="card">Intervals.icu is not connected.${why}
+-        <p><a class="btn" href="/api/intervals/auth/init">Connect Intervals.icu</a></p></div>`;
++        <p><button class="btn" id="connect">Connect Intervals.icu</button></p></div>`;
+     }
+     root.className = "";
+     root.innerHTML = `<p>Signed in as <b>${esc(me.name)}</b>.</p>${card}`;
+     const d = document.getElementById("disconnect");
+     if (d) d.onclick = async () => { await api("/api/intervals/disconnect", { method: "POST" }); render(); };
++    const c = document.getElementById("connect");
++    if (c) c.onclick = async () => {
++      c.disabled = true;
++      try {
++        const { authorize_url } = await api("/api/intervals/auth/init");
++        window.location.assign(authorize_url);
++      } catch (e) {
++        c.disabled = false;
++        root.insertAdjacentHTML("beforeend", `<p class="card">Error: ${esc(e.message)}</p>`);
++      }
++    };
+   } catch (e) {
+     root.innerHTML = `<p class="card">Error: ${esc(e.message)}</p>`;
+   }

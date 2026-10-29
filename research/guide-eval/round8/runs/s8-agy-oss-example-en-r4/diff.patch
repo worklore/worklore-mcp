@@ -1,0 +1,21 @@
+diff --git a/bot.py b/bot.py
+index e2ff241..7b8b9f7 100644
+--- a/bot.py
++++ b/bot.py
+@@ -128,9 +128,13 @@ def athlete_context(a, today):
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    # Split system prompt into two cacheable blocks:
++    #   1. Static instructions (unchanging across users and time).
++    #   2. Per‑athlete context (date, profile, facts) which may change.
++    # Both blocks are marked as `ephemeral` so they can be cached separately.
++    static_block = {"type": "text", "text": INSTRUCTIONS, "cache_control": {"type": "ephemeral"}}
++    tail_block = {"type": "text", "text": athlete_context(a, today), "cache_control": {"type": "ephemeral"}}
++    return [static_block, tail_block]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [

@@ -1,0 +1,3 @@
+Fixed the Intervals.icu connection flow and documented the causes in [ANSWER.md](/tmp/h-sK0yNh/ANSWER.md).
+
+The Connect button now starts OAuth with the athlete’s bearer token. The authorization request uses valid scopes, and the app no longer invents a one-hour expiry for Intervals.icu tokens. Local Python and JavaScript checks passed. No deployment or external submission was made.

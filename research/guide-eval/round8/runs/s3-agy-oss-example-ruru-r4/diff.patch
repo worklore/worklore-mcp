@@ -1,0 +1,32 @@
+diff --git a/Library/LaunchAgents/com.vk.nightly-review.plist b/Library/LaunchAgents/com.vk.nightly-review.plist
+index c347363..8ec0bfd 100644
+--- a/Library/LaunchAgents/com.vk.nightly-review.plist
++++ b/Library/LaunchAgents/com.vk.nightly-review.plist
+@@ -21,9 +21,8 @@
+   <key>StandardErrorPath</key>
+   <string>/Users/vk/Library/Logs/nightly-review.err</string>
+   <key>EnvironmentVariables</key>
+-  <dict>
+-    <key>PATH</key>
+-    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+-  </dict>
++    <key>USER</key>
++    <string>vk</string>
++
+ </dict>
+ </plist>
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..908d8c8 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -15,8 +15,8 @@ Do not modify any file."
+ 
+ cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
+ 
+-claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
++print -r -- "$PROMPT" | claude -p --output-format text > "$OUT"
++rc=$?
+ 
+ if [ $status -ne 0 ]; then
+   "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"

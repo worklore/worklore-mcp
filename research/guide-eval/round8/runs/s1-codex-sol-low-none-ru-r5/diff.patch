@@ -1,0 +1,99 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..1cd5c00
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,7 @@
++# Исправление диапазонов пульса
++
++Генератор теперь переводит проценты LTHR в конкретные границы пульса, используя `lthr_bpm` из плана. Для примера задано 172 уд/мин. Результат округляется до целого и передаётся как `units: "bpm"`.
++
++В отправляемых значениях вычитается 100: согласно `readback/watch-notes.md`, при передаче обычных абсолютных значений часы показывали диапазон на 100 уд/мин выше. Передача `%lthr` приводила к замене запланированных границ полными зонами часов. Поэтому для запланированных 117–129, 151–160, 129–141 и 112–124 уд/мин генератор записывает соответственно 17–29, 51–60, 29–41 и 12–24. Это также применяется к шагам внутри повторов.
++
++Обновлены `gen.py`, пример плана и `README.md`. Локальная проверка подтвердила значения всех четырёх типов шагов и отсутствие ошибок синтаксиса. Фактическое отображение на часах после изменения не проверялось: событие никуда не отправлялось.
+diff --git a/README.md b/README.md
+index 31b0941..a70ba71 100644
+--- a/README.md
++++ b/README.md
+@@ -9,8 +9,10 @@ exports them to the athlete's Garmin watch through Garmin Connect.
+ - `readback/` holds what the API returned for the last pushed event and
+   notes on what the watch displayed.
+ 
+-Athlete thresholds live in Intervals (LTHR 172 for this athlete). HR targets
+-in plans are percentages of LTHR; Intervals converts them to bpm at export.
++Plans specify `lthr_bpm` (172 for this athlete) and HR targets as percentages
++of it. The generator computes rounded bpm bounds before export and applies the
++100 bpm offset required by the observed Intervals-to-Garmin export. Update
++`lthr_bpm` when the planned threshold changes.
+ 
+ ```
+ python3 gen.py plans/tempo-run.json > event.json
+diff --git a/gen.py b/gen.py
+index be0b3bc..e2dba70 100755
+--- a/gen.py
++++ b/gen.py
+@@ -5,18 +5,29 @@ Usage: python3 gen.py plans/tempo-run.json > event.json
+ """
+ import json
+ import sys
++from decimal import Decimal, ROUND_HALF_UP
+ 
+ 
+-def hr_target(step):
+-    """HR corridor for a step, as a percentage of the athlete's LTHR."""
++def hr_target(step, lthr):
++    """Encode a planned LTHR corridor as absolute Garmin HR targets.
++
++    Intervals' bpm target values are exported 100 bpm above the supplied
++    numbers, so subtract that offset after calculating the actual bpm bounds.
++    """
+     lo, hi = step["hr_pct"]
+-    return {"units": "%lthr", "value": lo, "end": hi}
++    def encoded_bpm(pct):
++        bpm = (Decimal(str(pct)) * Decimal(str(lthr)) / 100).quantize(
++            Decimal("1"), rounding=ROUND_HALF_UP
++        )
++        return int(bpm) - 100
++
++    return {"units": "bpm", "value": encoded_bpm(lo), "end": encoded_bpm(hi)}
+ 
+ 
+-def build_step(step):
++def build_step(step, lthr):
+     out = {"duration": step["minutes"] * 60}
+     if "hr_pct" in step:
+-        out["hr"] = hr_target(step)
++        out["hr"] = hr_target(step, lthr)
+     if "label" in step:
+         out["text"] = step["label"]
+     return out
+@@ -24,14 +35,15 @@ def build_step(step):
+ 
+ def build_doc(plan):
+     steps = []
++    lthr = plan["lthr_bpm"]
+     for block in plan["steps"]:
+         if "repeat" in block:
+             steps.append({
+                 "reps": block["repeat"],
+-                "steps": [build_step(s) for s in block["steps"]],
++                "steps": [build_step(s, lthr) for s in block["steps"]],
+             })
+         else:
+-            steps.append(build_step(block))
++            steps.append(build_step(block, lthr))
+     return {"steps": steps}
+ 
+ 
+diff --git a/plans/tempo-run.json b/plans/tempo-run.json
+index 8a4a545..8e8bcc1 100644
+--- a/plans/tempo-run.json
++++ b/plans/tempo-run.json
+@@ -1,6 +1,7 @@
+ {
+   "name": "Tempo run 45",
+   "sport": "Run",
++  "lthr_bpm": 172,
+   "date": "2026-10-20",
+   "steps": [
+     {"label": "Warm-up easy", "minutes": 10, "hr_pct": [68, 75]},

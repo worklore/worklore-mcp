@@ -1,0 +1,62 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..73c066d
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,10 @@
++# Why the nightly review was silent
++
++The agent **was scheduled and ran**. `launchctl-print.txt` shows six runs, a 02:30 calendar trigger, and last exit code 1. The stderr log repeats two lines for each run:
++
++1. `Not logged in · Please run /login` — the `claude -p` process has no usable Claude login in the launchd job's context, so it cannot produce a review.
++2. `read-only variable: status` — zsh reserves `status` for the last command's exit code. Assigning to it aborts `nightly-review.zsh` before the failure notification runs. This explains why even the failure note never arrived.
++
++The snapshot now stores Claude's exit code in `claude_exit`, sends a failure note when Claude fails or returns an empty review, and reports notification errors to stderr. The Telegram helper also treats HTTP errors as failures instead of discarding them as apparent success. The Telegram change is preventive; the provided logs do not show a Telegram request being attempted.
++
++**Still needed on the actual Mac:** authenticate the Claude CLI for the `vk` account used by this LaunchAgent (run `claude` interactively and complete `/login`, or configure a valid supported noninteractive credential). The snapshot cannot supply those credentials. After applying these script changes in the actual home directory, run the agent once and inspect `~/Library/Logs/nightly-review.err` if no message arrives. No deployment or external request was made here.
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..efcfd33 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -16,11 +16,18 @@ Do not modify any file."
+ cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
+ 
+ claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
++claude_exit=$?
+ 
+-if [ $status -ne 0 ]; then
+-  "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
+-  exit $status
++if [ "$claude_exit" -ne 0 ]; then
++  "$NOTIFY" "nightly review FAILED (Claude exit $claude_exit); see ~/Library/Logs/nightly-review.err" ||
++    print -u2 "nightly review: failure notification could not be sent"
++  exit "$claude_exit"
++fi
++
++if [ ! -s "$OUT" ]; then
++  "$NOTIFY" "nightly review FAILED (Claude returned an empty review); see $OUT" ||
++    print -u2 "nightly review: failure notification could not be sent"
++  exit 1
+ fi
+ 
+ "$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"
+diff --git a/bin/notify.sh b/bin/notify.sh
+index 818e531..8996080 100755
+--- a/bin/notify.sh
++++ b/bin/notify.sh
+@@ -1,7 +1,12 @@
+ #!/bin/bash
+ # usage: notify.sh "message"  — sends a Telegram message to me.
+ set -eu
+-: "${TG_BOT_TOKEN:=$(security find-generic-password -s tg-bot -w)}"
++if [ -z "${TG_BOT_TOKEN:-}" ]; then
++  TG_BOT_TOKEN=$(security find-generic-password -s tg-bot -w) || {
++    printf '%s\n' 'notify: could not read tg-bot token from Keychain' >&2
++    exit 1
++  }
++fi
+ CHAT_ID=123456789
+-curl -sS -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
++curl -fsS -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
+   -d chat_id="$CHAT_ID" --data-urlencode text="$1" > /dev/null

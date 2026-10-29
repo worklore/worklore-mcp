@@ -1,0 +1,55 @@
+# Answer: save_fact evicts the cached system prompt
+
+## Cause
+
+`build_system` in `bot.py` returned one system block that held both the static
+`INSTRUCTIONS` and the per-athlete `athlete_context` (name, zones, goal, date and
+the long-term facts), with the `cache_control` marker on that whole block.
+Prompt caching matches on the exact prefix, so any change to the athlete's facts
+changed the cached block. `save_fact` appends a fact, so the next call missed the
+cache and wrote a new one. That is the pattern in `logs/usage.jsonl` and in
+NOTES.md: `cache_read_input_tokens: 0` with `cache_creation_input_tokens` near
+1000 right after each save.
+
+## Change
+
+`bot.py`, `build_system`: the system prompt is now two blocks.
+
+1. `INSTRUCTIONS` alone, with `cache_control`. It is the same for every athlete,
+   so the cached prefix no longer depends on facts, zones or the date.
+2. `athlete_context(a, today)`, without a marker. It sits after the breakpoint,
+   so a fact change only changes this uncached tail.
+
+Nothing else changed: the message, tool selection and the rest of the loop are as before.
+
+## Verified
+
+Checked by calling `build_system` directly (no API calls, and `data/athletes.json`
+was not written):
+
+- The first block is identical after a `save_fact` (facts `['x']` → `['x','y']`).
+- The first block is identical across different athletes and dates.
+- `cache_control` is only on block 0; the facts are only in block 1.
+
+## Open risk: the cached prefix may be below the minimum
+
+Caching is skipped silently when the cached prefix is shorter than the model's
+minimum (1024 tokens for Sonnet-class models). The static prefix is the tool
+definitions plus `INSTRUCTIONS` (2484 characters, roughly 600 tokens). I estimate
+the total at around 800–900 tokens, so it may be under the minimum. The old
+combined block only reached about 1000–1100 tokens because the facts and profile
+were added to it. I could not confirm this here: I had no API key and did not
+send anything to the API.
+
+**Check after deploy:** on the first two calls for one athlete, the first call
+should show `cache_creation_input_tokens` > 0 and the next call
+`cache_read_input_tokens` > 0, even after a `save_fact`. If both stay at 0, the
+prefix is below the minimum. The fix then is to make the static prefix longer,
+which is a product decision, so I did not pad it.
+
+## Not changed
+
+Keyword-gated tool selection (`select_tools`) also changes the tools part of the
+cache prefix, so a message that adds the `plan` or `race` group still misses the
+cache. NOTES.md says that filter is a deliberate win, so I left it. Moving to a
+fixed tool list would fix this too, at the cost of more tool tokens on short messages.

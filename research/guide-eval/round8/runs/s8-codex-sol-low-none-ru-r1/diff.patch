@@ -1,0 +1,34 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..4b6aa63
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,5 @@
++# Исправление кеширования
++
++В `bot.py` разделил системный промпт на два текстовых блока с отдельными `cache_control`: неизменные `INSTRUCTIONS` идут первыми, профиль и долговременная память спортсмена — вторыми. После `save_fact` меняется только второй блок; стабильный префикс может читаться из кеша, а обновлённый факт остаётся доступен уже в следующем раунде.
++
++Проверил локально: `python3 -m py_compile bot.py`. Фактические счётчики кеша без вызова API не проверял. У API есть минимальный размер кешируемого префикса, поэтому экономия для короткого префикса зависит от его токенизации и набора инструментов в запросе.
+diff --git a/__pycache__/bot.cpython-314.pyc b/__pycache__/bot.cpython-314.pyc
+new file mode 100644
+index 0000000..8611753
+Binary files /dev/null and b/__pycache__/bot.cpython-314.pyc differ
+diff --git a/bot.py b/bot.py
+index e2ff241..791fff0 100644
+--- a/bot.py
++++ b/bot.py
+@@ -128,9 +128,11 @@ def athlete_context(a, today):
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    # Keep the stable prefix reusable when save_fact changes athlete context.
++    return [
++        {"type": "text", "text": INSTRUCTIONS, "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": athlete_context(a, today), "cache_control": {"type": "ephemeral"}},
++    ]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [

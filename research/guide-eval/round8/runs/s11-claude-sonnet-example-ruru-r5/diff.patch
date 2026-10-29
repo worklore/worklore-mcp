@@ -1,0 +1,65 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..2e54713
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,14 @@
++# Почему вторая публикация возвращает 500
++
++## Причина
++`similarity()` в `src/app.py` возвращает `float` (`round(0.7 * ... , 4)`), и `related()` кладёт его в `similar[].score`. boto3 не сериализует float в DynamoDB: `TypeError: Float types are not supported. Use Decimal types instead.` (logs/error.log).
++Первая публикация проходила, потому что таблица была пуста: `existing == []`, оценок нет, `similar == []`, float'ов в записи нет. Ошибка проявляется только когда есть с чем сравнивать. Единственный тест публиковал только в пустую таблицу, поэтому её не ловил.
++
++## Исправление
++- `related()` приводит оценку к `Decimal(str(similarity(...)))` на границе записи (str сохраняет 4 знака точно, без артефактов двоичного float).
++- Добавлен тест `test_publish_second_story_with_similarity`: публикует две истории, так что выполняется путь с непустой таблицей; `FakeTable` отвергает float так же, как boto3.
++
++## Что пригодилось из заметки коллеги
++- Диагноз (float → DynamoDB, первая запись выживает из-за пустой таблицы) — совпал полностью.
++- Идея «конвертировать на границе» и тест с засеянной таблицей — применены.
++- Не применено: округление до целых процентов. Я выбрал Decimal, чтобы не менять формат/точность хранимой оценки. Поиск `round(` и `/` в коде дал только `similarity()`; проверка на реальной таблице и деплой не выполнялись (запрещено условиями).
+diff --git a/src/app.py b/src/app.py
+index db49c5e..205c71b 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -8,6 +8,7 @@ import json
+ import logging
+ import re
+ import time
++from decimal import Decimal
+ 
+ log = logging.getLogger("stories")
+ 
+@@ -35,7 +36,9 @@ def related(story, existing):
+     for other in existing:
+         if other["slug"] == story["slug"]:
+             continue
+-        scored.append({"slug": other["slug"], "score": similarity(story, other)})
++        # DynamoDB rejects float; convert at the boundary (str() keeps 4 digits exact).
++        score = Decimal(str(similarity(story, other)))
++        scored.append({"slug": other["slug"], "score": score})
+     scored.sort(key=lambda s: s["score"], reverse=True)
+     return scored[:TOP_N]
+ 
+diff --git a/tests/test_publish.py b/tests/test_publish.py
+index 6c9ac44..ae768d9 100644
+--- a/tests/test_publish.py
++++ b/tests/test_publish.py
+@@ -23,6 +23,17 @@ class PublishTest(unittest.TestCase):
+         self.assertEqual(table.get_item(Key={"slug": "why-my-cron-ran-twice"})["Item"]["title"], "Why my cron ran twice")
+         self.assertEqual(table.scan()["Count"], 1)
+ 
++    def test_publish_second_story_with_similarity(self):
++        # The second publish takes the populated-table path (scores computed).
++        table = FakeTable()
++        app.publish(table, {"slug": "first-story", "title": "A", "tags": ["cron", "linux"],
++                            "body": "Two crontabs ran the same line."})
++        stored = app.publish(table, {"slug": "second-story", "title": "B", "tags": ["cron"],
++                                     "body": "One crontab ran the line twice."})
++        self.assertEqual(stored["similar"][0]["slug"], "first-story")
++        self.assertGreater(stored["similar"][0]["score"], 0)
++        self.assertEqual(table.scan()["Count"], 2)
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

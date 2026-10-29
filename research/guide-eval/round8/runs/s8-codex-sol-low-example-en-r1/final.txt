@@ -1,0 +1,3 @@
+I split the system prompt into two cached blocks: fixed coaching instructions and athlete context. A `save_fact` write now changes only the athlete block. I documented the change, which parts of the colleague’s note applied, and the verification in [ANSWER.md](/tmp/h-Dmikr6/ANSWER.md).
+
+Local checks passed. Live cache usage still needs confirmation from `logs/usage.jsonl` after an API call.

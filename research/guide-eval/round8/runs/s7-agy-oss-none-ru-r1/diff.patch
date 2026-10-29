@@ -1,0 +1,71 @@
+diff --git a/__pycache__/config.cpython-314.pyc b/__pycache__/config.cpython-314.pyc
+new file mode 100644
+index 0000000..878feb3
+Binary files /dev/null and b/__pycache__/config.cpython-314.pyc differ
+diff --git a/config.py b/config.py
+index 54a8144..4ffb56f 100644
+--- a/config.py
++++ b/config.py
+@@ -7,7 +7,7 @@ APP_SECRET = "dev-only-change-me-7c1f0a"          # signs the OAuth state parame
+ INTERVALS_BASE = os.environ.get("INTERVALS_BASE", "https://intervals.icu")
+ CLIENT_ID = "tricoach-dev"
+ CLIENT_SECRET = "s3cr3t-placeholder-0000"
+-REDIRECT_URI = f"http://localhost:{PORT}/api/intervals/callback"
++REDIRECT_URI = f"https://localhost:{PORT}/api/intervals/callback"
+ SCOPES = "ACTIVITY:READ,ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:READ,CALENDAR:WRITE"
+ 
+ REFRESH_INTERVAL = 60      # seconds between passes of the token refresher
+diff --git a/server.py b/server.py
+index 351cbb7..df6eba7 100644
+--- a/server.py
++++ b/server.py
+@@ -191,7 +191,7 @@ class Handler(BaseHTTPRequestHandler):
+         if not user:
+             return
+         params = {"client_id": config.CLIENT_ID, "redirect_uri": config.REDIRECT_URI,
+-                  "scope": config.SCOPES, "state": sign_state(user["id"])}
++                  "scope": config.SCOPES, "state": sign_state(user["id"]), "access_type": "offline"}
+         self.redirect(AUTHORIZE_URL + "?" + urllib.parse.urlencode(params, safe=":,"))
+ 
+     # Step 2: Intervals redirects back here with ?code=&state=.
+diff --git a/static/app.js b/static/app.js
+index 368922e..d689480 100644
+--- a/static/app.js
++++ b/static/app.js
+@@ -11,7 +11,7 @@ async function api(path, opts = {}) {
+   return body;
+ }
+ 
+-function esc(s) { return String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
++function esc(s) { return String(s).replace(/[\u0026\u003c\u003e\"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+ 
+ async function render() {
+   try {
+@@ -25,12 +25,26 @@ async function render() {
+     } else {
+       const why = st.status && st.status !== "disconnected" ? `<p class="muted">Status: ${esc(st.status)}</p>` : "";
+       card = `<div class="card">Intervals.icu is not connected.${why}
+-        <p><a class="btn" href="/api/intervals/auth/init">Connect Intervals.icu</a></p></div>`;
++        <p><button class="btn" id="connect">Connect Intervals.icu</button></p></div>`;
+     }
+     root.className = "";
+     root.innerHTML = `<p>Signed in as <b>${esc(me.name)}</b>.</p>${card}`;
+     const d = document.getElementById("disconnect");
+     if (d) d.onclick = async () => { await api("/api/intervals/disconnect", { method: "POST" }); render(); };
++    const c = document.getElementById("connect");
++    if (c) c.onclick = async () => {
++      try {
++        const resp = await fetch("/api/intervals/auth/init", { headers: { "Authorization": "Bearer " + TOKEN } });
++        if (resp.redirected) {
++          window.location.href = resp.url;
++        } else if (!resp.ok) {
++          const body = await resp.json().catch(() => ({}));
++          throw new Error(body.error || `HTTP ${resp.status}`);
++        }
++      } catch (e) {
++        root.innerHTML = `<p class="card">Error: ${esc(e.message)}</p>`;
++      }
++    };
+   } catch (e) {
+     root.innerHTML = `<p class="card">Error: ${esc(e.message)}</p>`;
+   }

@@ -1,0 +1,3 @@
+The second publish returned 500 because it added a Python `float` to `similar[].score`, which DynamoDB rejects. The first publish had an empty `similar` list, so it succeeded.
+
+I converted stored scores to `Decimal`, added a regression test for successive publishes, and documented the cause and fix in [ANSWER.md](/tmp/h-ivk43B/ANSWER.md). Both tests pass.

@@ -1,0 +1,280 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..957d8ff
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,83 @@
++# The cache stays warm after `save_fact`
++
++## What was wrong
++
++`build_system()` put everything into one text block with one `cache_control`:
++instructions + date + profile + facts. The cache works on prefixes, so a new fact
++changed the block and invalidated the whole cached prefix. In `logs/usage.jsonl`, the
++call right after every `save_fact` shows `cache_read_input_tokens: 0` and
++`cache_creation_input_tokens` ≈ 1040–1100. That's the whole prompt again, at the write
++price (×1.25).
++
++## Why the colleague's fix alone isn't enough here
++
++The colleague used two markers: [static instructions] + [whole volatile tail]. For this
++bot, that layout doesn't work. Sonnet 4.5 caches only a prefix of at least 1024 tokens,
++and anything shorter is silently skipped. The logs give the size: the first message from
++user 77 cost exactly `cache_creation_input_tokens: 1024` for the whole prompt, and each
++fact adds ~15 tokens. So core tools + instructions come to ~920–950 tokens, under the
++minimum. A marker after the instructions would never write a cache entry, and a
++rewritten tail would still cost the whole prompt.
++`tests/test_cache_layout.py::test_two_segments_alone_hit_the_minimum` checks this.
++
++## What I changed (`bot.py`, `build_system` / `athlete_context`)
++
++The system prompt is now a list of blocks:
++
++1. `INSTRUCTIONS`: byte-identical for all athletes and days, with its own
++   `cache_control`.
++2. Athlete context: date, profile, zones, goal, language, and the header
++   `Long-term facts (oldest first):`. I moved the language line above the facts so it
++   doesn't sit after the part that changes.
++3. One block per fact, `- <fact>`. `cache_control` goes on the last block.
++
++`save_fact` only appends a fact (`a.facts.append`), so the new request differs from the
++previous one by exactly one block at the end. The API checks earlier block boundaries
++(lookback up to ~20 blocks before a breakpoint), finds the previous request's cache
++entry one block back, and reads it. Only the new fact is written, ~15 tokens instead of
++~1050. This holds both for the second round of the tool loop (where the fact is already
++in the prompt) and for the next message. Uses 2 markers out of the 4 allowed.
++
++Constraint, also written in the code comment: facts must stay append-only. Editing,
++deleting, deduplicating or reordering old facts (for example top-N by relevance) breaks
++the prefix from the changed fact onward. The `(none yet)` placeholder is gone, because
++the first fact would have replaced it.
++
++I left tool filtering alone, as `NOTES.md` asks.
++
++Also: README updated; added `tests/test_cache_layout.py`. It makes no API calls. It
++checks the block structure and replays a "message → save_fact → message → save_fact →
++message" scenario against a simplified prefix-cache model, with token counts calibrated
++to `usage.jsonl`:
++
++```
++old layout:  after save_fact (0 read, 1039 created), (0, 1051)
++new layout:  after save_fact (1026 read, 11 created), (1037, 12)
++```
++
++Run it with `python3 -m unittest discover tests`. All 5 tests pass. It's a model, not the
++real API. I didn't run the bot against Anthropic (no key, and external calls were off
++limits).
++
++## How to check in production
++
++In `logs/usage.jsonl`, the call after `save_fact` (round 2 and the next message) should
++show `cache_read_input_tokens` ≈ the size of the previous prompt and
++`cache_creation_input_tokens` ≈ 10–30. If it shows 0 / ~1000 again, something has made
++the prefix stop being byte-stable (a changed profile, a value inserted into the
++instructions, an edited old fact).
++
++## Which parts of the colleague's note helped
++
++- **Helped:** the diagnosis (prefix hash: a memory write invalidates everything after
++  it), separating the byte-stable instructions into their own block with their own
++  marker, the rule "no top-N selection of facts, load them all, in a stable order"
++  (here it's even stricter: append-only), the tip to keep tools above the system prompt
++  stable, and the check through `cache_creation_input_tokens` / `cache_read_input_tokens`.
++- **Didn't carry over as is:** the two-segment layout itself. In their case the static
++  part was bigger, and here it's under the 1024-token minimum. So the second segment is
++  split into a block per fact, and the cache is kept by lookback rather than by the
++  instructions marker. The instructions marker only helps here when an extra tool group
++  is in the request (the prefix grows past 1024 and becomes shared by all athletes).
++- **Skipped:** keyword tool filtering. It's already in the bot (`select_tools`), and
++  `NOTES.md` asks to leave it.
+diff --git a/README.md b/README.md
+index ebd390e..bfb7cb7 100644
+--- a/README.md
++++ b/README.md
+@@ -12,5 +12,8 @@ Run it locally with `COACH_ANTHROPIC_KEY=sk-ant-... python3 bot.py 42` and type
+ messages on stdin (the Telegram long-polling transport, which needs
+ `COACH_TELEGRAM_TOKEN`, lives in a separate deploy repo and just calls `reply()`).
+ Requires Python 3.11+ and `pip install anthropic`. Prompt caching is on: the system
+-prompt carries a `cache_control` marker so the tool-loop rounds and follow-up
+-messages inside the 5-minute window read it from cache.
++prompt is split into blocks (static instructions, athlete context, one block per fact)
++with `cache_control` markers, so the tool-loop rounds and follow-up messages inside
++the 5-minute window read it from cache, and `save_fact` only adds the new fact to the
++cache instead of re-caching the whole prompt. Facts are append-only for this reason
++(see `build_system`). `python3 -m unittest discover tests` checks the layout offline.
+diff --git a/bot.py b/bot.py
+index e2ff241..0a97f74 100644
+--- a/bot.py
++++ b/bot.py
+@@ -120,17 +120,30 @@ def athlete_context(a, today):
+         f"Athlete: {a.name} (id {a.user_id}), sport: {a.sport}",
+         "Zones: " + ", ".join(f"{k} {v}" for k, v in a.zones.items()),
+         f"Goal: {a.goal}",
+-        "Long-term facts:",
++        f"Language: {a.lang}",
++        "Long-term facts (oldest first):",
+     ]
+-    lines += [f"- {f}" for f in a.facts] or ["- (none yet)"]
+-    lines.append(f"Language: {a.lang}")
+     return "\n".join(lines)
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    # Cache layout (prefix cache: one changed byte invalidates everything after it):
++    #   [INSTRUCTIONS]            byte-identical for every athlete and day; own marker
++    #   [date + profile + header] changes daily / rarely
++    #   [fact 1] ... [fact N]     one block per fact, append-only; marker on the last one
++    # save_fact only appends a block, so the next request finds the previous request's
++    # cache entry one block back (automatic lookback) and writes just the new fact.
++    # The instructions alone (+ core tools) are under the 1024-token minimum for
++    # Sonnet, so that marker only pays off when an extra tool group is loaded; the
++    # append-only fact blocks are what keep a memory write from re-caching everything.
++    # Never edit, reorder or dedupe old facts here: that would break the prefix.
++    blocks = [
++        {"type": "text", "text": INSTRUCTIONS, "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": athlete_context(a, today)},
++    ]
++    blocks += [{"type": "text", "text": f"- {f}"} for f in a.facts]
++    blocks[-1]["cache_control"] = {"type": "ephemeral"}
++    return blocks
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [
+diff --git a/tests/test_cache_layout.py b/tests/test_cache_layout.py
+new file mode 100644
+index 0000000..0ae2aa6
+--- /dev/null
++++ b/tests/test_cache_layout.py
+@@ -0,0 +1,129 @@
++"""Offline check of the system-prompt cache layout (no API calls).
++
++Simulates Anthropic prompt caching closely enough to catch layout regressions:
++prefix match at content-block boundaries, writes only at explicit breakpoints whose
++prefix is >= MIN_CACHEABLE tokens, lookback of up to 20 blocks before a breakpoint.
++Token counts are a rough estimate (chars / 3.2), calibrated against logs/usage.jsonl.
++Run: python3 -m unittest discover tests
++"""
++import copy
++import datetime as dt
++import json
++import os
++import sys
++import unittest
++
++sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
++import bot  # noqa: E402
++
++MIN_CACHEABLE = 1024
++TOOL_OVERHEAD = 35  # tuned so the first call for user 77 lands near the 1024 seen in logs/usage.jsonl
++
++
++def ntok(text):
++    return max(1, round(len(text) / 3.2))
++
++
++def flatten(system, tools):
++    """Prefix as (key, tokens, has_marker) per block: tools first, then system blocks."""
++    out = [("tools:" + json.dumps(tools, sort_keys=True), ntok(json.dumps(tools)) + TOOL_OVERHEAD, False)]
++    out += [(b["text"], ntok(b["text"]), "cache_control" in b) for b in system]
++    return out
++
++
++class Cache:
++    def __init__(self):
++        self.entries = set()
++
++    def call(self, system, tools):
++        blocks = flatten(system, tools)
++        keys = [tuple(b[0] for b in blocks[:i + 1]) for i in range(len(blocks))]
++        cum = [sum(b[1] for b in blocks[:i + 1]) for i in range(len(blocks))]
++        read = 0
++        for i, (_, _, marked) in enumerate(blocks):
++            if not marked:
++                continue
++            for j in range(i, max(-1, i - 20), -1):  # lookback
++                if keys[j] in self.entries:
++                    read = max(read, cum[j])
++                    break
++        created = 0
++        for i, (_, _, marked) in enumerate(blocks):
++            if marked and cum[i] >= MIN_CACHEABLE:
++                if keys[i] not in self.entries:
++                    created = cum[i] - read
++                self.entries.add(keys[i])
++        return read, max(created, 0), cum[-1]
++
++
++def old_build_system(a, today):  # layout before the fix, for comparison
++    text = bot.INSTRUCTIONS + "\n\n" + bot.athlete_context(a, today) + "".join(f"\n- {f}" for f in a.facts)
++    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++
++
++def two_segment_build_system(a, today):  # colleague's layout: [instructions][whole tail]
++    tail = bot.athlete_context(a, today) + "".join(f"\n- {f}" for f in a.facts)
++    return [{"type": "text", "text": bot.INSTRUCTIONS, "cache_control": {"type": "ephemeral"}},
++            {"type": "text", "text": tail, "cache_control": {"type": "ephemeral"}}]
++
++
++def athlete():
++    return bot.Athlete(user_id="77", name="Jonas", lang="de", sport="cycling", goal="finish a 160 km gran fondo",
++                       facts=["Commutes by bike 2x15 km daily", "Has a smart trainer at home"])
++
++
++class LayoutTest(unittest.TestCase):
++    today = dt.date(2026, 4, 18)
++
++    def test_instructions_block_is_static(self):
++        a, b = athlete(), bot.Athlete(user_id="42", name="Marta")
++        sa, sb = bot.build_system(a, self.today), bot.build_system(b, self.today + dt.timedelta(days=3))
++        self.assertEqual(sa[0], sb[0])
++        self.assertEqual(sa[0]["text"], bot.INSTRUCTIONS)
++
++    def test_save_fact_only_appends_blocks(self):
++        a = athlete()
++        before = bot.build_system(a, self.today)
++        a.facts.append("Booked Oetztaler 2026")
++        after = bot.build_system(a, self.today)
++        strip = lambda bl: [b["text"] for b in bl]
++        self.assertEqual(strip(after)[:len(before)], strip(before))
++        self.assertIn("cache_control", after[-1])
++        self.assertLessEqual(sum("cache_control" in b for b in after), 4)
++
++    def test_no_facts(self):
++        s = bot.build_system(bot.Athlete(user_id="1", name="x"), self.today)
++        self.assertEqual(len(s), 2)
++        self.assertIn("cache_control", s[-1])
++
++    def run_scenario(self, build):
++        """msg, save_fact (2 rounds), msg, save_fact (2 rounds), msg -- all inside the TTL."""
++        cache, a, tools, log = Cache(), athlete(), bot.select_tools("hi"), []
++        log.append(cache.call(build(a, self.today), tools))
++        for fact in ["Booked a gran fondo for 2026-09-12", "Prefers indoor intervals on Tuesdays"]:
++            log.append(cache.call(build(a, self.today), tools))   # round 1: model calls save_fact
++            a.facts.append(fact)
++            log.append(cache.call(build(a, self.today), tools))   # round 2: system already has the fact
++            log.append(cache.call(build(a, self.today), tools))   # next message
++        return log
++
++    def test_memory_write_keeps_prefix_hot(self):
++        old, new = self.run_scenario(old_build_system), self.run_scenario(bot.build_system)
++        for name, log in (("old", old), ("new", new)):
++            print(f"\n{name}: (cache_read, cache_creation, prompt) per call", *log, sep="\n  ")
++        # After the first message, every call must read nearly the whole prompt from cache
++        for read, created, total in new[1:]:
++            self.assertGreaterEqual(read, total - 30)
++            self.assertLess(created, 30)
++        self.assertTrue(any(c > 900 for _, c, _ in old[1:]))  # the old layout re-cached everything
++
++    def test_two_segments_alone_hit_the_minimum(self):
++        # Core tools + instructions are below 1024 tokens, so the instructions marker never
++        # writes a cache entry and a rewritten tail still costs the whole prompt.
++        log = self.run_scenario(two_segment_build_system)
++        print("\ntwo segments:", *log, sep="\n  ")
++        self.assertTrue(any(r == 0 and c > 900 for r, c, _ in log[1:]))
++
++
++if __name__ == "__main__":
++    unittest.main()

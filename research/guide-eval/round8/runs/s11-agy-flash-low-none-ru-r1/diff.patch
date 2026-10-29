@@ -1,0 +1,96 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..109772d
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,26 @@
++# Причина ошибки и её исправление
++
++## Причина (Why)
++
++В логах (`logs/error.log`) зафиксирована ошибка при вызове `table.put_item(Item=item)`:
++```text
++TypeError: Float types are not supported. Use Decimal types instead.
++```
++
++1. При первой публикации таблица DynamoDB была пуста (`scan()` вернул пустой список `Items`). Функция `related()` вернула пустой список `similar: []`, и в сохраняемом объекте `item` не было дробных чисел (`float`). Публикация завершилась успешно (HTTP 201).
++2. При второй публикации в таблице уже существовала одна статья. Функция `related()` вычислила сходство между новой статьёй и уже существующей с помощью функции `similarity(story, other)`. Функция `similarity` возвращала значение типа `float` (`round(...)`).
++3. Библиотека `boto3` (и её сериализатор DynamoDB `TypeSerializer`) не поддерживает тип Python `float` для числовых атрибутов DynamoDB и требует использования `decimal.Decimal` во избежание потери точности с плавающей точкой.
++4. Попытка записать объект со значением `score` типа `float` привела к `TypeError`, который был перехвачен общим блоком `except Exception` в `handler()` и вернул HTTP 500.
++
++## Исправление (Fix)
++
++В файле [`src/app.py`](src/app.py):
++1. Импортирован класс `Decimal` из стандартного модуля `decimal`:
++   ```python
++   from decimal import Decimal
++   ```
++2. Значение сходства в функции `similarity()` преобразуется в `Decimal`:
++   ```python
++   return Decimal(str(round(0.7 * tag_score + 0.3 * word_score, 4)))
++   ```
++3. В тесты [`tests/test_publish.py`](tests/test_publish.py) добавлен тест `test_publish_second_story_with_similarity`, проверяющий успешную вторую публикацию при наличии ранее созданных статей и корректность типа `Decimal` для поля `score` в списке `similar`.
+diff --git a/src/app.py b/src/app.py
+index db49c5e..5931a84 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -4,6 +4,7 @@ Each story is stored in one DynamoDB item together with the three most similar
+ stories already in the library (``similar``), so the reader page can show
+ "related" without a query at read time.
+ """
++from decimal import Decimal
+ import json
+ import logging
+ import re
+@@ -27,7 +28,7 @@ def similarity(a, b):
+     tag_score = len(ta & tb) / len(ta | tb) if (ta | tb) else 0
+     wa, wb = words(a.get("body")), words(b.get("body"))
+     word_score = len(wa & wb) / len(wa | wb) if (wa | wb) else 0
+-    return round(0.7 * tag_score + 0.3 * word_score, 4)
++    return Decimal(str(round(0.7 * tag_score + 0.3 * word_score, 4)))
+ 
+ 
+ def related(story, existing):
+diff --git a/tests/test_publish.py b/tests/test_publish.py
+index 6c9ac44..b82a13a 100644
+--- a/tests/test_publish.py
++++ b/tests/test_publish.py
+@@ -1,3 +1,5 @@
++from decimal import Decimal
++import json
+ import os
+ import sys
+ import unittest
+@@ -23,6 +25,32 @@ class PublishTest(unittest.TestCase):
+         self.assertEqual(table.get_item(Key={"slug": "why-my-cron-ran-twice"})["Item"]["title"], "Why my cron ran twice")
+         self.assertEqual(table.scan()["Count"], 1)
+ 
++    def test_publish_second_story_with_similarity(self):
++        table = FakeTable()
++        story1 = {
++            "slug": "why-my-cron-ran-twice",
++            "title": "Why my cron ran twice",
++            "tags": ["cron", "linux"],
++            "body": "Two crontabs, one for root and one for me, both had the line.",
++        }
++        story2 = {
++            "slug": "cron-in-docker",
++            "title": "Cron in Docker",
++            "tags": ["cron", "docker"],
++            "body": "Running cron inside a docker container requires foreground execution.",
++        }
++        res1 = app.handler({"body": json.dumps(story1)}, table)
++        self.assertEqual(res1["statusCode"], 201)
++
++        res2 = app.handler({"body": json.dumps(story2)}, table)
++        self.assertEqual(res2["statusCode"], 201)
++        self.assertEqual(table.scan()["Count"], 2)
++
++        item2 = table.get_item(Key={"slug": "cron-in-docker"})["Item"]
++        self.assertEqual(len(item2["similar"]), 1)
++        self.assertEqual(item2["similar"][0]["slug"], "why-my-cron-ran-twice")
++        self.assertIsInstance(item2["similar"][0]["score"], Decimal)
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

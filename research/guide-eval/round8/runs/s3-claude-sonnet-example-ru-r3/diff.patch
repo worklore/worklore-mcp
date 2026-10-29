@@ -1,0 +1,79 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..50468ad
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,31 @@
++# Почему nightly-review молчала
++
++Задача **запускалась** каждую ночь (`launchctl-print.txt`: `runs = 6`, `last exit code = 1`; в `.err` шесть повторов). Молчание — это два слоя багов:
++
++1. **`claude -p` падал с "Not logged in · Please run /login".** В окружении launchd нет `USER`
++   (в `environment` только PATH и XPC_SERVICE_NAME), и CLI не находит свой логин в keychain.
++   Исправление: в plist в `EnvironmentVariables` добавлен `USER=vk`.
++2. **`status=$?` в zsh убивал скрипт.** `status` — read-only переменная zsh
++   (`nightly-review.zsh:19: read-only variable: status`). Скрипт умирал до вызова `notify.sh`,
++   поэтому уведомление об ошибке не уходило. Исправление: `rc=$?`.
++
++## Дополнительно изменено в скрипте
++- `claude ... < /dev/null` — закрытый stdin, чтобы CLI не ждал ввода.
++- В stdout-лог пишется код возврата и длительность запуска.
++- Нулевой код при пустом выводе считается ошибкой (rc=2) и порождает уведомление.
++- Длительность добавлена в тексты уведомлений.
++
++## Какие части заметки коллеги пригодились
++- Пригодились: сначала доказать, что задача запускалась (`launchctl print`: runs/last exit code);
++  читать stderr-лог; не присваивать `status` в zsh; `USER` в EnvironmentVariables; `< /dev/null`;
++  логировать длительность; не считать нулевой код и пустой результат успехом.
++- Не пригодились: передача промпта через stdin (у вас ошибки про промпт нет, промпт передаётся аргументом
++  и ошибка была в логине); догадка «задача не запускается» — тут она запускалась.
++
++## Не проверено
++Я ничего не запускал (нет вашего macOS/keychain, внешних отправок не делал). Проверьте у себя:
++`launchctl bootout gui/$UID/com.vk.nightly-review; launchctl bootstrap gui/$UID ~/Library/LaunchAgents/com.vk.nightly-review.plist; launchctl kickstart -k gui/$UID/com.vk.nightly-review`,
++затем убедитесь, что `last exit code = 0`, файл `nightly-review-<дата>.md` свежий и непустой, запуск
++длился не секунды, а в Telegram пришло сообщение. Затем один раз намеренно сломайте скрипт и проверьте
++уведомление об ошибке. Если «Not logged in» останется, выполните `claude /login` под этим пользователем.
++Также README говорит 02:30, как и plist.
+diff --git a/Library/LaunchAgents/com.vk.nightly-review.plist b/Library/LaunchAgents/com.vk.nightly-review.plist
+index c347363..d49eacf 100644
+--- a/Library/LaunchAgents/com.vk.nightly-review.plist
++++ b/Library/LaunchAgents/com.vk.nightly-review.plist
+@@ -24,6 +24,8 @@
+   <dict>
+     <key>PATH</key>
+     <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
++    <key>USER</key>
++    <string>vk</string>
+   </dict>
+ </dict>
+ </plist>
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..aa32b08 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -15,12 +15,18 @@ Do not modify any file."
+ 
+ cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
+ 
+-claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
++START=$SECONDS
++claude -p "$PROMPT" --output-format text < /dev/null > "$OUT"
++rc=$?   # not "status": it is read-only in zsh and kills the script
++DUR=$((SECONDS - START))
++echo "$(date '+%F %T') claude exit=$rc duration=${DUR}s"
+ 
+-if [ $status -ne 0 ]; then
+-  "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
+-  exit $status
++# a run that "succeeds" with empty output or in a few seconds did no real work
++if [ $rc -eq 0 ] && [ ! -s "$OUT" ]; then rc=2; fi
++
++if [ $rc -ne 0 ]; then
++  "$NOTIFY" "nightly review FAILED (exit $rc, ${DUR}s), see $OUT"
++  exit $rc
+ fi
+ 
+-"$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"
++"$NOTIFY" "nightly review done (${DUR}s): $(head -c 300 "$OUT")"

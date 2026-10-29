@@ -1,0 +1,210 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..3bf6a34
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,82 @@
++# Кеширование системного промпта после save_fact
++
++## Проблема
++
++В `build_system` был один текстовый блок (инструкции + контекст атлета) с одним
++`cache_control`. Кеш работает по хешу префикса. `save_fact` дописывал факт в конец блока,
++хеш менялся, и вместе с фактами из кеша вылетали неизменные инструкции. В
++`logs/usage.jsonl` это видно: сразу после каждого `save_fact` идёт `cache_read_input_tokens: 0`
++и `cache_creation_input_tokens` ≈ 1040–1100, то есть весь промпт по цене записи (1.25×).
++
++Вторая причина того же промаха: `build_request` пересобирал system на каждом раунде
++tool-loop. Если в раунде 1 был `save_fact`, раунд 2 того же ответа уже шёл с новым
++промптом и промахивался (в логе все эти промахи приходятся на `round: 2`).
++
++## Что изменено (`bot.py`)
++
++1. **Два сегмента с `cache_control: ephemeral`** (`build_system`):
++   - сегмент 1: `INSTRUCTIONS` + профиль атлета (имя, спорт, зоны, цель, язык), через
++     новую функцию `athlete_profile`. Он не меняется ни от `save_fact`, ни от смены даты;
++   - сегмент 2: дата + долговременные факты, через `athlete_memory`. Это единственная
++     часть, которую трогает запись в память.
++   Теперь после `save_fact` должен читаться из кеша префикс tools + сегмент 1, а заново
++   записываться только хвост (~50–150 токенов в зависимости от числа фактов).
++   `athlete_context` заменён этими двумя функциями.
++2. **System собирается один раз на сообщение** (`reply`), а `build_request` принимает
++   готовый `system`. Раунд 2 после `save_fact` теперь попадает в кеш полностью. Модель
++   и так видит новый факт в собственном `tool_use`, а в system он появится со следующего
++   сообщения. Именно так README и описывает поведение («the next message sees the fact»).
++3. **`python3 bot.py --check-cache <user_id>`** через `count_tokens` считает длину префикса
++   до первого маркера (core tools + сегмент 1) и сравнивает её с `MIN_CACHEABLE_TOKENS = 1024`.
++   README обновлён.
++
++## Важная оговорка: минимальная длина кешируемого префикса
++
++Если префикс до маркера короче минимума модели (у `claude-sonnet-4-5` это 1024 токена),
++API молча игнорирует маркер. Ошибки не будет, но всё будет как раньше. По логу весь
++промпт Марты с core tools весит 1046 токенов, промпт Йонаса 1024. Значит, tools + одни
++инструкции дают примерно 930–950 токенов, **ниже порога**. Поэтому я не стал делать
++сегмент 1 «только инструкции, общий для всех пользователей», как в заметке. Профиль
++перенесён в сегмент 1, чтобы добрать длину: он меняется ещё реже фактов. Цена этого в
++том, что сегмент 1 персональный, а не общий. Для маленького клуба с TTL 5 минут
++межпользовательские попадания всё равно редкость.
++
++По моей оценке (≈ 50–60 токенов профиля) сегмент 1 выходит около 1000 токенов, **на грани
++порога**. Реальный API я не вызывал: нет ключа, и внешние сервисы по условию трогать
++нельзя. Проверить нужно так:
++- `python3 bot.py --check-cache 42` должен напечатать `OK`;
++- либо на живом трафике: в первом раунде после сообщения с `save_fact` (с новым
++  кодом это следующее сообщение) `cache_read_input_tokens` должен быть ≈ размеру
++  сегмента 1, а `cache_creation_input_tokens` должен быть порядка размера хвоста.
++  Если там снова ~1050 записи и 0 чтения, сегмент 1 короче 1024. Тогда нужно либо
++  дописать в `INSTRUCTIONS` реальные правила, либо перенести в сегмент 1 ещё что-то
++  стабильное. Если сменить модель, проверить порог заново: у некоторых моделей он 2048
++  или 4096.
++
++## Что проверено
++
++Офлайн-прогон `reply()` с фейковым LLM на копии `data/athletes.json`: внутри одного ответа
++system в раундах 1 и 2 побайтно одинаковый, после `save_fact` сегмент 1 следующего
++сообщения побайтно совпадает с прежним, а сегмент 2 изменился. Реальные `usage` с API
++не проверялись (см. выше).
++
++## Что пригодилось из заметки коллеги
++
++- **Пригодилось:** главная идея с двумя маркерами `cache_control` вместо одного,
++  стабильный префикс и волатильный хвост, и требование держать первый сегмент побайтно
++  стабильным (без дат и счётчиков; дата у меня в хвосте). Пригодился и способ проверки
++  через `cache_creation_input_tokens` / `cache_read_input_tokens`: сначала читать `usage`,
++  потом искать «плавающее» значение.
++- **Пригодилось как подтверждение, без изменений:** держать tools байт-стабильными и не
++  выкидывать фильтрацию по ключевым словам. В NOTES.md прямо сказано её оставить, и
++  внутри одного сообщения набор tools и так постоянен. Совет не делать top-N отбора
++  фактов: у нас загружаются все факты, это я и оставил.
++- **Не подошло как есть:** «сегмент 1 = только инструкции, ~780 токенов». В заметке
++  ничего не сказано про минимальную длину кешируемого префикса. Здесь tools маленькие
++  (2 core-схемы, а не ~55), и инструкций с tools не хватает до 1024 токенов Sonnet 4.5.
++  Поэтому профиль атлета перенесён в первый сегмент (см. оговорку выше).
++- **Не нашлось в заметке, добавлено своё:** заморозка system на время одного ответа.
++  Отдельный источник промахов здесь был в том, что `save_fact` менял промпт посреди
++  tool-loop.
++- **Пропущено:** рассказ про фильтрацию ~55 MCP-инструментов (у нас она уже есть) и
++  Telegram-специфика.
+diff --git a/README.md b/README.md
+index ebd390e..b6740ef 100644
+--- a/README.md
++++ b/README.md
+@@ -12,5 +12,8 @@ Run it locally with `COACH_ANTHROPIC_KEY=sk-ant-... python3 bot.py 42` and type
+ messages on stdin (the Telegram long-polling transport, which needs
+ `COACH_TELEGRAM_TOKEN`, lives in a separate deploy repo and just calls `reply()`).
+ Requires Python 3.11+ and `pip install anthropic`. Prompt caching is on: the system
+-prompt carries a `cache_control` marker so the tool-loop rounds and follow-up
+-messages inside the 5-minute window read it from cache.
++prompt is two blocks, each with a `cache_control` marker: coaching rules + athlete
++profile (stable), then date + long-term facts (changes on every `save_fact`). A memory
++write only re-caches the short tail. After editing the rules, run
++`python3 bot.py --check-cache 42`: the first block (with the core tools) must stay above
++the model's minimum cacheable length (1024 tokens for Sonnet 4.5) or its marker is ignored.
+diff --git a/bot.py b/bot.py
+index e2ff241..96cc3a5 100644
+--- a/bot.py
++++ b/bot.py
+@@ -114,23 +114,40 @@ Formatting:
+ """
+ 
+ 
+-def athlete_context(a, today):
+-    lines = [
+-        f"Today: {today.isoformat()} ({today.strftime('%A')})",
++# Minimum cacheable prefix for MODEL (Sonnet 4.5: 1024 tokens). A breakpoint whose prefix
++# (tools + everything before it) is shorter is silently ignored, so the static segment must
++# stay above it -- check with `python3 bot.py --check-cache <user_id>` after editing the prompt.
++MIN_CACHEABLE_TOKENS = 1024
++
++
++def athlete_profile(a):
++    """Per-athlete data that changes only when the profile itself is edited."""
++    return "\n".join([
+         f"Athlete: {a.name} (id {a.user_id}), sport: {a.sport}",
+         "Zones: " + ", ".join(f"{k} {v}" for k, v in a.zones.items()),
+         f"Goal: {a.goal}",
+-        "Long-term facts:",
+-    ]
++        f"Language: {a.lang}",
++    ])
++
++
++def athlete_memory(a, today):
++    """Volatile tail: changes every day and on every save_fact."""
++    lines = [f"Today: {today.isoformat()} ({today.strftime('%A')})", "Long-term facts:"]
+     lines += [f"- {f}" for f in a.facts] or ["- (none yet)"]
+-    lines.append(f"Language: {a.lang}")
+     return "\n".join(lines)
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    # Two cache segments. The cache is a prefix hash, so with one marker every save_fact
++    # rewrote the facts and evicted the instructions too. Now a memory write (or a new day)
++    # only re-caches the short tail; the instructions + profile segment stays hot.
++    # Keep segment 1 free of dates, facts and anything else that changes between messages.
++    return [
++        {"type": "text", "text": INSTRUCTIONS + "\n\n" + athlete_profile(a),
++         "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": athlete_memory(a, today),
++         "cache_control": {"type": "ephemeral"}},
++    ]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [
+@@ -187,8 +204,8 @@ def log_usage(usage, user_id, round_no, tool=None):
+         f.write(json.dumps(rec) + "\n")
+ 
+ 
+-def build_request(a, messages, tools, today):
+-    return {"model": MODEL, "max_tokens": MAX_TOKENS, "system": build_system(a, today), "tools": tools, "messages": messages}
++def build_request(system, messages, tools):
++    return {"model": MODEL, "max_tokens": MAX_TOKENS, "system": system, "tools": tools, "messages": messages}
+ 
+ 
+ def reply(user_id, text, llm=None):
+@@ -196,9 +213,12 @@ def reply(user_id, text, llm=None):
+     a = load_athlete(user_id)
+     today = dt.date.today()
+     tools = select_tools(text)
++    # Built once per message: a save_fact in round 1 must not change the prompt of round 2
++    # (the model already sees the fact in its own tool_use). The next message picks it up.
++    system = build_system(a, today)
+     messages = [{"role": "user", "content": text}]
+     for round_no in range(1, MAX_TOOL_ROUNDS + 1):
+-        resp = llm.create(**build_request(a, messages, tools, today))
++        resp = llm.create(**build_request(system, messages, tools))
+         used_tools = [b.name for b in resp.content if b.type == "tool_use"]
+         log_usage(resp.usage, a.user_id, round_no, tool=",".join(used_tools) or None)
+         if resp.stop_reason != "tool_use":
+@@ -210,8 +230,27 @@ def reply(user_id, text, llm=None):
+     return "Sorry, I lost the thread. Ask me again?"
+ 
+ 
++def check_cache(user_id):
++    """Count the tokens up to the first cache marker (core tools + static segment).
++
++    Below MIN_CACHEABLE_TOKENS the first marker is ignored by the API and every memory
++    write re-caches the whole prompt again, exactly as before the split.
++    """
++    client = LLM()._client
++    static = build_system(load_athlete(user_id), dt.date.today())[:1]
++    msgs = [{"role": "user", "content": "."}]
++    full = client.messages.count_tokens(model=MODEL, system=static, tools=CORE_TOOLS, messages=msgs).input_tokens
++    bare = client.messages.count_tokens(model=MODEL, messages=msgs).input_tokens
++    prefix = full - bare
++    ok = prefix >= MIN_CACHEABLE_TOKENS
++    print(f"static prefix ~{prefix} tokens (min {MIN_CACHEABLE_TOKENS}): {'OK' if ok else 'TOO SHORT, first marker is ignored'}")
++    return ok
++
++
+ if __name__ == "__main__":
+     # Local chat: python3 bot.py <user_id>; Telegram long-polling lives in telegram.py (not in this repo).
++    if len(sys.argv) > 1 and sys.argv[1] == "--check-cache":
++        sys.exit(0 if check_cache(sys.argv[2] if len(sys.argv) > 2 else "42") else 1)
+     uid = sys.argv[1] if len(sys.argv) > 1 else "42"
+     for line in sys.stdin:
+         print(reply(uid, line.strip()))

@@ -1,0 +1,56 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..af712bb
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,29 @@
++# Что изменено и почему
++
++## Причина
++В `gen.py` (`hr_target`) нижняя граница коридора пульса передавалась ключом `value`:
++`{"units": "%lthr", "value": lo, "end": hi}`. Для Intervals.icu форма `{value, end}`
++экспортируется в FIT как цель Lap-HR, привязанная к зонам, — часы подгоняют её под
++собственные зоны (LTHR 168), поэтому в `watch-notes.md` видны границы зон часов
++(118–137, 137–151…), а не плановые 129–141 и т.п. Изменение LTHR на часах лишь
++сдвигает зоны, но не убирает привязку.
++
++## Исправление
++`gen.py`: `"value": lo` → `"start": lo`, т.е. `{"units": "%lthr", "start": lo, "end": hi}`.
++Эта форма экспортируется как Instant-HR коридор: часы показывают bpm, которые
++посчитал Intervals (процент × LTHR из Intervals = 172), независимо от зон часов.
++Добавлен комментарий в docstring. Проверено только локально: генератор выдаёт
++`start` во всех HR-целях. Проверку на реальных часах (ожидаемо 129–141 для 75–82%)
++я выполнить не мог — нужно перепушить событие и синхронизировать часы.
++Уже отправленное событие 184233 остаётся со старой формой; его нужно пересоздать.
++
++## Что пригодилось из заметки коллеги
++- Пригодилось: `start` вместо `value` (ключевая правка); оставить проценты `%lthr`,
++  а не абсолютные bpm (у нас так уже сделано; попытки с `bpm` и `start_bpm`/`end_bpm`
++  в `watch-notes.md` совпадают с описанными неудачами); способ проверки — прочитать
++  событие через GET и убедиться, что `steps` не пуст.
++- Пропущено: top-level `description` в текстовой грамматике Intervals (нужен только
++  для отображения шагов в веб-интерфейсе, к проблеме часов не относится; без
++  возможности проверить на API рискованно — при ошибке парсера Intervals стирает
++  оба представления). Шаги для воспроизведения с реальными учётными данными и
++  созданием тестового события не выполнялись (нельзя обращаться к внешним сервисам).
+diff --git a/gen.py b/gen.py
+index be0b3bc..698ceb1 100755
+--- a/gen.py
++++ b/gen.py
+@@ -8,9 +8,14 @@ import sys
+ 
+ 
+ def hr_target(step):
+-    """HR corridor for a step, as a percentage of the athlete's LTHR."""
++    """HR corridor for a step, as a percentage of the athlete's LTHR.
++
++    The lower bound must be `start`, not `value`: `{value, end}` is exported as
++    a zone-mapped Lap-HR target (watch clamps to its own zones), while
++    `{start, end}` becomes an Instant-HR corridor with raw bpm.
++    """
+     lo, hi = step["hr_pct"]
+-    return {"units": "%lthr", "value": lo, "end": hi}
++    return {"units": "%lthr", "start": lo, "end": hi}
+ 
+ 
+ def build_step(step):

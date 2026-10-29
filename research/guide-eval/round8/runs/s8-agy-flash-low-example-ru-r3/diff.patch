@@ -1,0 +1,52 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..c9ac2dc
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,22 @@
++# Изменения в кешировании системного промпта
++
++## Проблема
++Ранее в `bot.py` системный промпт собирался в один текстовый блок (`INSTRUCTIONS + "\n\n" + athlete_context(a, today)`) с единственным маркером `cache_control: {"type": "ephemeral"}`.
++Так как Anthropic prompt caching работает по принципу префиксного хеширования (prefix hash), при вызове инструмента `save_fact` в массив фактов спортсмена добавлялась новая запись. При следующем вызове или следующей итерации tool-use цикла весь системный промпт пересчитывался заново: происходила полная инвалидация кеша (miss), и приходилось платить полную стоимость за создание кеша всего промпта (~1000+ токенов), включая неизменяемые статические инструкции (`INSTRUCTIONS`).
++
++## Что изменено
++В [bot.py](file:///tmp/h-Ily8KY/bot.py) функция [`build_system`](file:///tmp/h-Ily8KY/bot.py#L130-L136) разделена на два независимых блока с маркерами `cache_control: {"type": "ephemeral"}`:
++1. **Первый сегмент (статический префикс)**: содержит только `INSTRUCTIONS` с маркером `cache_control: {"type": "ephemeral"}`. Этот блок байт-в-байт стабилен для всех пользователей и запросов и не зависит от даты или данных пользователя, оставаясь «горячим» в кеше.
++2. **Второй сегмент (динамический хвост)**: содержит `athlete_context(a, today)` с маркером `cache_control: {"type": "ephemeral"}`. В него входят изменяемые данные: текущая дата, профиль спортсмена, зоны пульса, цель, факты долговременной памяти и язык.
++
++При вызове `save_fact` инвалидируется только второй сегмент (хвост размером ~240 токенов), тогда как первый сегмент (статические инструкции ~780 токенов) считывается из кеша по сниженной стоимости (`cache_read_input_tokens`).
++
++## Какие части заметки коллеги пригодились
++- **Пригодилось:**
++  - Концепция разделения системного промпта на два сегмента с `cache_control: {"type": "ephemeral"}` (шаг 1 из инструкции): первый блок — байт-стабильные инструкции (`INSTRUCTIONS`), второй блок — переменный контекст (дата, профиль, факты).
++  - Понимание устройства префиксного кеша Anthropic (изменение одного байта инвалидирует всё, что следует за ним).
++  - Подтверждение того, что в `build_system` не нужно перемешивать статические инструкции с динамическими переменными.
++
++- **Не понадобилось / пропущено:**
++  - Советы по фильтрации инструментов (tool filtering) и их группировке по ключевым словам: инструментная фильтрация уже была реализована в `bot.py` и работала корректно.
++  - Анализ отказа от Top-N fact selection: отбор релевантных фактов в коде и так не использовался (все факты загружаются целиком).
+diff --git a/__pycache__/bot.cpython-314.pyc b/__pycache__/bot.cpython-314.pyc
+new file mode 100644
+index 0000000..7c2dfe1
+Binary files /dev/null and b/__pycache__/bot.cpython-314.pyc differ
+diff --git a/bot.py b/bot.py
+index e2ff241..dd3f44c 100644
+--- a/bot.py
++++ b/bot.py
+@@ -128,9 +128,12 @@ def athlete_context(a, today):
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    # Two blocks: static instructions (byte-stable) + volatile per-athlete context (tail).
++    # Writing to athlete memory invalidates only the tail cache, keeping the static instructions cached.
++    return [
++        {"type": "text", "text": INSTRUCTIONS, "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": athlete_context(a, today), "cache_control": {"type": "ephemeral"}},
++    ]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [

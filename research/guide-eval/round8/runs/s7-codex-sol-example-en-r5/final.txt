@@ -1,0 +1,3 @@
+Fixed the Intervals.icu connection flow. The Connect button now makes an authenticated POST, the requested scopes no longer duplicate areas, and the app no longer expires tokens after an invented one-hour lifetime. A provider 401 now prompts reconnection.
+
+The causes, applicable parts of the colleague’s note, and verification limits are in [ANSWER.md](/tmp/h-LNmLPi/ANSWER.md). Local HTTP tests pass; live Intervals testing was not possible with the repository’s placeholder credentials.

@@ -1,0 +1,52 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..953f486
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,7 @@
++# Second publish returns 500
++
++**Cause:** `related()` in `src/app.py` put `score` values into the item as Python floats (`similarity()` returns `round(..., 4)`). boto3's DynamoDB serializer rejects floats (`TypeError: Float types are not supported. Use Decimal types instead.`). The first publish worked only because the table was empty, so `similar` was `[]` and no float was written. From the second publish on, `similar` holds scored entries, so `put_item` fails and the handler returns 500.
++
++**Fix:** `related()` now stores each score as `Decimal(str(score))`. `str()` avoids binary-float noise. I added a regression test (`test_second_publish_stores_similar_scores`) that publishes twice. The fake table rejects floats the way boto3 does, so the test fails on the old code.
++
++**Not fixed:** `publish()` calls `scan` once and doesn't follow `LastEvaluatedKey`. Once the table passes 1 MB, `similar` will be computed from only part of the library. That is a separate problem.
+diff --git a/src/app.py b/src/app.py
+index db49c5e..d3d8129 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -8,6 +8,7 @@ import json
+ import logging
+ import re
+ import time
++from decimal import Decimal
+ 
+ log = logging.getLogger("stories")
+ 
+@@ -35,7 +36,7 @@ def related(story, existing):
+     for other in existing:
+         if other["slug"] == story["slug"]:
+             continue
+-        scored.append({"slug": other["slug"], "score": similarity(story, other)})
++        scored.append({"slug": other["slug"], "score": Decimal(str(similarity(story, other)))})
+     scored.sort(key=lambda s: s["score"], reverse=True)
+     return scored[:TOP_N]
+ 
+diff --git a/tests/test_publish.py b/tests/test_publish.py
+index 6c9ac44..7a69207 100644
+--- a/tests/test_publish.py
++++ b/tests/test_publish.py
+@@ -23,6 +23,13 @@ class PublishTest(unittest.TestCase):
+         self.assertEqual(table.get_item(Key={"slug": "why-my-cron-ran-twice"})["Item"]["title"], "Why my cron ran twice")
+         self.assertEqual(table.scan()["Count"], 1)
+ 
++    def test_second_publish_stores_similar_scores(self):
++        table = FakeTable()
++        app.publish(table, {"slug": "first-story", "title": "A", "tags": ["cron", "linux"], "body": "cron runs twice"})
++        stored = app.publish(table, {"slug": "second-story", "title": "B", "tags": ["cron"], "body": "cron ran once"})
++        self.assertEqual(stored["similar"][0]["slug"], "first-story")
++        self.assertEqual(table.scan()["Count"], 2)
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

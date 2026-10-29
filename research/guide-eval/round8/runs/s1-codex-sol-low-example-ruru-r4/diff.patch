@@ -1,0 +1,30 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..c0acc32
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,7 @@
++# Исправление пульсовых коридоров
++
++В `gen.py` нижняя граница пульсовой цели теперь записывается в `hr.start` вместо `hr.value`. Верхняя граница остаётся в `hr.end`, единицы — `%lthr`. Так Intervals.icu получает цель вида `{"units": "%lthr", "start": 68, "end": 75}` и может экспортировать точный коридор Instant HR, а не цель по зоне часов. Порог LTHR для пересчёта процентов в bpm берётся из Intervals.
++
++Из заметки коллеги пригодилось различие между `start/end` и `value/end`, а также рекомендация сохранить `%lthr`: попытки с `bpm` и `start_bpm`/`end_bpm` уже дали неверный результат в `readback/watch-notes.md`. Часть про текстовое `description` здесь не применял: прочитанное обратно событие уже содержит заполненный `workout_doc.steps`, а задача касается пульсовых целей.
++
++Локальная проверка генерации подтверждает, что все четыре вида шагов, включая шаги внутри повтора, содержат `start/end` и не содержат `value`. Проверить отображение на часах можно только после отправки и синхронизации; внешние сервисы в рамках этого исправления не использовались.
+diff --git a/__pycache__/gen.cpython-314.pyc b/__pycache__/gen.cpython-314.pyc
+new file mode 100644
+index 0000000..ab25443
+Binary files /dev/null and b/__pycache__/gen.cpython-314.pyc differ
+diff --git a/gen.py b/gen.py
+index be0b3bc..4aeba5a 100755
+--- a/gen.py
++++ b/gen.py
+@@ -10,7 +10,7 @@ import sys
+ def hr_target(step):
+     """HR corridor for a step, as a percentage of the athlete's LTHR."""
+     lo, hi = step["hr_pct"]
+-    return {"units": "%lthr", "value": lo, "end": hi}
++    return {"units": "%lthr", "start": lo, "end": hi}
+ 
+ 
+ def build_step(step):

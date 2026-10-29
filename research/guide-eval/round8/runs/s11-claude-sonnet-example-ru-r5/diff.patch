@@ -1,0 +1,99 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..2cb931c
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,23 @@
++# Почему вторая публикация возвращает 500
++
++**Причина.** `similarity()` в `src/app.py` возвращала `round(..., 4)` — это Python `float`.
++`publish()` кладёт список `similar: [{slug, score}]` в item, и `put_item` в boto3 падает с
++`TypeError: Float types are not supported. Use Decimal types instead.` (см. `logs/error.log`).
++При первой публикации таблица пуста, `related()` возвращает `[]`, floats нет — всё проходит.
++Начиная со второй в `similar` попадает score-float, и запись падает. Единственный тест
++проверял только путь с пустой таблицей, поэтому баг не ловился.
++
++**Исправление.**
++1. `similarity()` теперь возвращает целые проценты (0–100).
++2. Добавлен `dynamo_safe()` — на границе записи рекурсивно превращает любые float в `Decimal`,
++   так что новый вычисляемый float не уронит запись снова.
++3. Добавлен тест `test_second_publish_with_similar_story`: сначала кладёт запись, потом
++   публикует вторую (путь с непустой таблицей). `FakeTable` валидирует типы как boto3.
++
++Проверка: `python3 -m unittest discover tests`.
++
++**Что пригодилось из заметки коллеги:** диагноз (float → DynamoDB, первая запись «чистая»
++из-за пустой таблицы), целочисленные проценты, конвертация на границе записи и тест с
++предварительно засеянной таблицей. Шаги про grep по `round(`/`/` я выполнил вручную
++(в коде один такой случай). Реальную таблицу и «публикацию дважды» не использовал —
++деплой и внешние сервисы запрещены; вместо этого `FakeTable`.
+diff --git a/src/app.py b/src/app.py
+index db49c5e..67bdbc4 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -8,6 +8,7 @@ import json
+ import logging
+ import re
+ import time
++from decimal import Decimal
+ 
+ log = logging.getLogger("stories")
+ 
+@@ -27,7 +28,8 @@ def similarity(a, b):
+     tag_score = len(ta & tb) / len(ta | tb) if (ta | tb) else 0
+     wa, wb = words(a.get("body")), words(b.get("body"))
+     word_score = len(wa & wb) / len(wa | wb) if (wa | wb) else 0
+-    return round(0.7 * tag_score + 0.3 * word_score, 4)
++    # Integer percent: DynamoDB (boto3) rejects Python floats.
++    return round(100 * (0.7 * tag_score + 0.3 * word_score))
+ 
+ 
+ def related(story, existing):
+@@ -40,6 +42,17 @@ def related(story, existing):
+     return scored[:TOP_N]
+ 
+ 
++def dynamo_safe(value):
++    """Recursively convert floats to Decimal so no float reaches boto3."""
++    if isinstance(value, float):
++        return Decimal(str(value))
++    if isinstance(value, dict):
++        return {k: dynamo_safe(v) for k, v in value.items()}
++    if isinstance(value, (list, tuple)):
++        return [dynamo_safe(v) for v in value]
++    return value
++
++
+ def validate(story):
+     for k in ("slug", "title", "body"):
+         if not story.get(k):
+@@ -60,7 +73,7 @@ def publish(table, story):
+         "published_at": int(time.time()),
+         "similar": related(story, existing),
+     }
+-    table.put_item(Item=item)
++    table.put_item(Item=dynamo_safe(item))
+     log.info("publish slug=%s similar=%d stored", item["slug"], len(item["similar"]))
+     return item
+ 
+diff --git a/tests/test_publish.py b/tests/test_publish.py
+index 6c9ac44..0cc6d9c 100644
+--- a/tests/test_publish.py
++++ b/tests/test_publish.py
+@@ -23,6 +23,16 @@ class PublishTest(unittest.TestCase):
+         self.assertEqual(table.get_item(Key={"slug": "why-my-cron-ran-twice"})["Item"]["title"], "Why my cron ran twice")
+         self.assertEqual(table.scan()["Count"], 1)
+ 
++    def test_second_publish_with_similar_story(self):
++        table = FakeTable()
++        app.publish(table, {"slug": "first-story", "title": "A", "tags": ["cron", "linux"],
++                            "body": "Two crontabs both had the line."})
++        stored = app.publish(table, {"slug": "second-story", "title": "B", "tags": ["cron"],
++                                     "body": "A crontab had the line twice."})
++        self.assertEqual(stored["similar"][0]["slug"], "first-story")
++        self.assertIsInstance(stored["similar"][0]["score"], int)
++        self.assertEqual(table.scan()["Count"], 2)
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

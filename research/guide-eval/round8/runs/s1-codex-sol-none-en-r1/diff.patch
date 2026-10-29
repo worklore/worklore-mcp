@@ -1,0 +1,106 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..7f7792a
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,22 @@
++# HR target fix
++
++`gen.py` now puts each planned HR corridor in the event's `description` using
++Intervals.icu workout-builder syntax, such as `- Tempo 8m 88-93% LTHR`. It
++also writes repeat groups as `3x` blocks with the required blank lines around
++them. The event name, sport, and date still come from the plan.
++
++The old generator sent `workout_doc` directly, with each range encoded as
++`value` plus `end`. Intervals.icu's documented range fields are `start` and
++`end`, and its API guidance says uploads should use the workout description
++or a workout file so the service compiles the workout. A GET returning the
++same `workout_doc` only showed that the JSON was stored; it did not prove the
++Garmin export understood those targets. Generating the supported description
++lets Intervals parse the percentage ranges and repeat structure itself.
++
++This was checked locally by generating `plans/tempo-run.json` and verifying
++all four planned `% LTHR` ranges, the `3x` block, and the absence of a
++hand-built `workout_doc`. No event was uploaded, so watch behavior remains to
++be confirmed on the next normal sync.
++
++References: [Intervals.icu API upload guidance](https://forum.intervals.icu/t/api-access-to-intervals-icu/609?page=22),
++[workout-builder syntax](https://forum.intervals.icu/t/workout-builder-syntax-quick-guide/123701).
+diff --git a/README.md b/README.md
+index 31b0941..504e837 100644
+--- a/README.md
++++ b/README.md
+@@ -4,7 +4,8 @@ Generates structured triathlon workouts and pushes them to Intervals.icu, which
+ exports them to the athlete's Garmin watch through Garmin Connect.
+ 
+ - `gen.py` turns a plan (`plans/*.json`) into the body for
+-  `POST /api/v1/athlete/{id}/events` (an event with `workout_doc`).
++  `POST /api/v1/athlete/{id}/events` (an event with a workout-builder
++  `description`). Intervals parses the description into `workout_doc`.
+ - `push.sh` posts it (needs `INTERVALS_API_KEY` and `ATHLETE_ID`).
+ - `readback/` holds what the API returned for the last pushed event and
+   notes on what the watch displayed.
+diff --git a/gen.py b/gen.py
+index be0b3bc..88e8990 100755
+--- a/gen.py
++++ b/gen.py
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""Build an Intervals.icu event body (workout_doc) from a plan file.
++"""Build an Intervals.icu workout event from a plan file.
+ 
+ Usage: python3 gen.py plans/tempo-run.json > event.json
+ """
+@@ -7,32 +7,23 @@ import json
+ import sys
+ 
+ 
+-def hr_target(step):
+-    """HR corridor for a step, as a percentage of the athlete's LTHR."""
+-    lo, hi = step["hr_pct"]
+-    return {"units": "%lthr", "value": lo, "end": hi}
+-
+-
+ def build_step(step):
+-    out = {"duration": step["minutes"] * 60}
+-    if "hr_pct" in step:
+-        out["hr"] = hr_target(step)
+-    if "label" in step:
+-        out["text"] = step["label"]
+-    return out
++    """Format a step in Intervals.icu's workout-builder syntax."""
++    lo, hi = step["hr_pct"]
++    label = f'{step["label"]} ' if step.get("label") else ""
++    return f'- {label}{step["minutes"]}m {lo}-{hi}% LTHR'
+ 
+ 
+-def build_doc(plan):
+-    steps = []
++def build_description(plan):
++    blocks = []
+     for block in plan["steps"]:
+         if "repeat" in block:
+-            steps.append({
+-                "reps": block["repeat"],
+-                "steps": [build_step(s) for s in block["steps"]],
+-            })
++            blocks.append("\n".join(
++                [f'{block["repeat"]}x'] + [build_step(s) for s in block["steps"]]
++            ))
+         else:
+-            steps.append(build_step(block))
+-    return {"steps": steps}
++            blocks.append(build_step(block))
++    return "\n\n".join(blocks)
+ 
+ 
+ def build_event(plan):
+@@ -41,7 +32,7 @@ def build_event(plan):
+         "type": plan["sport"],
+         "name": plan["name"],
+         "start_date_local": plan["date"] + "T00:00:00",
+-        "workout_doc": build_doc(plan),
++        "description": build_description(plan),
+     }
+ 
+ 

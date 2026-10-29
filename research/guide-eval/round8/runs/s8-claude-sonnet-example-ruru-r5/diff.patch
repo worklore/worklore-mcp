@@ -1,0 +1,48 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..e1b1d16
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,22 @@
++# ANSWER
++
++## Причина
++В `bot.py` `build_system` отдавал один блок (инструкции + контекст атлета) с одним `cache_control`.
++`save_fact` меняет список фактов, и хеш всего блока меняется, так что весь промпт (~1000 токенов) перекешируется. Это видно в `logs/usage.jsonl`: после `save_fact` `cache_read_input_tokens: 0`, а `cache_creation_input_tokens` около 1000.
++
++## Что изменил
++`build_system` в `bot.py` теперь возвращает два текстовых блока, у каждого `cache_control: ephemeral`:
++1. `INSTRUCTIONS` — константа, одинаковая байт в байт для всех пользователей и дней (подстановок в ней нет).
++2. `athlete_context(...)` — дата, профиль, зоны, цель, факты, язык. Это единственный блок, который меняется.
++
++Теперь `save_fact` инвалидирует только хвост. Статический префикс остаётся в кеше.
++
++## Что пригодилось из заметки
++- Два маркера вместо одного: это и есть исправление.
++- Статический блок не должен содержать подстановок. Я проверил: в `INSTRUCTIONS` их нет, дата и имя уже были в `athlete_context`.
++- Не делать отбор top-N фактов под сообщение. Я продолжаю грузить все факты, чтобы хвост не менялся от сообщения к сообщению.
++- Инструменты стоят выше system в префиксе. Фильтр инструментов по ключевым словам я не трогал: NOTES.md тоже говорит его оставить, и внутри одного сообщения набор инструментов постоянен.
++- Проверка по `usage`: после `save_fact` `cache_read` должен покрывать инструкции, а `cache_creation` — только хвост.
++
++## Что пропустил
++Числа заметки (~780 и ~240 токенов, 55 схем инструментов, MCP) относятся к другому боту. Сегменты этого бота я не измерял. Живых вызовов API не делал, и тестов в репозитории нет, так что эффект по логам не проверен.
+diff --git a/bot.py b/bot.py
+index e2ff241..7e97e43 100644
+--- a/bot.py
++++ b/bot.py
+@@ -128,9 +128,12 @@ def athlete_context(a, today):
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    # Two cached segments: static instructions (byte-identical for everyone), then the
++    # per-athlete tail. A save_fact only invalidates the tail.
++    return [
++        {"type": "text", "text": INSTRUCTIONS, "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": athlete_context(a, today), "cache_control": {"type": "ephemeral"}},
++    ]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [

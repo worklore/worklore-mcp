@@ -1,0 +1,91 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..fe1933b
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,22 @@
++# Почему вторая публикация возвращает 500
++
++**Причина.** `publish()` кладёт в item поле `similar` со `score`, а `score` — это `float`
++(`round(0.7*… + 0.3*…, 4)` в `similarity`). boto3 не умеет сериализовать float в DynamoDB:
++`TypeError: Float types are not supported. Use Decimal types instead.` (см. `logs/error.log`).
++При первой публикации таблица пуста, `related()` возвращает `[]`, float'ов в item нет — и всё
++проходит. Со второй публикации появляются похожие истории со score, и `put_item` падает.
++Единственный существующий тест проверял только путь с пустой таблицей.
++
++**Исправление.**
++- `src/app.py`: добавлена `to_dynamo()` — рекурсивно превращает float в `Decimal(str(x))`;
++  вызывается на границе, прямо перед `put_item`, поэтому любое будущее вычисляемое float-поле
++  тоже будет безопасно, а не только `score`.
++- `tests/test_publish.py`: тест, публикующий вторую историю в уже заполненную таблицу
++  (и повторную публикацию), плюс тест на `to_dynamo`. Фейковая таблица проверяет типы как boto3.
++
++**Что пригодилось из заметки коллеги.** Диагноз (float → DynamoDB, баг виден только при
++непустых данных), конвертация на границе записи и тест с предварительно засеянной таблицей.
++Не использовал: замену score на целые проценты — это меняет формат хранимых данных
++(`score` 0.4321 → 43), а Decimal сохраняет прежнюю точность. Шаги с grep по `round(` и
++проверкой на реальной таблице не делал (внешних сервисов трогать нельзя); `round(`/`/`
++вручную просмотрены — float есть только в `similarity`.
+diff --git a/src/app.py b/src/app.py
+index db49c5e..5ccec23 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -8,6 +8,7 @@ import json
+ import logging
+ import re
+ import time
++from decimal import Decimal
+ 
+ log = logging.getLogger("stories")
+ 
+@@ -48,6 +49,17 @@ def validate(story):
+         raise ValueError("bad slug")
+ 
+ 
++def to_dynamo(value):
++    """Recursively convert floats to Decimal; DynamoDB (boto3) rejects floats."""
++    if isinstance(value, float):
++        return Decimal(str(value))
++    if isinstance(value, dict):
++        return {k: to_dynamo(v) for k, v in value.items()}
++    if isinstance(value, (list, tuple)):
++        return [to_dynamo(v) for v in value]
++    return value
++
++
+ def publish(table, story):
+     """Store ``story`` with its related stories. Returns the stored item."""
+     validate(story)
+@@ -60,6 +72,7 @@ def publish(table, story):
+         "published_at": int(time.time()),
+         "similar": related(story, existing),
+     }
++    item = to_dynamo(item)
+     table.put_item(Item=item)
+     log.info("publish slug=%s similar=%d stored", item["slug"], len(item["similar"]))
+     return item
+diff --git a/tests/test_publish.py b/tests/test_publish.py
+index 6c9ac44..d74483e 100644
+--- a/tests/test_publish.py
++++ b/tests/test_publish.py
+@@ -23,6 +23,20 @@ class PublishTest(unittest.TestCase):
+         self.assertEqual(table.get_item(Key={"slug": "why-my-cron-ran-twice"})["Item"]["title"], "Why my cron ran twice")
+         self.assertEqual(table.scan()["Count"], 1)
+ 
++    def test_second_publish_with_populated_table(self):
++        table = FakeTable()
++        a = {"slug": "first-story", "title": "A", "tags": ["cron", "linux"], "body": "cron runs twice"}
++        b = {"slug": "second-story", "title": "B", "tags": ["cron"], "body": "cron on linux"}
++        app.publish(table, a)
++        stored = app.publish(table, b)
++        self.assertEqual(stored["similar"][0]["slug"], "first-story")
++        self.assertEqual(table.scan()["Count"], 2)
++        app.publish(table, a)  # republish with existing data also works
++
++    def test_to_dynamo_converts_nested_floats(self):
++        out = app.to_dynamo({"x": [{"s": 0.5}]})
++        FakeTable().put_item({"slug": "k", **out})
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

@@ -1,0 +1,5 @@
+The launch agent **has run six times**, but `claude` reports “Not logged in” on each run. The script then tries to assign the exit code to zsh’s read-only `status` variable and stops before sending a failure note.
+
+I fixed the failure path in [nightly-review.zsh](/tmp/h-E4nZNv/bin/nightly-review.zsh), made [notify.sh](/tmp/h-E4nZNv/bin/notify.sh) report Telegram HTTP errors, and documented the causes in [ANSWER.md](/tmp/h-E4nZNv/ANSWER.md). Syntax and plist checks pass.
+
+Claude authentication still needs to be configured for the account running the agent before it can produce summaries. I did not contact any external service.

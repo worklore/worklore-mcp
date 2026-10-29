@@ -1,0 +1,5 @@
+The job **did run**: the saved launchd state shows six runs, and stderr records the failure each time. `claude` reported “Not logged in”; then the wrapper assigned to zsh’s read-only `status` variable and stopped before sending a failure notification.
+
+I added `USER` and `HOME` to the [plist](/tmp/h-W5w44G/Library/LaunchAgents/com.vk.nightly-review.plist), fixed the exit-code handling in the [wrapper](/tmp/h-W5w44G/bin/nightly-review.zsh), and documented the causes and which parts of the colleague’s note applied in [ANSWER.md](/tmp/h-W5w44G/ANSWER.md).
+
+The plist and script passed syntax checks. Local stand-ins verified success, CLI failure, and empty-output notifications. The snapshot cannot confirm whether the live Claude login is valid or whether Telegram receives a message; no live job or external service was contacted.

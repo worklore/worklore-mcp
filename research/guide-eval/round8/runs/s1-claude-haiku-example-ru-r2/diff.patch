@@ -1,0 +1,143 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..88183e0
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,58 @@
++# Диапазоны пульса на часах: что было и что изменено
++
++## Причина
++
++В `gen.py`, функция `hr_target`, нижняя граница HR-коридора писалась в ключ
++`value`:
++
++```python
++return {"units": "%lthr", "value": lo, "end": hi}
++```
++
++Intervals при экспорте в FIT трактует `{value, end}` как зонную (lap-HR)
++цель: часы подгоняют её под свои локальные зоны. Поэтому на часах коридоры
++выглядели как границы собственных зон (118–137, 151–162 и т.д.), а не как
++планируемый коридор, например 68–75% × 172 = 117–129 bpm для разминки. Ровно это описано в `readback/watch-notes.md`.
++
++## Что изменил
++
++`gen.py`, `hr_target`: ключ `value` заменён на `start`:
++
++```python
++return {"units": "%lthr", "start": lo, "end": hi}
++```
++
++В docstring добавлено пояснение, почему нужен `start`, чтобы следующий
++человек не вернул `value` «для единообразия».
++
++Проверка локально (пушить не пробовал):
++
++- `python3 -I gen.py plans/tempo-run.json` выдаёт цели
++  `{units: %lthr, start, end}`: Warm-up 68–75, Tempo 88–93, Float 75–82,
++  Cool-down 65–72.
++- В выводе нет ни одного ключа `value`.
++
++## Почему это должно сработать
++
++Опора на заметку коллеги (не инструкция, а наблюдение с их установки): там
++тот же симптом (часы обрезают по своим зонам) был вылечен переименованием
++`value` → `start` при том же `units: "%lthr"`. Их проверка: LTHR в Intervals
++172, на часах 168, цель 75–82% дала 129–141 bpm, то есть ровно по Intervals.
++Наш случай совпадает по симптому и по схеме тела запроса.
++
++## Что не сделано и почему
++
++- **Не проверено на реальных часах.** Нет доступа к Intervals API и Garmin
++  из этой среды, а пушить событие без разрешения нельзя. Проверка: запушить
++  новое событие (`push.sh`), прочитать его через `GET /events/{id}`
++  (`start` должен сохраниться, а не превратиться в `value`), синхронизировать
++  часы и сравнить коридор с 68–75% × 172 и т.д.
++- **`readback/event-184233-as-sent.json` не трогал.** Это запись того, что
++  реально ушло в API, и она остаётся верной для старого события.
++- **Top-level `description` и текстовая грамматика из заметки не нужны.**
++  В нашем случае `workout_doc.steps` уже заполнен (по `watch-notes.md`), то
++  есть парсер принимает тело. Проблема была только в ключе цели, поэтому
++  менять формат описания не стал.
++- **Абсолютные bpm не используются.** Заметка и наш опыт (`units: "bpm"`,
++  214–249 bpm) подтверждают, что нужны проценты от LTHR из Intervals.
++- Изменения не закоммичены.
+diff --git a/event.json b/event.json
+new file mode 100644
+index 0000000..ca089a2
+--- /dev/null
++++ b/event.json
+@@ -0,0 +1,51 @@
++{
++  "category": "WORKOUT",
++  "type": "Run",
++  "name": "Tempo run 45",
++  "start_date_local": "2026-10-20T00:00:00",
++  "workout_doc": {
++    "steps": [
++      {
++        "duration": 600,
++        "hr": {
++          "units": "%lthr",
++          "start": 68,
++          "end": 75
++        },
++        "text": "Warm-up easy"
++      },
++      {
++        "reps": 3,
++        "steps": [
++          {
++            "duration": 480,
++            "hr": {
++              "units": "%lthr",
++              "start": 88,
++              "end": 93
++            },
++            "text": "Tempo"
++          },
++          {
++            "duration": 120,
++            "hr": {
++              "units": "%lthr",
++              "start": 75,
++              "end": 82
++            },
++            "text": "Float"
++          }
++        ]
++      },
++      {
++        "duration": 300,
++        "hr": {
++          "units": "%lthr",
++          "start": 65,
++          "end": 72
++        },
++        "text": "Cool-down"
++      }
++    ]
++  }
++}
+diff --git a/gen.py b/gen.py
+index be0b3bc..2e486d8 100755
+--- a/gen.py
++++ b/gen.py
+@@ -8,9 +8,15 @@ import sys
+ 
+ 
+ def hr_target(step):
+-    """HR corridor for a step, as a percentage of the athlete's LTHR."""
++    """HR corridor for a step, as a percentage of the athlete's LTHR.
++
++    The lower bound must be keyed as "start", not "value": with "value" the
++    FIT export treats the target as a zone-mapped lap HR and the watch clamps
++    it to its own zones. "start"/"end" gives an instant-HR corridor that the
++    watch shows as the raw bpm Intervals computed.
++    """
+     lo, hi = step["hr_pct"]
+-    return {"units": "%lthr", "value": lo, "end": hi}
++    return {"units": "%lthr", "start": lo, "end": hi}
+ 
+ 
+ def build_step(step):

@@ -1,0 +1,88 @@
+# Why the nightly review never reports anything
+
+## Cause 1 (the silence): `status` is a read-only variable in zsh
+
+`bin/nightly-review.zsh` ran `status=$?`. In zsh, `status` is a special read-only
+parameter (a synonym for `$?`), so the assignment fails:
+
+```
+/Users/vk/bin/nightly-review.zsh:19: read-only variable: status
+```
+
+That error is in `Library/Logs/nightly-review.err` once per run. A non-interactive
+zsh aborts the script on this error, so the `if` block and `notify.sh` never ran.
+Nothing was sent to Telegram, not even a failure note. `launchctl print` agrees:
+`last exit code = 1` after 6 runs. I reproduced the error with `zsh -c 'status=1'`.
+
+**Fix:** renamed the variable to `rc` in `bin/nightly-review.zsh`. The failure note now
+also names `~/Library/Logs/nightly-review.err`, since that is where `claude`'s
+stderr goes.
+
+## Cause 2 (the actual failure underneath): `claude` is not logged in under launchd
+
+Every run's stderr also contains:
+
+```
+Not logged in · Please run /login
+```
+
+So the review itself never ran, even before the script died. The plist sets only
+`PATH` in `EnvironmentVariables`. A LaunchAgent does not inherit your interactive
+shell environment, so anything exported in `~/.zshrc` (for example `ANTHROPIC_API_KEY`
+or `CLAUDE_CONFIG_DIR`) is missing. Claude Code's stored login may also not be
+readable in this context. The snapshot cannot tell me which of these applies on your
+machine, so this part is **not fixed by the code change**.
+
+To check, run these on your Mac:
+
+```sh
+env | grep -Ei 'anthropic|claude'          # variables your shell has but launchd lacks
+env -i HOME="$HOME" PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin \
+  claude -p "say ok" --output-format text  # same clean environment as launchd
+```
+
+If the second command reports "Not logged in", run `claude` interactively, use `/login`,
+and retry. If auth works only because of a shell variable, the cleanest fix is to
+log in with `/login` so the credential lives in the keychain, not in the environment.
+Don't put API keys in the plist.
+
+## Cause 3 (latent): `notify.sh` could fail silently
+
+`: "${TG_BOT_TOKEN:=$(security find-generic-password -s tg-bot -w)}"` does not stop
+the script if the keychain lookup fails. The token ends up empty, `curl` (without `-f`)
+still exits 0 on the HTTP error, and nothing is sent or reported. This would hide the
+next failure even after the other two are fixed.
+
+**Fix:** `bin/notify.sh` now runs `security` as an explicit assignment, so a failed lookup
+exits non-zero. It also uses `curl -f`, so bad tokens and HTTP errors are non-zero exits.
+
+## What I changed
+
+- `bin/nightly-review.zsh`: `status` → `rc`; failure note also points at the `.err` log.
+- `bin/notify.sh`: explicit token lookup; `curl -fsS`.
+
+I did not change the plist, the logs, or the README.
+
+## Verification
+
+I ran the fixed scripts in a scratch HOME with stub `claude`, `security` and `curl`.
+Nothing was sent to Telegram.
+
+| Scenario | Result |
+|---|---|
+| `claude` fails (not logged in) | script exits 1, failure note sent via `notify.sh` |
+| `claude` succeeds | script exits 0, "done" note sent |
+| keychain lookup fails in `notify.sh` | `notify.sh` exits 44, no request made |
+| token from environment | request made with that token |
+
+I did not run the real job or the real `notify.sh`, and I can't check the live
+launchd state from here.
+
+## What you need to do
+
+1. Copy the two scripts to `~/bin/`, keeping them executable.
+2. Fix the login issue above, then test it:
+   `launchctl kickstart -k gui/$(id -u)/com.vk.nightly-review`
+   You should get a Telegram message, either a summary or a FAILED note with the reason.
+3. Check `~/Library/Logs/nightly-review.err` after the kickstart. It should no longer contain
+   `read-only variable` errors.

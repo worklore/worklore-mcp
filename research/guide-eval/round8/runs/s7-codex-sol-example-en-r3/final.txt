@@ -1,0 +1,3 @@
+Fixed the Intervals.icu integration. The Connect button now starts an authenticated POST, the requested scopes no longer duplicate areas, and the server no longer expires tokens after an invented hour. A provider 401 now prompts reconnection. I also made the OAuth credentials and callback URI configurable for deployment.
+
+The causes, the parts of your colleague’s note that applied, and the limits of verification are in [ANSWER.md](/tmp/h-cEbCcw/ANSWER.md). All four local flow tests pass. A live connection still needs verification with a real Intervals account and the registered production credentials.

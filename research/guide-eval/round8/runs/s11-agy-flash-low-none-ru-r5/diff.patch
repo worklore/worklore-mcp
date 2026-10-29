@@ -1,0 +1,93 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..290c07a
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,32 @@
++# Причина ошибки и исправление
++
++## Причина сбоя (500) при второй публикации
++
++1. **Первая публикация**:
++   - При первой публикации таблица DynamoDB пустая (`existing = []`).
++   - Функция `related(story, existing)` возвращает пустой список `[]` для поля `similar`.
++   - В сохраняемом объекте `similar: []` нет никаких числовых значений с плавающей точкой (`float`), поэтому вызов `table.put_item(Item=item)` проходит успешно (код 201).
++
++2. **Вторая публикация**:
++   - В таблице уже есть одна статья (`existing` содержит 1 элемент).
++   - Функция `related(story, existing)` вычисляет сходство с помощью `similarity(story, other)`.
++   - Функция `similarity` возвращала число типа `float` (`round(..., 4)`).
++   - Поле `similar` формировалось как `[{"slug": "...", "score": 0.xxxx}]`.
++   - Библиотека `boto3` (в частности, сериализатор типов DynamoDB `TypeSerializer`) намеренно **не поддерживает** тип Python `float` из-за возможной потери точности и требует использования `decimal.Decimal` (ошибка: `TypeError: Float types are not supported. Use Decimal types instead.`).
++   - Исключение `TypeError` перехватывалось общим блоком `except Exception:` в `handler()`, логировалось в `error.log` и приводило к ответу со статусом `500`.
++
++## Внесенные исправления
++
++1. В [`src/app.py`](src/app.py):
++   - Добавлен импорт класса `Decimal`:
++     ```python
++     from decimal import Decimal
++     ```
++   - В функции `similarity` результат вычисления возвращается как `Decimal` вместо `float`:
++     ```python
++     return Decimal(str(round(0.7 * tag_score + 0.3 * word_score, 4)))
++     ```
++   Теперь при наличии уже опубликованных статей значение поля `score` в списке `similar` сериализуется как DynamoDB Number (`Decimal`), что предотвращает возникновение `TypeError`.
++
++2. В [`tests/test_publish.py`](tests/test_publish.py):
++   - Добавлен тест `test_publish_second_story_with_similarity`, проверяющий последовательную публикацию двух статей и расчет `similar`, чтобы регрессия была исключена.
+diff --git a/src/app.py b/src/app.py
+index db49c5e..5931a84 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -4,6 +4,7 @@ Each story is stored in one DynamoDB item together with the three most similar
+ stories already in the library (``similar``), so the reader page can show
+ "related" without a query at read time.
+ """
++from decimal import Decimal
+ import json
+ import logging
+ import re
+@@ -27,7 +28,7 @@ def similarity(a, b):
+     tag_score = len(ta & tb) / len(ta | tb) if (ta | tb) else 0
+     wa, wb = words(a.get("body")), words(b.get("body"))
+     word_score = len(wa & wb) / len(wa | wb) if (wa | wb) else 0
+-    return round(0.7 * tag_score + 0.3 * word_score, 4)
++    return Decimal(str(round(0.7 * tag_score + 0.3 * word_score, 4)))
+ 
+ 
+ def related(story, existing):
+diff --git a/tests/test_publish.py b/tests/test_publish.py
+index 6c9ac44..f69f82c 100644
+--- a/tests/test_publish.py
++++ b/tests/test_publish.py
+@@ -23,6 +23,29 @@ class PublishTest(unittest.TestCase):
+         self.assertEqual(table.get_item(Key={"slug": "why-my-cron-ran-twice"})["Item"]["title"], "Why my cron ran twice")
+         self.assertEqual(table.scan()["Count"], 1)
+ 
++    def test_publish_second_story_with_similarity(self):
++        table = FakeTable()
++        story1 = {
++            "slug": "why-my-cron-ran-twice",
++            "title": "Why my cron ran twice",
++            "tags": ["cron", "linux"],
++            "body": "Two crontabs, one for root and one for me, both had the line.",
++        }
++        story2 = {
++            "slug": "another-cron-story",
++            "title": "Another cron story",
++            "tags": ["cron", "automation"],
++            "body": "Running cron jobs properly on linux systems.",
++        }
++        res1 = app.handler({"body": app.json.dumps(story1)}, table)
++        self.assertEqual(res1["statusCode"], 201)
++        res2 = app.handler({"body": app.json.dumps(story2)}, table)
++        self.assertEqual(res2["statusCode"], 201)
++        self.assertEqual(table.scan()["Count"], 2)
++        item2 = table.get_item(Key={"slug": "another-cron-story"})["Item"]
++        self.assertEqual(len(item2["similar"]), 1)
++        self.assertEqual(item2["similar"][0]["slug"], "why-my-cron-ran-twice")
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

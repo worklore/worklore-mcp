@@ -1,0 +1,88 @@
+diff --git a/config.py b/config.py
+index 54a8144..739992a 100644
+--- a/config.py
++++ b/config.py
+@@ -8,6 +8,6 @@ INTERVALS_BASE = os.environ.get("INTERVALS_BASE", "https://intervals.icu")
+ CLIENT_ID = "tricoach-dev"
+ CLIENT_SECRET = "s3cr3t-placeholder-0000"
+ REDIRECT_URI = f"http://localhost:{PORT}/api/intervals/callback"
+-SCOPES = "ACTIVITY:READ,ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:READ,CALENDAR:WRITE"
++SCOPES = "ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE,SETTINGS:WRITE"
+ 
+ REFRESH_INTERVAL = 60      # seconds between passes of the token refresher
+diff --git a/server.py b/server.py
+index 351cbb7..3816b36 100644
+--- a/server.py
++++ b/server.py
+@@ -56,9 +56,11 @@ def post_form(url, fields):
+ 
+ 
+ def exchange_code(code):
++    # Intervals.icu token endpoint expects only client_id, client_secret, and code.
+     return post_form(TOKEN_URL, {
+-        "grant_type": "authorization_code", "client_id": config.CLIENT_ID,
+-        "client_secret": config.CLIENT_SECRET, "code": code, "redirect_uri": config.REDIRECT_URI,
++        "client_id": config.CLIENT_ID,
++        "client_secret": config.CLIENT_SECRET,
++        "code": code,
+     })
+ 
+ 
+@@ -165,7 +167,13 @@ class Handler(BaseHTTPRequestHandler):
+             user = self.require_user()
+             return user and self.send_json(200, user)
+         if url.path == "/api/intervals/auth/init":
+-            return self.auth_init()
++            # Support POST for init
++            if self.command == "POST":
++                return self.auth_init_post()
++            else:
++                # For legacy GET, respond with method not allowed
++                self.send_error(405, "Method Not Allowed")
++                return
+         if url.path == "/api/intervals/callback":
+             return self.callback(q)
+         if url.path == "/api/intervals/status":
+@@ -186,13 +194,15 @@ class Handler(BaseHTTPRequestHandler):
+         self.send_json(404, {"error": "not found"})
+ 
+     # Step 1: build the authorize URL and send the browser to Intervals.
+-    def auth_init(self):
++    def auth_init_post(self):
+         user = self.require_user()
+         if not user:
+             return
+         params = {"client_id": config.CLIENT_ID, "redirect_uri": config.REDIRECT_URI,
+                   "scope": config.SCOPES, "state": sign_state(user["id"])}
+-        self.redirect(AUTHORIZE_URL + "?" + urllib.parse.urlencode(params, safe=":,"))
++        authorize_url = AUTHORIZE_URL + "?" + urllib.parse.urlencode(params, safe=":,")
++        self.send_json(200, {"authorize_url": authorize_url})
++
+ 
+     # Step 2: Intervals redirects back here with ?code=&state=.
+     def callback(self, q):
+diff --git a/static/app.js b/static/app.js
+index 368922e..cf1ac47 100644
+--- a/static/app.js
++++ b/static/app.js
+@@ -24,8 +24,19 @@ async function render() {
+         <p><button class="btn" id="disconnect">Disconnect</button></p></div>`;
+     } else {
+       const why = st.status && st.status !== "disconnected" ? `<p class="muted">Status: ${esc(st.status)}</p>` : "";
++      // New connect flow using POST init endpoint
+       card = `<div class="card">Intervals.icu is not connected.${why}
+-        <p><a class="btn" href="/api/intervals/auth/init">Connect Intervals.icu</a></p></div>`;
++        <p><button class="btn" id="connect">Connect Intervals.icu</button></p></div>`;
++      // attach handler after rendering
++      setTimeout(() => {
++        const c = document.getElementById("connect");
++        if (c) c.onclick = async () => {
++          const resp = await fetch("/api/intervals/auth/init", {method: "POST"});
++          if (!resp.ok) throw new Error("Failed to init Intervals auth");
++          const data = await resp.json();
++          window.location.assign(data.authorize_url);
++        };
++      }, 0);
+     }
+     root.className = "";
+     root.innerHTML = `<p>Signed in as <b>${esc(me.name)}</b>.</p>${card}`;

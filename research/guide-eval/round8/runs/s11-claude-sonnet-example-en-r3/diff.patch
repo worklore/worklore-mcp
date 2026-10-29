@@ -1,0 +1,71 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..bd2b006
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,24 @@
++# Second publish returns 500
++
++## Cause
++`similarity()` in `src/app.py` returns `round(..., 4)`, a Python float. `publish()` stores
++the top matches as `similar: [{slug, score}]`, so the float goes into `put_item`.
++boto3 refuses floats: `TypeError: Float types are not supported. Use Decimal types instead.`
++The first publish scans an empty table, so `similar` is `[]` and no float exists. From the
++second publish on there are matches, so the float is written and the handler returns 500.
++The existing test only published once, to an empty table, so it never ran this path.
++
++## Fix
++- `similarity()` now returns an integer percent (`round(100 * ...)`). DynamoDB accepts ints.
++- Added tests that publish a second story into a populated table (checks the score is an `int`)
++  and that the handler returns 201 twice. `FakeTable` rejects floats the way boto3 does, so
++  reintroducing a float fails the tests.
++
++## Colleague's note
++Applied: the diagnosis (the float only appears once data exists), the int-percent fix, and
++the advice to seed the table before testing a write. Not applied: the grep for `round(`
++and `/` (I read the single file instead) and the real-table publish (not allowed here).
++
++## Not changed
++`publish()` uses one un-paginated `scan`, so once the table passes 1 MB the related-story
++list will silently be computed from partial data. That is a separate issue.
+diff --git a/src/app.py b/src/app.py
+index db49c5e..22f316c 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -27,7 +27,8 @@ def similarity(a, b):
+     tag_score = len(ta & tb) / len(ta | tb) if (ta | tb) else 0
+     wa, wb = words(a.get("body")), words(b.get("body"))
+     word_score = len(wa & wb) / len(wa | wb) if (wa | wb) else 0
+-    return round(0.7 * tag_score + 0.3 * word_score, 4)
++    # Integer percent: DynamoDB (boto3) rejects floats.
++    return round(100 * (0.7 * tag_score + 0.3 * word_score))
+ 
+ 
+ def related(story, existing):
+diff --git a/tests/test_publish.py b/tests/test_publish.py
+index 6c9ac44..f7c8b74 100644
+--- a/tests/test_publish.py
++++ b/tests/test_publish.py
+@@ -23,6 +23,22 @@ class PublishTest(unittest.TestCase):
+         self.assertEqual(table.get_item(Key={"slug": "why-my-cron-ran-twice"})["Item"]["title"], "Why my cron ran twice")
+         self.assertEqual(table.scan()["Count"], 1)
+ 
++    def test_second_publish_with_existing_data(self):
++        table = FakeTable()
++        a = {"slug": "first-story", "title": "A", "tags": ["cron", "linux"], "body": "cron runs twice"}
++        b = {"slug": "second-story", "title": "B", "tags": ["cron"], "body": "cron on linux"}
++        app.publish(table, a)
++        stored = app.publish(table, b)  # populated path: computes similarity
++        self.assertEqual(stored["similar"][0]["slug"], "first-story")
++        self.assertIsInstance(stored["similar"][0]["score"], int)
++
++    def test_handler_second_publish_returns_201(self):
++        import json
++        table = FakeTable()
++        for slug in ("first-story", "second-story"):
++            body = json.dumps({"slug": slug, "title": "T", "tags": ["x"], "body": "same words"})
++            self.assertEqual(app.handler({"body": body}, table)["statusCode"], 201)
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

@@ -1,0 +1,5 @@
+The job did run six times. Each run failed because the Claude CLI reported “Not logged in”; then zsh stopped before sending a failure note because the script tried to assign to its read-only `status` variable.
+
+I fixed the failure path in [nightly-review.zsh](/tmp/h-jgERW2/bin/nightly-review.zsh) and made [notify.sh](/tmp/h-jgERW2/bin/notify.sh) report token lookup and HTTP failures. The causes and the remaining login step are in [ANSWER.md](/tmp/h-jgERW2/ANSWER.md). Syntax and plist checks passed.
+
+Reviews will still require a Claude CLI login for the scheduled user in the real home directory. I changed only this snapshot and contacted no external service.

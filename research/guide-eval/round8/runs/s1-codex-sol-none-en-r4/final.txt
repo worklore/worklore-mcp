@@ -1,0 +1,3 @@
+Fixed [gen.py](/tmp/h-LqWnkp/gen.py) to emit HR ranges with `start` and `end`. Intervals.icu uses those fields for a range; `value` denotes a single target ([workout document schema](https://forum.intervals.icu/t/downloading-planned-workouts-from-the-api/93737)).
+
+I recorded the change and its reason in [ANSWER.md](/tmp/h-LqWnkp/ANSWER.md). Local generation checks passed for all four targets, including the repeat block. I did not send a workout to Intervals or Garmin, so the watch display remains unverified.

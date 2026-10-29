@@ -1,0 +1,250 @@
+s8-agy-oss-none-en-r1 rc=0 wall=56s limit=false PASS=True
+s8-agy-oss-example-en-r1 rc=0 wall=31s limit=false PASS=True
+s8-agy-oss-none-ru-r1 rc=0 wall=63s limit=false PASS=False
+s8-agy-oss-example-ru-r1 rc=0 wall=37s limit=false PASS=False
+s8-agy-oss-example-ruru-r1 rc=0 wall=37s limit=false PASS=True
+s10-agy-oss-none-en-r1 rc=3 wall=82s limit=false PASS=False
+s10-agy-oss-example-en-r1 rc=0 wall=206s limit=false PASS=False
+s10-agy-oss-none-ru-r1 rc=0 wall=184s limit=false PASS=False
+s10-agy-oss-example-ru-r1 rc=0 wall=113s limit=false PASS=False
+s10-agy-oss-example-ruru-r1 rc=0 wall=123s limit=false PASS=False
+s11-agy-oss-none-en-r1 rc=0 wall=28s limit=false PASS=False
+s11-agy-oss-example-en-r1 rc=0 wall=18s limit=false PASS=False
+s11-agy-oss-none-ru-r1 rc=0 wall=36s limit=false PASS=True
+s11-agy-oss-example-ru-r1 rc=0 wall=40s limit=false PASS=True
+s11-agy-oss-example-ruru-r1 rc=0 wall=33s limit=false PASS=True
+s1-agy-oss-none-en-r1 rc=0 wall=99s limit=false PASS=False
+s1-agy-oss-example-en-r1 rc=0 wall=37s limit=false PASS=True
+s1-agy-oss-none-ru-r1 rc=0 wall=49s limit=false PASS=False
+s1-agy-oss-example-ru-r1 rc=3 wall=31s limit=true PASS=False
+LIMIT s1 example-ru r1 (will redo)
+s1-agy-oss-example-ruru-r1 rc=0 wall=32s limit=false PASS=True
+s3-agy-oss-none-en-r1 rc=0 wall=54s limit=false PASS=False
+s3-agy-oss-example-en-r1 rc=0 wall=82s limit=false PASS=False
+s3-agy-oss-none-ru-r1 rc=0 wall=95s limit=false PASS=False
+s3-agy-oss-example-ru-r1 rc=0 wall=50s limit=false PASS=False
+s3-agy-oss-example-ruru-r1 rc=0 wall=94s limit=false PASS=False
+s7-agy-oss-none-en-r1 rc=0 wall=253s limit=false PASS=False
+s7-agy-oss-example-en-r1 rc=0 wall=198s limit=false PASS=False
+s7-agy-oss-none-ru-r1 rc=0 wall=218s limit=false PASS=False
+s7-agy-oss-example-ru-r1 rc=0 wall=108s limit=false PASS=False
+s7-agy-oss-example-ruru-r1 rc=0 wall=44s limit=false PASS=False
+s8-agy-oss-none-en-r2 rc=0 wall=40s limit=false PASS=False
+s8-agy-oss-example-en-r2 rc=0 wall=29s limit=false PASS=True
+s8-agy-oss-none-ru-r2 rc=0 wall=11s limit=false PASS=False
+s8-agy-oss-example-ru-r2 rc=0 wall=40s limit=false PASS=True
+s8-agy-oss-example-ruru-r2 rc=0 wall=11s limit=false PASS=False
+s10-agy-oss-none-en-r2 rc=0 wall=244s limit=false PASS=False
+s10-agy-oss-example-en-r2 rc=0 wall=289s limit=false PASS=False
+s10-agy-oss-none-ru-r2 rc=3 wall=303s limit=true PASS=False
+LIMIT s10 none-ru r2 (will redo)
+s10-agy-oss-example-ru-r2 rc=0 wall=106s limit=false PASS=True
+s10-agy-oss-example-ruru-r2 rc=3 wall=50s limit=true PASS=False
+LIMIT s10 example-ruru r2 (will redo)
+s11-agy-oss-none-en-r2 rc=0 wall=40s limit=false PASS=True
+s11-agy-oss-example-en-r2 rc=0 wall=26s limit=false PASS=True
+s11-agy-oss-none-ru-r2 rc=0 wall=41s limit=false PASS=True
+s11-agy-oss-example-ru-r2 rc=0 wall=45s limit=false PASS=False
+s11-agy-oss-example-ruru-r2 rc=0 wall=36s limit=false PASS=True
+s1-agy-oss-none-en-r2 rc=0 wall=98s limit=false PASS=True
+s1-agy-oss-example-en-r2 rc=0 wall=25s limit=false PASS=True
+s1-agy-oss-none-ru-r2 rc=0 wall=72s limit=false PASS=False
+s1-agy-oss-example-ru-r2 rc=0 wall=34s limit=false PASS=True
+s1-agy-oss-example-ruru-r2 rc=0 wall=37s limit=false PASS=True
+s3-agy-oss-none-en-r2 rc=0 wall=74s limit=false PASS=False
+s3-agy-oss-example-en-r2 rc=0 wall=55s limit=false PASS=False
+s3-agy-oss-none-ru-r2 rc=0 wall=40s limit=false PASS=False
+s3-agy-oss-example-ru-r2 rc=0 wall=80s limit=false PASS=True
+s3-agy-oss-example-ruru-r2 rc=0 wall=73s limit=false PASS=True
+s7-agy-oss-none-en-r2 rc=0 wall=242s limit=false PASS=False
+s7-agy-oss-example-en-r2 rc=0 wall=462s limit=false PASS=False
+s8-agy-oss-none-en-r5 rc=0 wall=24s limit=false PASS=True
+s8-agy-oss-example-en-r5 rc=3 wall=32s limit=true PASS=False
+LIMIT s8 example-en r5 (will redo)
+s8-agy-oss-none-ru-r5 rc=0 wall=29s limit=false PASS=True
+s8-agy-oss-example-ru-r5 rc=0 wall=54s limit=false PASS=True
+s8-agy-oss-example-ruru-r5 rc=0 wall=48s limit=false PASS=True
+s10-agy-oss-none-en-r5 rc=3 wall=115s limit=true PASS=False
+LIMIT s10 none-en r5 (will redo)
+s7-agy-oss-none-ru-r2 rc=0 wall=678s limit=false PASS=False
+s7-agy-oss-example-ru-r2 rc=3 wall=44s limit=true PASS=False
+LIMIT s7 example-ru r2 (will redo)
+s7-agy-oss-example-ruru-r2 rc=0 wall=123s limit=false PASS=False
+s8-agy-oss-none-en-r3 rc=0 wall=31s limit=false PASS=False
+s8-agy-oss-example-en-r3 rc=0 wall=56s limit=false PASS=True
+s8-agy-oss-none-ru-r3 rc=0 wall=32s limit=false PASS=False
+s8-agy-oss-example-ru-r3 rc=0 wall=75s limit=false PASS=True
+s8-agy-oss-example-ruru-r3 rc=0 wall=59s limit=false PASS=True
+s10-agy-oss-example-en-r5 rc=0 wall=565s limit=false PASS=True
+s10-agy-oss-none-ru-r5 rc=0 wall=201s limit=false PASS=False
+s10-agy-oss-example-ru-r5 rc=0 wall=94s limit=false PASS=False
+s10-agy-oss-example-ruru-r5 rc=0 wall=208s limit=false PASS=True
+s11-agy-oss-none-en-r5 rc=0 wall=53s limit=false PASS=True
+s11-agy-oss-example-en-r5 rc=0 wall=37s limit=false PASS=True
+s11-agy-oss-none-ru-r5 rc=0 wall=42s limit=false PASS=True
+s11-agy-oss-example-ru-r5 rc=0 wall=27s limit=false PASS=True
+s10-agy-oss-none-en-r3 rc=0 wall=758s limit=false PASS=False
+s11-agy-oss-example-ruru-r5 rc=0 wall=54s limit=false PASS=True
+s1-agy-oss-none-en-r5 rc=0 wall=46s limit=false PASS=False
+s1-agy-oss-example-en-r5 rc=0 wall=27s limit=false PASS=True
+s10-agy-oss-example-en-r3 rc=0 wall=123s limit=false PASS=True
+s1-agy-oss-none-ru-r5 rc=0 wall=51s limit=false PASS=False
+s1-agy-oss-example-ru-r5 rc=0 wall=21s limit=false PASS=True
+s10-agy-oss-none-ru-r3 rc=3 wall=74s limit=true PASS=False
+LIMIT s10 none-ru r3 (will redo)
+s1-agy-oss-example-ruru-r5 rc=0 wall=51s limit=false PASS=True
+s3-agy-oss-none-en-r5 rc=0 wall=80s limit=false PASS=False
+s3-agy-oss-example-en-r5 rc=0 wall=38s limit=false PASS=False
+s10-agy-oss-example-ru-r3 rc=0 wall=171s limit=false PASS=False
+s3-agy-oss-none-ru-r5 rc=0 wall=177s limit=false PASS=False
+s3-agy-oss-example-ru-r5 rc=0 wall=10s limit=false PASS=False
+s10-agy-oss-example-ruru-r3 rc=0 wall=196s limit=false PASS=True
+s3-agy-oss-example-ruru-r5 rc=0 wall=42s limit=false PASS=False
+s11-agy-oss-none-en-r3 rc=0 wall=35s limit=false PASS=True
+s11-agy-oss-example-en-r3 rc=0 wall=38s limit=false PASS=True
+s11-agy-oss-none-ru-r3 rc=0 wall=39s limit=false PASS=True
+s11-agy-oss-example-ru-r3 rc=0 wall=78s limit=false PASS=True
+s11-agy-oss-example-ruru-r3 rc=3 wall=5s limit=true PASS=False
+LIMIT s11 example-ruru r3 (will redo)
+s1-agy-oss-none-en-r3 rc=0 wall=52s limit=false PASS=False
+s1-agy-oss-example-en-r3 rc=0 wall=35s limit=false PASS=True
+s7-agy-oss-none-en-r5 rc=3 wall=290s limit=true PASS=False
+LIMIT s7 none-en r5 (will redo)
+s7-agy-oss-example-en-r5 rc=0 wall=51s limit=false PASS=False
+s1-agy-oss-none-ru-r3 rc=0 wall=125s limit=false PASS=False
+s1-agy-oss-example-ru-r3 rc=0 wall=91s limit=false PASS=False
+s1-agy-oss-example-ruru-r3 rc=0 wall=40s limit=false PASS=True
+s3-agy-oss-none-en-r3 rc=0 wall=49s limit=false PASS=False
+s3-agy-oss-example-en-r3 rc=0 wall=93s limit=false PASS=True
+s3-agy-oss-none-ru-r3 rc=3 wall=14s limit=true PASS=False
+LIMIT s3 none-ru r3 (will redo)
+s7-agy-oss-none-ru-r5 rc=3 wall=338s limit=true PASS=False
+LIMIT s7 none-ru r5 (will redo)
+s3-agy-oss-example-ru-r3 rc=0 wall=50s limit=false PASS=False
+s3-agy-oss-example-ruru-r3 rc=0 wall=11s limit=false PASS=False
+s7-agy-oss-example-ru-r5 rc=0 wall=53s limit=false PASS=False
+s7-agy-oss-example-ruru-r5 rc=0 wall=64s limit=false PASS=False
+s7-agy-oss-none-en-r3 rc=0 wall=87s limit=false PASS=False
+s8-agy-oss-none-en-r4 rc=0 wall=31s limit=false PASS=False
+s8-agy-oss-example-en-r4 rc=0 wall=52s limit=false PASS=True
+s8-agy-oss-none-ru-r4 rc=0 wall=33s limit=false PASS=False
+s8-agy-oss-example-ru-r4 rc=0 wall=56s limit=false PASS=True
+s8-agy-oss-example-ruru-r4 rc=0 wall=60s limit=false PASS=True
+s7-agy-oss-example-en-r3 rc=0 wall=268s limit=false PASS=False
+s7-agy-oss-none-ru-r3 rc=0 wall=93s limit=false PASS=False
+s10-agy-oss-none-en-r4 rc=0 wall=256s limit=false PASS=False
+s10-agy-oss-example-en-r4 rc=3 wall=71s limit=true PASS=False
+LIMIT s10 example-en r4 (will redo)
+s10-agy-oss-none-ru-r4 rc=0 wall=291s limit=false PASS=False
+s10-agy-oss-example-ru-r4 rc=0 wall=160s limit=false PASS=False
+s10-agy-oss-example-ruru-r4 rc=3 wall=56s limit=true PASS=False
+LIMIT s10 example-ruru r4 (will redo)
+s11-agy-oss-none-en-r4 rc=3 wall=8s limit=true PASS=False
+LIMIT s11 none-en r4 (will redo)
+s7-agy-oss-example-ru-r3 rc=3 wall=687s limit=true PASS=False
+LIMIT s7 example-ru r3 (will redo)
+s11-agy-oss-example-en-r4 rc=3 wall=17s limit=true PASS=False
+LIMIT s11 example-en r4 (will redo)
+s7-agy-oss-example-ruru-r3 rc=3 wall=8s limit=true PASS=False
+LIMIT s7 example-ruru r3 (will redo)
+s11-agy-oss-none-ru-r4 rc=0 wall=8s limit=false PASS=False
+s10-agy-oss-example-en-r4 rc=3 wall=22s limit=true PASS=False
+LIMIT s10 example-en r4 (will redo)
+s11-agy-oss-example-ru-r4 rc=0 wall=39s limit=false PASS=True
+s11-agy-oss-example-ruru-r4 rc=0 wall=32s limit=false PASS=True
+s10-agy-oss-example-ruru-r4 rc=0 wall=138s limit=false PASS=True
+s1-agy-oss-none-en-r4 rc=0 wall=88s limit=false PASS=False
+s1-agy-oss-example-en-r4 rc=0 wall=40s limit=false PASS=True
+s11-agy-oss-none-en-r4 rc=0 wall=59s limit=false PASS=False
+s1-agy-oss-none-ru-r4 rc=3 wall=33s limit=true PASS=False
+LIMIT s1 none-ru r4 (will redo)
+s11-agy-oss-example-en-r4 rc=0 wall=27s limit=false PASS=True
+s1-agy-oss-example-ru-r4 rc=0 wall=32s limit=false PASS=True
+s1-agy-oss-example-ruru-r4 rc=0 wall=41s limit=false PASS=True
+s3-agy-oss-none-en-r4 rc=3 wall=12s limit=true PASS=False
+LIMIT s3 none-en r4 (will redo)
+s1-agy-oss-none-ru-r4 rc=0 wall=144s limit=false PASS=False
+s3-agy-oss-example-en-r4 rc=0 wall=129s limit=false PASS=True
+s3-agy-oss-none-en-r4 rc=0 wall=138s limit=false PASS=False
+fatal: bad object 070b5c8cff002faf116e4b08d70bf5d052cc27d9
+s3-agy-oss-none-ru-r4 rc=0 wall=86s limit=false PASS=False
+s3-agy-oss-example-ru-r4 rc=0 wall=64s limit=false PASS=False
+s3-agy-oss-example-ruru-r4 rc=3 wall=10s limit=true PASS=False
+LIMIT s3 example-ruru r4 (will redo)
+s3-agy-oss-none-ru-r4 rc=3 wall=83s limit=true PASS=False
+LIMIT s3 none-ru r4 (will redo)
+s3-agy-oss-example-ruru-r4 rc=0 wall=49s limit=false PASS=True
+s7-agy-oss-none-en-r4 rc=0 wall=68s limit=false PASS=False
+s7-agy-oss-example-en-r4 rc=0 wall=222s limit=false PASS=False
+fatal: bad object bd8e259b41aa0341b7be729239316b1589cb9a0b
+s7-agy-oss-none-en-r4 rc=0 wall=601s limit=false PASS=False
+fatal: bad object 19c28b1b9beda211a8467068f163dc1370dced11
+s7-agy-oss-none-ru-r4 rc=0 wall=395s limit=false PASS=False
+s7-agy-oss-none-ru-r4 rc=0 wall=318s limit=false PASS=False
+s7-agy-oss-example-ru-r4 rc=3 wall=93s limit=true PASS=False
+LIMIT s7 example-ru r4 (will redo)
+s7-agy-oss-example-ruru-r4 rc=3 wall=8s limit=true PASS=False
+LIMIT s7 example-ruru r4 (will redo)
+s10-agy-oss-none-ru-r3 rc=0 wall=90s limit=false PASS=False
+cat: /Users/valentinakoniukhova/projects/worklore-mcp/research/guide-eval/round8/runs/s7-agy-oss-example-ru-r4/base_commit: No such file or directory
+/Users/valentinakoniukhova/projects/worklore-mcp/research/guide-eval/round8/run.sh: line 56: /Users/valentinakoniukhova/projects/worklore-mcp/research/guide-eval/round8/runs/s7-agy-oss-example-ru-r4/diff.patch: No such file or directory
+cp: cannot create directory '/Users/valentinakoniukhova/projects/worklore-mcp/research/guide-eval/round8/runs/s7-agy-oss-example-ru-r4/repo': No such file or directory
+/Users/valentinakoniukhova/projects/worklore-mcp/research/guide-eval/round8/run.sh: line 64: /Users/valentinakoniukhova/projects/worklore-mcp/research/guide-eval/round8/runs/s7-agy-oss-example-ru-r4/meta.json: No such file or directory
+/Users/valentinakoniukhova/projects/worklore-mcp/research/guide-eval/round8/run.sh: line 65: /Users/valentinakoniukhova/projects/worklore-mcp/research/guide-eval/round8/runs/s7-agy-oss-example-ru-r4/grade.json: No such file or directory
+s7-agy-oss-example-ru-r4 rc=0 wall=395s limit=false PASS=
+s11-agy-oss-example-ruru-r3 rc=0 wall=31s limit=false PASS=True
+s3-agy-oss-none-ru-r3 rc=3 wall=36s limit=true PASS=False
+LIMIT s3 none-ru r3 (will redo)
+s7-agy-oss-example-ru-r3 rc=0 wall=143s limit=false PASS=False
+s7-agy-oss-example-ruru-r3 rc=3 wall=15s limit=true PASS=False
+LIMIT s7 example-ruru r3 (will redo)
+s10-agy-oss-none-ru-r2 rc=3 wall=67s limit=true PASS=False
+LIMIT s10 none-ru r2 (will redo)
+s7-agy-oss-example-ruru-r4 rc=3 wall=298s limit=true PASS=False
+LIMIT s7 example-ruru r4 (will redo)
+s10-agy-oss-example-ruru-r2 rc=3 wall=25s limit=true PASS=False
+LIMIT s10 example-ruru r2 (will redo)
+s8-agy-oss-example-en-r5 rc=0 wall=74s limit=false PASS=True
+s7-agy-oss-example-ru-r2 rc=0 wall=335s limit=false PASS=False
+REDO s10 none-en r1
+s10-agy-oss-none-en-r5 rc=0 wall=287s limit=false PASS=False
+s10-agy-oss-none-en-r1 rc=3 wall=86s limit=true PASS=False
+LIMIT s10 none-en r1 (will redo)
+s7-agy-oss-none-en-r5 rc=0 wall=80s limit=false PASS=False
+s1-agy-oss-example-ru-r1 rc=0 wall=38s limit=false PASS=True
+pass 1 done, 10 cells missing; sleeping 30 min
+s7-agy-oss-none-ru-r5 rc=3 wall=38s limit=true PASS=False
+LIMIT s7 none-ru r5 (will redo)
+pass 1 hit a usage limit; sleeping 30 min
+s10-agy-oss-none-en-r1 rc=3 wall=82s limit=true PASS=False
+LIMIT s10 none-en r1 (will redo)
+s7-agy-oss-none-ru-r5 rc=3 wall=93s limit=true PASS=False
+LIMIT s7 none-ru r5 (will redo)
+s10-agy-oss-none-ru-r2 rc=3 wall=93s limit=true PASS=False
+LIMIT s10 none-ru r2 (will redo)
+s10-agy-oss-example-ruru-r2 rc=3 wall=12s limit=true PASS=False
+LIMIT s10 example-ruru r2 (will redo)
+s3-agy-oss-none-ru-r3 rc=3 wall=29s limit=true PASS=False
+LIMIT s3 none-ru r3 (will redo)
+s7-agy-oss-example-ruru-r3 rc=0 wall=368s limit=false PASS=False
+fatal: bad object d0de2e0f4a788b961ae358e8b3500e01831ba00c
+s10-agy-oss-example-en-r4 rc=0 wall=536s limit=false PASS=False
+s3-agy-oss-none-ru-r4 rc=0 wall=30s limit=false PASS=False
+s7-agy-oss-example-ru-r4 rc=0 wall=134s limit=false PASS=False
+s7-agy-oss-example-ruru-r4 rc=0 wall=126s limit=false PASS=False
+s3-agy-oss-none-ru-r3 rc=3 wall=64s limit=true PASS=False
+LIMIT s3 none-ru r3 (will redo)
+s10-agy-oss-example-en-r4 rc=0 wall=491s limit=false PASS=False
+s10-agy-oss-none-ru-r2 rc=0 wall=149s limit=false PASS=False
+s7-agy-oss-none-ru-r5 rc=0 wall=54s limit=false PASS=False
+pass 2 hit a usage limit; sleeping 30 min
+s10-agy-oss-example-ruru-r2 rc=3 wall=51s limit=true PASS=False
+LIMIT s10 example-ruru r2 (will redo)
+s10-agy-oss-none-en-r1 rc=0 wall=254s limit=false PASS=False
+pass 2 done, 2 cells missing; sleeping 30 min
+s10-agy-oss-example-ruru-r2 rc=0 wall=222s limit=false PASS=False
+fatal: bad object e2fba09791cea9b37b806e1d98945aab0f0dfdb4
+s3-agy-oss-none-ru-r3 rc=0 wall=97s limit=false PASS=False
+LANE_DONE
+s3-agy-oss-none-ru-r3 rc=0 wall=127s limit=false PASS=False
+LANE_DONE

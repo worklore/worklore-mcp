@@ -1,0 +1,78 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..26e24c7
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,20 @@
++# Почему не было сообщений
++
++`launchd` запускал задачу: в `launchctl-print.txt` указаны `runs = 6`, календарный триггер на 02:30 и `last exit code = 1`. Пустой `nightly-review.out` сам по себе не означает, что задача не стартовала.
++
++В `nightly-review.err` шесть раз повторяется одна последовательность:
++
++1. `claude` завершился с сообщением `Not logged in · Please run /login`. В контексте ночного запуска CLI не был авторизован, поэтому обзор не создавался.
++2. После этого скрипт пытался выполнить `status=$?`. В zsh `status` — специальная переменная только для чтения. Присваивание прерывало скрипт **до** ветки, которая должна была отправить сообщение об ошибке.
++
++Дополнительно `notify.sh` раньше не проверял, удалось ли прочитать токен из Keychain, а `curl` без `-f` мог завершиться с кодом 0 при HTTP-ошибке Telegram. Работоспособность уведомителя при ручном запуске не доказывает доступность Keychain для запуска из `launchd`; снимок не содержит данных, позволяющих утверждать, что это уже происходило.
++
++# Что исправлено
++
++- `bin/nightly-review.zsh`: убрано присваивание `status`; вывод ошибок Claude сохраняется в датированный `.err` и включается в сообщение об отказе. Успешный запуск по-прежнему отправляет краткую сводку.
++- `bin/notify.sh`: ошибка получения токена и HTTP-ошибка теперь дают ненулевой код и диагностическое сообщение в stderr.
++- Plist оставлен без изменений: он загружен, расписание присутствует, а причина молчания находится в скрипте и авторизации.
++
++Для получения **самих обзоров** потребуется авторизовать `claude` в реальном аккаунте пользователя `vk` (CLI прямо просит выполнить `/login`) и убедиться, что эта авторизация доступна при запуске из `launchd`. Если Keychain недоступен агенту, `notify.sh` теперь явно сообщит об этом в `Library/Logs/nightly-review.err`; доступ к токену нужно обеспечить в реальном окружении. В этом снимке нет ни учётных данных, ни возможности проверить их доступность; никакие сообщения во внешние сервисы при исправлении не отправлялись.
++
++Проверка: синтаксис обоих скриптов и plist прошёл проверку; локальные подставные `claude` и `notify.sh` подтвердили успешную ветку и ветку ошибки без сетевых вызовов.
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..33868d0 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -4,6 +4,7 @@ set -u
+ 
+ REPO="$HOME/projects/shop"
+ OUT="$HOME/Library/Logs/nightly-review-$(date +%F).md"
++ERR="$HOME/Library/Logs/nightly-review-$(date +%F).err"
+ NOTIFY="$HOME/bin/notify.sh"
+ 
+ SINCE=$(date -v-1d +%F)
+@@ -15,12 +16,11 @@ Do not modify any file."
+ 
+ cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
+ 
+-claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
+-
+-if [ $status -ne 0 ]; then
+-  "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
+-  exit $status
++if claude -p "$PROMPT" --output-format text > "$OUT" 2> "$ERR"; then
++  "$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"
++else
++  claude_exit=$?
++  reason=$(head -c 300 "$ERR")
++  "$NOTIFY" "nightly review FAILED (exit $claude_exit): $reason (see $ERR)"
++  exit "$claude_exit"
+ fi
+-
+-"$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"
+diff --git a/bin/notify.sh b/bin/notify.sh
+index 818e531..d11c0b0 100755
+--- a/bin/notify.sh
++++ b/bin/notify.sh
+@@ -1,7 +1,13 @@
+ #!/bin/bash
+ # usage: notify.sh "message"  — sends a Telegram message to me.
+ set -eu
+-: "${TG_BOT_TOKEN:=$(security find-generic-password -s tg-bot -w)}"
++if [ -z "${TG_BOT_TOKEN:-}" ]; then
++  TG_BOT_TOKEN=$(security find-generic-password -s tg-bot -w) || {
++    echo "notify: cannot read Telegram token from Keychain" >&2
++    exit 1
++  }
++fi
++[ -n "$TG_BOT_TOKEN" ] || { echo "notify: Telegram token is empty" >&2; exit 1; }
+ CHAT_ID=123456789
+-curl -sS -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
++curl -fsS -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
+   -d chat_id="$CHAT_ID" --data-urlencode text="$1" > /dev/null

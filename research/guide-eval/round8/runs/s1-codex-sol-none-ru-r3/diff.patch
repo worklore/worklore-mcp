@@ -1,0 +1,97 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..d3bad73
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,7 @@
++# Исправление диапазонов пульса
++
++В `gen.py` границы `hr_pct` теперь пересчитываются по `lthr_bpm` плана в целые удары в минуту. Генератор записывает в `workout_doc` центр (`value`) и половину ширины (`range`) коридора с `units: "bpm"`, а не пару `value`/`end` с `%lthr`. `end` описывает конечную точку цели, поэтому прежняя запись не задавала независимые нижнюю и верхнюю границы. Процентные цели также позволяли экспорту подменять коридор зоной часов.
++
++В план добавлен явный `lthr_bpm: 172`, чтобы расчёт не зависел от автоматически определённого часами порога 168. Для текущего плана генератор выдаёт границы 117–129, 151–160, 129–141 и 112–124 уд/мин, включая шаги внутри повтора. Границы округляются по отдельности до ближайшего целого удара.
++
++Локальная проверка сравнила все четыре рассчитанных коридора с ожидаемыми значениями из `readback/watch-notes.md`; `git diff --check` прошёл. Выгрузка на часы здесь не выполнялась, поэтому фактическое отображение после изменения ещё не проверено.
+diff --git a/README.md b/README.md
+index 31b0941..f7b383d 100644
+--- a/README.md
++++ b/README.md
+@@ -9,8 +9,10 @@ exports them to the athlete's Garmin watch through Garmin Connect.
+ - `readback/` holds what the API returned for the last pushed event and
+   notes on what the watch displayed.
+ 
+-Athlete thresholds live in Intervals (LTHR 172 for this athlete). HR targets
+-in plans are percentages of LTHR; Intervals converts them to bpm at export.
++Plans include the LTHR used to calculate their HR targets (`lthr_bpm`). The
++generator rounds each percentage boundary to bpm and emits a custom bpm
++corridor as a midpoint and half-width. Update `lthr_bpm` when the planned
++threshold changes; the watch's own zones do not define these corridors.
+ 
+ ```
+ python3 gen.py plans/tempo-run.json > event.json
+diff --git a/gen.py b/gen.py
+index be0b3bc..f7357ed 100755
+--- a/gen.py
++++ b/gen.py
+@@ -5,33 +5,43 @@ Usage: python3 gen.py plans/tempo-run.json > event.json
+ """
+ import json
+ import sys
++from decimal import Decimal, ROUND_HALF_UP
+ 
+ 
+-def hr_target(step):
+-    """HR corridor for a step, as a percentage of the athlete's LTHR."""
++def hr_target(step, lthr):
++    """Convert a planned LTHR percentage corridor to an absolute BPM range."""
+     lo, hi = step["hr_pct"]
+-    return {"units": "%lthr", "value": lo, "end": hi}
++    if not 0 < lo <= hi:
++        raise ValueError(f"Invalid HR corridor: {step['hr_pct']}")
++    bounds = [int((Decimal(str(pct)) * Decimal(str(lthr)) / 100).quantize(
++        Decimal("1"), rounding=ROUND_HALF_UP)) for pct in (lo, hi)]
++    lower, upper = bounds
++    return {"units": "bpm", "value": (lower + upper) / 2,
++            "range": (upper - lower) / 2}
+ 
+ 
+-def build_step(step):
++def build_step(step, lthr):
+     out = {"duration": step["minutes"] * 60}
+     if "hr_pct" in step:
+-        out["hr"] = hr_target(step)
++        out["hr"] = hr_target(step, lthr)
+     if "label" in step:
+         out["text"] = step["label"]
+     return out
+ 
+ 
+ def build_doc(plan):
++    lthr = plan["lthr_bpm"]
++    if lthr <= 0:
++        raise ValueError("lthr_bpm must be positive")
+     steps = []
+     for block in plan["steps"]:
+         if "repeat" in block:
+             steps.append({
+                 "reps": block["repeat"],
+-                "steps": [build_step(s) for s in block["steps"]],
++                "steps": [build_step(s, lthr) for s in block["steps"]],
+             })
+         else:
+-            steps.append(build_step(block))
++            steps.append(build_step(block, lthr))
+     return {"steps": steps}
+ 
+ 
+diff --git a/plans/tempo-run.json b/plans/tempo-run.json
+index 8a4a545..baa8cdf 100644
+--- a/plans/tempo-run.json
++++ b/plans/tempo-run.json
+@@ -2,6 +2,7 @@
+   "name": "Tempo run 45",
+   "sport": "Run",
+   "date": "2026-10-20",
++  "lthr_bpm": 172,
+   "steps": [
+     {"label": "Warm-up easy", "minutes": 10, "hr_pct": [68, 75]},
+     {"repeat": 3, "steps": [

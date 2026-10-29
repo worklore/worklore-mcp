@@ -1,0 +1,67 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..dfc2603
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,19 @@
++# Почему nightly-review молчит
++
++Задача запускается (в `launchctl-print.txt`: `runs = 6`, `last exit code = 1`), но падает, и уведомление о падении тоже не уходит.
++
++1. **Первая причина: `claude` не авторизован под launchd.** В `nightly-review.err` каждый запуск пишет `Not logged in · Please run /login`. У агента launchd нет интерактивной сессии, так что вход, сделанный в терминале, ему не помогает. Из-за этого каждый запуск завершается с ошибкой.
++2. **Вторая причина: скрипт ломается на обработке этой ошибки.** `status` в zsh — read-only переменная (это код возврата последней команды). Поэтому `status=$?` на строке 19 даёт `read-only variable: status`, и скрипт аварийно завершается до `if [ $status -ne 0 ]`. До `notify.sh` дело не доходит, и ни сообщения об ошибке, ни сводки не приходит. Ошибка при этом попадает только в `.err`, который никто не читает.
++3. **Усиливающий фактор: `notify.sh` умеет молчать.** `curl -sS` без `--fail` возвращает 0 даже на ответ 4xx от Telegram (например, неверный токен). Вывод уходит в `/dev/null`, так что отказ Telegram остаётся незаметным. Кроме того, `security find-generic-password` в фоне может не получить доступ к keychain. Это я проверить не мог.
++
++## Что исправлено
++- В `bin/nightly-review.zsh` переменная `status` переименована в `rc`.
++- Скрипт берёт токен из keychain (`claude-oauth`) и экспортирует его как `CLAUDE_CODE_OAUTH_TOKEN`, если тот не задан.
++- stderr от `claude` теперь сохраняется в `$OUT.err` и первые 200 байт попадают в сообщение об ошибке.
++- В `bin/notify.sh` добавлен `curl --fail`, так что отказ Telegram даёт ненулевой код и виден в `.err`.
++
++## Что нужно сделать вам (я не мог это сделать отсюда)
++- Один раз выполнить `claude setup-token` и сохранить токен: `security add-generic-password -s claude-oauth -a "$USER" -w <токен>`.
++- Проверить, что `claude` находится в PATH из plist (`/opt/homebrew/bin:/usr/local/bin`). Если он стоит, например, в `~/.local/bin`, добавьте этот путь в `EnvironmentVariables`.
++- Снимок `launchctl print` старый (18 октября), поэтому проверьте актуальное состояние.
++- Проверить запуск: `launchctl kickstart gui/$UID/com.vk.nightly-review`.
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..f4f4b71 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -15,12 +15,21 @@ Do not modify any file."
+ 
+ cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
+ 
+-claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
++# launchd has no interactive login session: pass a long-lived token
++# (made once with `claude setup-token`, stored with
++# `security add-generic-password -s claude-oauth -a "$USER" -w <token>`).
++if [ -z "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]; then
++  CLAUDE_CODE_OAUTH_TOKEN=$(security find-generic-password -s claude-oauth -w 2>/dev/null) \
++    && export CLAUDE_CODE_OAUTH_TOKEN
++fi
++
++# NB: `status` is read-only in zsh, so use another name.
++claude -p "$PROMPT" --output-format text > "$OUT" 2> "$OUT.err"
++rc=$?
+ 
+-if [ $status -ne 0 ]; then
+-  "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
+-  exit $status
++if [ $rc -ne 0 ]; then
++  "$NOTIFY" "nightly review FAILED (exit $rc): $(head -c 200 "$OUT.err")"
++  exit $rc
+ fi
+ 
+ "$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"
+diff --git a/bin/notify.sh b/bin/notify.sh
+index 818e531..2aa315a 100755
+--- a/bin/notify.sh
++++ b/bin/notify.sh
+@@ -3,5 +3,5 @@
+ set -eu
+ : "${TG_BOT_TOKEN:=$(security find-generic-password -s tg-bot -w)}"
+ CHAT_ID=123456789
+-curl -sS -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
++curl -sS --fail -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
+   -d chat_id="$CHAT_ID" --data-urlencode text="$1" > /dev/null

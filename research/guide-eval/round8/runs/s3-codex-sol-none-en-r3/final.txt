@@ -1,0 +1,5 @@
+The job ran six times, but `claude` reported “Not logged in” each time. The script then tried to assign its exit code to zsh’s read-only `status` parameter and stopped before sending a failure note. The evidence and causes are in [ANSWER.md](/tmp/h-gLSpFG/ANSWER.md).
+
+I fixed the failure path in [nightly-review.zsh](/tmp/h-gLSpFG/bin/nightly-review.zsh) and made [notify.sh](/tmp/h-gLSpFG/bin/notify.sh) report token and HTTP failures. Syntax checks and local mock runs passed; no job or external message was sent.
+
+**One setup step remains:** authenticate `claude` for the user and environment that run the launch agent. The snapshot has no credentials, so the review itself cannot succeed until that is done.

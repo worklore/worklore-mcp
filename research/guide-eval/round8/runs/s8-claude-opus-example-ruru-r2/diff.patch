@@ -1,0 +1,318 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..d567559
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,100 @@
++# Кеширование промпта и `save_fact`
++
++## В чём была проблема
++
++`build_system` собирал один блок `INSTRUCTIONS + athlete_context` с одним
++маркером `cache_control`. Кеш работает как хеш префикса, а в `athlete_context`
++входит список фактов. Внутри цикла инструментов `run_tool` дописывает факт в
++`a.facts`, и второй раунд пересобирает системный промпт из того же `a`. Значит,
++промпт меняется уже на втором раунде того сообщения, в котором вызван
++`save_fact`. В `logs/usage.jsonl` так происходит со всеми шестью вызовами
++`save_fact`: в первом раунде `cache_read` около 1046, во втором
++`cache_read: 0` и `cache_creation` около 1061. Каждый раз весь промпт кешируется
++заново.
++
++## Почему «просто поставить два маркера» здесь не сработает
++
++Очевидное исправление — два кешируемых блока: инструкции отдельно, контекст
++атлета отдельно. Здесь оно тихо не сработает. Sonnet 4.5 (`MODEL`) кеширует
++префикс только от **1024 токенов**, причём в префикс до первого маркера входят
++и инструменты, а не только системные блоки. По логу весь промпт атлета 77
++(2 факта, базовые инструменты) занимает ровно 1024 токена. Значит, инструменты
++вместе с `INSTRUCTIONS` — это около 930–960 токенов, и даже с профилем остаётся
++меньше 1024. Маркер ниже минимума API игнорирует без ошибки, и поведение
++осталось бы прежним. Офлайн-симуляция это подтверждает
++(`python3 tests/sim_cache.py --naive`): после каждого `save_fact` снова
++`cache_creation` около 1050.
++
++## Что изменено (`bot.py`)
++
++Системный промпт теперь состоит из двух блоков, от самого стабильного к самому
++изменчивому:
++
++1. **Кешируемый блок** (`cache_control: ephemeral`): `INSTRUCTIONS` + профиль
++   (имя, спорт, зоны, цель, язык) + *снимок* фактов. Вместе с инструментами это
++   больше 1024 токенов, так что блок реально кешируется.
++2. **Некешируемый хвост** без маркера: сегодняшняя дата и факты, сохранённые
++   после снимка. Это несколько десятков токенов по обычной цене входа — намного
++   дешевле, чем пересоздавать 1000+ токенов по цене ×1,25.
++
++Новые факты переносятся в кешируемый блок (`snapshot_size`) только тогда, когда
++он всё равно будет создан заново:
++- последний вызов API для этого атлета был больше 4,5 минут назад, то есть
++  5-минутный TTL уже истёк;
++- или в хвосте накопилось больше `MAX_PENDING_FACTS = 8` фактов;
++- или процесс перезапустился (состояние хранится в памяти, `_prompt_state`).
++  В худшем случае это стоит одного создания кеша, как и раньше.
++
++Дата переехала из начала контекста в хвост: раньше в полночь она меняла
++кешируемый префикс, теперь не меняет.
++
++Модель по-прежнему видит все факты уже на следующем запросе; недавно
++сохранённые идут под заголовком «More long-term facts (recent)». Фильтрацию
++инструментов я не трогал (NOTES.md просит её оставить). Формат `athletes.json`
++не изменился. В README обновлён абзац про кеширование.
++
++## Проверка
++
++Ключа API нет, а обращаться к внешним сервисам запрещено, поэтому проверить на
++живом API я не мог. Вместо этого `tests/sim_cache.py` прогоняет `reply()`
++через фейковый кеш с теми же правилами (хеш префикса, точки разрыва, минимум
++1024 токена, оценка токенов откалибрована по логу):
++
++| раскладка | cache_creation за 11 вызовов (2 из них save_fact) |
++|---|---|
++| наивные два маркера | 3163 (полный промпт заново после каждого save_fact) |
++| новая | 1036 (только первый вызов) |
++
++После деплоя стоит проверить настоящий `logs/usage.jsonl`: вызов после
++`save_fact` должен показывать `cache_creation_input_tokens: 0` и `cache_read`
++примерно на размер всего кешируемого блока. Числа токенов в симуляции —
++оценки. Аргумент про порог 1024 опирается на реальные числа из лога.
++
++## Что пригодилось из заметки коллеги, а что нет
++
++Пригодилось:
++- Главный диагноз: кеш — это хеш префикса, а запись в память переписывает
++  промпт и вытесняет всё после изменённого байта.
++- Порядок блоков от стабильного к изменчивому и требование, чтобы кешируемая
++  часть совпадала байт в байт. Поэтому дата ушла из кешируемого блока.
++- Инструменты выше системного промпта должны быть стабильными, а
++  фильтрацию по ключевым словам не надо убирать. Внутри цикла одного сообщения
++  список инструментов постоянен, и именно там кеш окупается больше всего.
++- Не отбирать top-N фактов под сообщение: факты грузятся все и всегда.
++- Проверять результат по `cache_creation_input_tokens` /
++  `cache_read_input_tokens` в `usage`. Их раздел «Проверка» прямо ложится на
++  проверку выше.
++
++Не пригодилось или использовано по-другому:
++- Главный рецепт — два маркера `cache_control` (инструкции | хвост
++  пользователя) — здесь в лоб не работает. Наш статический префикс меньше
++  минимума 1024 токена для Sonnet 4.5. В заметке про минимум ничего не сказано;
++  их ~780 токенов инструкций, видимо, добирались до порога за счёт ~55
++  инструментов. Вместо второго маркера я сделал хвост некешируемым, а новые
++  факты переношу в кешируемый блок отложенно.
++- «Статический блок, общий для всех пользователей байт в байт»: здесь
++  кешируемый блок у каждого атлета свой (в нём профиль и снимок фактов).
++  Закешировать только общую часть не даёт тот же минимум, а в чате один на
++  один такое разделение почти ничего не даёт.
++- Части про ~55 MCP-инструментов и экономию 75% от фильтрации: этот бот уже
++  фильтрует инструменты (с марта).
+diff --git a/README.md b/README.md
+index ebd390e..75b9883 100644
+--- a/README.md
++++ b/README.md
+@@ -12,5 +12,7 @@ Run it locally with `COACH_ANTHROPIC_KEY=sk-ant-... python3 bot.py 42` and type
+ messages on stdin (the Telegram long-polling transport, which needs
+ `COACH_TELEGRAM_TOKEN`, lives in a separate deploy repo and just calls `reply()`).
+ Requires Python 3.11+ and `pip install anthropic`. Prompt caching is on: the system
+-prompt carries a `cache_control` marker so the tool-loop rounds and follow-up
+-messages inside the 5-minute window read it from cache.
++prompt is a cached block (instructions + profile + facts snapshot) followed by a
++small uncached tail (date + facts saved while the cache is warm), so `save_fact`
++does not invalidate the cache; see the comment above `build_system` in `bot.py`.
++`python3 tests/sim_cache.py` checks the layout offline against a fake prefix cache.
+diff --git a/bot.py b/bot.py
+index e2ff241..d2136af 100644
+--- a/bot.py
++++ b/bot.py
+@@ -114,23 +114,69 @@ Formatting:
+ """
+ 
+ 
+-def athlete_context(a, today):
++# Prompt caching is a prefix hash: one changed byte re-creates everything from
++# there to the cache breakpoint. Order the system prompt from most to least
++# stable and keep every byte above the breakpoint identical between calls:
++#
++#   tools (fixed per message)
++#   [cached]   INSTRUCTIONS + profile + facts snapshot   <- cache_control here
++#   [uncached] today's date + facts saved since the snapshot
++#
++# Why not simply "instructions" and "athlete context" as two cached blocks:
++# Sonnet 4.5 does not cache a prefix shorter than 1024 tokens, and tools +
++# INSTRUCTIONS are ~930 (logs/usage.jsonl: the whole prompt for athlete 77 is
++# 1024). A marker after INSTRUCTIONS alone would be silently ignored and every
++# save_fact would still re-create the full prompt. So a new fact goes to the
++# small uncached tail instead, and is folded into the cached block only when
++# that cache has expired anyway (or the tail grows past MAX_PENDING_FACTS).
++CACHE_TTL = dt.timedelta(minutes=4, seconds=30)   # 5 min TTL, with a margin
++MAX_PENDING_FACTS = 8
++
++# user_id -> (number of facts in the cached block, time of the last API call).
++# In-process only: after a restart everything is folded once, which costs the
++# one cache creation a cold start costs anyway.
++_prompt_state = {}
++
++
++def athlete_profile(a, facts):
+     lines = [
+-        f"Today: {today.isoformat()} ({today.strftime('%A')})",
+         f"Athlete: {a.name} (id {a.user_id}), sport: {a.sport}",
+         "Zones: " + ", ".join(f"{k} {v}" for k, v in a.zones.items()),
+         f"Goal: {a.goal}",
++        f"Language: {a.lang}",
+         "Long-term facts:",
+     ]
+-    lines += [f"- {f}" for f in a.facts] or ["- (none yet)"]
+-    lines.append(f"Language: {a.lang}")
++    lines += [f"- {f}" for f in facts] or ["- (none yet)"]
+     return "\n".join(lines)
+ 
+ 
+-def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++def volatile_tail(today, new_facts):
++    lines = [f"Today: {today.isoformat()} ({today.strftime('%A')})"]
++    if new_facts:
++        lines.append("More long-term facts (recent):")
++        lines += [f"- {f}" for f in new_facts]
++    return "\n".join(lines)
++
++
++def snapshot_size(a, now):
++    """How many of a.facts go into the cached block for this call."""
++    n, last = _prompt_state.get(a.user_id, (None, None))
++    cold = last is None or now - last > CACHE_TTL
++    if n is None or cold or n > len(a.facts) or len(a.facts) - n > MAX_PENDING_FACTS:
++        n = len(a.facts)   # cache is (re)created on this call anyway: fold everything in
++    return n
++
++
++def touch_prompt_state(a, n, now):
++    _prompt_state[a.user_id] = (n, now)
++
++
++def build_system(a, today, n_cached):
++    cached = INSTRUCTIONS + "\n\n" + athlete_profile(a, a.facts[:n_cached])
++    return [
++        {"type": "text", "text": cached, "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": volatile_tail(today, a.facts[n_cached:])},
++    ]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [
+@@ -187,8 +233,9 @@ def log_usage(usage, user_id, round_no, tool=None):
+         f.write(json.dumps(rec) + "\n")
+ 
+ 
+-def build_request(a, messages, tools, today):
+-    return {"model": MODEL, "max_tokens": MAX_TOKENS, "system": build_system(a, today), "tools": tools, "messages": messages}
++def build_request(a, messages, tools, today, n_cached):
++    return {"model": MODEL, "max_tokens": MAX_TOKENS, "system": build_system(a, today, n_cached), "tools": tools,
++            "messages": messages}
+ 
+ 
+ def reply(user_id, text, llm=None):
+@@ -198,7 +245,10 @@ def reply(user_id, text, llm=None):
+     tools = select_tools(text)
+     messages = [{"role": "user", "content": text}]
+     for round_no in range(1, MAX_TOOL_ROUNDS + 1):
+-        resp = llm.create(**build_request(a, messages, tools, today))
++        now = dt.datetime.now(dt.timezone.utc)
++        n_cached = snapshot_size(a, now)
++        resp = llm.create(**build_request(a, messages, tools, today, n_cached))
++        touch_prompt_state(a, n_cached, now)
+         used_tools = [b.name for b in resp.content if b.type == "tool_use"]
+         log_usage(resp.usage, a.user_id, round_no, tool=",".join(used_tools) or None)
+         if resp.stop_reason != "tool_use":
+diff --git a/tests/sim_cache.py b/tests/sim_cache.py
+new file mode 100644
+index 0000000..dfd2bb5
+--- /dev/null
++++ b/tests/sim_cache.py
+@@ -0,0 +1,86 @@
++"""Offline check of the prompt layout against a fake prefix cache (no API calls).
++
++Run: python3 tests/sim_cache.py          (current layout)
++     python3 tests/sim_cache.py --naive  (two cache_control markers, for comparison)
++The fake cache mimics Anthropic's rules that matter here: a breakpoint caches the
++whole prefix (tools, then system blocks) up to it, only if that prefix is at least
++MIN_CACHE_TOKENS; a hit needs the prefix to be identical byte for byte. Token
++counts are a chars/3.6 estimate plus a tool-use overhead, calibrated so the
++default prompt lands near the ~1024-1046 tokens seen in logs/usage.jsonl.
++"""
++import json, os, shutil, sys, tempfile, types
++sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
++import bot
++
++MIN_CACHE_TOKENS = 1024          # Sonnet 4.5
++tok = lambda s: round(len(s) / 3.6)
++TOOL_OVERHEAD = 150
++
++
++class FakeLLM:
++    def __init__(self, script):
++        self.cache, self.script = set(), list(script)   # script: tool name to call in round 1, or None
++
++    def create(self, **kw):
++        parts = [(json.dumps(kw["tools"], sort_keys=True), TOOL_OVERHEAD + tok(json.dumps(kw["tools"])), False)]
++        parts += [(b["text"], tok(b["text"]), "cache_control" in b) for b in kw["system"]]
++        prefix, n, best_read, created, breakpoints = "", 0, 0, 0, []
++        for text, t, bp in parts:
++            prefix += "\x00" + text; n += t
++            if bp:
++                breakpoints.append((prefix, n))
++        for p, n_p in breakpoints:
++            if p in self.cache:
++                best_read = n_p
++        for p, n_p in breakpoints:
++            if n_p >= MIN_CACHE_TOKENS and p not in self.cache:
++                self.cache.add(p)
++        last = max([n_p for p, n_p in breakpoints if n_p >= MIN_CACHE_TOKENS], default=0)
++        created = max(0, last - best_read)
++        total = n + 30 * len(kw["messages"])
++        usage = types.SimpleNamespace(input_tokens=total - best_read - created, cache_creation_input_tokens=created,
++                                      cache_read_input_tokens=best_read, output_tokens=50)
++        first_round = len(kw["messages"]) == 1
++        tool = self.script.pop(0) if first_round else None
++        if tool:
++            arg = {"save_fact": {"fact": f"Fact number {len(self.cache)} about the athlete's week"},
++                   "log_session": {"minutes": 40}}[tool]
++            block = types.SimpleNamespace(type="tool_use", name=tool, id="t1", input=arg,
++                                          model_dump=lambda: {"type": "tool_use", "id": "t1", "name": tool, "input": arg})
++            return types.SimpleNamespace(content=[block], stop_reason="tool_use", usage=usage)
++        text = types.SimpleNamespace(type="text", text="ok", model_dump=lambda: {"type": "text", "text": "ok"})
++        return types.SimpleNamespace(content=[text], stop_reason="end_turn", usage=usage)
++
++
++def naive_two_markers(a, today, n_cached):
++    """The obvious fix: marker after INSTRUCTIONS, marker after the athlete context."""
++    return [{"type": "text", "text": bot.INSTRUCTIONS, "cache_control": {"type": "ephemeral"}},
++            {"type": "text", "text": bot.athlete_profile(a, a.facts) + "\n" + bot.volatile_tail(today, []),
++             "cache_control": {"type": "ephemeral"}}]
++
++
++def main():
++    if "--naive" in sys.argv:
++        bot.build_system = naive_two_markers
++    tmp = tempfile.mkdtemp()
++    bot.ATHLETES_FILE = os.path.join(tmp, "athletes.json")
++    bot.USAGE_LOG = os.path.join(tmp, "usage.jsonl")
++    shutil.copy(os.path.join(os.path.dirname(__file__), "..", "data", "athletes.json"), bot.ATHLETES_FILE)
++    script = [None, None, "save_fact", None, "log_session", "save_fact", None, None]
++    llm = FakeLLM(script)
++    for _ in range(len(script)):
++        bot.reply("42", "hello", llm=llm)
++    rows = [json.loads(l) for l in open(bot.USAGE_LOG)]
++    for r in rows:
++        print(f"round {r['round']} tool={r.get('tool') or '-':12} create={r['cache_creation_input_tokens']:5} "
++              f"read={r['cache_read_input_tokens']:5} uncached={r['input_tokens']:4}")
++    creates = [r["cache_creation_input_tokens"] for r in rows]
++    print("total cache_creation:", sum(creates), " total cache_read:", sum(r["cache_read_input_tokens"] for r in rows))
++    if "--naive" in sys.argv:
++        return
++    assert creates[0] > 0 and sum(creates[1:]) == 0, "only the first call may create the cache"
++    shutil.rmtree(tmp)
++
++
++if __name__ == "__main__":
++    main()

@@ -1,0 +1,63 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..0a16933
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,37 @@
++# Nightly Launchd Job Review & Diagnosis
++
++## Summary of Root Causes
++
++The nightly launchd job (`com.vk.nightly-review`) ran and failed, but never reported any notifications (neither success nor failure) to Telegram due to two distinct causes:
++
++1. **Why `claude` failed (`Not logged in · Please run /login`)**:
++   - Claude Code (`claude`) failed with exit code 1 because it was not authenticated or could not access the required authentication credentials in the headless launchd environment.
++
++2. **Why no failure notification was sent over Telegram (`read-only variable: status`)**:
++   - In [nightly-review.zsh](file:///tmp/h-4iRz6I/bin/nightly-review.zsh#L18-L24), line 19 attempted to capture the exit status with `status=$?`.
++   - In zsh, `status` is a special built-in read-only variable aliased to `$?`. Attempting to assign to `status` (`status=$?`) throws a fatal error:
++     ```text
++     zsh: read-only variable: status
++     ```
++   - Because `status=$?` caused the zsh script to abort immediately, execution never reached lines 21–23 where `bin/notify.sh` would have been called to send the failure alert to Telegram.
++
++---
++
++## Fix Applied
++
++- In [bin/nightly-review.zsh](file:///tmp/h-4iRz6I/bin/nightly-review.zsh#L19-L23), replaced the assignment to the read-only variable `status` with `exit_code`:
++  ```zsh
++  claude -p "$PROMPT" --output-format text > "$OUT"
++  exit_code=$?
++
++  if [ $exit_code -ne 0 ]; then
++    "$NOTIFY" "nightly review FAILED (exit $exit_code), see $OUT"
++    exit $exit_code
++  fi
++  ```
++  Now, if `claude` (or any command) fails, the error handler properly executes and sends a failure notification via Telegram.
++
++## Recommendations for Claude Authentication in Launchd
++
++To fix the underlying `claude` execution error:
++- Authenticate Claude or provide the necessary API key environment variable (such as `ANTHROPIC_API_KEY`) within [Library/LaunchAgents/com.vk.nightly-review.plist](file:///tmp/h-4iRz6I/Library/LaunchAgents/com.vk.nightly-review.plist) under `<key>EnvironmentVariables</key>`, or ensure Claude Code's login credentials directory (`~/.claude` or config file) is accessible by the launchd job environment.
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..f9f7692 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -16,11 +16,11 @@ Do not modify any file."
+ cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
+ 
+ claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
++exit_code=$?
+ 
+-if [ $status -ne 0 ]; then
+-  "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
+-  exit $status
++if [ $exit_code -ne 0 ]; then
++  "$NOTIFY" "nightly review FAILED (exit $exit_code), see $OUT"
++  exit $exit_code
+ fi
+ 
+ "$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"

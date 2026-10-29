@@ -1,0 +1,210 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..03580ff
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,69 @@
++# Intervals.icu: почему не подключались и что исправлено
++
++## Причины
++
++1. **Кнопка Connect не работает ни у кого (ticket #214).** Кнопка была `<a href="/api/intervals/auth/init">`,
++   то есть обычная навигация GET. Полноэкранный переход не несёт заголовок `Authorization`, которым SPA
++   авторизует запросы (`logs/connect-attempt.log`, пункт 1). Сервер отвечал 401 `{"error": "unauthorized"}`.
++
++2. **Ссылка на авторизацию отдавала 400 с 2026-10-02 (ticket #219, пункт 3 лога).** `SCOPES` содержали
++   одну и ту же область дважды: `ACTIVITY:READ,ACTIVITY:WRITE` и `CALENDAR:READ,CALENDAR:WRITE`.
++   `:WRITE` уже включает `:READ`. Рабочее подключение Rivera было со scope
++   `ACTIVITY:WRITE,WELLNESS:READ`, без дублей. Это совпадает с ошибкой «Duplicate scope» из заметки коллеги,
++   но на живом Intervals я это не проверял (см. ниже).
++
++3. **Подключение «протухло» через час (ticket #219, пункт 40 лога).** Intervals не отдаёт ни `refresh_token`,
++   ни `expires_in`. Сервер подставлял `DEFAULT_TOKEN_TTL = 3600` и без `refresh_token` помечал подключение
++   как `expired, reconnect`. Токен на самом деле бессрочный, пока его не отзовёт сам атлет.
++
++4. **Сброс подключения при отзыве не работал.** Если токен отозван в Intervals, wellness возвращал 401,
++   но подключение оставалось `connected` и никто не просил переподключиться.
++
++## Что изменено
++
++- `static/app.js`: кнопка стала `<button id="connect">`. По клику она делает `POST /api/intervals/auth/init`
++  через обычный `api()`-враппер (с `Authorization`) и переходит на полученный `authorize_url`.
++- `server.py`, `auth_init`: маршрут перенесён с GET на POST, ответ `{"authorize_url": ...}` вместо 302.
++  GET `/api/intervals/auth/init` теперь отдаёт 404.
++- `config.py`: `SCOPES = "ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE"`. Каждая область указана один раз.
++  `ACTIVITY:READ` и `CALENDAR:READ` убраны, так как их покрывают `:WRITE`.
++- `server.py`, `store_connection`: без `expires_in` `expires_at = None`, токен не истекает по таймеру.
++  В логе: `connected as athlete ... (no expiry, valid until revoked)`.
++- `server.py`, `refresh_tokens`: пропускает подключения с `expires_at = None`. Ветка с обновлением токена
++  для провайдеров, которые сообщают `expires_in`, сохранена.
++- `server.py`, `wellness`: при 401 от Intervals токен сбрасывается, статус становится `expired, reconnect`,
++  ответ 409. Интерфейс покажет «Status: expired, reconnect» и кнопку Connect.
++
++## Что проверено
++
++- `python3 -m py_compile server.py config.py` проходит.
++- Сквозной прогон на моке Intervals (через `INTERVALS_BASE`, порт 9999), сервер на порту 8767:
++  - `GET /api/intervals/auth/init` даёт 404;
++  - `POST` даёт 200 с `authorize_url`, в нём scope `ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE`;
++  - callback с `code` и `state` даёт 302 на `/?connected=1`;
++  - `status` показывает `connected`, `wellness` возвращает 200 с данными;
++  - после отзыва на моке `wellness` даёт 409, `status` даёт `expired, reconnect`;
++  - неавторизованный `POST` даёт 401.
++- `node --check static/app.js` проходит.
++
++## Что не проверено и что нужно сделать
++
++- **Живой Intervals.icu не проверялся.** Нет реальных `client_id` и `client_secret`, а `config.py` содержит
++  заглушки. Подтверждение, что Intervals принимает новый scope и не отвечает `Duplicate scope`, требует
++  одного запроса на `/oauth/authorize` с реальным клиентом.
++- **Порт 8766 занят другим процессом** (PID 88629, `server.py` из `/private/tmp/h-kKlOSc`). Я его не трогал.
++  Тесты шли на порту 8767. Если он ваш, остановите его и перезапустите сервер, иначе увидите старый код.
++- **Уже подключённые атлеты.** Их сохранённый scope старый. После деплоя им нужно нажать Connect ещё раз.
++- `APP_SECRET` в `config.py` остаётся заглушкой для разработки. В проде его нужно брать из окружения.
++
++## Что взято из заметки коллеги
++
++- **Пункт 1 (нет refresh_token, токен бессрочный, сброс по 401):** применено. Это главная причина
++  «протухания» Rivera.
++- **Пункт 2 (scope, каждая область один раз):** применено. Это причина 400.
++- **Пункт 4 (init должен быть POST, а не GET-ссылкой):** применено. Это причина 401 на кнопке.
++- **Пункт 3 (обмен токена «standard-lite»):** не применено. В логе обмен с `grant_type` и `redirect_uri`
++  прошёл успешно и вернул `athlete`, значит поля не мешают. Менять без необходимости не стал.
++- **Подпись state с purpose-claim и guard по athlete id:** не применено. Текущая HMAC-подпись state уже
++  содержит TTL 15 минут и проверку подписи. Guard на смену athlete id при переподключении стоит добавить
++  отдельно, если понадобится.
+diff --git a/config.py b/config.py
+index 54a8144..e2a27cc 100644
+--- a/config.py
++++ b/config.py
+@@ -8,6 +8,8 @@ INTERVALS_BASE = os.environ.get("INTERVALS_BASE", "https://intervals.icu")
+ CLIENT_ID = "tricoach-dev"
+ CLIENT_SECRET = "s3cr3t-placeholder-0000"
+ REDIRECT_URI = f"http://localhost:{PORT}/api/intervals/callback"
+-SCOPES = "ACTIVITY:READ,ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:READ,CALENDAR:WRITE"
++# Each area once. :WRITE already implies :READ, so listing both (or READ+WRITE
++# for the same area) makes Intervals reject the authorize request.
++SCOPES = "ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE"
+ 
+ REFRESH_INTERVAL = 60      # seconds between passes of the token refresher
+diff --git a/server.py b/server.py
+index 351cbb7..351a537 100644
+--- a/server.py
++++ b/server.py
+@@ -12,7 +12,6 @@ import config
+ STATIC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
+ TOKEN_URL = config.INTERVALS_BASE + "/api/oauth/token"
+ AUTHORIZE_URL = config.INTERVALS_BASE + "/oauth/authorize"
+-DEFAULT_TOKEN_TTL = 3600   # seconds; used when the provider does not say how long a token lives
+ 
+ # --- in-memory store -------------------------------------------------------
+ USERS = {
+@@ -63,18 +62,21 @@ def exchange_code(code):
+ 
+ 
+ def store_connection(user_id, tok):
+-    expires_in = int(tok.get("expires_in") or DEFAULT_TOKEN_TTL)
++    # Intervals issues no refresh_token and no expires_in: the access token lives
++    # until the athlete revokes the app. expires_at=None means "never expires";
++    # a 401 from the API is what marks the connection dead (see wellness()).
++    expires_in = tok.get("expires_in")
+     refresh = tok.get("refresh_token")
+-    if not refresh:
+-        log(f"{user_id}: no refresh_token in response, scheduling expiry in {expires_in}s")
++    expires_at = time.time() + int(expires_in) if expires_in else None
+     athlete = tok.get("athlete") or {}
+     with LOCK:
+         CONNECTIONS[user_id] = {
+             "athlete_id": athlete.get("id"), "athlete_name": athlete.get("name"),
+             "access_token": tok["access_token"], "refresh_token": refresh,
+-            "scope": tok.get("scope"), "expires_at": time.time() + expires_in, "status": "connected",
++            "scope": tok.get("scope"), "expires_at": expires_at, "status": "connected",
+         }
+-    log(f"{user_id}: connected as athlete {athlete.get('id')} (expires in {expires_in}s)")
++    life = f"expires in {expires_in}s" if expires_at else "no expiry, valid until revoked"
++    log(f"{user_id}: connected as athlete {athlete.get('id')} ({life})")
+ 
+ 
+ def refresh_tokens():
+@@ -84,7 +86,7 @@ def refresh_tokens():
+         now = time.time()
+         with LOCK:
+             for uid, c in CONNECTIONS.items():
+-                if c["status"] != "connected" or c["expires_at"] - now > 300:
++                if c["status"] != "connected" or c["expires_at"] is None or c["expires_at"] - now > 300:
+                     continue
+                 if not c["refresh_token"]:
+                     log(f"{uid}: token expiry passed and no refresh token on file -> expired, reconnect")
+@@ -164,8 +166,6 @@ class Handler(BaseHTTPRequestHandler):
+         if url.path == "/api/me":
+             user = self.require_user()
+             return user and self.send_json(200, user)
+-        if url.path == "/api/intervals/auth/init":
+-            return self.auth_init()
+         if url.path == "/api/intervals/callback":
+             return self.callback(q)
+         if url.path == "/api/intervals/status":
+@@ -176,6 +176,8 @@ class Handler(BaseHTTPRequestHandler):
+ 
+     def do_POST(self):
+         url = urllib.parse.urlsplit(self.path)
++        if url.path == "/api/intervals/auth/init":
++            return self.auth_init()
+         if url.path == "/api/intervals/disconnect":
+             user = self.require_user()
+             if user:
+@@ -185,14 +187,16 @@ class Handler(BaseHTTPRequestHandler):
+             return
+         self.send_json(404, {"error": "not found"})
+ 
+-    # Step 1: build the authorize URL and send the browser to Intervals.
++    # Step 1: POST (XHR, so the Authorization header is sent). A full-page GET
++    # navigation carries no such header, which is why the old link 401'd.
++    # The SPA then does window.location.assign(authorize_url).
+     def auth_init(self):
+         user = self.require_user()
+         if not user:
+             return
+         params = {"client_id": config.CLIENT_ID, "redirect_uri": config.REDIRECT_URI,
+                   "scope": config.SCOPES, "state": sign_state(user["id"])}
+-        self.redirect(AUTHORIZE_URL + "?" + urllib.parse.urlencode(params, safe=":,"))
++        self.send_json(200, {"authorize_url": AUTHORIZE_URL + "?" + urllib.parse.urlencode(params, safe=":,")})
+ 
+     # Step 2: Intervals redirects back here with ?code=&state=.
+     def callback(self, q):
+@@ -233,6 +237,12 @@ class Handler(BaseHTTPRequestHandler):
+             code, data = intervals_get(c, "/wellness")
+             self.send_json(code, data)
+         except urllib.error.HTTPError as e:
++            if e.code == 401:
++                # Revoked on the Intervals side (or otherwise dead): drop the token, ask to reconnect.
++                log(f"{user['id']}: Intervals returned 401 -> token revoked, reconnect")
++                with LOCK:
++                    CONNECTIONS[user["id"]].update(status="expired, reconnect", access_token=None)
++                return self.send_json(409, {"error": "intervals not connected"})
+             self.send_json(e.code, {"error": f"intervals returned {e.code}"})
+         except Exception as e:
+             self.send_json(502, {"error": str(e)})
+diff --git a/static/app.js b/static/app.js
+index 368922e..c47b910 100644
+--- a/static/app.js
++++ b/static/app.js
+@@ -25,12 +25,17 @@ async function render() {
+     } else {
+       const why = st.status && st.status !== "disconnected" ? `<p class="muted">Status: ${esc(st.status)}</p>` : "";
+       card = `<div class="card">Intervals.icu is not connected.${why}
+-        <p><a class="btn" href="/api/intervals/auth/init">Connect Intervals.icu</a></p></div>`;
++        <p><button class="btn" id="connect">Connect Intervals.icu</button></p></div>`;
+     }
+     root.className = "";
+     root.innerHTML = `<p>Signed in as <b>${esc(me.name)}</b>.</p>${card}`;
+     const d = document.getElementById("disconnect");
+     if (d) d.onclick = async () => { await api("/api/intervals/disconnect", { method: "POST" }); render(); };
++    const c = document.getElementById("connect");
++    if (c) c.onclick = async () => {
++      const { authorize_url } = await api("/api/intervals/auth/init", { method: "POST" });
++      window.location.assign(authorize_url);
++    };
+   } catch (e) {
+     root.innerHTML = `<p class="card">Error: ${esc(e.message)}</p>`;
+   }

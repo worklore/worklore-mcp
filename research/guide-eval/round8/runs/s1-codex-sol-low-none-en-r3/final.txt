@@ -1,0 +1,3 @@
+Fixed [gen.py](/tmp/h-cYLUmX/gen.py) to send HR corridors with `start` and `end`, the range fields Intervals.icu expects. The previous `value` field represented a single target, which explains why the watch showed zone bands instead of the planned bounds.
+
+I recorded the change and reasoning in [ANSWER.md](/tmp/h-cYLUmX/ANSWER.md). Generated output now has the planned bounds for every step. The watch display still needs confirmation after a new workout is synced.

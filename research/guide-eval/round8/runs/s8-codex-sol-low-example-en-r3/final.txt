@@ -1,0 +1,3 @@
+Updated [bot.py](/tmp/h-ZplbTO/bot.py) to cache the static instructions and the changing athlete context as separate blocks. A `save_fact` write now changes only the athlete block.
+
+Documented the change, the applicable parts of the colleague’s note, and verification in [ANSWER.md](/tmp/h-ZplbTO/ANSWER.md). Local checks passed; live cache token counts remain unmeasured.

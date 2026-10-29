@@ -1,0 +1,47 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..b9c7c79
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,16 @@
++# Кеширование после save_fact
++
++## Причина
++`build_system` клал инструкции и контекст атлета (дата, зоны, список фактов) в **один** text-блок с одним `cache_control`. Кеш префиксный, поэтому после `save_fact` (список фактов изменился) весь блок получал другой хеш, и ~1000 токенов инструкций заново писались в кеш (`cache_read=0`, `cache_creation≈1000` в `logs/usage.jsonl`). То же самое происходило при смене даты.
++
++## Что изменено (`bot.py`, `build_system`)
++System теперь состоит из двух блоков:
++1. `INSTRUCTIONS` (статика) с `cache_control` — не зависит от фактов и даты.
++2. `athlete_context(...)` (динамика) со своим `cache_control` — чтобы раунды tool-цикла и следующие сообщения читали и его.
++
++Порядок: tools → инструкции → контекст, поэтому изменение фактов затрагивает только хвост. Фильтрацию инструментов по ключевым словам не трогал (по NOTES.md она полезна).
++
++## Ограничение — проверьте на реальных логах
++Минимум для кеширования у Sonnet 4.5 — 1024 токена в префиксе до точки кеша. По логам весь запрос ≈1046 токенов, контекст ≈100, значит статический префикс (инструкции + core-инструменты) ≈ 950 токенов — **вблизи или чуть ниже порога**. Если после правки `cache_creation_input_tokens` на статике останется 0, префикс не кешируется из-за размера, и тогда нужно, чтобы статическая часть превысила 1024 токена (например, добавить в инструкции реально полезные примеры ответов) — текст я не раздувал. Точных токенов без вызова API я не считал, проверка не запускалась (ключа/сети нет, ничего не отправлялось).
++
++Дополнительно: набор tools тоже входит в префикс, поэтому сообщения с разными группами инструментов (plan/race) кешируются раздельно.
+diff --git a/__pycache__/bot.cpython-314.pyc b/__pycache__/bot.cpython-314.pyc
+new file mode 100644
+index 0000000..c23b0e9
+Binary files /dev/null and b/__pycache__/bot.cpython-314.pyc differ
+diff --git a/bot.py b/bot.py
+index e2ff241..9f36d3f 100644
+--- a/bot.py
++++ b/bot.py
+@@ -128,9 +128,13 @@ def athlete_context(a, today):
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    # Two blocks. The static instructions come first with their own breakpoint, so a
++    # change in the athlete context (new fact, new day) cannot invalidate them. The
++    # context block has a second breakpoint so tool-loop rounds reuse it.
++    return [
++        {"type": "text", "text": INSTRUCTIONS, "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": athlete_context(a, today), "cache_control": {"type": "ephemeral"}},
++    ]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [

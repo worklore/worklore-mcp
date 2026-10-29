@@ -1,0 +1,63 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..b4bf96d
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,26 @@
++# Why the nightly job never reported anything
++
++Every run (6 so far) failed the same way, and the failure path was broken too,
++so nothing was ever sent.
++
++1. **`claude` is not logged in in the launchd context.** `Library/Logs/nightly-review.err`
++   shows `Not logged in · Please run /login` on every run. The job's `claude -p`
++   exits non-zero, so there is never a summary. Not fixable from this folder:
++   run `claude setup-token` in a terminal and put the resulting token in the
++   plist's `EnvironmentVariables` as `CLAUDE_CODE_OAUTH_TOKEN` (or an
++   `ANTHROPIC_API_KEY`), then reload the agent. I did not add a token.
++
++2. **The failure notice could never be sent: `status` is read-only in zsh.**
++   `status=$?` in `bin/nightly-review.zsh` gives
++   `read-only variable: status` (also in the err log). zsh's `$status` is a
++   special alias of `$?`, so the assignment fails, the script exits with 1
++   and `notify.sh` is never reached. This is why even failures were silent.
++   Fixed: the variable is now `rc`.
++
++3. (Hardening) `notify.sh` used `curl -sS` without `--fail`, so Telegram HTTP
++   errors (bad token, wrong chat id) would be swallowed silently. Added `--fail`
++   so the error shows up in the err log.
++
++After setting the token, test with:
++`launchctl kickstart gui/$UID/com.vk.nightly-review` and check Telegram and
++`~/Library/Logs/nightly-review.err`.
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..bf005f5 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -16,11 +16,11 @@ Do not modify any file."
+ cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
+ 
+ claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
++rc=$?
+ 
+-if [ $status -ne 0 ]; then
+-  "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
+-  exit $status
++if [ $rc -ne 0 ]; then
++  "$NOTIFY" "nightly review FAILED (exit $rc), see $OUT"
++  exit $rc
+ fi
+ 
+ "$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"
+diff --git a/bin/notify.sh b/bin/notify.sh
+index 818e531..2aa315a 100755
+--- a/bin/notify.sh
++++ b/bin/notify.sh
+@@ -3,5 +3,5 @@
+ set -eu
+ : "${TG_BOT_TOKEN:=$(security find-generic-password -s tg-bot -w)}"
+ CHAT_ID=123456789
+-curl -sS -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
++curl -sS --fail -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
+   -d chat_id="$CHAT_ID" --data-urlencode text="$1" > /dev/null

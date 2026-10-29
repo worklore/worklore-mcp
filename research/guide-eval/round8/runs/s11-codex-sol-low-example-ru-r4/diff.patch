@@ -1,0 +1,78 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..e1f37ff
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,11 @@
++# Причина
++
++Первая публикация проходит, потому что таблица пуста и `similar` получается пустым списком. При следующей публикации `similarity()` вычисляет оценку для уже существующей истории через деление и возвращает Python `float`. Этот `float` попадает в `item["similar"][...]["score"]`; сериализатор boto3 для DynamoDB отвергает его при `table.put_item(Item=item)`. Именно этот `TypeError` виден в `logs/error.log`, после чего обработчик отвечает 500.
++
++# Исправление
++
++Расчёт сходства в `src/app.py` теперь использует `Decimal` от деления до округления. Оценка остаётся в прежней шкале 0–1 с четырьмя знаками после запятой, но в сохраняемом элементе больше нет `float`. Добавлен тест, который публикует три истории через обработчик в одну таблицу, проверяет успешные ответы и тип сохранённых оценок. `python3 -m unittest discover tests -v`: 2 теста прошли.
++
++# Что пригодилось из заметки коллеги
++
++Пригодились указание на запрет `float` в DynamoDB, объяснение различия между пустой и заполненной таблицей и рекомендация проверять запись после предварительного заполнения таблицы. Вариант перевести оценку в целые проценты не использован: он изменил бы существующую шкалу и точность оценки. Проверка на настоящей таблице не проводилась: тесты выполнялись локально с `FakeTable`, без обращения к внешним сервисам.
+diff --git a/src/app.py b/src/app.py
+index db49c5e..e5d2f06 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -8,6 +8,7 @@ import json
+ import logging
+ import re
+ import time
++from decimal import Decimal
+ 
+ log = logging.getLogger("stories")
+ 
+@@ -24,10 +25,10 @@ def words(text):
+ def similarity(a, b):
+     """Shared-tag ratio (Jaccard), blended with shared words of the two bodies."""
+     ta, tb = set(a.get("tags", [])), set(b.get("tags", []))
+-    tag_score = len(ta & tb) / len(ta | tb) if (ta | tb) else 0
++    tag_score = Decimal(len(ta & tb)) / len(ta | tb) if (ta | tb) else Decimal(0)
+     wa, wb = words(a.get("body")), words(b.get("body"))
+-    word_score = len(wa & wb) / len(wa | wb) if (wa | wb) else 0
+-    return round(0.7 * tag_score + 0.3 * word_score, 4)
++    word_score = Decimal(len(wa & wb)) / len(wa | wb) if (wa | wb) else Decimal(0)
++    return (Decimal("0.7") * tag_score + Decimal("0.3") * word_score).quantize(Decimal("0.0001"))
+ 
+ 
+ def related(story, existing):
+diff --git a/tests/test_publish.py b/tests/test_publish.py
+index 6c9ac44..3aad461 100644
+--- a/tests/test_publish.py
++++ b/tests/test_publish.py
+@@ -1,6 +1,8 @@
++import json
+ import os
+ import sys
+ import unittest
++from decimal import Decimal
+ 
+ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+ sys.path.insert(0, os.path.dirname(__file__))
+@@ -23,6 +25,21 @@ class PublishTest(unittest.TestCase):
+         self.assertEqual(table.get_item(Key={"slug": "why-my-cron-ran-twice"})["Item"]["title"], "Why my cron ran twice")
+         self.assertEqual(table.scan()["Count"], 1)
+ 
++    def test_publish_with_existing_stories(self):
++        table = FakeTable()
++        first = {"slug": "first-story", "title": "First", "tags": ["python"], "body": "shared words"}
++        second = {"slug": "second-story", "title": "Second", "tags": ["python"], "body": "shared words"}
++        third = {"slug": "third-story", "title": "Third", "tags": [], "body": "unrelated"}
++
++        self.assertEqual(app.handler({"body": json.dumps(first)}, table)["statusCode"], 201)
++        self.assertEqual(app.handler({"body": json.dumps(second)}, table)["statusCode"], 201)
++        self.assertEqual(app.handler({"body": json.dumps(third)}, table)["statusCode"], 201)
++
++        stored = table.get_item(Key={"slug": "second-story"})["Item"]
++        self.assertEqual(stored["similar"], [{"slug": "first-story", "score": Decimal("1.0000")}])
++        self.assertTrue(all(isinstance(match["score"], Decimal)
++                            for match in table.get_item(Key={"slug": "third-story"})["Item"]["similar"]))
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

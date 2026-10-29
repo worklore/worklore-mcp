@@ -1,0 +1,53 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..31db8a7
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,16 @@
++# Что изменено
++
++**Причина** (logs/usage.jsonl, NOTES.md): `build_system` склеивал инструкции и контекст атлета (дата, профиль, зоны, цель, факты) в один блок с одним `cache_control`. `save_fact` меняет факты → меняется хеш префикса → весь блок (~1000 токенов) пересоздаётся (`cache_read=0`, `cache_creation≈1100`).
++
++**Исправление** (`bot.py`, `build_system`): `system` теперь два текстовых блока, у каждого `cache_control: ephemeral`:
++1. `INSTRUCTIONS` — статический, байт в байт одинаковый (ни дат, ни имён);
++2. `athlete_context(...)` — изменчивый хвост (дата, профиль, зоны, цель, факты, язык).
++
++Запись в память инвалидирует только хвост. В README обновлено описание кеширования.
++
++Не проверено на реальном API (нет ключа): ожидаемо после `save_fact` `cache_read` ≈ статический блок, `cache_creation` ≈ хвост. Один риск: у Sonnet минимум для кеширования 1024 токенов на префикс; префикс первого маркера = tools + инструкции (~780 + схемы), должен проходить, но смотрите `usage`.
++
++# Что пригодилось из заметки коллеги
++- Пригодилось: два сегмента cache_control (статика / хвост на пользователя); идея держать статический блок без подставленных значений; проверка через `cache_read_input_tokens`/`cache_creation_input_tokens`.
++- Учтено, но без изменений: инструменты стоят выше system в префиксе, поэтому фильтрацию по ключевым словам не трогал (NOTES.md тоже говорит оставить); отбор top-N фактов не делал — он ломал бы кеш хвоста.
++- Пропущено: MCP, Telegram-специфика, число инструментов (~55) — в этом репо не применимо.
+diff --git a/README.md b/README.md
+index ebd390e..7b51920 100644
+--- a/README.md
++++ b/README.md
+@@ -12,5 +12,5 @@ Run it locally with `COACH_ANTHROPIC_KEY=sk-ant-... python3 bot.py 42` and type
+ messages on stdin (the Telegram long-polling transport, which needs
+ `COACH_TELEGRAM_TOKEN`, lives in a separate deploy repo and just calls `reply()`).
+ Requires Python 3.11+ and `pip install anthropic`. Prompt caching is on: the system
+-prompt carries a `cache_control` marker so the tool-loop rounds and follow-up
++prompt carries two `cache_control` markers (static instructions, per-athlete tail) so the tool-loop rounds and follow-up
+ messages inside the 5-minute window read it from cache.
+diff --git a/bot.py b/bot.py
+index e2ff241..3493364 100644
+--- a/bot.py
++++ b/bot.py
+@@ -128,9 +128,12 @@ def athlete_context(a, today):
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    # Two cached segments. The first is the static instructions (identical for every athlete and day);
++    # the second is the per-athlete tail (date, profile, facts). save_fact only invalidates the tail.
++    return [
++        {"type": "text", "text": INSTRUCTIONS, "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": athlete_context(a, today), "cache_control": {"type": "ephemeral"}},
++    ]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [

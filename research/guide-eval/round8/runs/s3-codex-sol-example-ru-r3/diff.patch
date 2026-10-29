@@ -1,0 +1,104 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..4763bab
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,23 @@
++# Почему ночная задача молчала
++
++`launchctl-print.txt` показывает `runs = 6` и `last exit code = 1`: launchd запускал задачу, но каждый запуск завершался ошибкой. В `Library/Logs/nightly-review.err` одна и та же пара сообщений повторяется шесть раз:
++
++1. `Not logged in · Please run /login` — Claude не смог получить авторизацию в окружении launchd. В plist был задан `PATH`, но отсутствовал `USER`. Добавлен `USER=vk`, чтобы CLI мог найти учётные данные пользователя. Это исправление соответствует наблюдаемой ошибке; подтвердить доступ к реальному keychain по одному снимку нельзя.
++2. Затем zsh выдавал `read-only variable: status`. `status` — специальная переменная zsh, и присваивание `status=$?` прерывало скрипт **до** ветки с уведомлением о сбое. Код возврата теперь сохраняется в `rc`, а отказ Claude сразу передаётся в функцию `fail`, которая пишет причину в stderr и вызывает уведомитель.
++
++Дополнительно скрипт закрывает stdin у `claude -p`, проверяет, что обзорный файл не пуст, и пишет в stderr длительность запуска. Если отправка уведомления об успехе не удалась, задача теперь завершится ошибкой с сообщением в логе. В `notify.sh` добавлен `curl -f`, чтобы HTTP-ошибки Telegram не выглядели как успешная отправка.
++
++## Что пригодилось из заметки коллеги
++
++- Проверка `launchctl print` и stderr: они доказали, что запуск происходил, и показали обе ошибки.
++- Запрет на присваивание `status` в zsh: это непосредственная причина отсутствия сообщения об ошибке.
++- `USER` в `EnvironmentVariables`: соответствует ошибке `Not logged in`.
++- Закрытый stdin при передаче prompt аргументом, проверка фактического результата и длительности, проверка ветки отказа: применены как защита от следующих «тихих» запусков.
++
++Совет передавать prompt через stdin здесь не понадобился: prompt уже передаётся одним аргументом `-p`, а лог не содержит ошибки о его отсутствии. Из-за ограничения на внешние действия не выполнялись `launchctl kickstart`, реальный вызов Claude или отправка в Telegram.
++
++## Проверка в снимке
++
++Синтаксис обоих скриптов, формат plist и `git diff --check` прошли. Локальный прогон с подменёнными Claude и уведомителем проверил три сценария: успешный обзор (код 0 и сообщение об успехе), отказ Claude (код 7 и сообщение об ошибке), пустой результат (код 1 и сообщение об ошибке). Ни один прогон не обращался к внешним сервисам.
++
++После переноса исправленных файлов в домашнюю директорию потребуется перезагрузить launchd agent, поскольку изменилось окружение в plist. Для окончательной проверки там нужны новый запуск, свежий непустой обзорный файл и доставленное уведомление; в этом снимке это подтвердить нельзя.
+diff --git a/Library/LaunchAgents/com.vk.nightly-review.plist b/Library/LaunchAgents/com.vk.nightly-review.plist
+index c347363..f371054 100644
+--- a/Library/LaunchAgents/com.vk.nightly-review.plist
++++ b/Library/LaunchAgents/com.vk.nightly-review.plist
+@@ -22,6 +22,8 @@
+   <string>/Users/vk/Library/Logs/nightly-review.err</string>
+   <key>EnvironmentVariables</key>
+   <dict>
++    <key>USER</key>
++    <string>vk</string>
+     <key>PATH</key>
+     <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+   </dict>
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..ffbb576 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -5,22 +5,37 @@ set -u
+ REPO="$HOME/projects/shop"
+ OUT="$HOME/Library/Logs/nightly-review-$(date +%F).md"
+ NOTIFY="$HOME/bin/notify.sh"
++START=$(date +%s)
+ 
+-SINCE=$(date -v-1d +%F)
++fail() {
++  local rc=$1
++  shift
++  print -u2 -- "nightly review: $* (after $(($(date +%s) - START))s)"
++  "$NOTIFY" "nightly review FAILED: $*" || print -u2 -- "nightly review: failure notification failed"
++  exit "$rc"
++}
++
++SINCE=$(date -v-1d +%F) || fail 1 "could not calculate review date"
+ PROMPT="Review the commits in this repository since $SINCE.
+ For each commit: one line on what it changes and whether anything looks risky
+ (migrations, auth, payments, deleted tests).
+ End with a three-line summary I can read on my phone.
+ Do not modify any file."
+ 
+-cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
+-
+-claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
++cd "$REPO" || fail 1 "repo missing: $REPO"
+ 
+-if [ $status -ne 0 ]; then
+-  "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
+-  exit $status
++if claude -p "$PROMPT" --output-format text < /dev/null > "$OUT"; then
++  :
++else
++  rc=$?
++  fail "$rc" "Claude exited with code $rc; see $OUT"
+ fi
+ 
+-"$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"
++[[ -s "$OUT" ]] || fail 1 "Claude produced no review; see $OUT"
++
++print -u2 -- "nightly review: review written to $OUT (after $(($(date +%s) - START))s)"
++"$NOTIFY" "nightly review done: $(head -c 300 "$OUT")" || {
++  rc=$?
++  print -u2 -- "nightly review: success notification failed (exit $rc)"
++  exit "$rc"
++}
+diff --git a/bin/notify.sh b/bin/notify.sh
+index 818e531..bc9115f 100755
+--- a/bin/notify.sh
++++ b/bin/notify.sh
+@@ -3,5 +3,5 @@
+ set -eu
+ : "${TG_BOT_TOKEN:=$(security find-generic-password -s tg-bot -w)}"
+ CHAT_ID=123456789
+-curl -sS -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
++curl -fsS -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
+   -d chat_id="$CHAT_ID" --data-urlencode text="$1" > /dev/null

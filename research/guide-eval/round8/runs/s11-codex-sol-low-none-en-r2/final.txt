@@ -1,0 +1,3 @@
+The second publish failed because it was the first to store a related-story score. That score was a Python `float`, which boto3 rejects for DynamoDB writes; the first publish had an empty `similar` list.
+
+I changed related scores to `Decimal` values in [app.py](/tmp/h-XOwblm/src/app.py), added a regression test covering later publishes and zero scores, and documented the cause and fix in [ANSWER.md](/tmp/h-XOwblm/ANSWER.md). All tests pass with `python3 -m unittest discover tests`.

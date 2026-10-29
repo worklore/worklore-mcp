@@ -1,0 +1,5 @@
+The job ran six times. Each run failed because `claude` reported “Not logged in”; then zsh aborted at `status=$?` before the failure notification could run.
+
+I fixed the launchd environment, the wrapper’s failure path, and the notifier’s HTTP error handling. The evidence, causes, and which parts of your colleague’s note applied are in [ANSWER.md](/tmp/h-VsnidI/ANSWER.md).
+
+The plist and scripts passed syntax checks, and local stubs exercised success and failure notifications. I did not reload the live agent or contact Telegram, so live authentication and delivery still need confirmation on the actual Mac.

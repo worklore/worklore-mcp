@@ -1,0 +1,5 @@
+The job ran six times. Each run failed because `claude` had no usable login in the launchd environment. The script then tried to assign its exit code to zsh’s read-only `status` variable, stopping it before the failure notification.
+
+I fixed the exit-code handling, made failure notifications include the captured error, and made the notifier return an error for Telegram HTTP failures. The causes and remaining setup step are in [ANSWER.md](/tmp/h-5PZ8Zr/ANSWER.md). Syntax and plist checks pass.
+
+Successful reviews still require noninteractive Claude authentication for the actual launchd job. That credential is absent from the snapshot, so I could not verify a live review or Telegram delivery.

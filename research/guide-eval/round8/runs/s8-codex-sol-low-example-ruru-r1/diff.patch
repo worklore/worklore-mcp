@@ -1,0 +1,32 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..5793cd6
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,7 @@
++# Исправление кеширования
++
++В `bot.py` системный промпт разделён на два текстовых блока с `cache_control: ephemeral`: неизменные инструкции и изменяемый контекст атлета (дата, профиль, зоны, цель, факты, язык). После `save_fact` меняется только второй блок; первый остаётся побайтно тем же при неизменном наборе инструментов.
++
++Из заметки пригодились идея двух точек кеширования и требование проверять стабильность префикса. Отбор фактов под сообщение не добавлял: он менял бы контекст при каждом запросе. Фильтрацию инструментов оставил как есть, согласно `NOTES.md`; при смене их набора кешированный префикс тоже может измениться. Точные `cache_read_input_tokens` и `cache_creation_input_tokens` на реальном API здесь не проверял: внешние вызовы запрещены.
++
++Локально проверил, что оба блока имеют маркеры, после добавления факта первый блок и список инструментов не меняются, а второй содержит новый факт. Также прошли `py_compile` и `git diff --check`.
+diff --git a/bot.py b/bot.py
+index e2ff241..df2a1dd 100644
+--- a/bot.py
++++ b/bot.py
+@@ -128,9 +128,11 @@ def athlete_context(a, today):
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    # Keep the stable instructions cached when memory changes the athlete context.
++    return [
++        {"type": "text", "text": INSTRUCTIONS, "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": athlete_context(a, today), "cache_control": {"type": "ephemeral"}},
++    ]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [

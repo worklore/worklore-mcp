@@ -1,0 +1,5 @@
+The job did run six times. Each time, Claude reported that it was not logged in; then the script tried to assign to zsh’s read-only `status` variable and exited before sending the failure note.
+
+I fixed the script to capture Claude’s exit code in `review_exit` and documented both causes in [ANSWER.md](/tmp/h-fLrlIt/ANSWER.md). Syntax checks and `git diff --check` passed.
+
+The review still needs Claude authentication configured for the real launchd session. This snapshot contains no credentials, so I could not verify a successful run.

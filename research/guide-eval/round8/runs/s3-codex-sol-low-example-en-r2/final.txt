@@ -1,0 +1,5 @@
+The job ran six times. Each run failed because `claude` could not find its login, then the zsh wrapper stopped at `status=$?` before it could send a failure notification.
+
+I added `USER=vk` to the plist and fixed the wrapper’s failure handling. It now closes stdin for the argument-based prompt, rejects empty output, and logs run duration. [ANSWER.md](/tmp/h-cxowhJ/ANSWER.md) records the causes and which parts of the colleague’s note applied.
+
+The script syntax and plist validation pass. I could not verify a live review or Telegram delivery from this snapshot; no job was reloaded or external message sent.

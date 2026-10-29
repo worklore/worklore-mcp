@@ -1,0 +1,49 @@
+gui/501/com.vk.nightly-review = {
+	active count = 0
+	path = /Users/vk/Library/LaunchAgents/com.vk.nightly-review.plist
+	type = LaunchAgent
+	state = waiting
+
+	program = /bin/zsh
+	arguments = {
+		/bin/zsh
+		/Users/vk/bin/nightly-review.zsh
+	}
+
+	stdout path = /Users/vk/Library/Logs/nightly-review.out
+	stderr path = /Users/vk/Library/Logs/nightly-review.err
+	default environment = {
+		PATH => /usr/bin:/bin:/usr/sbin:/sbin
+	}
+
+	environment = {
+		PATH => /opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin
+		XPC_SERVICE_NAME => com.vk.nightly-review
+	}
+
+	domain = gui/501 [100005]
+	minimum runtime = 10
+	exit timeout = 5
+	runs = 6
+	last exit code = 1
+
+	event triggers = {
+		com.vk.nightly-review.StartCalendarInterval => {
+			keep alive = 0
+			service = com.vk.nightly-review
+			name = com.vk.nightly-review.StartCalendarInterval
+			descriptor = {
+				"Hour" => 2
+				"Minute" => 30
+			}
+		}
+	}
+
+	spawn type = daemon (3)
+	properties = {
+		partial import = 0
+		launchd bundle = 0
+		trusted = 0
+		on demand = 1
+	}
+}

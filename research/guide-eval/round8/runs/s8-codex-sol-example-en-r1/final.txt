@@ -1,0 +1,3 @@
+I split the system prompt into two cached blocks: fixed coaching instructions and changing athlete context. A `save_fact` write now changes only the second block. I also updated [ANSWER.md](/tmp/h-7miJff/ANSWER.md) with what changed, which parts of the colleague’s note applied, and the remaining live verification step.
+
+The local regression test passes: after `save_fact`, the instruction block and tool list stay identical while the athlete context updates. A live API call is still needed to confirm the cache token counts.

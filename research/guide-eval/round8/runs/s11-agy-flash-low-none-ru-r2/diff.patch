@@ -1,0 +1,136 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..738f644
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,34 @@
++# Причина ошибки 500 при повторной публикации и способ её устранения
++
++## Почему первая публикация работала, а вторая возвращала 500
++
++1. **Первая публикация**:
++   - При первом запросе таблица DynamoDB пуста (`existing = []`).
++   - Функция `related(story, existing)` не находит существующих историй и возвращает пустой список `similar: []`.
++   - В сохраняемом объекте `item` отсутствуют числовые поля с плавающей точкой (`float`), поэтому вызов `table.put_item(Item=item)` проходит успешно и возвращает статус 201.
++
++2. **Вторая (и последующие) публикации**:
++   - В таблице уже есть сохранённая первая статья (`existing` содержит элементы).
++   - Вызывается функция `related(story, existing)`, которая для каждой существующей истории рассчитывает коэффициент схожести с помощью функции `similarity(a, b)`.
++   - Функция `similarity()` возвращала результат вызова `round(...)`, имеющий стандартный тип Python `float`.
++   - Поле `item["similar"]` содержало список объектов вида `{"slug": ..., "score": <float>}`.
++   - Клиент `boto3` (модуль `boto3.dynamodb.types.TypeSerializer`) намеренно запрещает тип `float` при сериализации атрибутов элементов DynamoDB во избежание потерь точности и требует использовать тип `Decimal` из стандартного модуля `decimal`.
++   - При попытке выполнить `table.put_item(Item=item)` возникло исключение:
++     ```text
++     TypeError: Float types are not supported. Use Decimal types instead.
++     ```
++   - В функции `handler()` исключение попало в общий блок `except Exception:`, где было записано в лог как `publish failed` и привело к ответу с HTTP-кодом 500 (`Internal Server Error`).
++
++## Исправление
++
++1. **В `src/app.py`**:
++   - Импортирован класс `Decimal` из модуля `decimal`.
++   - Значение схожести в функции `similarity()` преобразуется в `Decimal`:
++     ```python
++     return Decimal(str(round(0.7 * tag_score + 0.3 * word_score, 4)))
++     ```
++     Теперь поле `score` сериализуется как числовой тип DynamoDB (`N`) без ошибок валидации типов.
++
++2. **В `tests/test_publish.py`**:
++   - Добавлен тест `test_subsequent_publishes_succeed_with_decimal_score`, проверяющий успешность публикации второй истории и валидность типа `Decimal` для поля `score` в списке `similar`.
++   - Добавлен тест `test_handler_second_publish_returns_201_not_500`, проверяющий успешный возврат статуса 201 (вместо 500) при последовательных вызовах `handler`.
+diff --git a/src/app.py b/src/app.py
+index db49c5e..5931a84 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -4,6 +4,7 @@ Each story is stored in one DynamoDB item together with the three most similar
+ stories already in the library (``similar``), so the reader page can show
+ "related" without a query at read time.
+ """
++from decimal import Decimal
+ import json
+ import logging
+ import re
+@@ -27,7 +28,7 @@ def similarity(a, b):
+     tag_score = len(ta & tb) / len(ta | tb) if (ta | tb) else 0
+     wa, wb = words(a.get("body")), words(b.get("body"))
+     word_score = len(wa & wb) / len(wa | wb) if (wa | wb) else 0
+-    return round(0.7 * tag_score + 0.3 * word_score, 4)
++    return Decimal(str(round(0.7 * tag_score + 0.3 * word_score, 4)))
+ 
+ 
+ def related(story, existing):
+diff --git a/tests/test_publish.py b/tests/test_publish.py
+index 6c9ac44..3bd132f 100644
+--- a/tests/test_publish.py
++++ b/tests/test_publish.py
+@@ -1,6 +1,8 @@
++import json
+ import os
+ import sys
+ import unittest
++from decimal import Decimal
+ 
+ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+ sys.path.insert(0, os.path.dirname(__file__))
+@@ -23,6 +25,61 @@ class PublishTest(unittest.TestCase):
+         self.assertEqual(table.get_item(Key={"slug": "why-my-cron-ran-twice"})["Item"]["title"], "Why my cron ran twice")
+         self.assertEqual(table.scan()["Count"], 1)
+ 
++    def test_subsequent_publishes_succeed_with_decimal_score(self):
++        table = FakeTable()
++        story1 = {
++            "slug": "why-my-cron-ran-twice",
++            "title": "Why my cron ran twice",
++            "tags": ["cron", "linux"],
++            "body": "Two crontabs, one for root and one for me, both had the line.",
++        }
++        story2 = {
++            "slug": "debugging-cron-jobs",
++            "title": "Debugging cron jobs",
++            "tags": ["cron", "monitoring"],
++            "body": "How to inspect crontabs and system logs when jobs fire twice.",
++        }
++        app.publish(table, story1)
++        stored2 = app.publish(table, story2)
++
++        self.assertEqual(stored2["slug"], "debugging-cron-jobs")
++        self.assertEqual(len(stored2["similar"]), 1)
++        self.assertEqual(stored2["similar"][0]["slug"], "why-my-cron-ran-twice")
++        self.assertIsInstance(stored2["similar"][0]["score"], Decimal)
++        self.assertGreater(stored2["similar"][0]["score"], Decimal(0))
++
++    def test_handler_second_publish_returns_201_not_500(self):
++        table = FakeTable()
++        res1 = app.handler(
++            {
++                "body": json.dumps(
++                    {
++                        "slug": "story-one",
++                        "title": "Story One",
++                        "tags": ["python"],
++                        "body": "First story about python programming.",
++                    }
++                )
++            },
++            table,
++        )
++        self.assertEqual(res1["statusCode"], 201)
++
++        res2 = app.handler(
++            {
++                "body": json.dumps(
++                    {
++                        "slug": "story-two",
++                        "title": "Story Two",
++                        "tags": ["python"],
++                        "body": "Second story also about python programming.",
++                    }
++                )
++            },
++            table,
++        )
++        self.assertEqual(res2["statusCode"], 201)
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

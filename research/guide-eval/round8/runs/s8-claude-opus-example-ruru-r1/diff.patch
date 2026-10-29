@@ -1,0 +1,163 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..798fb86
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,75 @@
++# Почему `save_fact` сбрасывал кеш и что изменено
++
++## Что показывал `logs/usage.jsonl`
++
++Промах был в **round 2 того же сообщения**, а не только в следующем сообщении:
++`round 1, tool: save_fact` → `round 2: cache_read 0, cache_creation ~1060`. Причин две:
++
++1. `reply()` пересобирал системный промпт на каждой итерации цикла инструментов, а
++   `run_tool("save_fact")` в это время дописывал факт в `a.facts`. Поэтому уже следующий
++   раунд отправлял другой промпт.
++2. В `build_system()` был один блок (`INSTRUCTIONS` + контекст атлета) с одним маркером
++   `cache_control`. Кеш работает по хешу префикса, и любой новый факт (а также смена даты)
++   сбрасывал весь промпт вместе с инструкциями, которые никогда не меняются.
++
++## Изменения (`bot.py`)
++
++- **`build_system()`: два блока, на каждом `cache_control: ephemeral`.** Блок 1 — только
++  `INSTRUCTIONS`: байт в байт одинаковые для всех атлетов и всех дней. Блок 2 —
++  `athlete_context()` (дата, профиль, зоны, цель, факты, язык). После записи факта заново
++  кешируется только хвост (~70–100 токенов), а общий префикс tools + инструкции
++  читается из кеша. Этот префикс общий у всех атлетов, поэтому сообщение другого
++  пользователя тоже попадает в кеш.
++- **Системный промпт собирается один раз на сообщение** (`system = build_system(...)` до цикла;
++  `build_request()` теперь принимает готовый `system`). Раунды цикла после `save_fact`
++  отправляют тот же промпт и получают полный cache read. Модель всё равно знает о новом
++  факте из пары `tool_use`/`tool_result` в истории. В системный промпт факт попадает со
++  следующим сообщением, как и описано в README.
++- **Статический блок дотянут выше минимального кешируемого префикса.** Неочевидный момент:
++  у `claude-sonnet-4-5` минимальный кешируемый префикс — 1024 токена. Он считается вместе
++  с инструментами (и служебным промптом tool use), которые стоят в запросе перед `system`.
++  По логу весь промпт был ~1046 токенов при хвосте ~80–90, значит tools + инструкции давали
++  примерно 950–960 токенов. Если бы я просто разрезал блок, первый маркер оказался бы ниже
++  порога, API молча проигнорировал бы его, и `save_fact` по-прежнему перекешировал бы весь
++  промпт. Поэтому в `INSTRUCTIONS` добавлен раздел «Zone guide»: назначение каждой зоны,
++  соответствие RPE и правило разминки/заминки, примерно +180 токенов. Он согласован с
++  существующими правилами (зоны по профилю, Z1/Z2 — лёгкие, RPE как альтернатива). Это
++  небольшое изменение промпта, то есть поведения бота: проверьте формулировки. Если
++  инструкции когда-нибудь сократят, снова проверьте, что блок 1 остаётся выше 1024 токенов.
++- В README обновлено описание кеширования.
++
++Что не трогал: фильтрацию инструментов по ключевым словам (см. NOTES.md, она полезна) и
++порядок и формулировки схем инструментов. Внутри одного сообщения список инструментов
++не меняется, поэтому раунды цикла по-прежнему попадают в кеш.
++
++## Проверка
++
++Реальных вызовов API я не делал: нет ключа, и по правилам задачи во внешние сервисы
++ничего не отправляется. Проверял офлайн: подставил фейковый клиент, который моделирует
++префиксный кеш (маркеры, порог 1024, приблизительный подсчёт токенов), и прогнал его
++на копии `data/athletes.json`. Результат:
++`hi` → creation ~1340; `hi` → read 1340; `save_fact` round 1 → read; **round 2 → read
++(раньше был полный промах)**; следующее сообщение → read ~1270 (статика) + creation ~80
++(хвост); другой атлет → read ~1270 + creation ~66.
++
++Как проверить на проде по `logs/usage.jsonl`: после `save_fact` раунд 2 должен показывать
++`cache_creation_input_tokens: 0`, а следующее сообщение — `cache_read` около 1100+ и
++`cache_creation` примерно размером с хвост. Если после записи факта `cache_creation`
++снова ~1000+, значит блок 1 ниже порога 1024 или в нём оказалось подставленное значение.
++Точный размер можно узнать через `messages.count_tokens` с одними tools + `INSTRUCTIONS`.
++
++## Что пригодилось из заметки коллеги
++
++- **Пригодилось:** главная идея — два маркера `cache_control` (статические инструкции
++  отдельно от изменчивого хвоста). Правило «никаких дат, имён и счётчиков в статическом
++  блоке». Наблюдение, что инструменты стоят в префиксе перед `system` и их нужно держать
++  стабильными. Отказ от отбора top-N фактов под сообщение (я его не вводил). Методика
++  проверки через `cache_creation`/`cache_read`, включая подсказку «если запись даёт
++  `cache_creation` размером с полный промпт, ищите проблему в статическом блоке».
++- **Не пригодилось / пропустил:** фильтрация инструментов по группам здесь уже есть с
++  марта, менять её не нужно. Цифры «~780 + ~240 токенов» относятся к чужому боту.
++  Кстати, в заметке статика ~780 токенов, что ниже порога 1024 для Sonnet 4.5. В нашем
++  случае именно это и сломало бы фикс, поэтому пришлось дополнить инструкции.
++- **Чего в заметке не было, но понадобилось:** промах внутри цикла инструментов
++  (промпт пересобирался между раундами после `save_fact`) и порог минимального
++  кешируемого префикса.
+diff --git a/README.md b/README.md
+index ebd390e..4c25709 100644
+--- a/README.md
++++ b/README.md
+@@ -12,5 +12,8 @@ Run it locally with `COACH_ANTHROPIC_KEY=sk-ant-... python3 bot.py 42` and type
+ messages on stdin (the Telegram long-polling transport, which needs
+ `COACH_TELEGRAM_TOKEN`, lives in a separate deploy repo and just calls `reply()`).
+ Requires Python 3.11+ and `pip install anthropic`. Prompt caching is on: the system
+-prompt carries a `cache_control` marker so the tool-loop rounds and follow-up
+-messages inside the 5-minute window read it from cache.
++prompt is two blocks, each with a `cache_control` marker — static `INSTRUCTIONS`
++(byte-identical for everyone, must stay above the 1024-token minimum cacheable
++prefix together with the tools) and the per-athlete context. A `save_fact` only
++re-caches the second block; the system prompt is built once per message, so the
++tool-loop rounds keep reading it from cache.
+diff --git a/bot.py b/bot.py
+index e2ff241..b6a107d 100644
+--- a/bot.py
++++ b/bot.py
+@@ -111,6 +111,15 @@ Formatting:
+ - Plain text. No markdown headings, no tables.
+ - Lists only for a session structure (warm-up / main / cool-down).
+ - Numbers with units: 45 min, 12 km, 150 bpm.
++
++Zone guide (the boundaries come from the athlete's profile; this is what each zone is for):
++- Z1 recovery: conversational with ease, after hard days and in taper weeks. Never "too easy".
++- Z2 aerobic base: most of the weekly volume lives here; long runs and long rides are Z2 unless stated.
++- Z3 tempo: comfortably hard, short sentences only. Use sparingly; it is not a substitute for Z2.
++- Z4 threshold: intervals of 4-15 min with equal or shorter recovery; counts as the hard session.
++- Z5 VO2max: 1-5 min repeats with full recovery; only for athletes with a solid base, never two days in a row.
++- RPE equivalents when there is no heart-rate data: Z1 2-3, Z2 3-4, Z3 5-6, Z4 7-8, Z5 9.
++- Every session has a warm-up of at least 10 min in Z1-Z2 and a cool-down of at least 5 min.
+ """
+ 
+ 
+@@ -128,9 +137,17 @@ def athlete_context(a, today):
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    # Two cached segments. The cache is a prefix hash, so with one marker any change in the
++    # athlete context (a save_fact, the date) also re-wrote the instructions. Segment one is
++    # INSTRUCTIONS only: byte-identical for every athlete and every day, never put a date, name
++    # or counter in it. It must stay above the model's minimum cacheable prefix (1024 tokens for
++    # Sonnet 4.5, counted together with the tools that precede it), or its marker is silently
++    # ignored and every fact write re-caches the whole prompt again.
++    # Segment two is everything per athlete; a fact write only re-caches this tail.
++    return [
++        {"type": "text", "text": INSTRUCTIONS, "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": athlete_context(a, today), "cache_control": {"type": "ephemeral"}},
++    ]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [
+@@ -187,8 +204,8 @@ def log_usage(usage, user_id, round_no, tool=None):
+         f.write(json.dumps(rec) + "\n")
+ 
+ 
+-def build_request(a, messages, tools, today):
+-    return {"model": MODEL, "max_tokens": MAX_TOKENS, "system": build_system(a, today), "tools": tools, "messages": messages}
++def build_request(system, messages, tools):
++    return {"model": MODEL, "max_tokens": MAX_TOKENS, "system": system, "tools": tools, "messages": messages}
+ 
+ 
+ def reply(user_id, text, llm=None):
+@@ -196,9 +213,13 @@ def reply(user_id, text, llm=None):
+     a = load_athlete(user_id)
+     today = dt.date.today()
+     tools = select_tools(text)
++    # Built once per message: a save_fact inside the loop must not rewrite the prompt the next
++    # round sends (that round already sees the fact in its tool_use/tool_result). The new fact
++    # reaches the system prompt with the next message.
++    system = build_system(a, today)
+     messages = [{"role": "user", "content": text}]
+     for round_no in range(1, MAX_TOOL_ROUNDS + 1):
+-        resp = llm.create(**build_request(a, messages, tools, today))
++        resp = llm.create(**build_request(system, messages, tools))
+         used_tools = [b.name for b in resp.content if b.type == "tool_use"]
+         log_usage(resp.usage, a.user_id, round_no, tool=",".join(used_tools) or None)
+         if resp.stop_reason != "tool_use":

@@ -1,0 +1,3 @@
+Changed [gen.py](/tmp/h-4qHa4q/gen.py) to emit `%lthr` HR corridors with `start` and `end`. This applies to every step, including repeats. The generated tempo-run payload passes a local check.
+
+[ANSWER.md](/tmp/h-4qHa4q/ANSWER.md) explains why the change addresses the zone clamping and which parts of the colleague’s note applied. The new payload has not been verified on the watch; no external service was contacted.

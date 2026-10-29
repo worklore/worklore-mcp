@@ -1,0 +1,34 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..1cf9765
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,15 @@
++# HR corridors clamped to watch zones
++
++## Change
++`gen.py` `hr_target()` now emits `{"units": "%lthr", "start": lo, "end": hi}` instead of `{"units": "%lthr", "value": lo, "end": hi}`.
++
++## Why
++The readback (`readback/event-184233-as-sent.json`) shows we sent `value`/`end`. The API accepted it (steps populated), so the problem was not rejection. Per the colleague's note, the key name for the lower bound selects the FIT export mode. `value`+`end` becomes a zone-mapped Lap-HR target, which the watch clamps to its own zones. `start`+`end` becomes an Instant-HR corridor, which shows the raw bpm Intervals computes (% x Intervals LTHR 172). That matches the watch-notes symptoms: every step showed a watch zone band, and changing the watch LTHR moved the bands but they stayed zone edges.
++
++## Colleague's note: what applied
++- Applied: `value` -> `start`, keeping `%lthr` units. This is the only change.
++- Already consistent: we use percentages, not bpm. `units: "bpm"` and `start_bpm`/`end_bpm` were already ruled out in watch-notes.
++- Not applied: the top-level `description` text grammar. Our readback shows `workout_doc.steps` populated and the notes don't report a web-UI problem. I left it alone.
++
++## Not verified
++I couldn't push or sync a watch, so the expected watch result is untested: 68-75 -> ~117-129 bpm, 88-93 -> 151-160, 75-82 -> 129-141, 65-72 -> 112-124. Please push a test event, read it back and check the watch. Also confirm that the readback shows `start`, since the API could normalise it.
+diff --git a/gen.py b/gen.py
+index be0b3bc..4aeba5a 100755
+--- a/gen.py
++++ b/gen.py
+@@ -10,7 +10,7 @@ import sys
+ def hr_target(step):
+     """HR corridor for a step, as a percentage of the athlete's LTHR."""
+     lo, hi = step["hr_pct"]
+-    return {"units": "%lthr", "value": lo, "end": hi}
++    return {"units": "%lthr", "start": lo, "end": hi}
+ 
+ 
+ def build_step(step):

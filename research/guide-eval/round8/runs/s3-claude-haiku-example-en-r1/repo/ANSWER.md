@@ -1,0 +1,121 @@
+# Why the nightly review never reported anything
+
+## What the evidence shows
+
+- **The job fires on schedule.** `launchctl-print.txt` (captured 2026-10-18) shows
+  `runs = 6`, `last exit code = 1`, and the 02:30 `StartCalendarInterval`. launchd
+  is not the problem.
+- **The failure note never gets sent.** `Library/Logs/nightly-review.err` has six
+  runs, each with the same two lines:
+
+  ```
+  Not logged in · Please run /login
+  /Users/vk/bin/nightly-review.zsh:19: read-only variable: status
+  ```
+
+  Line 19 of the old script is `status=$?`. In zsh, `status` is a read-only
+  parameter (it mirrors `$?`), so the assignment aborts the script. The
+  `if [ $status -ne 0 ]` block that sends the Telegram failure note is after that
+  line, so it never runs. I reproduced this with zsh 5.9.
+- **The success path never runs either.** The review itself dies first:
+  `claude -p` prints `Not logged in`, exits 1, and writes nothing to the output
+  file. `nightly-review.out` is 0 bytes.
+
+So the job was silent in both directions. The failure reporter sat downstream of the
+failure, and the failure was real.
+
+## Causes
+
+1. **Failure reporter killed by `status=$?`** (the bug that hid everything). The
+   script used a read-only zsh variable name, so the failure path died before
+   notifying. Fixed: the script uses `rc=$?`, and every failure goes through a
+   `fail` function that sends the note first.
+2. **Headless `claude` cannot see its login under launchd** (the bug that actually
+   stopped the review). Every run printed `Not logged in`. The likely cause is that
+   the job environment is missing `USER` (and possibly `HOME`), so the CLI cannot find
+   its keychain credentials. I could not prove this from the snapshot. The
+   `launchctl print` environment listing does not show `USER` or `HOME`, but it does
+   not show them as absent for certain either. The fix is the standard one, and it is
+   harmless if the cause is different.
+
+Fixing only cause 1 would make the notification arrive, reporting `Not logged in`
+every night. The review would still not run. Both are fixed now.
+
+## Changes
+
+`bin/nightly-review.zsh`:
+
+- `status=$?` replaced by `rc=$?`.
+- A `fail` function sends the failure note first, then exits 1. If the notifier
+  itself fails, that is logged to stdout.
+- `claude` gets `< /dev/null`, so it never waits on stdin.
+- Exit 0 with an empty output file is now a failure. A green exit code with
+  nothing done is no longer possible.
+- Each run logs a timestamped start, a duration, and the output size, to
+  `nightly-review.out`.
+
+`Library/LaunchAgents/com.vk.nightly-review.plist`:
+
+- Added `USER` = `vk` and `HOME` = `/Users/vk` under `EnvironmentVariables`. I took
+  these values from the `/Users/vk` paths already in the plist. Run `id -un` on the
+  Mac. If the short name is not `vk`, change `USER`.
+
+## Colleague's note: what applied
+
+| Point in the note | Applied here? |
+|---|---|
+| Check `launchctl print` first (runs, last exit code) | **Yes.** It showed the job ran, and that the exit code was a real failure (1). |
+| Read the StandardErrorPath log before theorizing | **Yes.** It contained both bugs. |
+| `status` is read-only in zsh; use `rc=$?` | **Yes, exactly.** This was the silent-failure bug. |
+| Notifier must sit near the top of the failure path | **Yes.** It is now in `fail`. |
+| "Input must be provided… stdin or prompt argument" (prompt not received) | **No.** That error is not in the log. The failure is `Not logged in`. The note's stdin-pipe fix was not applied. |
+| `< /dev/null` when the prompt is an argument | **Yes, as a precaution.** No hang appears in the log. |
+| `USER` in plist `EnvironmentVariables` for the keychain login | **Yes.** It matches the `Not logged in` symptom. Not proven here, as explained above. |
+| Log each run's duration; a few-second run means it failed | **Yes.** There was no timing before. The script now logs it. |
+| Exit code 0 is not proof of work | **Yes.** Empty output now fails the run. |
+| Forced failure test and success check | **Not run on launchd** (see below). Covered by a sandbox test. |
+
+Not used from the note: the stdin-pipe change for the prompt, because its symptom is
+absent from this log.
+
+## What I tested, and what I did not
+
+- **Sandbox test** (under the working directory, with stub `claude` and `notify`
+  scripts, nothing sent to Telegram, real home untouched). Original script with
+  `claude` failing: exits 1, no note sent. New script:
+  - `claude` fails: failure note sent, exit 1.
+  - success: summary note sent, exit 0.
+  - exit 0 with empty output: failure note sent, exit 1.
+  - `claude` fails and the notifier is down: failure is logged to stdout.
+  - success and the notifier is down: failure is logged to stdout, exit 1.
+  - repo missing: failure note sent, exit 1.
+  - The plist passes `plutil -lint`. The script passes `zsh -n`.
+- **Not tested:** the real launchd job, the real `claude` login, and the real
+  Telegram path. I did not install the plist or run `launchctl` against your login
+  session, since that is outside this folder. `bin/notify.sh` is unchanged. Its
+  keychain lookup (`security find-generic-password -s tg-bot`) has not been tested
+  under launchd, and the README says it only works by hand.
+
+## Deploy and verify (on your Mac; not run here)
+
+```sh
+cp bin/nightly-review.zsh ~/bin/nightly-review.zsh && chmod +x ~/bin/nightly-review.zsh
+cp Library/LaunchAgents/com.vk.nightly-review.plist ~/Library/LaunchAgents/
+launchctl bootout gui/$UID ~/Library/LaunchAgents/com.vk.nightly-review.plist
+launchctl bootstrap gui/$UID ~/Library/LaunchAgents/com.vk.nightly-review.plist
+launchctl kickstart -k gui/$UID/com.vk.nightly-review
+```
+
+Then check all three:
+
+1. `launchctl print gui/$UID/com.vk.nightly-review | grep -E 'runs|last exit'`: last exit code 0.
+2. `ls -l ~/Library/Logs/nightly-review-$(date +%F).md` is non-empty and fresh, and
+   `tail ~/Library/Logs/nightly-review.out` shows a plausible duration (not a few seconds).
+3. A Telegram success message arrived.
+
+Then the failure test, once: point `REPO` in `~/bin/nightly-review.zsh` at a missing
+path, kickstart again, and confirm a Telegram `FAILED` note arrives. Restore the file afterward.
+
+If `Not logged in` still appears after the `USER` change, the CLI login itself has
+expired or never reached this job. Run `claude` interactively and `/login` once, then
+kickstart again. The job cannot log in on its own.

@@ -1,0 +1,58 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..2886fcf
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,32 @@
++# Solution: Prompt Caching Fix for Memory Writes
++
++## Cause of the Issue
++Previously, [`build_system()`](file:///tmp/h-KWzCjd/bot.py#L130-L136) concatenated the static coaching instructions (`INSTRUCTIONS`) and the dynamic per-athlete profile/facts (`athlete_context(a, today)`) into a single text block with a `cache_control` marker:
++
++```python
++def build_system(a, today):
++    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
++    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++```
++
++Because Anthropic prompt caching matches exact prefix byte-for-byte, any change to the prompt invalidates the cache for that block and everything downstream. When an athlete shared a durable fact, `save_fact` appended a new item to `athlete.facts`. In the subsequent tool round or message, `athlete_context()` changed, altering the single combined block. This caused a complete cache miss (`cache_creation_input_tokens: ~1000+`, `cache_read_input_tokens: 0`), forcing a full re-computation charge for the entire system prompt including the static instructions.
++
++## Changes Made
++In [`bot.py`](file:///tmp/h-KWzCjd/bot.py):
++1. Separated the system prompt in [`build_system()`](file:///tmp/h-KWzCjd/bot.py#L130-L136) into two distinct content blocks:
++   - A static block containing `INSTRUCTIONS` with `{"cache_control": {"type": "ephemeral"}}`.
++   - A dynamic block containing `athlete_context(a, today)` without cache control.
++
++```python
++def build_system(a, today):
++    # Two blocks: static coaching instructions (cached across all athletes and calls)
++    # followed by dynamic athlete-specific context (profile, facts, date).
++    return [
++        {"type": "text", "text": INSTRUCTIONS, "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": athlete_context(a, today)},
++    ]
++```
++
++## Verification
++- Tested structure and types returned by `build_system(a, today)`: verified it returns two blocks, the first containing the exact static instructions with ephemeral cache control, and the second containing the dynamic context.
++- Verified tool execution flow with mocked LLM rounds: confirmed that when `save_fact` executes and modifies athlete facts, the static instructions block remains unchanged with its cache marker intact across rounds.
+diff --git a/bot.py b/bot.py
+index e2ff241..c774615 100644
+--- a/bot.py
++++ b/bot.py
+@@ -128,9 +128,12 @@ def athlete_context(a, today):
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    # Two blocks: static coaching instructions (cached across all athletes and calls)
++    # followed by dynamic athlete-specific context (profile, facts, date).
++    return [
++        {"type": "text", "text": INSTRUCTIONS, "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": athlete_context(a, today)},
++    ]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [

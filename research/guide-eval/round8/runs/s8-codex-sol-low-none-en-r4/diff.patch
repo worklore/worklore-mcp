@@ -1,0 +1,71 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..629caf9
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,7 @@
++# Cache fix
++
++`build_system()` now puts the coaching instructions and stable athlete profile in a separately cached first block. The date and long-term facts are in a second block. After `save_fact`, the next request therefore keeps the same first cache breakpoint while sending the updated facts. The second breakpoint still lets unchanged context be reused across normal follow-up calls.
++
++I added a short profile-use section to the instructions so the stable breakpoint remains above Claude Sonnet 4.5's 1,024-token minimum for prompt caching with the existing core tools. Tool selection and the memory persistence path are unchanged.
++
++Verified locally that a fact write leaves the first block identical, changes the second block, and includes the new fact in the next request. I did not make a live API call, so actual cache usage after this change is not measured here.
+diff --git a/__pycache__/bot.cpython-314.pyc b/__pycache__/bot.cpython-314.pyc
+new file mode 100644
+index 0000000..4e9e54e
+Binary files /dev/null and b/__pycache__/bot.cpython-314.pyc differ
+diff --git a/bot.py b/bot.py
+index e2ff241..8a1c025 100644
+--- a/bot.py
++++ b/bot.py
+@@ -111,26 +111,43 @@ Formatting:
+ - Plain text. No markdown headings, no tables.
+ - Lists only for a session structure (warm-up / main / cool-down).
+ - Numbers with units: 45 min, 12 km, 150 bpm.
++
++Profile use:
++- Treat the athlete profile as the source of truth for their name, sport, goal, zones, and language.
++- Treat long-term facts as additional context. Apply them when relevant to the question or training advice.
++- If a new durable fact conflicts with an older one, use the newer information in the current reply and save it so future replies can account for it.
++- When a tool changes the athlete record, use the updated record for the rest of the current conversation.
++- Do not repeat profile details or long-term facts just to show that you remember them.
+ """
+ 
+ 
+-def athlete_context(a, today):
++def athlete_profile(a):
+     lines = [
+-        f"Today: {today.isoformat()} ({today.strftime('%A')})",
+         f"Athlete: {a.name} (id {a.user_id}), sport: {a.sport}",
+         "Zones: " + ", ".join(f"{k} {v}" for k, v in a.zones.items()),
+         f"Goal: {a.goal}",
++        f"Language: {a.lang}",
++    ]
++    return "\n".join(lines)
++
++
++def athlete_context(a, today):
++    lines = [
++        f"Today: {today.isoformat()} ({today.strftime('%A')})",
+         "Long-term facts:",
+     ]
+     lines += [f"- {f}" for f in a.facts] or ["- (none yet)"]
+-    lines.append(f"Language: {a.lang}")
+     return "\n".join(lines)
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    # Keep the stable prefix cacheable when a memory write changes the trailing facts.
++    return [
++        {"type": "text", "text": INSTRUCTIONS + "\n\n" + athlete_profile(a),
++         "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": athlete_context(a, today),
++         "cache_control": {"type": "ephemeral"}},
++    ]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [

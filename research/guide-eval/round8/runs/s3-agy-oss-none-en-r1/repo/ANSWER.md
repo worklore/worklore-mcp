@@ -1,0 +1,62 @@
+# Causes of the silent launchd job failure
+
+## 1. Script attempted to assign to a read‑only variable `status`
+
+- The Zsh special parameter `$status` holds the exit status of the last command and **cannot be reassigned**.
+- In `nightly-review.zsh` the line:
+  ```zsh
+  status=$?
+  ```
+  caused the error `read‑only variable: status` every time the job ran.
+- Because the script exited with a non‑zero status before reaching the notification step, LaunchAgents recorded an exit code = 1 (see `launchctl‑print.txt`) but never produced any output or error message beyond the script’s own error.
+
+## 2. Consequence in LaunchAgent logs
+
+- `StandardOutPath` and `StandardErrorPath` point to `~/Library/Logs/nightly-review.out` and `.err`.
+- The `.err` file contains only the repeated *read‑only variable* messages, while the `.out` file is empty.
+- Launchd therefore appears to be “silent” because the script never reaches the `notify.sh` call that would send a Telegram message.
+
+## 3. Minor environment issue (optional)
+
+- `notify.sh` tries to retrieve a Telegram bot token from the macOS keychain using `security find‑generic‑password -s tg‑bot -w`.
+- The error messages `Not logged in · Please run /login` come from the `security` command when the keychain is locked.
+- This does **not** affect the primary failure, but once the script runs successfully you’ll need to ensure the keychain is unlocked (e.g., `security unlock‑keychain` or login automatically).
+
+# Fix applied
+
+1. **Replaced the illegal assignment** with a safe variable name.
+   ```zsh
+   # Old (broken)
+   status=$?
+   if [ $status -ne 0 ]; then
+   ...
+   fi
+   ```
+   ```zsh
+   # New (working) – stored in `exit_status`
+   exit_status=$?
+   if [ $exit_status -ne 0 ]; then
+     "$NOTIFY" "nightly review FAILED (exit $exit_status), see $OUT"
+     exit $exit_status
+   fi
+   ```
+2. The edit was performed directly on `~/bin/nightly-review.zsh` (see the diff in the repository).
+3. No changes required to the LaunchAgent plist; the existing `StandardOutPath` and `StandardErrorPath` correctly capture logs.
+
+# Verification steps
+
+- Reload the LaunchAgent:
+  ```
+  launchctl unload ~/Library/LaunchAgents/com.vk.nightly-review.plist
+  launchctl load ~/Library/LaunchAgents/com.vk.nightly-review.plist
+  ```
+- Trigger it manually to confirm it runs without the read‑only error:
+  ```
+  launchctl start com.vk.nightly-review
+  ```
+- Check the log files:
+  - `~/Library/Logs/nightly-review.out` should contain the output of the `claude` command (or be empty if nothing was generated yet).
+  - `~/Library/Logs/nightly-review.err` should no longer have the `read‑only variable` lines.
+- Verify you receive the Telegram notification (ensure the keychain is unlocked for the token).
+
+With these changes the nightly job will now report its success or failure via the configured Telegram message, and the LaunchAgent logs will reflect the actual script execution.

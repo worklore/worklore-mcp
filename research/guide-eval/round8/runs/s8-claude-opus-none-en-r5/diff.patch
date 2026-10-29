@@ -1,0 +1,141 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..f84c6d8
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,66 @@
++# Why every save_fact was a full cache miss, and the fix
++
++## Cause
++`build_system()` sent the system prompt as **one** text block with one
++`cache_control` marker: instructions + `Today:` + profile + facts + `Language:`.
++Prompt caching only matches exact prefixes, so changing any byte of that block
++throws away the cache entry for the whole block. `save_fact` appends to
++`a.facts`, and the loop rebuilds the system prompt on the next round, so the
++round right after a `save_fact` sent a different block. That's the
++`cache_read_input_tokens: 0` / `cache_creation ≈ 1000+` pattern in
++`logs/usage.jsonl`, and those writes cost 1.25x base input instead of 0.1x.
++The `Language:` line also came after the facts, so a new fact never just
++extended the old prompt. It changed the middle of it.
++
++The obvious fix doesn't work here. If you split off the instructions as their
++own cached block, nothing gets cached: tools + instructions come to about
++960 tokens (the logs show ~1046 total for athlete 42, and the profile and 3 facts
++are ~85 of that). Sonnet 4.5 needs at least 1024 tokens before a breakpoint,
++and anything shorter is silently not cached.
++
++## Change (`bot.py`, `build_system` / new `athlete_profile`)
++The system prompt is now a list of blocks, ordered so the parts that change most
++come last:
++
++1. `INSTRUCTIONS`: static
++2. profile (name, sport, zones, goal, language, a "facts follow" header): stable per athlete
++3. one block per fact (`save_fact` only ever appends)
++4. `Today: …`: after the last breakpoint, so it isn't cached
++
++The `cache_control` breakpoint is on the **last fact block**. When a fact is
++appended, the old prompt is an exact prefix of the new one, and the old
++breakpoint is one block earlier. The API's prefix lookback (up to 20 blocks
++before a breakpoint) finds the previous entry. So the call after a
++`save_fact` reads the ~1000 cached tokens and writes only the new fact
++(~15 tokens), instead of re-writing everything.
++
++Side effects:
++- The date moved out of the cached part, so the first message of each day no
++  longer misses the cache either.
++- A second breakpoint on the profile block is a fallback for when facts are
++  edited or removed, or more than 20 are added between two calls. It only
++  takes effect if tools + instructions + profile reach 1024 tokens; otherwise
++  it does nothing and costs nothing.
++- `(none yet)` is gone. If it disappeared when the first fact arrived, the
++  prompt would no longer be append-only.
++
++Tool filtering is unchanged, as NOTES.md asks.
++
++## Verification
++I ran it offline with a fake LLM client (no API calls): `reply()` with a
++`save_fact` round, then another message. For each request, the prefix up to the
++previous request's last breakpoint is byte-identical in the next request (the
++round after save_fact, and the following message). The final system text reads
++the same as before, apart from the order.
++
++I haven't checked it against the live API. After deploying, watch
++`logs/usage.jsonl`: rows right after a `save_fact` should show
++`cache_read_input_tokens` ≈ the previous prefix and a small
++`cache_creation_input_tokens`.
++
++## Not fixed (separate issue)
++Tools come before `system` in the cache prefix. When a message's keywords pull
++in `plan_week` / `predict_race`, the tool list changes and the whole prefix
++misses (the 1305/1334 rows). That isn't caused by memory writes, and NOTES.md
++asks to keep keyword filtering. If it matters, one option is to always send the
++same tool list and limit which tools can be used per message instead.
+diff --git a/README.md b/README.md
+index ebd390e..0872e7d 100644
+--- a/README.md
++++ b/README.md
+@@ -12,5 +12,7 @@ Run it locally with `COACH_ANTHROPIC_KEY=sk-ant-... python3 bot.py 42` and type
+ messages on stdin (the Telegram long-polling transport, which needs
+ `COACH_TELEGRAM_TOKEN`, lives in a separate deploy repo and just calls `reply()`).
+ Requires Python 3.11+ and `pip install anthropic`. Prompt caching is on: the system
+-prompt carries a `cache_control` marker so the tool-loop rounds and follow-up
+-messages inside the 5-minute window read it from cache.
++prompt is built as append-only blocks (instructions, profile, one block per fact,
++then today's date) with `cache_control` on the last fact, so tool-loop rounds and
++follow-up messages inside the 5-minute window read it from cache, and a new fact
++only adds its own block to the cache instead of re-writing the whole prompt.
+diff --git a/bot.py b/bot.py
+index e2ff241..f0d693d 100644
+--- a/bot.py
++++ b/bot.py
+@@ -114,23 +114,39 @@ Formatting:
+ """
+ 
+ 
+-def athlete_context(a, today):
+-    lines = [
+-        f"Today: {today.isoformat()} ({today.strftime('%A')})",
++def athlete_profile(a):
++    # Stable per-athlete data only. No date and nothing that save_fact touches.
++    return "\n".join([
+         f"Athlete: {a.name} (id {a.user_id}), sport: {a.sport}",
+         "Zones: " + ", ".join(f"{k} {v}" for k, v in a.zones.items()),
+         f"Goal: {a.goal}",
+-        "Long-term facts:",
+-    ]
+-    lines += [f"- {f}" for f in a.facts] or ["- (none yet)"]
+-    lines.append(f"Language: {a.lang}")
+-    return "\n".join(lines)
++        f"Language: {a.lang}",
++        "Long-term facts (one per line below; none listed means none saved yet):",
++    ]) + "\n"
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    """System prompt as an append-only sequence of blocks, cheapest-to-change last.
++
++    Prompt caching matches on exact prefixes, so anything that changes must sit
++    after everything that doesn't. Order: static instructions -> stable profile ->
++    one block per fact (save_fact only ever appends) -> today's date (uncached).
++    The breakpoint sits on the last fact; when a new fact is appended, the API's
++    lookback finds the previous request's entry one block earlier, so only the new
++    fact is written to cache instead of the whole prompt.
++    """
++    blocks = [
++        {"type": "text", "text": INSTRUCTIONS + "\n"},
++        {"type": "text", "text": athlete_profile(a)},
++    ]
++    blocks += [{"type": "text", "text": f"- {f}\n"} for f in a.facts]
++    blocks[-1]["cache_control"] = {"type": "ephemeral"}
++    if len(blocks) > 2:
++        # Fallback entry that survives fact edits or >20 facts added at once
++        # (only written if tools + instructions + profile reach the model's minimum).
++        blocks[1]["cache_control"] = {"type": "ephemeral"}
++    blocks.append({"type": "text", "text": f"\nToday: {today.isoformat()} ({today.strftime('%A')})"})
++    return blocks
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [

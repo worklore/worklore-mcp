@@ -1,0 +1,129 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..98a8cd8
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,43 @@
++# Диапазоны пульса на часах: что изменено и почему
++
++## Причина
++
++`gen.py` отправлял цели пульса в Intervals как `{"units": "%lthr", "value": 68, "end": 75}`.
++Intervals при экспорте в Garmin переводит такие цели в собственные зоны часов
++(Z2, Z4 и т.п.), а не в диапазон, который мы задали. Поэтому на часах появлялись
++полосы зон: 118–137, 151–162, 137–151, а не 117–129, 151–160, 129–141.
++Смена LTHR в часах только сдвигала эти полосы, но не превращала их в наш диапазон.
++
++## Что изменено
++
++1. **`gen.py`**: проценты LTHR переводятся в абсолютные bpm прямо в генераторе.
++   Цель теперь выглядит так: `{"units": "bpm", "value": 151, "end": 160}`.
++   Формула: `round(pct * lthr / 100)`. Функции `hr_target`, `build_step` и `build_doc`
++   получили параметр `lthr`.
++2. **`plans/tempo-run.json`**: добавлено поле `"lthr": 172`, его берёт генератор.
++   Теперь LTHR задаётся в плане, а не подразумевается.
++
++Результат генератора для этого плана (проверено запуском `python3 -I gen.py plans/tempo-run.json`):
++
++| шаг | % LTHR | bpm (units: bpm) | ожидалось в readback |
++|---|---|---|---|
++| Warm-up easy | 68–75 | 117–129 | 117–129 |
++| Tempo | 88–93 | 151–160 | 151–160 |
++| Float | 75–82 | 129–141 | 129–141 |
++| Cool-down | 65–72 | 112–124 | 112–124 |
++
++В выводе больше нет `%lthr`. Файл `readback/event-184233-as-sent.json` не менялся: это запись
++отправленного ранее события.
++
++## Что не проверено
++
++- Событие не отправлялось: по правилам задачи ничего не публикуется и не отправляется.
++  Поэтому не известно, что покажут часы после push. Нужно отправить событие, затем
++  сверить диапазоны на часах с таблицей выше.
++- Сообщения на форуме Intervals (найдены поиском, официальной документации не нашлось)
++  описывают похожую проблему на Edge 840 с прошивкой ≥30.18: абсолютные bpm
++  интерпретировались как % от HRmax. Это могло объяснить неудачную попытку с `units: "bpm"`
++  из readback (показано 214–249 bpm), но точная причина неизвестна. Если на часах снова
++  будут неверные значения, проверьте прошивку и то, как часы трактуют bpm.
++- В `README.md` написано, что Intervals сам переводит проценты в bpm при экспорте. После этой
++  правки это уже неверно: bpm считает генератор. README пока не обновлён.
+diff --git a/README.md b/README.md
+index 31b0941..48c3dda 100644
+--- a/README.md
++++ b/README.md
+@@ -9,8 +9,9 @@ exports them to the athlete's Garmin watch through Garmin Connect.
+ - `readback/` holds what the API returned for the last pushed event and
+   notes on what the watch displayed.
+ 
+-Athlete thresholds live in Intervals (LTHR 172 for this athlete). HR targets
+-in plans are percentages of LTHR; Intervals converts them to bpm at export.
++Athlete thresholds: LTHR 172 for this athlete, set in `plans/*.json` as `lthr`.
++HR targets in plans are percentages of LTHR; `gen.py` converts them to absolute
++bpm, because Intervals exports % LTHR targets as the watch's zone bands.
+ 
+ ```
+ python3 gen.py plans/tempo-run.json > event.json
+diff --git a/gen.py b/gen.py
+index be0b3bc..2ea6d75 100755
+--- a/gen.py
++++ b/gen.py
+@@ -7,31 +7,40 @@ import json
+ import sys
+ 
+ 
+-def hr_target(step):
+-    """HR corridor for a step, as a percentage of the athlete's LTHR."""
++def hr_target(step, lthr):
++    """HR corridor for a step, converted from % of LTHR to absolute bpm.
++
++    Intervals sends %lthr targets to the watch as its own zone bands, so the
++    planned corridor is resolved to bpm here, from the plan's LTHR.
++    """
+     lo, hi = step["hr_pct"]
+-    return {"units": "%lthr", "value": lo, "end": hi}
++    return {
++        "units": "bpm",
++        "value": round(lo * lthr / 100),
++        "end": round(hi * lthr / 100),
++    }
+ 
+ 
+-def build_step(step):
++def build_step(step, lthr):
+     out = {"duration": step["minutes"] * 60}
+     if "hr_pct" in step:
+-        out["hr"] = hr_target(step)
++        out["hr"] = hr_target(step, lthr)
+     if "label" in step:
+         out["text"] = step["label"]
+     return out
+ 
+ 
+ def build_doc(plan):
++    lthr = plan["lthr"]
+     steps = []
+     for block in plan["steps"]:
+         if "repeat" in block:
+             steps.append({
+                 "reps": block["repeat"],
+-                "steps": [build_step(s) for s in block["steps"]],
++                "steps": [build_step(s, lthr) for s in block["steps"]],
+             })
+         else:
+-            steps.append(build_step(block))
++            steps.append(build_step(block, lthr))
+     return {"steps": steps}
+ 
+ 
+diff --git a/plans/tempo-run.json b/plans/tempo-run.json
+index 8a4a545..a9aea9a 100644
+--- a/plans/tempo-run.json
++++ b/plans/tempo-run.json
+@@ -2,6 +2,7 @@
+   "name": "Tempo run 45",
+   "sport": "Run",
+   "date": "2026-10-20",
++  "lthr": 172,
+   "steps": [
+     {"label": "Warm-up easy", "minutes": 10, "hr_pct": [68, 75]},
+     {"repeat": 3, "steps": [

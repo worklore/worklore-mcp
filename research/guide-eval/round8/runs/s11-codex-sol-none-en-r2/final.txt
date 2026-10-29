@@ -1,0 +1,3 @@
+The first publish succeeds because it has no related-story scores. The second creates a Python `float` score, which DynamoDB rejects, causing the 500.
+
+I changed stored scores to `Decimal` and added a regression test covering three consecutive publishes. The cause and fix are documented in [ANSWER.md](/tmp/h-IKqoiN/ANSWER.md). Both tests pass with `python3 -m unittest discover tests`.

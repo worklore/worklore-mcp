@@ -1,0 +1,36 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..9bc9bf0
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,7 @@
++# Исправление кеширования
++
++В `bot.py` функция `build_system` теперь отправляет два текстовых блока с `cache_control: ephemeral`: неизменные `INSTRUCTIONS` и отдельный контекст спортсмена (дата, профиль, зоны, цель, факты, язык). После `save_fact` меняется только второй блок; первый остаётся тем же кешируемым префиксом для запросов с одинаковым набором инструментов.
++
++Из заметки пригодились разделение статической и изменчивой частей двумя маркерами и проверка по `cache_read_input_tokens` / `cache_creation_input_tokens`. Фильтрация инструментов уже была в проекте, поэтому её не менял. Отбор фактов под отдельное сообщение здесь не нужен: текущий код передаёт все факты и сохраняет стабильность контекста между записями. Набор инструментов может меняться по ключевым словам, поэтому при его смене кешированный префикс может пересоздаваться независимо от памяти.
++
++Локальная проверка подтвердила, что после добавления факта первый блок побайтно прежний, второй меняется и оба имеют маркер кеша. Реальные счётчики Anthropic после изменения не проверялись: внешние вызовы запрещены условием задачи. При доступной локальной проверке ожидаемый признак исправления после `save_fact` — чтение статического блока из кеша и создание кеша только для изменившегося хвоста при том же наборе инструментов и в пределах TTL.
+diff --git a/__pycache__/bot.cpython-314.pyc b/__pycache__/bot.cpython-314.pyc
+new file mode 100644
+index 0000000..0b63207
+Binary files /dev/null and b/__pycache__/bot.cpython-314.pyc differ
+diff --git a/bot.py b/bot.py
+index e2ff241..00e1793 100644
+--- a/bot.py
++++ b/bot.py
+@@ -128,9 +128,11 @@ def athlete_context(a, today):
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    # Keep the shared instructions cacheable when save_fact changes the athlete context.
++    return [
++        {"type": "text", "text": INSTRUCTIONS, "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": athlete_context(a, today), "cache_control": {"type": "ephemeral"}},
++    ]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [

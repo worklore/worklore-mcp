@@ -1,0 +1,51 @@
+# HR ranges showing up as the watch's zones
+
+## What was wrong
+
+`gen.py` wrote every HR corridor as
+
+```json
+"hr": {"units": "%lthr", "value": 88, "end": 93}
+```
+
+In Intervals.icu's `workout_doc`, `value` is the field for a **single** target.
+A **range** uses `start` + `end` (and `"ramp": true` on the step turns that
+range into a ramp). Because the step had `value`, Intervals read it as a
+single target of 88 % LTHR and ignored `end`. When it exports a single HR
+target to Garmin, it sends a zone target instead of a custom low/high bpm
+range. The watch then shows that zone using **its own** zone table. That
+explains everything in `readback/watch-notes.md`:
+
+- every step shows exactly one of the watch's zone bands (Z2, Z4, Z3, Z2);
+- changing the watch's LTHR moves the bands, but they're always zone edges;
+- the event read back "exactly as sent". Intervals stores the doc as-is, so an
+  ignored `end` key doesn't raise an error. A populated `steps` array doesn't
+  mean the target was read as a range.
+
+The earlier workarounds (`units: "bpm"`, `start_bpm`/`end_bpm`) changed the
+units or used field names Intervals doesn't recognise. The 214–249 and constant
+101 values look like Garmin's +100 bpm offset applied to bad values. They
+didn't touch the real problem, which was `value` vs `start`.
+
+## Change
+
+`gen.py` `hr_target()`:
+
+- `hr_pct: [lo, hi]` with `lo != hi` now gives `{"units": "%lthr", "start": lo, "end": hi}`;
+- `lo == hi` gives a single target, `{"units": "%lthr", "value": lo}`.
+
+Targets stay as % LTHR, so Intervals still converts them using its LTHR (172)
+and not the watch's auto-detected 168. Expected on the watch: 117–129,
+151–160, 129–141, 112–124.
+
+## Not done / to verify
+
+- I did not push anything (ground rules). Regenerate with
+  `python3 gen.py plans/tempo-run.json > event.json`, push it yourself, then
+  check on the watch that the Tempo step reads 151–160.
+- I couldn't check the field names against the live API docs from here; this
+  is based on Intervals.icu's documented `workout_doc` format (`value` for a
+  single target, `start`/`end` for a range). If the watch still shows zone
+  bands after the change, look next at the Garmin Connect export settings.
+  Intervals' editor shows the same `start`/`end` format if you build a
+  "88-93% LTHR" step by hand and open its JSON.

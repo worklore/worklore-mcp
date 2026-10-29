@@ -1,0 +1,3 @@
+The second publish failed because it computed a related-story score as a Python float, which DynamoDB rejects. The first publish had no existing stories, so it stored no score.
+
+I converted stored scores to `Decimal`, added a regression test that publishes twice, and documented the cause, fix, and applicable parts of the colleague’s note in [ANSWER.md](/tmp/h-bGed1Z/ANSWER.md). Both tests pass.

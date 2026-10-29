@@ -1,0 +1,3 @@
+The saved launchd record shows the job ran six times. Each run failed because `claude` could not find its login, then the wrapper tried to assign to zsh’s read-only `status` variable and stopped before sending a failure notification.
+
+I fixed the plist and wrapper, added an empty-output check, and documented the causes and which parts of the colleague’s note applied in [ANSWER.md](/tmp/h-KS2q4z/ANSWER.md). The script passed `zsh -n`, and the plist parsed successfully. I did not run the job or contact Telegram, so live delivery remains unverified.

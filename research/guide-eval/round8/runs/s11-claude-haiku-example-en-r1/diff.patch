@@ -1,0 +1,143 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..4141e8f
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,76 @@
++# Second publish returns 500: float in DynamoDB item
++
++## Cause
++
++`publish()` stores each story with `similar`: the top three existing stories by
++similarity. `related()` builds that list from `similarity()`, which returns
++`round(..., 4)`, a Python `float`.
++
++- **First publish:** the table is empty, so `related()` never calls
++  `similarity()`. `similar` is `[]`, there are no floats, and the write succeeds.
++- **Second publish:** there is one story to compare against, so `similar`
++  contains `{"slug": ..., "score": 0.1234}`. boto3 rejects the float with
++  `TypeError: Float types are not supported. Use Decimal types instead.`
++  `handler()` catches it and returns 500.
++
++The bug depends on stored data. Any publish after the first one that finds a
++related story fails, so it cannot be fixed by retrying.
++
++`logs/error.log` matches this: the 09:14 publish has `similar=0` and returns 201;
++the 09:21 and 09:22 publishes fail in `table.put_item` with the float TypeError.
++
++## Fix
++
++`src/app.py`, in `related()`: the score is converted to `Decimal` at the write
++boundary.
++
++```python
++scored.append({"slug": other["slug"], "score": Decimal(str(similarity(story, other)))})
++```
++
++`Decimal(str(x))` keeps the 4-decimal value exact, where `Decimal(x)` would store
++the float's binary expansion. Sorting still works because `Decimal` compares with
++`Decimal`. The scoring math is unchanged.
++
++I checked the rest of `app.py` with a grep for `round(`, `/`, and `float(`. The
++only other float-producing lines are the divisions in `similarity()` (lines 28
++and 30), which are intermediates and never reach an item. `published_at` is an
++`int`. No other float reaches a DynamoDB write.
++
++## Keeping it from coming back
++
++`tests/test_publish.py` gets `test_second_publish_with_related_stories_is_stored`.
++It seeds one story, then calls `handler()` for a second one, the same path
++production uses, and asserts a 201, that the related slug is stored, and that
++the score is a `Decimal`.
++
++The test fails without the fix: running it against the old `src/app.py` gives a
++failure on the 500 status. With the fix, both tests pass:
++
++```
++python3 -m unittest discover tests
++OK
++```
++
++The existing fake table in `tests/fake_dynamo.py` already rejects floats the way
++boto3 does, so any future float in an item will fail the tests.
++
++## Colleague's note: what applied
++
++- **Applied:** the diagnosis. The first write hid the bug because the code path
++  depends on existing state. The fix is to convert at the DynamoDB boundary.
++- **Applied:** the seeded-table test. The new test seeds a record and writes a
++  second one, so the populated path runs under test.
++- **Applied:** the grep for `round(` and `/` feeding item dicts. I did it by hand
++  with grep, as the note describes.
++- **Not applied:** integer percentages. That would change the stored score
++  format, and nothing in the repo says the reader expects percentages. `Decimal`
++  keeps the existing values.
++- **Not done:** publishing twice against a real table. The ground rules forbid
++  deploying or publishing to external services, so the fix is verified only with
++  the in-memory table. Before relying on it in production, run the second publish
++  against the real `stories` table in a non-production environment.
++
++## Not committed
++
++The changes are uncommitted: `src/app.py`, `tests/test_publish.py`, and this file.
+diff --git a/src/app.py b/src/app.py
+index db49c5e..e89044b 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -8,6 +8,7 @@ import json
+ import logging
+ import re
+ import time
++from decimal import Decimal
+ 
+ log = logging.getLogger("stories")
+ 
+@@ -35,7 +36,8 @@ def related(story, existing):
+     for other in existing:
+         if other["slug"] == story["slug"]:
+             continue
+-        scored.append({"slug": other["slug"], "score": similarity(story, other)})
++        # DynamoDB rejects Python floats; Decimal(str(...)) keeps the 4-decimal value exact.
++        scored.append({"slug": other["slug"], "score": Decimal(str(similarity(story, other)))})
+     scored.sort(key=lambda s: s["score"], reverse=True)
+     return scored[:TOP_N]
+ 
+diff --git a/tests/test_publish.py b/tests/test_publish.py
+index 6c9ac44..4ac301a 100644
+--- a/tests/test_publish.py
++++ b/tests/test_publish.py
+@@ -1,6 +1,7 @@
+ import os
+ import sys
+ import unittest
++from decimal import Decimal
+ 
+ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+ sys.path.insert(0, os.path.dirname(__file__))
+@@ -23,6 +24,26 @@ class PublishTest(unittest.TestCase):
+         self.assertEqual(table.get_item(Key={"slug": "why-my-cron-ran-twice"})["Item"]["title"], "Why my cron ran twice")
+         self.assertEqual(table.scan()["Count"], 1)
+ 
++    def test_second_publish_with_related_stories_is_stored(self):
++        # The first publish has nothing to compare against; the second one computes
++        # similarity scores, which is the path that used to crash with a float.
++        table = FakeTable()
++        app.publish(table, {
++            "slug": "why-my-cron-ran-twice",
++            "title": "Why my cron ran twice",
++            "tags": ["cron", "linux"],
++            "body": "Two crontabs, one for root and one for me, both had the line.",
++        })
++        response = app.handler(
++            {"body": '{"slug": "cron-again", "title": "Cron again", "tags": ["cron"], '
++                     '"body": "Two crontabs ran the job twice, again."}'},
++            table,
++        )
++        self.assertEqual(response["statusCode"], 201)
++        similar = table.get_item(Key={"slug": "cron-again"})["Item"]["similar"]
++        self.assertEqual([s["slug"] for s in similar], ["why-my-cron-ran-twice"])
++        self.assertIsInstance(similar[0]["score"], Decimal)
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

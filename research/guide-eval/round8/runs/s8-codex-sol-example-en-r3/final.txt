@@ -1,0 +1,3 @@
+Fixed prompt caching so a `save_fact` write changes only the athlete context block; the fixed coaching instructions keep their own cache breakpoint. I added a regression test and documented the change, the applicable parts of the colleague’s note, and verification limits in [ANSWER.md](/tmp/h-sUL2C2/ANSWER.md).
+
+`python3 -m unittest -v` passes. Live cache usage remains unverified because this checkout has no Anthropic SDK or API key.

@@ -1,0 +1,56 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..0c3164a
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,10 @@
++# Почему задача молчала
++
++`launchctl-print.txt` показывает `runs = 6` и `last exit code = 1`: launchd запускал задачу. В `Library/Logs/nightly-review.err` для каждого запуска видна цепочка из двух ошибок:
++
++1. `claude` завершался с `Not logged in · Please run /login`. В окружении задачи из plist отсутствовал `USER`; добавлено `USER=vk`, чтобы CLI мог найти вход в связке ключей при запуске через launchd.
++2. Сразу после вызова CLI скрипт присваивал `status=$?`. В zsh `status` — переменная только для чтения. Ошибка на этой строке прекращала выполнение до ветки, отправляющей сообщение об ошибке. Теперь код возврата хранится в `rc`.
++
++Промпт уже передавался аргументом `-p`, поэтому перенаправлять его через stdin не требовалось. Для такого вызова stdin закрыт через `< /dev/null`. Также добавлена проверка непустого отчёта: успешный код возврата сам по себе не доказывает, что обзор создан. Если отправка сообщения об ошибке тоже не удастся, скрипт запишет это в stderr.
++
++Из заметки коллеги пригодились проверка `launchctl print` и stderr, замена `status` на `rc`, установка `USER`, закрытие stdin при промпте-аргументе и проверка реального результата. Совет передавать промпт через stdin здесь не нужен: аргумент `-p "$PROMPT"` уже корректно заключён в кавычки. Проверку через `kickstart` и реальную отправку в Telegram не проводил: по условию нельзя ничего отправлять во внешний сервис и работать вне текущей папки. Исправленный plist потребуется загрузить в настоящий launchd отдельно; снимок сам по себе действующую задачу не меняет.
+diff --git a/Library/LaunchAgents/com.vk.nightly-review.plist b/Library/LaunchAgents/com.vk.nightly-review.plist
+index c347363..f371054 100644
+--- a/Library/LaunchAgents/com.vk.nightly-review.plist
++++ b/Library/LaunchAgents/com.vk.nightly-review.plist
+@@ -22,6 +22,8 @@
+   <string>/Users/vk/Library/Logs/nightly-review.err</string>
+   <key>EnvironmentVariables</key>
+   <dict>
++    <key>USER</key>
++    <string>vk</string>
+     <key>PATH</key>
+     <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+   </dict>
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..031f80e 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -15,12 +15,17 @@ Do not modify any file."
+ 
+ cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
+ 
+-claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
++claude -p "$PROMPT" --output-format text < /dev/null > "$OUT"
++rc=$?
+ 
+-if [ $status -ne 0 ]; then
+-  "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
+-  exit $status
++if [ "$rc" -ne 0 ]; then
++  "$NOTIFY" "nightly review FAILED (exit $rc), see $OUT" || print -u2 -- "nightly review: failure notification failed"
++  exit "$rc"
++fi
++
++if [ ! -s "$OUT" ]; then
++  "$NOTIFY" "nightly review FAILED (empty report), see $OUT" || print -u2 -- "nightly review: failure notification failed"
++  exit 1
+ fi
+ 
+ "$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"

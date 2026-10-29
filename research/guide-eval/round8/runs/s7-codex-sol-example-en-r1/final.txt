@@ -1,0 +1,3 @@
+Fixed the Intervals.icu connection flow. The Connect button now starts OAuth through an authenticated POST, the requested scopes no longer repeat areas, and the backend no longer invents a one-hour token expiry. A 401 from Intervals now clears the token and prompts reconnection.
+
+The causes, how the colleague’s note applied, and the verification limits are in [ANSWER.md](/tmp/h-m5gm7I/ANSWER.md). Local integration tests pass; live OAuth could not be tested without production credentials.

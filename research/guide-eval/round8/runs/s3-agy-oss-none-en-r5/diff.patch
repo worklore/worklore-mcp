@@ -1,0 +1,29 @@
+diff --git a/Library/LaunchAgents/com.vk.nightly-review.plist b/Library/LaunchAgents/com.vk.nightly-review.plist
+index c347363..5eed1c4 100644
+--- a/Library/LaunchAgents/com.vk.nightly-review.plist
++++ b/Library/LaunchAgents/com.vk.nightly-review.plist
+@@ -7,7 +7,7 @@
+   <key>ProgramArguments</key>
+   <array>
+     <string>/bin/zsh</string>
+-    <string>/Users/vk/bin/nightly-review.zsh</string>
++    <string>/tmp/h-DmxY4y/bin/nightly-review.zsh</string>
+   </array>
+   <key>StartCalendarInterval</key>
+   <dict>
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..0b6ad16 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -16,9 +16,9 @@ Do not modify any file."
+ cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
+ 
+ claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
++exit_status=$?
+ 
+-if [ $status -ne 0 ]; then
++if [ $exit_status -ne 0 ]; then
+   "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
+   exit $status
+ fi

@@ -1,0 +1,3 @@
+Fixed the prompt cache layout. Coaching instructions and athlete context now have separate cache markers, so a `save_fact` write changes the athlete block while leaving the static instructions intact. I added a regression test and documented the change, the applicable parts of the colleague’s note, and the remaining tool-selection caveat in [ANSWER.md](/tmp/h-qeRDoW/ANSWER.md).
+
+The test and syntax check pass. Live cache token counts remain unverified because this workspace has no Anthropic SDK or API key.

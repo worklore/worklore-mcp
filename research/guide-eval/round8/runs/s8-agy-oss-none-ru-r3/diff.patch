@@ -1,0 +1,27 @@
+diff --git a/bot.py b/bot.py
+index e2ff241..941c1c3 100644
+--- a/bot.py
++++ b/bot.py
+@@ -128,9 +128,19 @@ def athlete_context(a, today):
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    """Construct the system prompt.
++
++    The static INSTRUCTIONS are cached across requests, while the per‑athlete
++    context (including dynamic facts) is marked as *ephemeral* so it is not
++    cached. This prevents a `save_fact` call from causing the entire system
++    prompt to be re‑sent and billed again.
++    """
++    # Static part – can be cached by the LLM service.
++    static_msg = {"type": "text", "text": INSTRUCTIONS}
++    # Dynamic athlete‑specific part – marked as ephemeral to avoid caching.
++    dynamic_text = athlete_context(a, today)
++    dynamic_msg = {"type": "text", "text": dynamic_text, "cache_control": {"type": "ephemeral"}}
++    return [static_msg, dynamic_msg]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [

@@ -1,0 +1,150 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..565bde5
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,95 @@
++# Why the nightly review never reports anything
++
++## Cause 1 (the one that stops every run): `status` is a read-only variable in zsh
++
++`bin/nightly-review.zsh` line 19 was `status=$?`. In zsh, `status` is a read-only
++special parameter (an alias for the last exit status), so the assignment fails:
++
++```
++/Users/vk/bin/nightly-review.zsh:19: read-only variable: status
++```
++
++The script aborts there, before it reaches either `$NOTIFY` call. So no success
++message and no failure message is ever sent, and the job exits 1. That is why
++the launchd job shows `last exit code = 1` and why Telegram stays silent.
++
++Evidence:
++- `Library/Logs/nightly-review.err` contains that exact error on every run.
++- `launchctl-print.txt`: `runs = 6`, `last exit code = 1`.
++- Reproduced locally with zsh 5.9: `status=$?` aborts the script with exit 1, and
++  `rc=$?` works.
++
++Fix: renamed the variable to `rc` in `bin/nightly-review.zsh`, with a comment
++explaining why.
++
++## Cause 2: the job runs logged out
++
++Under launchd the job's `claude -p` call fails with:
++
++```
++Not logged in · Please run /login
++```
++
++This is the second failure. Fixing Cause 1 alone would only bring this one to
++light. The snapshot doesn't show why the credentials are missing for the launchd
++job, but the likely reason is that a launchd agent does not inherit your
++interactive shell's environment (for example an API key or config-dir variable
++exported in `~/.zshrc`). I could not verify this from here.
++
++What I changed: stderr now goes to a per-day `.err` file, and the failure
++notification includes its first 300 characters. The next failed run will tell
++you "Not logged in · Please run /login" on your phone instead of nothing.
++
++What you need to do: make the job's credentials explicit, for example by
++generating a long-lived token with `claude setup-token` (check `claude --help`
++for the exact subcommand) and loading it from the Keychain, the same way
++`notify.sh` loads `tg-bot`. I did not add any token to the repo.
++
++## Cause 3: the notifier fails silently
++
++`bin/notify.sh` could report success even when it had failed:
++
++1. If the Keychain lookup for `tg-bot` failed, `TG_BOT_TOKEN` was empty. The
++   script then POSTed to `https://api.telegram.org/bot/sendMessage` and still
++   exited 0. I reproduced this with a stub `curl`.
++2. `curl -sS` without `-f` does not treat HTTP errors (bad token, 404, 401) as
++   failures, and its output went to `/dev/null`.
++
++So even a working job would have had no way to report that Telegram rejected the
++message.
++
++Fix: `notify.sh` now exits 1 with a message on stderr when the token is empty,
++and uses `curl -f`, so HTTP errors fail the script.
++
++## Not changed, but likely to bite next
++
++- **Headless permissions.** `claude -p` cannot ask for tool permission. If the
++  review needs `git log` or `git show` and those aren't pre-approved, the review
++  may come back thin or with denied-tool notes. I did not change this, because I
++  can't verify it from the snapshot. If it happens, add read-only
++  `--allowedTools` entries (for example `Bash(git log:*)` and `Bash(git show:*)`)
++  to the `claude` call.
++- **Keychain access under launchd.** `notify.sh` reads the token with
++  `security find-generic-password`. That should work in the GUI session, but it
++  can't be checked from the snapshot. The new error message will say so if it
++  fails.
++- **Stray error line.** The `.err` file has seven "Not logged in" entries and
++  `runs = 6`. The extra one is probably a manual run.
++
++## What I verified
++
++Everything was tested locally with a throwaway HOME and stub `claude`/`curl` on
++PATH. I did not run the real job, call Claude, or send anything to Telegram.
++
++- Logged-out run: exit 1, and the failure message contains the auth error.
++- Success run: exit 0, and the summary is sent.
++- Telegram HTTP error: the job exits non-zero instead of 0.
++- No token: `notify.sh` exits 1 with a clear message and does not call curl.
++- `zsh -n` and `bash -n` pass on both scripts.
++
++## Files changed
++
++- `bin/nightly-review.zsh`: `status` renamed to `rc`; stderr captured in a
++  per-day `.err` file and included in the failure message.
++- `bin/notify.sh`: empty-token check; `curl -f`.
++- `ANSWER.md`: this file.
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..2019a85 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -4,6 +4,7 @@ set -u
+ 
+ REPO="$HOME/projects/shop"
+ OUT="$HOME/Library/Logs/nightly-review-$(date +%F).md"
++ERR="$HOME/Library/Logs/nightly-review-$(date +%F).err"
+ NOTIFY="$HOME/bin/notify.sh"
+ 
+ SINCE=$(date -v-1d +%F)
+@@ -15,12 +16,14 @@ Do not modify any file."
+ 
+ cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
+ 
+-claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
++# Not `status`: that name is read-only in zsh, and the assignment aborts the script.
++# stderr goes to its own file so errors such as "Not logged in" reach the failure message.
++claude -p "$PROMPT" --output-format text > "$OUT" 2> "$ERR"
++rc=$?
+ 
+-if [ $status -ne 0 ]; then
+-  "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
+-  exit $status
++if [ $rc -ne 0 ]; then
++  "$NOTIFY" "nightly review FAILED (exit $rc): $(head -c 300 "$ERR") (see $ERR)"
++  exit $rc
+ fi
+ 
+ "$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"
+diff --git a/bin/notify.sh b/bin/notify.sh
+index 818e531..ce42654 100755
+--- a/bin/notify.sh
++++ b/bin/notify.sh
+@@ -2,6 +2,11 @@
+ # usage: notify.sh "message"  — sends a Telegram message to me.
+ set -eu
+ : "${TG_BOT_TOKEN:=$(security find-generic-password -s tg-bot -w)}"
++if [ -z "$TG_BOT_TOKEN" ]; then
++  echo "notify.sh: no Telegram token (keychain item tg-bot missing or locked)" >&2
++  exit 1
++fi
+ CHAT_ID=123456789
+-curl -sS -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
++# -f: HTTP errors (bad token, bad chat) must fail the script instead of exiting 0.
++curl -fsS -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
+   -d chat_id="$CHAT_ID" --data-urlencode text="$1" > /dev/null

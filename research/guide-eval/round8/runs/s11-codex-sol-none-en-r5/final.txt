@@ -1,0 +1,3 @@
+The second publish failed because it created a `similar[].score` as a Python `float`, which boto3 refuses to store in DynamoDB. The first publish had an empty `similar` list, so it succeeded.
+
+I changed similarity scores to use `Decimal` throughout and added a regression test covering three publishes. The cause and fix are documented in [ANSWER.md](/tmp/h-tkYZtj/ANSWER.md). Both tests pass, and `git diff --check` is clean.

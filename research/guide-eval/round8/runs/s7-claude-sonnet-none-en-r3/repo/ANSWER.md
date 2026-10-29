@@ -1,0 +1,7 @@
+# Why Intervals.icu connection fails
+
+1. **Connect button always 401s.** It was a plain `<a href="/api/intervals/auth/init">`. A browser navigation cannot send the `Authorization: Bearer` header (the SPA only adds it in `fetch`), so `require_user` returned `{"error":"unauthorized"}` for everyone. Fix: `/auth/init` now returns `{url}` as JSON; the button calls it via `fetch` (with the header) and then sets `location.href`.
+2. **Authorize step 400s even with a hand-built link.** The 2026-10-02 calendar sync added `CALENDAR:READ,CALENDAR:WRITE` to `SCOPES`. Intervals answers `invalid_request` before the consent screen; the last working request (Rivera, 2026-09-19) was granted only `ACTIVITY:WRITE,WELLNESS:READ`. Fix: scopes reverted to the known-working set, overridable via `INTERVALS_SCOPES`. Caveat: I cannot reach Intervals from here, so this is inferred from the logs (the error body does not name the parameter) and untested; calendar scopes presumably need to be enabled on the OAuth client before they are re-added.
+3. **"Reconnect" after an hour.** Intervals' token response had no `expires_in` and no `refresh_token`. `store_connection` invented a 3600s default expiry, and the refresher then marked the connection expired with nothing to refresh. Fix: no `expires_in` now means no timer-based expiry; a connection is marked expired only if Intervals actually rejects the token (401 on wellness). The refresh path also no longer crashes on a missing `expires_in`.
+
+Not tested end to end against Intervals (no external access).

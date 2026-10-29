@@ -1,0 +1,68 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..60f4eb3
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,38 @@
++# HR corridors shown as watch zones: fix
++
++## Cause
++`gen.py` wrote each HR corridor as
++
++```json
++"hr": {"units": "%lthr", "value": 68, "end": 75}
++```
++
++In Intervals.icu's `workout_doc`, a **range** is written as `start` + `end`.
++`value` means a **single target**. Intervals read each step as one %LTHR value,
++so `end` had no effect. When it exported to Garmin, it sent each single HR
++value as a heart-rate *zone* target. The watch then showed that zone's edges
++from its own zone table (118–137, 151–162, …). That is why changing the
++watch's LTHR moved the bands but never produced 151–160. The API still
++accepted the doc and returned it as sent, because the keys are valid JSON.
++So the readback looked fine even though it was read differently.
++
++The earlier attempts were also off the target: `start_bpm`/`end_bpm` are not
++workout_doc fields, and absolute `bpm` values skip the %LTHR conversion that
++the README relies on.
++
++## Change (`gen.py`, `hr_target`)
++- A corridor is now `{"units": "%lthr", "start": lo, "end": hi}`. Intervals
++  converts it with the athlete's LTHR (172) and exports it as a custom bpm
++  range, e.g. Tempo 88–93% → about 151–160.
++- If `lo == hi`, it outputs a single `value` (a deliberate single target).
++- If `lo > hi`, it raises an error instead of sending an inverted range.
++
++The plan files and `push.sh` are unchanged.
++
++## Not verified
++I did not push anything (per the ground rules), so I have not confirmed this
++against the live API or the watch. To check: regenerate
++(`python3 gen.py plans/tempo-run.json > event.json`), push, sync, and confirm
++the watch shows Tempo ≈151–160 and Float ≈129–141. If the steps still appear
++as zones, check whether Intervals' Garmin export settings force HR targets
++to zones.
+diff --git a/gen.py b/gen.py
+index be0b3bc..8b23ec4 100755
+--- a/gen.py
++++ b/gen.py
+@@ -8,9 +8,17 @@ import sys
+ 
+ 
+ def hr_target(step):
+-    """HR corridor for a step, as a percentage of the athlete's LTHR."""
++    """HR corridor for a step, as a percentage of the athlete's LTHR.
++
++    Intervals' workout_doc encodes a range as start/end; "value" is a single
++    target, which Intervals exports to Garmin as a zone rather than a range.
++    """
+     lo, hi = step["hr_pct"]
+-    return {"units": "%lthr", "value": lo, "end": hi}
++    if lo == hi:
++        return {"units": "%lthr", "value": lo}
++    if lo > hi:
++        raise ValueError(f"hr_pct {step['hr_pct']}: low is above high")
++    return {"units": "%lthr", "start": lo, "end": hi}
+ 
+ 
+ def build_step(step):

@@ -1,0 +1,21 @@
+diff --git a/src/app.py b/src/app.py
+index db49c5e..a8cd9a9 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -6,6 +6,7 @@ stories already in the library (``similar``), so the reader page can show
+ """
+ import json
+ import logging
++from decimal import Decimal
+ import re
+ import time
+ 
+@@ -35,7 +36,7 @@ def related(story, existing):
+     for other in existing:
+         if other["slug"] == story["slug"]:
+             continue
+-        scored.append({"slug": other["slug"], "score": similarity(story, other)})
++        scored.append({"slug": other["slug"], "score": Decimal(str(similarity(story, other)))})
+     scored.sort(key=lambda s: s["score"], reverse=True)
+     return scored[:TOP_N]
+ 

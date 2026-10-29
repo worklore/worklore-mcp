@@ -1,0 +1,158 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..bae85f1
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,62 @@
++# Вторая публикация возвращает 500
++
++## Причина
++
++`src/app.py`, функция `similarity()` возвращала `float` (`round(..., 4)`).
++`related()` кладёт эти значения в `item["similar"]`, а `publish()` пишет
++элемент через `table.put_item(Item=item)`.
++
++- Первая публикация идёт в пустую таблицу. `related()` возвращает пустой
++  список, float в записи нет, запись проходит.
++- Вторая публикация сравнивает историю с уже сохранённой. В `similar` появляется
++  `{"slug": ..., "score": 0.xxxx}` с float, и boto3 отклоняет элемент:
++  `TypeError: Float types are not supported. Use Decimal types instead.`
++  (см. `logs/error.log`, строки 09:21:47 и 09:22:10).
++
++Ошибка была в коде с самого начала. Она просто не проявлялась, пока в таблице
++не было ни одной записи.
++
++Тесты не ловили её, потому что `tests/test_publish.py` публиковал только в
++пустую таблицу. `tests/fake_dynamo.py` уже отказывал бы во float, но до этого
++путь с оценками не доходил.
++
++## Исправление
++
++- `src/app.py`: `similarity()` возвращает `Decimal(str(round(..., 4)))`.
++  Значение то же самое (четыре знака), сортировка и `TOP_N` не меняются, формат
++  `similar: [{slug, score}]` сохранён. DynamoDB принимает `Decimal`.
++- Округление до целых процентов, как предложено в заметке, я не делал: это
++  поменяло бы смысл `score` для читателя страницы.
++
++## Чтобы не повторилось
++
++1. `test_second_publish_with_similar_stories_is_stored`: сажает одну историю,
++   публикует вторую и проверяет `similar` и количество записей. Это и есть путь,
++   который падал. Тест падал на исходном коде с той же ошибкой, что в логе.
++2. `test_stored_item_is_valid_for_boto3_serializer`: прогоняет каждое значение
++   элемента через `boto3.dynamodb.types.TypeSerializer`, тот же сериализатор,
++   что при `put_item`. Поэтому float в любом поле упадёт в тесте, даже без
++   настоящей таблицы.
++3. Тип на источнике: `similarity()` теперь объявлен как возвращающий `Decimal`,
++   и это записано в docstring.
++
++Запуск: `python3 -m unittest discover tests` из корня репозитория. Все три теста
++проходят.
++
++Публикация в реальную таблицу не выполнялась: это вне рамок задачи. Проверка
++только локальная, через `FakeTable` и настоящий `TypeSerializer`.
++
++## Что взято из заметки коллеги
++
++- **Пригодилось:** главный вывод про то, что тест с пустой базой не покрывает
++  путь с существующими данными. Тест с засеянной записью стал основным
++  исправлением тестов.
++- **Пригодилось:** поиск по коду всего, что попадает в элемент и вычисляется
++  делением или `round(`. В проекте такое одно место, `similarity()`. `published_at`
++  уже целое (`int(time.time())`).
++- **Пригодилось:** проверка через сериализатор boto3 на границе записи.
++- **Не пригодилось:** способ с целыми процентами, см. выше.
++- **Не пригодилось:** шаг «опубликуйте дважды в реальную таблицу». Публикация
++  в продакшен вне рамок задачи, и тесты дают ту же проверку локально.
++- **Не относится к этому проекту:** раздел «агенту понадобятся от вас» и
++  правила деплоя из заметки.
+diff --git a/src/app.py b/src/app.py
+index db49c5e..8e2ad07 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -8,6 +8,7 @@ import json
+ import logging
+ import re
+ import time
++from decimal import Decimal
+ 
+ log = logging.getLogger("stories")
+ 
+@@ -22,12 +23,16 @@ def words(text):
+ 
+ 
+ def similarity(a, b):
+-    """Shared-tag ratio (Jaccard), blended with shared words of the two bodies."""
++    """Shared-tag ratio (Jaccard), blended with shared words of the two bodies.
++
++    Returns a Decimal: DynamoDB rejects Python floats, and this value is stored
++    inside the item.
++    """
+     ta, tb = set(a.get("tags", [])), set(b.get("tags", []))
+     tag_score = len(ta & tb) / len(ta | tb) if (ta | tb) else 0
+     wa, wb = words(a.get("body")), words(b.get("body"))
+     word_score = len(wa & wb) / len(wa | wb) if (wa | wb) else 0
+-    return round(0.7 * tag_score + 0.3 * word_score, 4)
++    return Decimal(str(round(0.7 * tag_score + 0.3 * word_score, 4)))
+ 
+ 
+ def related(story, existing):
+diff --git a/tests/test_publish.py b/tests/test_publish.py
+index 6c9ac44..89535fd 100644
+--- a/tests/test_publish.py
++++ b/tests/test_publish.py
+@@ -7,6 +7,7 @@ sys.path.insert(0, os.path.dirname(__file__))
+ 
+ import app  # noqa: E402
+ from fake_dynamo import FakeTable  # noqa: E402
++from boto3.dynamodb.types import TypeSerializer  # noqa: E402
+ 
+ 
+ class PublishTest(unittest.TestCase):
+@@ -23,6 +24,46 @@ class PublishTest(unittest.TestCase):
+         self.assertEqual(table.get_item(Key={"slug": "why-my-cron-ran-twice"})["Item"]["title"], "Why my cron ran twice")
+         self.assertEqual(table.scan()["Count"], 1)
+ 
++    def test_second_publish_with_similar_stories_is_stored(self):
++        # The first publish always runs against an empty table, so it never
++        # produces scores. Seed one story first so the second publish exercises
++        # the scoring path that was failing in production.
++        table = FakeTable()
++        app.publish(table, {
++            "slug": "why-my-cron-ran-twice",
++            "title": "Why my cron ran twice",
++            "tags": ["cron", "linux"],
++            "body": "Two crontabs, one for root and one for me, both had the line.",
++        })
++        stored = app.publish(table, {
++            "slug": "my-cron-jobs-and-root",
++            "title": "My cron jobs and root",
++            "tags": ["cron"],
++            "body": "Root owns the system crontab, I own mine, and both ran the same line.",
++        })
++        self.assertEqual([s["slug"] for s in stored["similar"]], ["why-my-cron-ran-twice"])
++        self.assertEqual(table.scan()["Count"], 2)
++
++    def test_stored_item_is_valid_for_boto3_serializer(self):
++        # Runs the same type check boto3 applies on put_item, so a float in any
++        # attribute fails here even without a real table.
++        table = FakeTable()
++        app.publish(table, {
++            "slug": "why-my-cron-ran-twice",
++            "title": "Why my cron ran twice",
++            "tags": ["cron", "linux"],
++            "body": "Two crontabs, one for root and one for me, both had the line.",
++        })
++        stored = app.publish(table, {
++            "slug": "my-cron-jobs-and-root",
++            "title": "My cron jobs and root",
++            "tags": ["cron", "linux"],
++            "body": "Root owns the system crontab, I own mine, and both ran the same line.",
++        })
++        serializer = TypeSerializer()
++        for name, value in stored.items():
++            serializer.serialize(value)
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

@@ -1,0 +1,3 @@
+Fixed the cache layout in [bot.py](/tmp/h-TfMoAM/bot.py): coaching instructions and the stable athlete profile now form the cached prefix; the date and long-term facts follow it. A `save_fact` updates the next request without changing that prefix. Tool selection is unchanged.
+
+The change is documented in [ANSWER.md](/tmp/h-TfMoAM/ANSWER.md). Two local tests pass, covering a memory write and a date change. No external API was called, so live token savings have not been measured.

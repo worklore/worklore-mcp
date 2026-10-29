@@ -1,0 +1,131 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..8a0cd9d
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,60 @@
++# Second publish returns 500: float score written to DynamoDB
++
++## Cause
++
++`publish()` stores each story with `similar`, a list of `{slug, score}` for the
++three most similar existing stories. `score` comes from `similarity()`, which
++returns `round(..., 4)`. Python's `round()` on these Jaccard ratios returns a
++`float`, and boto3's DynamoDB serializer rejects floats:
++
++    TypeError: Float types are not supported. Use Decimal types instead.
++
++(`logs/error.log`, `src/app.py:63`, the `put_item` call.)
++
++Why the first publish worked: `table.scan()` returned nothing on the empty
++table, so `related()` never called `similarity()` and `similar` was `[]`. No
++float was built. The bug only exists once the table has at least one story.
++
++Why the tests missed it: `tests/test_publish.py` only publishes into an empty
++`FakeTable`, so it never reaches the score path. `FakeTable` already rejects
++floats (`tests/fake_dynamo.py`), so the test would have caught this if it had
++ever run the populated path.
++
++## Fix
++
++- `src/app.py`: `related()` now stores the score as `Decimal(str(...))`. The
++  float stays inside `similarity()` and the sort, and is converted at the point
++  it enters the item. `str()` keeps the 4-decimal value exact, so the stored
++  number is `0.3333`, not `0.33329999...`.
++- `tests/test_publish.py`: new test
++  `test_second_publish_with_existing_story_stores_related`. It seeds one record
++  with `put_item`, then publishes a second story and asserts that `similar`
++  holds the seeded slug with a `Decimal` score. Against the old code it fails
++  with the same TypeError as production (verified before the fix).
++
++Result: `python3 -m unittest discover tests` passes both tests.
++
++To keep it from coming back: the seeded test runs the populated path, so
++`FakeTable`'s float check now fires on any float written in that path. Any
++future computed value (averages, counters, new scores) must go through
++`Decimal` or `int` before it reaches `put_item`.
++
++## Which parts of the colleague's note applied
++
++- **Applied:** the diagnosis (the bug sits on the populated path, the first
++  write never exercises it); the seeded integration test; grepping for
++  computed values that reach an item dict; converting at the boundary with
++  `Decimal`.
++- **Applied, with a note:** the grep. `round(` and `/` appear only in
++  `similarity()` (`src/app.py:28-31`). The only route from them into an item is
++  `related()` → `similar[].score`. `published_at` uses `int(time.time())`, which
++  is already an int.
++- **Not applied:** converting scores to integer percentages. That changes the
++  `score` value the reader page receives (0-1 becomes 0-100) and I don't know
++  what the reader expects. `Decimal` keeps the existing scale. If you want
++  percentages, it is a one-line change in `related()`, but it is a contract
++  change.
++- **Not done:** publishing twice against a real table. The ground rules
++  forbid deploying or publishing to an external service. The seeded test
++  covers the same code path locally, but it runs against `FakeTable`, not
++  DynamoDB. Please run one real double-publish after deploying to confirm.
+diff --git a/src/app.py b/src/app.py
+index db49c5e..6cf362f 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -8,6 +8,7 @@ import json
+ import logging
+ import re
+ import time
++from decimal import Decimal
+ 
+ log = logging.getLogger("stories")
+ 
+@@ -35,7 +36,9 @@ def related(story, existing):
+     for other in existing:
+         if other["slug"] == story["slug"]:
+             continue
+-        scored.append({"slug": other["slug"], "score": similarity(story, other)})
++        # DynamoDB rejects Python floats; store the score as a Decimal.
++        score = Decimal(str(similarity(story, other)))
++        scored.append({"slug": other["slug"], "score": score})
+     scored.sort(key=lambda s: s["score"], reverse=True)
+     return scored[:TOP_N]
+ 
+diff --git a/tests/test_publish.py b/tests/test_publish.py
+index 6c9ac44..ec017e9 100644
+--- a/tests/test_publish.py
++++ b/tests/test_publish.py
+@@ -1,6 +1,7 @@
+ import os
+ import sys
+ import unittest
++from decimal import Decimal
+ 
+ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+ sys.path.insert(0, os.path.dirname(__file__))
+@@ -23,6 +24,29 @@ class PublishTest(unittest.TestCase):
+         self.assertEqual(table.get_item(Key={"slug": "why-my-cron-ran-twice"})["Item"]["title"], "Why my cron ran twice")
+         self.assertEqual(table.scan()["Count"], 1)
+ 
++    def test_second_publish_with_existing_story_stores_related(self):
++        # The first publish runs against an empty table and never computes a
++        # similarity score, so only a write with existing stories reaches the
++        # score path. Seed one record first so the populated path runs.
++        table = FakeTable()
++        table.put_item(Item={
++            "slug": "why-my-cron-ran-twice",
++            "title": "Why my cron ran twice",
++            "tags": ["cron", "linux"],
++            "body": "Two crontabs, one for root and one for me, both had the line.",
++            "similar": [],
++        })
++        story = {
++            "slug": "cron-env-path",
++            "title": "Cron and the PATH it does not have",
++            "tags": ["cron", "linux", "shell"],
++            "body": "My script worked in the terminal and failed under cron, the PATH differed.",
++        }
++        stored = app.publish(table, story)
++        self.assertEqual([s["slug"] for s in stored["similar"]], ["why-my-cron-ran-twice"])
++        self.assertIsInstance(stored["similar"][0]["score"], Decimal)
++        self.assertEqual(table.scan()["Count"], 2)
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

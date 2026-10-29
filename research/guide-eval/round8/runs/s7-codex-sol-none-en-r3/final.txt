@@ -1,0 +1,3 @@
+Fixed the Intervals.icu connection flow and documented the three causes in [ANSWER.md](/tmp/h-usD0SD/ANSWER.md): the Connect link dropped the app’s authorization header, the requested scopes contained duplicates, and the app invented a one-hour token expiry.
+
+Connect now starts through an authenticated request, requests each scope area once, and keeps the access token until Intervals rejects it. The local OAuth flow tests pass. A live consent flow remains unverified because this workspace has placeholder OAuth credentials.

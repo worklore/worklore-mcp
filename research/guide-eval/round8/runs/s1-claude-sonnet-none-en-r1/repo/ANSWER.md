@@ -1,0 +1,25 @@
+# Change
+
+`gen.py` `hr_target()` emitted a range as `{"units": "%lthr", "value": lo, "end": hi}`.
+It now emits `{"units": "%lthr", "start": lo, "end": hi}`.
+
+# Why
+
+In the Intervals.icu `workout_doc`, `value` is the single-target field. A range
+uses `start`/`end`. With `value` + `end`, the API accepts the step (the readback
+shows `steps` populated) but it's a malformed range. The export then looks to
+have fallen back to the watch's zone band containing the target, which matches
+the notes: every corridor came out as a Garmin zone edge pair (118–137, 151–162, …).
+Changing the watch LTHR only shifted the zone edges, as expected under that theory.
+
+I kept `%lthr` rather than bpm: the earlier `bpm` attempt displayed 214–249,
+and `start_bpm`/`end_bpm` aren't field names the API recognises (constant 101).
+
+# Not verified
+
+This is my best reading of the API format, not a confirmed fix. I made no API
+calls, as instructed, and couldn't check the watch. Next step: push a test event
+with the new generator and compare the watch against the expected 117–129 /
+151–160 / 129–141 / 112–124. If the watch still shows zone bands, the cause is
+in the Garmin export side and the fallback is absolute bpm in a field/units
+Intervals documents for HR ranges.

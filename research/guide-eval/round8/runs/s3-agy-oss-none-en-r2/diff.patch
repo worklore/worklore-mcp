@@ -1,0 +1,49 @@
+diff --git a/Library/LaunchAgents/com.vk.nightly-review.plist b/Library/LaunchAgents/com.vk.nightly-review.plist
+index c347363..8b803cf 100644
+--- a/Library/LaunchAgents/com.vk.nightly-review.plist
++++ b/Library/LaunchAgents/com.vk.nightly-review.plist
+@@ -7,7 +7,7 @@
+   <key>ProgramArguments</key>
+   <array>
+     <string>/bin/zsh</string>
+-    <string>/Users/vk/bin/nightly-review.zsh</string>
++    <string>/tmp/h-AQpjbm/bin/nightly-review.zsh</string>
+   </array>
+   <key>StartCalendarInterval</key>
+   <dict>
+@@ -17,7 +17,7 @@
+     <integer>30</integer>
+   </dict>
+   <key>StandardOutPath</key>
+-  <string>/Users/vk/Library/Logs/nightly-review.out</string>
++  <string>/tmp/h-AQpjbm/Library/Logs/nightly-review.out</string>
+   <key>StandardErrorPath</key>
+   <string>/Users/vk/Library/Logs/nightly-review.err</string>
+   <key>EnvironmentVariables</key>
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..7bfecf5 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -2,11 +2,11 @@
+ # Nightly review of yesterday's commits, summary to Telegram.
+ set -u
+ 
+-REPO="$HOME/projects/shop"
+-OUT="$HOME/Library/Logs/nightly-review-$(date +%F).md"
+-NOTIFY="$HOME/bin/notify.sh"
++REPO="/tmp/h-AQpjbm/projects/shop"
++OUT="/tmp/h-AQpjbm/Library/Logs/nightly-review-$(/bin/date +%F).md"
++NOTIFY="/tmp/h-AQpjbm/bin/notify.sh"
+ 
+-SINCE=$(date -v-1d +%F)
++SINCE=$(/bin/date -v-1d +%F)
+ PROMPT="Review the commits in this repository since $SINCE.
+ For each commit: one line on what it changes and whether anything looks risky
+ (migrations, auth, payments, deleted tests).
+diff --git a/projects/shop b/projects/shop
+new file mode 160000
+index 0000000..74d3538
+--- /dev/null
++++ b/projects/shop
+@@ -0,0 +1 @@
++Subproject commit 74d3538a2d9301d4e59be719245c6d3d9dd512a9

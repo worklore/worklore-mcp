@@ -1,0 +1,68 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..35f2e89
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,11 @@
++# Why the nightly job was silent
++
++The job **did run**. The saved `launchctl print` shows six runs and `last exit code = 1`. Its stderr log contains six pairs of errors: `Not logged in · Please run /login`, followed by `read-only variable: status` at line 19.
++
++The plist supplied `PATH` but not `USER`. In this headless launchd environment, `claude` could not find its login and exited before producing a review. The wrapper then assigned to zsh's read-only `status` parameter. That error terminated the script before its failure-notification branch, so neither a summary nor a failure note reached Telegram. The empty stdout log is consistent with this sequence.
++
++I added `USER=vk` to the plist, renamed the exit-code variable to `rc`, and pipe the prompt to `claude -p` through stdin. The wrapper now reports an empty output as a failure and logs elapsed time, so a zero exit code alone cannot mark an empty review as successful. The failure notification runs immediately after either failure check.
++
++From the colleague's note, the following applied: inspect `launchctl print` and stderr first; avoid assigning to zsh `status`; set `USER` for headless CLI login; pass the prompt through stdin; check the actual output and duration rather than relying only on exit code. The note's alternative of passing a prompt argument with closed stdin was not used because this wrapper now pipes the prompt. There is no evidence in this snapshot of a multiline argument parsing failure: the recorded CLI error was specifically a login failure.
++
++Validation in this snapshot: `zsh -n bin/nightly-review.zsh` and plist parsing both passed. A live launchd run and Telegram delivery cannot be verified from this local snapshot; the files have not been deployed or used to contact an external service.
+diff --git a/Library/LaunchAgents/com.vk.nightly-review.plist b/Library/LaunchAgents/com.vk.nightly-review.plist
+index c347363..f371054 100644
+--- a/Library/LaunchAgents/com.vk.nightly-review.plist
++++ b/Library/LaunchAgents/com.vk.nightly-review.plist
+@@ -22,6 +22,8 @@
+   <string>/Users/vk/Library/Logs/nightly-review.err</string>
+   <key>EnvironmentVariables</key>
+   <dict>
++    <key>USER</key>
++    <string>vk</string>
+     <key>PATH</key>
+     <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+   </dict>
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..7e760ea 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -5,6 +5,7 @@ set -u
+ REPO="$HOME/projects/shop"
+ OUT="$HOME/Library/Logs/nightly-review-$(date +%F).md"
+ NOTIFY="$HOME/bin/notify.sh"
++START_SECONDS=$SECONDS
+ 
+ SINCE=$(date -v-1d +%F)
+ PROMPT="Review the commits in this repository since $SINCE.
+@@ -15,12 +16,20 @@ Do not modify any file."
+ 
+ cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
+ 
+-claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
++print -r -- "$PROMPT" | claude -p --output-format text > "$OUT"
++rc=$?
+ 
+-if [ $status -ne 0 ]; then
+-  "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
+-  exit $status
++if (( rc != 0 )); then
++  print -r -- "nightly review failed: claude exit $rc after $(( SECONDS - START_SECONDS ))s" >&2
++  "$NOTIFY" "nightly review FAILED (exit $rc), see $OUT"
++  exit $rc
+ fi
+ 
++if [[ ! -s "$OUT" ]]; then
++  print -r -- "nightly review failed: empty output after $(( SECONDS - START_SECONDS ))s" >&2
++  "$NOTIFY" "nightly review FAILED (empty output), see $OUT"
++  exit 1
++fi
++
++print -r -- "nightly review completed in $(( SECONDS - START_SECONDS ))s: $OUT"
+ "$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"

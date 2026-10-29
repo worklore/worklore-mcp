@@ -1,0 +1,54 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..f87a4cf
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,17 @@
++# Почему nightly-review молчал
++
++Задача запускалась (runs = 6, расписание 02:30 верное), но ни одного сообщения не отправила. Причин две, и они наслаиваются друг на друга.
++
++1. **`claude` в launchd не авторизован** (`Not logged in · Please run /login` в `nightly-review.err`, 6 раз). Агент выходит с кодом 1 — это и есть `last exit code = 1`. Вручную всё работает, потому что в интерактивной сессии логин есть, а у фонового агента launchd его нет.
++2. **Баг в скрипте: `status` — read-only переменная в zsh** (`read-only variable: status`, строка 19). Из-за `status=$?` zsh падал сразу после запуска `claude`, и до ветки `if ... notify.sh "FAILED"` дело не доходило. Уведомление об ошибке было мертво, поэтому первая причина оставалась невидимой в Telegram.
++
++`notify.sh` и Telegram ни при чём: он работает вручную и просто ни разу не вызывался.
++
++## Что исправлено
++- `bin/nightly-review.zsh`: переменная `status` переименована в `rc`, теперь сообщение о сбое реально отправляется.
++- `bin/notify.sh`: добавлен `curl --fail`, чтобы HTTP-ошибки Telegram (неверный токен и т.п.) давали ненулевой код, а не молчали.
++
++## Что нужно сделать вам (я не могу это сделать из снимка)
++- Дать фоновому запуску авторизацию: выполнить `claude setup-token` и добавить полученный токен в `EnvironmentVariables` плиста как `CLAUDE_CODE_OAUTH_TOKEN` (или залогиниться так, чтобы учётные данные были доступны из сессии gui/501). Затем перезагрузить агент: `launchctl bootout gui/$UID/com.vk.nightly-review && launchctl bootstrap gui/$UID ~/Library/LaunchAgents/com.vk.nightly-review.plist`, и проверить `launchctl kickstart gui/$UID/com.vk.nightly-review`.
++- До этого шага ночной запуск будет приходить в Telegram как «FAILED» — это ожидаемо и уже лучше тишины.
++- Скопировать исправленные файлы из этой папки в домашнюю директорию.
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..bf005f5 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -16,11 +16,11 @@ Do not modify any file."
+ cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
+ 
+ claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
++rc=$?
+ 
+-if [ $status -ne 0 ]; then
+-  "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
+-  exit $status
++if [ $rc -ne 0 ]; then
++  "$NOTIFY" "nightly review FAILED (exit $rc), see $OUT"
++  exit $rc
+ fi
+ 
+ "$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"
+diff --git a/bin/notify.sh b/bin/notify.sh
+index 818e531..2aa315a 100755
+--- a/bin/notify.sh
++++ b/bin/notify.sh
+@@ -3,5 +3,5 @@
+ set -eu
+ : "${TG_BOT_TOKEN:=$(security find-generic-password -s tg-bot -w)}"
+ CHAT_ID=123456789
+-curl -sS -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
++curl -sS --fail -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
+   -d chat_id="$CHAT_ID" --data-urlencode text="$1" > /dev/null

@@ -1,0 +1,3 @@
+Updated [bot.py](/tmp/h-YxOnZf/bot.py) so the stable coaching instructions and changing athlete context have separate cache breakpoints. A `save_fact` now changes the context block without changing the instructions block. I documented the change in [ANSWER.md](/tmp/h-YxOnZf/ANSWER.md).
+
+Local checks confirmed the block behavior and that `bot.py` compiles. I did not make a live API call, so the cache savings have not been measured against `logs/usage.jsonl` yet.

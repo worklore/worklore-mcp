@@ -1,0 +1,118 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..95607ff
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,42 @@
++# Second publish returns 500
++
++## Cause
++
++`publish()` stores each story with `similar: [{slug, score}, ...]`. The `score`
++came from `similarity()`, which returned a Python `float` (`round(..., 4)`).
++
++- The first publish works because the library is empty, so `related()` returns
++  `[]` and no float is ever written. (`logs/error.log`: `similar=0 stored`, 201.)
++- The second publish has one existing story to compare against, so `similar`
++  holds a float. boto3's DynamoDB serializer rejects floats with
++  `TypeError: Float types are not supported. Use Decimal types instead.`
++  The exception is caught by `handler()`'s generic `except`, which returns 500.
++
++The existing test only published into an empty table, so it never reached the
++float path. The fake table in `tests/fake_dynamo.py` already rejects floats the
++same way boto3 does, so the bug was reproducible in tests all along; nothing
++exercised it.
++
++## Fix
++
++`src/app.py`: `similarity()` now returns a `Decimal`, built from the rounded
++float's string form (`Decimal(str(round(...)))`) so the stored value is exactly
++the 4-digit score. The module imports `Decimal`, and the docstring says why.
++
++## Keeping it from coming back
++
++`tests/test_publish.py` gained two tests:
++
++- `test_second_publish_with_related_story_succeeds`: publishes two overlapping
++  stories through `handler()`, expects 201 on the second, and checks that the
++  stored `score` is a `Decimal`. This is the path that failed in production.
++- `test_similarity_is_decimal`: pins the return type of `similarity()`, so a
++  future change back to float fails directly.
++
++Verified: both new tests fail against the original `app.py` and pass with the
++fix. `python3 -m unittest discover tests` is green (3 tests).
++
++## Not done
++
++- Nothing was deployed. The second story from the log (`09:21:47`, 500) was
++  never stored and has to be published again after the fix ships.
+diff --git a/src/app.py b/src/app.py
+index db49c5e..158a74a 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -8,6 +8,7 @@ import json
+ import logging
+ import re
+ import time
++from decimal import Decimal
+ 
+ log = logging.getLogger("stories")
+ 
+@@ -22,12 +23,16 @@ def words(text):
+ 
+ 
+ def similarity(a, b):
+-    """Shared-tag ratio (Jaccard), blended with shared words of the two bodies."""
++    """Shared-tag ratio (Jaccard), blended with shared words of the two bodies.
++
++    Returns a ``Decimal``: DynamoDB rejects Python floats, and this value is
++    stored inside each item's ``similar`` list.
++    """
+     ta, tb = set(a.get("tags", [])), set(b.get("tags", []))
+     tag_score = len(ta & tb) / len(ta | tb) if (ta | tb) else 0
+     wa, wb = words(a.get("body")), words(b.get("body"))
+     word_score = len(wa & wb) / len(wa | wb) if (wa | wb) else 0
+-    return round(0.7 * tag_score + 0.3 * word_score, 4)
++    return Decimal(str(round(0.7 * tag_score + 0.3 * word_score, 4)))
+ 
+ 
+ def related(story, existing):
+diff --git a/tests/test_publish.py b/tests/test_publish.py
+index 6c9ac44..8fe8d18 100644
+--- a/tests/test_publish.py
++++ b/tests/test_publish.py
+@@ -1,6 +1,8 @@
++import json
+ import os
+ import sys
+ import unittest
++from decimal import Decimal
+ 
+ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+ sys.path.insert(0, os.path.dirname(__file__))
+@@ -23,6 +25,25 @@ class PublishTest(unittest.TestCase):
+         self.assertEqual(table.get_item(Key={"slug": "why-my-cron-ran-twice"})["Item"]["title"], "Why my cron ran twice")
+         self.assertEqual(table.scan()["Count"], 1)
+ 
++    def test_second_publish_with_related_story_succeeds(self):
++        # The first publish has nothing to compare against, so it never writes a
++        # similarity score. The second one does; this is the case that failed in prod.
++        table = FakeTable()
++        first = {"slug": "first-story", "title": "First", "tags": ["cron", "linux"], "body": "cron runs jobs on linux"}
++        second = {"slug": "second-story", "title": "Second", "tags": ["cron"], "body": "cron jobs twice"}
++        self.assertEqual(app.handler({"body": json.dumps(first)}, table)["statusCode"], 201)
++
++        response = app.handler({"body": json.dumps(second)}, table)
++
++        self.assertEqual(response["statusCode"], 201)
++        similar = table.get_item(Key={"slug": "second-story"})["Item"]["similar"]
++        self.assertEqual([s["slug"] for s in similar], ["first-story"])
++        self.assertIsInstance(similar[0]["score"], Decimal)
++
++    def test_similarity_is_decimal(self):
++        score = app.similarity({"tags": ["a", "b"], "body": "x y"}, {"tags": ["a"], "body": "x z"})
++        self.assertIsInstance(score, Decimal)
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

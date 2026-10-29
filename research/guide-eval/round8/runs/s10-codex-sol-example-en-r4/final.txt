@@ -1,0 +1,3 @@
+Implemented all six events from `docs/EVENTS.md` on the registration and offers screens using `Analytics.capture`. Text input, slider, and scroll events are limited to meaningful interactions so they do not fire on every keystroke or movement update.
+
+I documented the changes and which parts of the colleague’s note applied in [ANSWER.md](/tmp/h-dIFTj8/ANSWER.md). `dart analyze` and `git diff --check` passed.

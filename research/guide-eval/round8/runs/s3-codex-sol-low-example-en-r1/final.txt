@@ -1,0 +1,5 @@
+The saved launchd record shows the job ran six times. Each run failed because `claude` reported “Not logged in”; then zsh stopped at `status=$?`, so the failure notification never ran.
+
+I added `USER=vk` to the [plist](/tmp/h-ken4J3/Library/LaunchAgents/com.vk.nightly-review.plist) and fixed the [wrapper](/tmp/h-ken4J3/bin/nightly-review.zsh) to capture the exit code in `rc`, close stdin, and report an empty summary as a failure. [ANSWER.md](/tmp/h-ken4J3/ANSWER.md) documents the evidence and which parts of the colleague’s note applied.
+
+Syntax, plist, and diff checks pass. I did not deploy the snapshot or send a Telegram message, so live delivery remains unverified.

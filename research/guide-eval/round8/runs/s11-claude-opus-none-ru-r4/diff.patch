@@ -1,0 +1,152 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..281e992
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,45 @@
++# Why the second publish returns 500
++
++## Cause
++
++`publish()` stores each story together with `similar: [{slug, score}]`, and
++`score` comes from `similarity()`, which returns a Python `float`
++(`round(0.7 * tag_score + 0.3 * word_score, 4)`). boto3's DynamoDB serializer
++doesn't accept `float` anywhere in an item. It raises
++`TypeError: Float types are not supported. Use Decimal types instead.` That
++error isn't a `ValueError`, so `handler()` catches it as a generic exception
++and returns 500.
++
++The first publish works only because the library is empty. `scan()` returns
++nothing, so `similar == []` and the item contains no floats (`published_at` is
++an `int`). The log confirms it: `similar=0 stored`. From the second publish on
++there is at least one other story, so `similar` holds a float score and
++`put_item` fails every time (09:21:47 and 09:22:10 in `logs/error.log`).
++
++The existing test missed this because it only publishes into an empty table.
++
++## Fix (`src/app.py`)
++
++- New `to_dynamo()` function. It walks the item recursively and converts every
++  `float` to `Decimal(str(value))`. Going through `str` keeps the short form
++  (`0.4667`) instead of the binary expansion. `NaN`/`inf` are rejected with a
++  `ValueError` (→ 400), because DynamoDB can't store them either.
++- `publish()` runs the item through `to_dynamo()` right before
++  `table.put_item()`. The conversion happens at the database boundary rather
++  than inside `similarity()`, so any float field added to the item later is
++  converted automatically. That's what keeps this class of error from coming
++  back.
++- Items read back from DynamoDB already contain `Decimal`. They're only passed
++  to `similarity()`, which uses `slug`, `tags` and `body`, not `score`, so the
++  read path is unaffected.
++
++## Tests (`tests/test_publish.py`)
++
++- `test_second_publish_stores_float_free_similar` publishes 3 stories in a row
++  through `handler()`. It checks that every call returns 201 and that
++  `similar[].score` is stored as a `Decimal`. On the old code it fails with
++  `500 != 201`, the same `TypeError` as in production.
++- `test_to_dynamo_converts_nested_floats` checks the conversion of nested
++  floats, and that `bool`/`int` values are left unchanged.
++
++`python3 -m unittest discover tests`: all 3 tests pass.
+diff --git a/src/app.py b/src/app.py
+index db49c5e..36b6185 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -8,6 +8,7 @@ import json
+ import logging
+ import re
+ import time
++from decimal import Decimal
+ 
+ log = logging.getLogger("stories")
+ 
+@@ -40,6 +41,28 @@ def related(story, existing):
+     return scored[:TOP_N]
+ 
+ 
++def to_dynamo(value):
++    """Convert a value into types boto3's DynamoDB serializer accepts.
++
++    boto3 rejects ``float`` anywhere in an item ("Float types are not
++    supported"), so every float is turned into a ``Decimal`` via ``str`` (to
++    keep the short decimal form, not the binary expansion). Applied to the
++    whole item right before ``put_item``, so any float field added later is
++    covered too.
++    """
++    if isinstance(value, bool):
++        return value
++    if isinstance(value, float):
++        if value != value or value in (float("inf"), float("-inf")):
++            raise ValueError("non-finite number cannot be stored")
++        return Decimal(str(value))
++    if isinstance(value, dict):
++        return {k: to_dynamo(v) for k, v in value.items()}
++    if isinstance(value, (list, tuple)):
++        return [to_dynamo(v) for v in value]
++    return value
++
++
+ def validate(story):
+     for k in ("slug", "title", "body"):
+         if not story.get(k):
+@@ -60,6 +83,7 @@ def publish(table, story):
+         "published_at": int(time.time()),
+         "similar": related(story, existing),
+     }
++    item = to_dynamo(item)
+     table.put_item(Item=item)
+     log.info("publish slug=%s similar=%d stored", item["slug"], len(item["similar"]))
+     return item
+diff --git a/tests/test_publish.py b/tests/test_publish.py
+index 6c9ac44..d43d27a 100644
+--- a/tests/test_publish.py
++++ b/tests/test_publish.py
+@@ -1,6 +1,8 @@
+ import os
+ import sys
+ import unittest
++import json
++from decimal import Decimal
+ 
+ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+ sys.path.insert(0, os.path.dirname(__file__))
+@@ -23,6 +25,38 @@ class PublishTest(unittest.TestCase):
+         self.assertEqual(table.get_item(Key={"slug": "why-my-cron-ran-twice"})["Item"]["title"], "Why my cron ran twice")
+         self.assertEqual(table.scan()["Count"], 1)
+ 
++    def test_second_publish_stores_float_free_similar(self):
++        # Regression: the first publish has an empty library (similar=[]), the
++        # second one gets float similarity scores, which boto3 rejects.
++        table = FakeTable()
++        first = {
++            "slug": "why-my-cron-ran-twice",
++            "title": "Why my cron ran twice",
++            "tags": ["cron", "linux"],
++            "body": "Two crontabs, one for root and one for me, both had the line.",
++        }
++        second = {
++            "slug": "systemd-timers-instead-of-cron",
++            "title": "systemd timers instead of cron",
++            "tags": ["cron", "systemd"],
++            "body": "One timer unit replaced the line in both crontabs.",
++        }
++        self.assertEqual(app.handler({"body": json.dumps(first)}, table)["statusCode"], 201)
++        resp = app.handler({"body": json.dumps(second)}, table)
++        self.assertEqual(resp["statusCode"], 201, resp)
++        similar = table.get_item(Key={"slug": second["slug"]})["Item"]["similar"]
++        self.assertEqual(similar[0]["slug"], first["slug"])
++        self.assertIsInstance(similar[0]["score"], Decimal)
++        self.assertGreater(similar[0]["score"], 0)
++        # A third publish scores against items read back from the table.
++        third = dict(second, slug="cron-again", title="cron again")
++        self.assertEqual(app.handler({"body": json.dumps(third)}, table)["statusCode"], 201)
++        self.assertEqual(len(table.get_item(Key={"slug": "cron-again"})["Item"]["similar"]), 2)
++
++    def test_to_dynamo_converts_nested_floats(self):
++        out = app.to_dynamo({"a": 0.1, "b": [{"c": 1.5}], "d": True, "e": 3})
++        self.assertEqual(out, {"a": Decimal("0.1"), "b": [{"c": Decimal("1.5")}], "d": True, "e": 3})
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

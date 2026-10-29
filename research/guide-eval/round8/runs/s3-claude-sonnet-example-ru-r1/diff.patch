@@ -1,0 +1,100 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..b97d76b
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,42 @@
++# Почему nightly-review молчал
++
++Задача запускалась (runs = 6, last exit code = 1), логи существовали. Два слоя ошибок:
++
++1. **`claude -p` падал с «Not logged in · Please run /login»** (см. `nightly-review.err`).
++   Под launchd нет `USER` в окружении, CLI не находит логин в keychain.
++   Исправление: `USER=vk` в `EnvironmentVariables` plist.
++2. **`status=$?` в zsh** — `status` read-only, скрипт умирал на строке 19
++   (`read-only variable: status`) ещё до вызова `notify.sh`. Уведомление об ошибке
++   было *после* места падения, поэтому не пришло ничего.
++   Исправление: `rc=...`.
++
++Прочее в скрипте: `notify` обёрнут, чтобы сбой уведомления не маскировал результат;
++добавлены длительность запуска в stderr-лог и проверка непустого выхода
++(exit 0 при пустом результате теперь тоже даёт FAILED); промпт передаётся через
++stdin (`print -r -- "$PROMPT" | claude -p`), код возврата берётся из `pipestatus[2]`.
++
++## Что пригодилось из заметки коллеги
++- `launchctl print` как первый шаг (runs / last exit code) — подтвердил, что задача запускалась.
++- Чтение stderr-лога до теорий — там были обе причины.
++- Не присваивать `status` в zsh — основная причина тишины.
++- `USER` в plist — вторая причина (Not logged in).
++- Промпт через stdin (альтернатива `< /dev/null`).
++- Логирование длительности, проверка реального результата, а не только кода выхода.
++
++Не пригодилось: «prompt not received» как причина (у вас ошибка другая — Not logged in);
++история про 16:50 и watchdog; ссылки на внешние статьи не открывал.
++
++## Что сделать вам
++Я ничего не перезагружал. Примените plist и проверьте:
++```
++launchctl bootout gui/$UID/com.vk.nightly-review
++launchctl bootstrap gui/$UID ~/Library/LaunchAgents/com.vk.nightly-review.plist
++launchctl kickstart -k gui/$UID/com.vk.nightly-review
++launchctl print gui/$UID/com.vk.nightly-review   # last exit code = 0
++```
++Проверьте свежий `nightly-review-<дата>.md`, правдоподобную длительность в `.err` и
++сообщение в Telegram. Затем сломайте скрипт нарочно (например, неверный REPO или
++команду) и убедитесь, что приходит FAILED. Также проверьте, что `notify.sh` под launchd
++достаёт токен из keychain (`security find-generic-password` может требовать доступа
++без GUI) — иначе сообщение не уйдёт, но теперь это будет видно в `.err`.
++Правки в `~/bin` и `~/Library/LaunchAgents` нужно скопировать из этого снимка.
+diff --git a/Library/LaunchAgents/com.vk.nightly-review.plist b/Library/LaunchAgents/com.vk.nightly-review.plist
+index c347363..d49eacf 100644
+--- a/Library/LaunchAgents/com.vk.nightly-review.plist
++++ b/Library/LaunchAgents/com.vk.nightly-review.plist
+@@ -24,6 +24,8 @@
+   <dict>
+     <key>PATH</key>
+     <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
++    <key>USER</key>
++    <string>vk</string>
+   </dict>
+ </dict>
+ </plist>
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..21a187c 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -13,14 +13,27 @@ For each commit: one line on what it changes and whether anything looks risky
+ End with a three-line summary I can read on my phone.
+ Do not modify any file."
+ 
+-cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
++# A failing notifier must never mask the job's own result.
++notify() { "$NOTIFY" "$1" || print -u2 -- "notify failed (exit $?)"; }
+ 
+-claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
++cd "$REPO" || { notify "nightly review: repo missing"; exit 1; }
+ 
+-if [ $status -ne 0 ]; then
+-  "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
+-  exit $status
++START=$SECONDS
++# Prompt via stdin (no stdin wait / no argument parsing). NB: never assign to
++# `status` in zsh, it is read-only -- use rc.
++print -r -- "$PROMPT" | claude -p --output-format text > "$OUT"
++rc=${pipestatus[2]}
++DUR=$((SECONDS - START))
++print -u2 -- "$(date '+%F %T') run finished: rc=$rc duration=${DUR}s"
++
++if [ $rc -ne 0 ]; then
++  notify "nightly review FAILED (exit $rc, ${DUR}s), see $OUT"
++  exit $rc
++fi
++
++if [ ! -s "$OUT" ]; then
++  notify "nightly review FAILED: empty output (${DUR}s), see $OUT"
++  exit 1
+ fi
+ 
+-"$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"
++notify "nightly review done (${DUR}s): $(head -c 300 "$OUT")"

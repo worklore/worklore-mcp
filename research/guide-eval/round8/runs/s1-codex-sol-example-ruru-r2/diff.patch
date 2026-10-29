@@ -1,0 +1,28 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..623653c
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,9 @@
++# Исправление пульсовых коридоров
++
++В `gen.py` нижняя граница HR-цели теперь записывается в `start` вместо `value`. Генератор выдаёт `{"units": "%lthr", "start": <низ>, "end": <верх>}` для обычных шагов и шагов внутри повтора. Проценты LTHR сохранены: Intervals рассчитывает по своему LTHR (172) целевые bpm при экспорте.
++
++Причина: в `readback/watch-notes.md` часы показывали границы собственных зон, хотя API вернул заполненные шаги. Из заметки коллеги пригодилось различие между `value/end` (цель по зонам) и `start/end` (коридор Instant HR), а также подтверждение, что для этого следует оставить `%lthr`. Описанные там неудачные варианты `bpm` и `start_bpm/end_bpm` согласуются с уже зафиксированными попытками в нашем readback; их не использовал.
++
++Советы про текстовое поле `description` здесь не применял: в нашем ответе API `workout_doc.steps` уже заполнен, а проблема касается границ пульса на часах, не отображения шагов в веб-интерфейсе.
++
++Локальная проверка: генерация `plans/tempo-run.json` дала все четыре ожидаемых коридора, включая шаги повтора, с `start/end` и без `value`. Синхронизацию с часами не выполнял: по условию ничего не отправлялось во внешние сервисы.
+diff --git a/gen.py b/gen.py
+index be0b3bc..4aeba5a 100755
+--- a/gen.py
++++ b/gen.py
+@@ -10,7 +10,7 @@ import sys
+ def hr_target(step):
+     """HR corridor for a step, as a percentage of the athlete's LTHR."""
+     lo, hi = step["hr_pct"]
+-    return {"units": "%lthr", "value": lo, "end": hi}
++    return {"units": "%lthr", "start": lo, "end": hi}
+ 
+ 
+ def build_step(step):

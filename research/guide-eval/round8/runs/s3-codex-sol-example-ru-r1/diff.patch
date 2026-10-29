@@ -1,0 +1,112 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..d11fc14
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,22 @@
++# Почему ночная задача молчала
++
++Согласно `launchctl-print.txt`, launchd **запустил задачу шесть раз**; её последний код выхода — 1. Значит, проблема не в расписании. В `Library/Logs/nightly-review.err` после каждого запуска стоят две ошибки: `Not logged in · Please run /login` от `claude` и `read-only variable: status` от zsh.
++
++1. В окружении задачи из `launchctl print` есть `PATH`, но нет `USER`. При таком запуске `claude` не находил свой вход в учётную запись. В plist добавлен `USER=vk`, как в пользовательском сеансе, для которого создан агент. Это устраняет видимое различие окружений; подтвердить действующую авторизацию `claude` можно только на исходном Mac при настоящем запуске.
++2. После неудачи `claude` скрипт присваивал код выхода переменной `status`. В zsh она доступна только для чтения, поэтому выполнение обрывалось **до** ветки с сообщением об ошибке. Переменная заменена на `rc`.
++3. Уведомитель подавлял тело ответа Telegram, а обычный `curl -sS` возвращает код 0 и при HTTP-ошибке. Теперь `curl -fsS` сообщает о такой ошибке ненулевым кодом; ошибка чтения токена из keychain также явно выводится в stderr. По снимку нельзя утверждать, что эта третья проблема уже случалась: до уведомителя прежний скрипт не доходил.
++
++Скрипт также закрывает stdin для `claude -p` с prompt в аргументе, отвергает пустой результат, пишет начало и длительность запуска, а ошибку отправки уведомления отражает в коде выхода и stderr. Поэтому код 0 теперь требует непустого отчёта и успешного завершения уведомителя. Это не доказывает доставку сообщения адресату: её подтверждает только реальная проверка в Telegram.
++
++## Что пригодилось из заметки коллеги
++
++- Проверка `launchctl print` и stderr: они сразу отделили срабатывание расписания от сбоя скрипта.
++- Запрет присваивания `status` в zsh: это точная причина, по которой не отправлялось сообщение об ошибке.
++- `USER` в plist: это соответствует ошибке авторизации и отсутствующей переменной в сохранённом окружении.
++- Закрытый stdin при prompt-аргументе, проверка реального результата и длительности: добавлены как защита от ложного успешного запуска.
++
++Передача prompt через pipe **не понадобилась**: в логе нет ошибки о неполученном prompt, а сам prompt уже передавался аргументом. Совет выполнить `kickstart` и послать тестовые сообщения здесь не применялся: по условию работа ограничена снимком, без загрузки агента и обращения к внешним сервисам.
++
++## Проверка в снимке
++
++`zsh -n`, `bash -n`, `plutil -lint` и `git diff --check` прошли. Локальные заглушки без сети подтвердили четыре ветки: успешный отчёт и уведомление (код 0), ошибка агента (код 7 и сообщение о сбое), пустой отчёт (код 1 и сообщение о сбое), ошибка уведомителя (код 1). Заглушка `curl` подтвердила ненулевой выход при HTTP-ошибке. Настоящие авторизация `claude`, keychain, загрузка изменённого plist и доставка Telegram из этого снимка не проверялись.
+diff --git a/Library/LaunchAgents/com.vk.nightly-review.plist b/Library/LaunchAgents/com.vk.nightly-review.plist
+index c347363..d49eacf 100644
+--- a/Library/LaunchAgents/com.vk.nightly-review.plist
++++ b/Library/LaunchAgents/com.vk.nightly-review.plist
+@@ -24,6 +24,8 @@
+   <dict>
+     <key>PATH</key>
+     <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
++    <key>USER</key>
++    <string>vk</string>
+   </dict>
+ </dict>
+ </plist>
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..2e47742 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -5,6 +5,9 @@ set -u
+ REPO="$HOME/projects/shop"
+ OUT="$HOME/Library/Logs/nightly-review-$(date +%F).md"
+ NOTIFY="$HOME/bin/notify.sh"
++START=$(date +%s)
++
++print -u2 -- "nightly review started at $(date)"
+ 
+ SINCE=$(date -v-1d +%F)
+ PROMPT="Review the commits in this repository since $SINCE.
+@@ -13,14 +16,30 @@ For each commit: one line on what it changes and whether anything looks risky
+ End with a three-line summary I can read on my phone.
+ Do not modify any file."
+ 
+-cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
++if ! cd "$REPO"; then
++  print -u2 -- "nightly review failed: repo missing: $REPO"
++  "$NOTIFY" "nightly review FAILED: repo missing: $REPO"
++  exit 1
++fi
++
++claude -p "$PROMPT" --output-format text < /dev/null > "$OUT"
++rc=$?
+ 
+-claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
++if (( rc != 0 )); then
++  print -u2 -- "nightly review failed: claude exit $rc after $(($(date +%s) - START))s"
++  "$NOTIFY" "nightly review FAILED (exit $rc), see $OUT"
++  exit $rc
++fi
++
++if [[ ! -s "$OUT" ]]; then
++  print -u2 -- "nightly review failed: empty output after $(($(date +%s) - START))s"
++  "$NOTIFY" "nightly review FAILED: empty output, see $OUT"
++  exit 1
++fi
+ 
+-if [ $status -ne 0 ]; then
+-  "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
+-  exit $status
++if ! "$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"; then
++  print -u2 -- "nightly review failed: notification after $(($(date +%s) - START))s"
++  exit 1
+ fi
+ 
+-"$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"
++print -u2 -- "nightly review succeeded: $OUT after $(($(date +%s) - START))s"
+diff --git a/bin/notify.sh b/bin/notify.sh
+index 818e531..13180a4 100755
+--- a/bin/notify.sh
++++ b/bin/notify.sh
+@@ -1,7 +1,12 @@
+ #!/bin/bash
+ # usage: notify.sh "message"  — sends a Telegram message to me.
+ set -eu
+-: "${TG_BOT_TOKEN:=$(security find-generic-password -s tg-bot -w)}"
++if [ -z "${TG_BOT_TOKEN:-}" ]; then
++  TG_BOT_TOKEN=$(security find-generic-password -s tg-bot -w) || {
++    echo "nightly review: could not read Telegram token from keychain" >&2
++    exit 1
++  }
++fi
+ CHAT_ID=123456789
+-curl -sS -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
++curl -fsS -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
+   -d chat_id="$CHAT_ID" --data-urlencode text="$1" > /dev/null

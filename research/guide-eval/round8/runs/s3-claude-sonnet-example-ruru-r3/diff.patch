@@ -1,0 +1,65 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..3fb96b3
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,22 @@
++# Почему ночная задача молчала
++
++Задача запускалась (runs = 6, last exit code = 1, в `.err` есть записи), но падала, а уведомление об ошибке не доходило. Причин две, одна поверх другой.
++
++1. **`claude -p` падает с «Not logged in · Please run /login».** В окружении launchd нет `USER` (в `launchctl-print.txt` только `PATH` и `XPC_SERVICE_NAME`), поэтому CLI не находит свой логин в keychain. Исправление: в `EnvironmentVariables` plist добавлен `USER=vk`.
++2. **`status=$?` в zsh.** `status` — переменная только для чтения, поэтому скрипт умирал на строке 19 (`read-only variable: status`) ещё до вызова `notify.sh`. Сообщение об ошибке не отправлялось никогда. Исправление: `rc=$?`.
++
++Дополнительно: `claude` теперь запускается с `< /dev/null`, а длительность запуска и код выхода пишутся в stderr-лог.
++
++## Что пригодилось из заметки коллеги
++- `launchctl print` и чтение лога до построения теорий. Я начал с них.
++- Запрет `status=$?` в zsh, замена на `rc=$?`. Это точное совпадение.
++- `USER` в `EnvironmentVariables`. Это совпадает с «Not logged in» в логе.
++- `< /dev/null` и логирование длительности.
++- Совет про корректность проверки (код выхода ≠ результат): учтён в рекомендации ниже.
++
++Не пригодилось: передача промпта через stdin. У вас ошибка не про пустой промпт, а про логин, и аргумент разбирается нормально. Время запуска в заметке (16:50) отличается от вашего (02:30).
++
++## Что проверить вам
++Я не мог запустить launchd и claude в этой среде, проверен только синтаксис zsh. Перезагрузите агент: `launchctl bootout gui/$UID ~/Library/LaunchAgents/com.vk.nightly-review.plist && launchctl bootstrap gui/$UID ~/Library/LaunchAgents/com.vk.nightly-review.plist`. Затем выполните `launchctl kickstart -k gui/$UID/com.vk.nightly-review`. Убедитесь, что код выхода 0, свежий файл `nightly-review-<дата>.md` появился, запуск длился больше нескольких секунд и пришло сообщение в Telegram. Один раз намеренно сломайте скрипт и проверьте, что приходит уведомление об ошибке.
++
++Возможный остаточный риск: `notify.sh` берёт токен из keychain; из launchd это может требовать разблокированной сессии. Если уведомление не придёт, смотрите `.err`.
+diff --git a/Library/LaunchAgents/com.vk.nightly-review.plist b/Library/LaunchAgents/com.vk.nightly-review.plist
+index c347363..d49eacf 100644
+--- a/Library/LaunchAgents/com.vk.nightly-review.plist
++++ b/Library/LaunchAgents/com.vk.nightly-review.plist
+@@ -24,6 +24,8 @@
+   <dict>
+     <key>PATH</key>
+     <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
++    <key>USER</key>
++    <string>vk</string>
+   </dict>
+ </dict>
+ </plist>
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..8e382bd 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -15,12 +15,14 @@ Do not modify any file."
+ 
+ cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
+ 
+-claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
++START=$SECONDS
++claude -p "$PROMPT" --output-format text < /dev/null > "$OUT"
++rc=$?
++echo "$(date '+%F %T') claude exit=$rc duration=$((SECONDS-START))s" >&2
+ 
+-if [ $status -ne 0 ]; then
+-  "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
+-  exit $status
++if [ $rc -ne 0 ]; then
++  "$NOTIFY" "nightly review FAILED (exit $rc), see $OUT"
++  exit $rc
+ fi
+ 
+ "$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"
