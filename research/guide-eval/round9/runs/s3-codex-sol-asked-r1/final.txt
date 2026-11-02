@@ -1,0 +1,3 @@
+The job was running: the saved launchd record shows six runs, each exiting with code 1. Claude reported “Not logged in,” then the script tried to assign to zsh’s read-only `status` variable and stopped before sending a failure message. The notifier also ignored the local Telegram config and tried the locked keychain.
+
+I fixed the plist, review script, and notifier. The causes and remaining live-login limitation are in [ANSWER.md](/tmp/h-uQuk7W/ANSWER.md). Syntax checks passed, and local mock runs verified success, agent failure, empty output, and notification failure. I did not contact Telegram or reload the job on the actual Mac; the edited plist must be loaded there for its environment changes to take effect.

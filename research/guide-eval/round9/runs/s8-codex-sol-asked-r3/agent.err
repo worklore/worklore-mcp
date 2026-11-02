@@ -1,0 +1,14 @@
+  ok     EVAL_NO_SECRETS
+  ok     HOME
+  ok     LC_CTYPE
+  ok     LOGNAME
+  ok     PATH
+  ok     PWD
+  ok     SHELL
+  ok     SHLVL
+  ok     TERM
+  ok     TMPDIR
+  ok     USER
+verify: 11 names in the child, cli=codex, result=PASS (exit 0)
+Reading additional input from stdin...
+2026-11-02T02:39:31.157901Z ERROR codex_core::tools::router: error=exec_command failed: CreateProcess { message: "Rejected(\"`/bin/zsh -lc 'rm -rf __pycache__ && git status --short'` rejected: rm -f style commands are not permitted. Use a safer approach\")" }

@@ -1,0 +1,3 @@
+Fixed [gen.py](/tmp/h-aKpv2Z/gen.py) to emit HR ranges with `start` and `end`, the [Intervals.icu range format](https://forum.intervals.icu/t/workout-builder/1163?page=55). The previous `value` and `end` fields did not encode a range.
+
+Added a regression check in [test_gen.py](/tmp/h-aKpv2Z/test_gen.py) and documented the change in [ANSWER.md](/tmp/h-aKpv2Z/ANSWER.md). The test passes. I did not sync a workout, so the watch display remains unverified.

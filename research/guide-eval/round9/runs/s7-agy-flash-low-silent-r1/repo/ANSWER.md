@@ -1,0 +1,13 @@
+# Causes of Intervals.icu Integration Issues
+
+### 1. Connect button fails with 401 Unauthorized for everyone
+* **Cause**: In `static/app.js`, the "Connect Intervals.icu" button was implemented as a direct hyperlink (`<a href="/api/intervals/auth/init">`). When an athlete clicked the link, the browser initiated a top-level document navigation (`GET /api/intervals/auth/init`). Standard browser document navigations do not send the `Authorization: Bearer <token>` header stored in the single-page application's `localStorage` (which was only attached in fetch requests via the `api()` wrapper). Because `/api/intervals/auth/init` required user authentication (`require_user()`), the unauthenticated GET request was rejected with `401 Unauthorized`.
+* **Fix**: Changed the auth initialization endpoint in `server.py` to `POST /api/intervals/auth/init` returning JSON containing `{"authorize_url": ...}`, and updated `static/app.js` to make an authenticated `api("/api/intervals/auth/init", { method: "POST" })` fetch call carrying the bearer token, followed by `window.location.assign(data.authorize_url)`.
+
+### 2. Manual authorize URL failed with 400 `{"error":"invalid_request"}`
+* **Cause**: In `config.py`, the requested OAuth scopes were configured as `SCOPES = "ACTIVITY:READ,ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:READ,CALENDAR:WRITE"`. On Intervals.icu, `:WRITE` scopes inherently include `:READ` permissions for each respective domain, and requesting duplicate permissions for the same resource area causes Intervals.icu's OAuth authorization endpoint to reject the request with `invalid_request` (`Duplicate scope`).
+* **Fix**: Deduplicated the scopes in `config.py` to `SCOPES = "ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE"`, specifying each resource area at most once.
+
+### 3. Connected accounts marked "expired, reconnect" after 1 hour
+* **Cause**: Intervals.icu OAuth access tokens do not expire and do not issue `refresh_token`s. In `server.py`, `store_connection()` fell back to `DEFAULT_TOKEN_TTL = 3600` seconds when no `expires_in` was returned by the token endpoint. Meanwhile, the background thread `refresh_tokens()` ran periodically and inspected connections nearing expiry; seeing no `refresh_token`, it marked the connection as `"expired, reconnect"` and cleared `access_token` after an hour.
+* **Fix**: Removed the artificial expiry TTL and background token refresh thread. Tokens are persisted indefinitely and token invalidation/revocation is handled lazily (marking the connection as `"expired, reconnect"` if an API request returns a `401 Unauthorized`). Additionally streamlined `exchange_code()` to post only the required OAuth parameters (`client_id`, `client_secret`, and `code`).

@@ -1,0 +1,3 @@
+Fixed the prompt cache by separating stable coaching instructions from the athlete context, with a cache marker on each block. A `save_fact` update now changes only the context block. The change and its verification are documented in [ANSWER.md](/tmp/h-pBZrzJ/ANSWER.md).
+
+Both local regression tests passed. Live cache token counts have not been measured.

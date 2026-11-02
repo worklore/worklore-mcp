@@ -1,0 +1,3 @@
+The first publish stored no related scores. The second computed a Python `float` score, which DynamoDB rejected and returned as a 500.
+
+I converted related scores to `Decimal` before storage and added a regression test that publishes twice through the handler. The cause and fix are in [ANSWER.md](/tmp/h-JultIE/ANSWER.md). Both tests pass; no external publish was performed.

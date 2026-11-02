@@ -1,0 +1,5 @@
+The job ran six times; it did not miss the schedule. Claude reported “Not logged in,” and then the wrapper exited while assigning its exit code to zsh’s read-only `status` variable. The notifier also ignored the local Telegram config and depended on a keychain that is locked at night. The evidence and causes are in [ANSWER.md](/tmp/h-WE2Rgc/ANSWER.md).
+
+I fixed the wrapper and notifier and removed a literal bot token from the README. Shell and plist checks passed, and local stub runs verified both success and failure notifications without contacting an external service.
+
+**Review summaries still require Claude authentication on the actual Mac.** I did not install or reload the job there; with these changes installed, an authentication failure should produce a failure note instead of silence.

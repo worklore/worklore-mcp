@@ -1,0 +1,3 @@
+Fixed [gen.py](/tmp/h-XCmPdr/gen.py) to emit HR corridors with `start` and `end`, as shown in [Intervals.icu’s workout examples](https://forum.intervals.icu/t/workout-builder/1163?page=55). I recorded the change and reasoning in [ANSWER.md](/tmp/h-XCmPdr/ANSWER.md).
+
+Local checks passed for all four planned ranges and the repeat block. I did not push an event, so the corrected ranges still need a watch readback to confirm them on the device.

@@ -1,0 +1,3 @@
+The job ran, but `claude` reported “Not logged in,” and a zsh error stopped the script before it could send a failure notice. The notifier also ignored its unattended token config.
+
+I fixed the script and notifier, documented the causes in [ANSWER.md](/tmp/h-ecrMez/ANSWER.md), and verified the success and failure paths with local mocks. No external request was made. **Successful summaries still require unattended Claude authentication** for the launchd user.

@@ -1,0 +1,153 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..72eb7e2
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,19 @@
++# Root Causes and Fixes for Intervals.icu Integration
++
++## 1. Connect Button Fails for Everyone (Unauthorized 401)
++* **Cause**: In `static/app.js`, the "Connect Intervals.icu" button was implemented as a simple navigation link (`<a href="/api/intervals/auth/init">`). Navigating via an `<a>` link initiates a standard browser document GET request, which does not send the user's `Authorization: Bearer <token>` stored in `localStorage`. As a result, `server.py` rejected the request with `401 Unauthorized` (`no Authorization header`).
++* **Fix**:
++  * Updated `server.py` to handle `POST /api/intervals/auth/init` by returning `{ "authorize_url": auth_url }` as JSON (while retaining GET fallback).
++  * Updated `static/app.js` so clicking the Connect button issues an authenticated `POST` request via the app's `api()` helper (which attaches the `Authorization` header), and then navigates the user via `window.location.assign(res.authorize_url)`.
++
++## 2. Invalid Request (400) on Intervals Authorize Screen (Duplicate Scopes)
++* **Cause**: In `config.py`, `SCOPES` was configured as `"ACTIVITY:READ,ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:READ,CALENDAR:WRITE"`. In Intervals.icu's OAuth implementation, write permissions imply read permissions (`:WRITE` implies `:READ`), and specifying both `:READ` and `:WRITE` for the same scope category causes Intervals.icu to reject the authorization request with an `invalid_request` (`Duplicate scope`) error.
++* **Fix**:
++  * Updated `SCOPES` in `config.py` to `"ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE"` (listing each scope category at most once).
++
++## 3. Disconnection After One Hour ("status: expired, reconnect")
++* **Cause**: In `server.py`, `store_connection()` assumed all tokens expire and set an artificial 3600-second (1 hour) TTL default (`DEFAULT_TOKEN_TTL = 3600`) when `expires_in` was absent in the token response. Furthermore, Intervals.icu OAuth access tokens are perpetual (they do not provide `expires_in` or `refresh_token` and remain valid until manually revoked). The background token refresher in `server.py` checked every minute, found the token approaching expiry without a `refresh_token`, and erroneously marked the connection as `"expired, reconnect"`.
++* **Fix**:
++  * Updated `store_connection()` in `server.py` to only set `expires_at` if `expires_in` is actually provided by the provider.
++  * Updated `refresh_tokens()` to skip token expiration for perpetual tokens (where `expires_at` is `None`).
++  * Added lazy revocation handling: if a call to the Intervals.icu API fails with `401 Unauthorized`, mark the user's connection as `"expired, reconnect"` so they are prompted to reconnect only when the token has actually been revoked.
+diff --git a/config.py b/config.py
+index ddf9ba3..79e33eb 100644
+--- a/config.py
++++ b/config.py
+@@ -8,6 +8,6 @@ INTERVALS_BASE = os.environ.get("INTERVALS_BASE", "https://intervals.icu")
+ CLIENT_ID = "tricoach-dev"
+ CLIENT_SECRET = os.environ.get("INTERVALS_CLIENT_SECRET", "r9s7cfgclientsecret3ym6czcaHSZV")
+ REDIRECT_URI = f"http://localhost:{PORT}/api/intervals/callback"
+-SCOPES = "ACTIVITY:READ,ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:READ,CALENDAR:WRITE"
++SCOPES = "ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE"
+ 
+ REFRESH_INTERVAL = 60      # seconds between passes of the token refresher
+diff --git a/server.py b/server.py
+index 351cbb7..6ed28d0 100644
+--- a/server.py
++++ b/server.py
+@@ -63,28 +63,35 @@ def exchange_code(code):
+ 
+ 
+ def store_connection(user_id, tok):
+-    expires_in = int(tok.get("expires_in") or DEFAULT_TOKEN_TTL)
+     refresh = tok.get("refresh_token")
+-    if not refresh:
+-        log(f"{user_id}: no refresh_token in response, scheduling expiry in {expires_in}s")
++    expires_in = tok.get("expires_in")
++    expires_at = time.time() + int(expires_in) if expires_in else None
+     athlete = tok.get("athlete") or {}
+     with LOCK:
+         CONNECTIONS[user_id] = {
+             "athlete_id": athlete.get("id"), "athlete_name": athlete.get("name"),
+             "access_token": tok["access_token"], "refresh_token": refresh,
+-            "scope": tok.get("scope"), "expires_at": time.time() + expires_in, "status": "connected",
++            "scope": tok.get("scope"), "expires_at": expires_at, "status": "connected",
+         }
+-    log(f"{user_id}: connected as athlete {athlete.get('id')} (expires in {expires_in}s)")
++    if expires_at:
++        log(f"{user_id}: connected as athlete {athlete.get('id')} (expires in {expires_in}s)")
++    else:
++        log(f"{user_id}: connected as athlete {athlete.get('id')} (no expiry, perpetual token)")
+ 
+ 
+ def refresh_tokens():
+-    """Background pass: renew access tokens shortly before they expire."""
++    """Background pass: renew access tokens shortly before they expire (if token has expiry/refresh_token)."""
+     while True:
+         time.sleep(config.REFRESH_INTERVAL)
+         now = time.time()
+         with LOCK:
+             for uid, c in CONNECTIONS.items():
+-                if c["status"] != "connected" or c["expires_at"] - now > 300:
++                if c["status"] != "connected":
++                    continue
++                # If there is no expires_at (perpetual token), do nothing
++                if not c.get("expires_at"):
++                    continue
++                if c["expires_at"] - now > 300:
+                     continue
+                 if not c["refresh_token"]:
+                     log(f"{uid}: token expiry passed and no refresh token on file -> expired, reconnect")
+@@ -176,6 +183,8 @@ class Handler(BaseHTTPRequestHandler):
+ 
+     def do_POST(self):
+         url = urllib.parse.urlsplit(self.path)
++        if url.path == "/api/intervals/auth/init":
++            return self.auth_init()
+         if url.path == "/api/intervals/disconnect":
+             user = self.require_user()
+             if user:
+@@ -185,14 +194,17 @@ class Handler(BaseHTTPRequestHandler):
+             return
+         self.send_json(404, {"error": "not found"})
+ 
+-    # Step 1: build the authorize URL and send the browser to Intervals.
++    # Step 1: build the authorize URL and send the browser to Intervals (or return URL to SPA).
+     def auth_init(self):
+         user = self.require_user()
+         if not user:
+             return
+         params = {"client_id": config.CLIENT_ID, "redirect_uri": config.REDIRECT_URI,
+                   "scope": config.SCOPES, "state": sign_state(user["id"])}
+-        self.redirect(AUTHORIZE_URL + "?" + urllib.parse.urlencode(params, safe=":,"))
++        auth_url = AUTHORIZE_URL + "?" + urllib.parse.urlencode(params, safe=":,")
++        if self.command == "POST":
++            return self.send_json(200, {"authorize_url": auth_url})
++        self.redirect(auth_url)
+ 
+     # Step 2: Intervals redirects back here with ?code=&state=.
+     def callback(self, q):
+@@ -233,6 +245,10 @@ class Handler(BaseHTTPRequestHandler):
+             code, data = intervals_get(c, "/wellness")
+             self.send_json(code, data)
+         except urllib.error.HTTPError as e:
++            if e.code == 401:
++                with LOCK:
++                    c.update(status="expired, reconnect", access_token=None)
++                log(f"{user['id']}: 401 from intervals -> marked expired, reconnect")
+             self.send_json(e.code, {"error": f"intervals returned {e.code}"})
+         except Exception as e:
+             self.send_json(502, {"error": str(e)})
+diff --git a/static/app.js b/static/app.js
+index 368922e..50ae10f 100644
+--- a/static/app.js
++++ b/static/app.js
+@@ -25,12 +25,23 @@ async function render() {
+     } else {
+       const why = st.status && st.status !== "disconnected" ? `<p class="muted">Status: ${esc(st.status)}</p>` : "";
+       card = `<div class="card">Intervals.icu is not connected.${why}
+-        <p><a class="btn" href="/api/intervals/auth/init">Connect Intervals.icu</a></p></div>`;
++        <p><button class="btn" id="connect">Connect Intervals.icu</button></p></div>`;
+     }
+     root.className = "";
+     root.innerHTML = `<p>Signed in as <b>${esc(me.name)}</b>.</p>${card}`;
+     const d = document.getElementById("disconnect");
+     if (d) d.onclick = async () => { await api("/api/intervals/disconnect", { method: "POST" }); render(); };
++    const c = document.getElementById("connect");
++    if (c) c.onclick = async () => {
++      try {
++        const res = await api("/api/intervals/auth/init", { method: "POST" });
++        if (res.authorize_url) {
++          window.location.assign(res.authorize_url);
++        }
++      } catch (err) {
++        alert("Failed to initiate connection: " + err.message);
++      }
++    };
+   } catch (e) {
+     root.innerHTML = `<p class="card">Error: ${esc(e.message)}</p>`;
+   }

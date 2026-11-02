@@ -1,0 +1,3 @@
+I split the system prompt in [bot.py](/tmp/h-svdfSW/bot.py) into two cached blocks: fixed coaching instructions and changing athlete context. A `save_fact` now changes only the second block. I recorded the change and its verification in [ANSWER.md](/tmp/h-svdfSW/ANSWER.md).
+
+Local checks passed. I made no live API calls, so the cache savings have not been measured in `logs/usage.jsonl`.

@@ -1,0 +1,14 @@
+  ok     EVAL_NO_SECRETS
+  ok     HOME
+  ok     LC_CTYPE
+  ok     LOGNAME
+  ok     PATH
+  ok     PWD
+  ok     SHELL
+  ok     SHLVL
+  ok     TERM
+  ok     TMPDIR
+  ok     USER
+verify: 11 names in the child, cli=codex, result=PASS (exit 0)
+Reading additional input from stdin...
+2026-11-02T02:24:17.197579Z ERROR codex_core::tools::router: error=exec_command failed: CreateProcess { message: "Rejected(\"`/bin/zsh -lc 'test_root=$(mktemp -d \\\"$PWD/.nightly-test.XXXXXX\\\")\\ntrap '\\\"'rm -rf \\\\\\\"\\\"'$test_root\\\"'\\\"' EXIT\\nmkdir -p \\\\\\\"\\\"'$test_root/home/bin\\\" \\\"$test_root/home/projects/shop\\\" \\\"$test_root/home/Library/Logs\\\" \\\"$test_root/home/.config/nightly-review\\\" \\\"$test_root/mockbin\\\"\\ncp bin/notify.sh \\\"$test_root/home/bin/notify.sh\\\"\\ncat >…1422 chars truncated…ailure=%s\\\\\\\\n' \\\\\\\"\\\"'$success_rc\\\" \\\"$failure_rc\\\" \\\"$empty_rc\\\" \\\"$notify_rc\\\"\\nsed -E '\\\"'s@/[\\\"'^ ]*/nightly-review-[0-9-]+'\\\"\\\\\\\\.md@<output>@g' \\\\\\\"\\\"'$MOCK_NOTIFICATIONS\\\"\\nif [ \\\"$success_rc\\\" -ne 0 ] || [ \\\"$failure_rc\\\" -ne 7 ] || [ \\\"$empty_rc\\\" -ne 1 ] || [ \\\"$notify_rc\\\" -ne 22 ]; then exit 1; fi'` rejected: rm -f style commands are not permitted. Use a safer approach\")" }

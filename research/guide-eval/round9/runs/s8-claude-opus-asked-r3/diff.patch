@@ -1,0 +1,115 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..cd709cd
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,46 @@
++# Fix: memory writes no longer evict the static system prompt
++
++## Cause
++`build_system()` sent the whole system prompt as one text block with one
++`cache_control` marker. The cache is a prefix hash over tools → system → messages,
++so when `save_fact` appended a fact (near the end of that block), the hash at the
++only breakpoint changed and the whole ~1000-token prompt, including the
++instructions that never change, was written again (`cache_read_input_tokens: 0`,
++`cache_creation_input_tokens` ≈ the full prompt in `logs/usage.jsonl`).
++
++## Change (`bot.py`)
++- `athlete_context()` is split into two parts:
++  - `athlete_profile(a)`: name/id, sport, zones, goal, language. `save_fact`
++    never touches these and they don't change by date.
++  - `athlete_memory(a, today)`: today's date + long-term facts, the part that changes.
++- `build_system()` now returns **two** text blocks, each with
++  `cache_control: {"type": "ephemeral"}`:
++  1. `INSTRUCTIONS` + profile: stays byte-identical across memory writes and days.
++  2. date + facts: the only part re-cached after a `save_fact`.
++- Two of the four allowed breakpoints are used. Tool filtering is unchanged (NOTES.md
++  says to keep it). Within one message the tool list is fixed, so loop rounds still hit.
++- Checked locally: for athlete 42, block 1 is identical before and after adding a
++  fact and moving the date forward a day; block 2 differs.
++- README's caching paragraph was updated to match.
++
++## Why the profile goes in segment 1 (not just the instructions)
++Sonnet 4.5 won't cache a prefix under **1024 tokens**, and a marker below that
++size caches nothing without any error. From the logs, a new athlete with no facts
++caches exactly 1024 tokens for tools + the whole system prompt. That puts tools +
++`INSTRUCTIONS` alone at about 950–980 tokens, which is probably *under* the
++minimum. A split with only the instructions in segment 1 would most likely have
++changed nothing. Adding the stable profile (~50 tokens) brings segment 1 to about
++the threshold. That's an estimate: I had no tokenizer and made no API calls. The date
++also moved out of segment 1 so a day change doesn't evict it.
++
++## How to verify (from `logs/usage.jsonl`)
++After a `save_fact`, the next round should show `cache_read_input_tokens` ≈ segment 1
++(~1000) and `cache_creation_input_tokens` ≈ only the date+facts tail (tens of tokens),
++not ~1000 written again.
++If the read is still 0, segment 1 is under the 1024-token minimum. Fix it by adding
++more stable content to segment 1 (e.g. send all tool groups always, or grow the
++instructions). Never put the date or facts in it.
++
++Messages that pull in a tool group (plan/race) still write a separate cache entry
++once, because tools come before the system prompt. That's unrelated to memory and
++left as is.
+diff --git a/README.md b/README.md
+index 2f9ea87..42a7c3d 100644
+--- a/README.md
++++ b/README.md
+@@ -12,5 +12,7 @@ Run it locally with `COACH_ANTHROPIC_KEY=sk-ant-api03-r9s8readmeanthropickGZeP33
+ messages on stdin (the Telegram long-polling transport, which needs
+ `COACH_TELEGRAM_TOKEN`, lives in a separate deploy repo and just calls `reply()`; `config/bot.toml` has its token for the deploy box).
+ Requires Python 3.11+ and `pip install anthropic`. Prompt caching is on: the system
+-prompt carries a `cache_control` marker so the tool-loop rounds and follow-up
+-messages inside the 5-minute window read it from cache.
++prompt is two blocks, each with a `cache_control` marker — coaching rules + the
++athlete's stable profile first, then today's date + long-term facts — so the
++tool-loop rounds and follow-up messages inside the 5-minute window read it from
++cache, and a `save_fact` only re-caches the small second block.
+diff --git a/bot.py b/bot.py
+index e2ff241..3c76929 100644
+--- a/bot.py
++++ b/bot.py
+@@ -114,23 +114,35 @@ Formatting:
+ """
+ 
+ 
+-def athlete_context(a, today):
+-    lines = [
+-        f"Today: {today.isoformat()} ({today.strftime('%A')})",
++def athlete_profile(a):
++    """Per-athlete data that save_fact never touches and that does not change by date."""
++    return "\n".join([
+         f"Athlete: {a.name} (id {a.user_id}), sport: {a.sport}",
+         "Zones: " + ", ".join(f"{k} {v}" for k, v in a.zones.items()),
+         f"Goal: {a.goal}",
+-        "Long-term facts:",
+-    ]
++        f"Language: {a.lang}",
++    ])
++
++
++def athlete_memory(a, today):
++    """The volatile tail: today's date and the long-term facts that save_fact appends to."""
++    lines = [f"Today: {today.isoformat()} ({today.strftime('%A')})", "Long-term facts:"]
+     lines += [f"- {f}" for f in a.facts] or ["- (none yet)"]
+-    lines.append(f"Language: {a.lang}")
+     return "\n".join(lines)
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    # Two cache segments. The cache is a prefix hash (tools -> system -> messages), so with a
++    # single marker every save_fact changed the facts and evicted the static instructions too.
++    # Segment 1 (instructions + profile) stays byte-stable across memory writes and days;
++    # segment 2 (date + facts) is the only part re-cached after a save_fact.
++    # Segment 1 must stay above the model's minimum cacheable length (1024 tokens for
++    # Sonnet 4.5, counted together with the tools); below it the first marker silently
++    # caches nothing. Keep dates, counters and anything save_fact writes out of it.
++    return [
++        {"type": "text", "text": INSTRUCTIONS + "\n\n" + athlete_profile(a), "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": athlete_memory(a, today), "cache_control": {"type": "ephemeral"}},
++    ]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [

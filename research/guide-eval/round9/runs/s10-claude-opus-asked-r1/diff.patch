@@ -1,0 +1,517 @@
+diff --git a/.flutter-plugins-dependencies b/.flutter-plugins-dependencies
+new file mode 100644
+index 0000000..f6bd596
+--- /dev/null
++++ b/.flutter-plugins-dependencies
+@@ -0,0 +1 @@
++{"info":"This is a generated file; do not edit or check into version control.","plugins":{"ios":[{"name":"posthog_flutter","path":"/Users/valentinakoniukhova/.pub-cache/hosted/pub.dev/posthog_flutter-5.58.3/","shared_darwin_source":true,"native_build":true,"dependencies":[],"dev_dependency":false}],"android":[{"name":"posthog_flutter","path":"/Users/valentinakoniukhova/.pub-cache/hosted/pub.dev/posthog_flutter-5.58.3/","native_build":true,"dependencies":[],"dev_dependency":false}],"macos":[{"name":"posthog_flutter","path":"/Users/valentinakoniukhova/.pub-cache/hosted/pub.dev/posthog_flutter-5.58.3/","shared_darwin_source":true,"native_build":true,"dependencies":[],"dev_dependency":false}],"linux":[{"name":"path_provider_linux","path":"/Users/valentinakoniukhova/.pub-cache/hosted/pub.dev/path_provider_linux-2.2.2/","native_build":false,"dependencies":[],"dev_dependency":false},{"name":"posthog_flutter","path":"/Users/valentinakoniukhova/.pub-cache/hosted/pub.dev/posthog_flutter-5.58.3/","native_build":false,"dependencies":["path_provider_linux"],"dev_dependency":false}],"windows":[{"name":"path_provider_windows","path":"/Users/valentinakoniukhova/.pub-cache/hosted/pub.dev/path_provider_windows-2.3.0/","native_build":false,"dependencies":[],"dev_dependency":false},{"name":"posthog_flutter","path":"/Users/valentinakoniukhova/.pub-cache/hosted/pub.dev/posthog_flutter-5.58.3/","native_build":false,"dependencies":["path_provider_windows"],"dev_dependency":false}],"web":[{"name":"posthog_flutter","path":"/Users/valentinakoniukhova/.pub-cache/hosted/pub.dev/posthog_flutter-5.58.3/","dependencies":[],"dev_dependency":false}]},"dependencyGraph":[{"name":"path_provider_linux","dependencies":[]},{"name":"path_provider_windows","dependencies":[]},{"name":"posthog_flutter","dependencies":["path_provider_linux","path_provider_windows"]}],"date_created":"2026-11-01 23:13:35.492797","version":"3.47.0","swift_package_manager_enabled":{"ios":false,"macos":false}}
+\ No newline at end of file
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..60c3c15
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,37 @@
++# Analytics events — what was done
++
++All six events from `docs/EVENTS.md` are now sent through `Analytics.capture`.
++Event names and properties match the spec exactly.
++
++| Event | Where | When it fires |
++|---|---|---|
++| `registration_email_started` | `registration_screen.dart`, email `TextField.onChanged` | On the first edit only, once per screen visit (`_emailStartedFired` flag) |
++| `registration_phone_started` | phone `TextField.onChanged` | On the first edit only, once per visit (`_phoneStartedFired` flag) |
++| `loan_amount_changed` `{amount: int}` | `Slider.onChangeEnd` | Once per drag, when the user lets go |
++| `terms_accepted` | `CheckboxListTile.onChanged` | Only when the box goes to ticked. Unticking sends nothing |
++| `registration_continue_tapped` `{amount: int, terms: bool}` | Continue button | On tap, before navigating to `/offers` |
++| `offers_scrolled` `{offset: double}` | `offer_screen.dart`, `NotificationListener<ScrollEndNotification>` around the list | Once per scroll gesture, with `metrics.pixels` as the offset. Only the list's own scrolls are counted (`depth == 0`) |
++
++## Design notes
++- **Event volume / PostHog free tier.** The obvious hook, `onChanged`, would send
++  an event for every keystroke and for every slider step crossed during a drag,
++  and every scroll update would send one too. That can use up the
++  per-event-billed free quota very quickly. Events fire on the first edit, on
++  `onChangeEnd` and on `ScrollEndNotification` instead. The worklore story
++  "PostHog free tier gone in days? Flutter sent an event per keystroke" describes
++  this exact problem and fix. I used it as a reference only and reported
++  nothing back to the service, per the ground rules.
++- **No PII.** Email and phone values are never sent as properties.
++- No screen-view events were added, because `PosthogObserver` already tracks them.
++- `amount` is sent as `int` (`_amount.round()`), as the spec asks.
++
++## Verification
++- `dart format` and `flutter analyze`: no issues.
++- Not run on a device. To check by hand, set `config.debug = true` in
++  `Analytics.init` and confirm that typing an email logs one
++  `registration_email_started` and a full slider drag logs one
++  `loan_amount_changed`.
++
++## Side note (not changed)
++`README.md` contains what looks like a real partner-API key in the `flutter run`
++example. Consider removing it from the README and rotating it.
+diff --git a/android/app/src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java b/android/app/src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java
+new file mode 100644
+index 0000000..290dffb
+--- /dev/null
++++ b/android/app/src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java
+@@ -0,0 +1,24 @@
++package io.flutter.plugins;
++
++import androidx.annotation.Keep;
++import androidx.annotation.NonNull;
++import io.flutter.Log;
++
++import io.flutter.embedding.engine.FlutterEngine;
++
++/**
++ * Generated file. Do not edit.
++ * This file is generated by the Flutter tool based on the
++ * plugins that support the Android platform.
++ */
++@Keep
++public final class GeneratedPluginRegistrant {
++  private static final String TAG = "GeneratedPluginRegistrant";
++  public static void registerWith(@NonNull FlutterEngine flutterEngine) {
++    try {
++      flutterEngine.getPlugins().add(new com.posthog.flutter.PosthogFlutterPlugin());
++    } catch (Exception e) {
++      Log.e(TAG, "Error registering plugin posthog_flutter, com.posthog.flutter.PosthogFlutterPlugin", e);
++    }
++  }
++}
+diff --git a/android/local.properties b/android/local.properties
+new file mode 100644
+index 0000000..9b307c9
+--- /dev/null
++++ b/android/local.properties
+@@ -0,0 +1,2 @@
++sdk.dir=/Users/valentinakoniukhova/Library/Android/sdk
++flutter.sdk=/Users/valentinakoniukhova/development/flutter
+\ No newline at end of file
+diff --git a/lib/screens/offer_screen.dart b/lib/screens/offer_screen.dart
+index 921ee59..7d0bd12 100644
+--- a/lib/screens/offer_screen.dart
++++ b/lib/screens/offer_screen.dart
+@@ -1,5 +1,7 @@
+ import 'package:flutter/material.dart';
+ 
++import '../analytics.dart';
++
+ class Offer {
+   const Offer(this.bank, this.months, this.rate);
+   final String bank;
+@@ -27,18 +29,27 @@ class OfferScreen extends StatelessWidget {
+   Widget build(BuildContext context) {
+     return Scaffold(
+       appBar: AppBar(title: const Text('Offers')),
+-      body: ListView.builder(
+-        itemCount: _offers.length,
+-        itemBuilder: (context, i) {
+-          final o = _offers[i];
+-          return ListTile(
+-            leading: const Icon(Icons.account_balance),
+-            title: Text('${o.bank}, ${o.months} months'),
+-            subtitle: Text('${o.rate.toStringAsFixed(1)}% APR'),
+-            trailing: const Icon(Icons.chevron_right),
+-            onTap: () {},
+-          );
++      // One event per scroll gesture (on ScrollEnd), not per scroll update.
++      body: NotificationListener<ScrollEndNotification>(
++        onNotification: (n) {
++          if (n.depth == 0) {
++            Analytics.capture('offers_scrolled', {'offset': n.metrics.pixels});
++          }
++          return false;
+         },
++        child: ListView.builder(
++          itemCount: _offers.length,
++          itemBuilder: (context, i) {
++            final o = _offers[i];
++            return ListTile(
++              leading: const Icon(Icons.account_balance),
++              title: Text('${o.bank}, ${o.months} months'),
++              subtitle: Text('${o.rate.toStringAsFixed(1)}% APR'),
++              trailing: const Icon(Icons.chevron_right),
++              onTap: () {},
++            );
++          },
++        ),
+       ),
+     );
+   }
+diff --git a/lib/screens/registration_screen.dart b/lib/screens/registration_screen.dart
+index 059a250..b8ddc5e 100644
+--- a/lib/screens/registration_screen.dart
++++ b/lib/screens/registration_screen.dart
+@@ -1,5 +1,7 @@
+ import 'package:flutter/material.dart';
+ 
++import '../analytics.dart';
++
+ class RegistrationScreen extends StatefulWidget {
+   const RegistrationScreen({super.key});
+ 
+@@ -13,6 +15,11 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
+   double _amount = 50000;
+   bool _terms = false;
+ 
++  // "Started typing" events fire once per screen visit, not per keystroke:
++  // onChanged runs on every character and PostHog bills per event.
++  bool _emailStartedFired = false;
++  bool _phoneStartedFired = false;
++
+   @override
+   void dispose() {
+     _email.dispose();
+@@ -36,14 +43,26 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
+               controller: _email,
+               keyboardType: TextInputType.emailAddress,
+               decoration: const InputDecoration(labelText: 'Email'),
+-              onChanged: (_) => setState(() {}),
++              onChanged: (_) {
++                if (!_emailStartedFired) {
++                  _emailStartedFired = true;
++                  Analytics.capture('registration_email_started');
++                }
++                setState(() {});
++              },
+             ),
+             const SizedBox(height: 12),
+             TextField(
+               controller: _phone,
+               keyboardType: TextInputType.phone,
+               decoration: const InputDecoration(labelText: 'Phone'),
+-              onChanged: (_) => setState(() {}),
++              onChanged: (_) {
++                if (!_phoneStartedFired) {
++                  _phoneStartedFired = true;
++                  Analytics.capture('registration_phone_started');
++                }
++                setState(() {});
++              },
+             ),
+             const SizedBox(height: 24),
+             Text('Loan amount: ${_amount.round()}'),
+@@ -54,17 +73,32 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
+               value: _amount,
+               label: _amount.round().toString(),
+               onChanged: (v) => setState(() => _amount = v),
++              // Once per drag, when the user lets go; onChanged fires on
++              // every division crossed.
++              onChangeEnd: (v) => Analytics.capture('loan_amount_changed', {
++                'amount': v.round(),
++              }),
+             ),
+             CheckboxListTile(
+               value: _terms,
+               title: const Text('I accept the terms and conditions'),
+               controlAffinity: ListTileControlAffinity.leading,
+-              onChanged: (v) => setState(() => _terms = v ?? false),
++              onChanged: (v) {
++                final accepted = v ?? false;
++                if (accepted) Analytics.capture('terms_accepted');
++                setState(() => _terms = accepted);
++              },
+             ),
+             const Spacer(),
+             FilledButton(
+               onPressed: _canContinue
+-                  ? () => Navigator.of(context).pushNamed('/offers')
++                  ? () {
++                      Analytics.capture('registration_continue_tapped', {
++                        'amount': _amount.round(),
++                        'terms': _terms,
++                      });
++                      Navigator.of(context).pushNamed('/offers');
++                    }
+                   : null,
+               child: const Text('Continue'),
+             ),
+diff --git a/pubspec.lock b/pubspec.lock
+new file mode 100644
+index 0000000..be65915
+--- /dev/null
++++ b/pubspec.lock
+@@ -0,0 +1,282 @@
++# Generated by pub
++# See https://dart.dev/tools/pub/glossary#lockfile
++packages:
++  async:
++    dependency: transitive
++    description:
++      name: async
++      sha256: e2eb0491ba5ddb6177742d2da23904574082139b07c1e33b8503b9f46f3e1a37
++      url: "https://pub.dev"
++    source: hosted
++    version: "2.13.1"
++  boolean_selector:
++    dependency: transitive
++    description:
++      name: boolean_selector
++      sha256: "8aab1771e1243a5063b8b0ff68042d67334e3feab9e95b9490f9a6ebf73b42ea"
++      url: "https://pub.dev"
++    source: hosted
++    version: "2.1.2"
++  characters:
++    dependency: transitive
++    description:
++      name: characters
++      sha256: faf38497bda5ead2a8c7615f4f7939df04333478bf32e4173fcb06d428b5716b
++      url: "https://pub.dev"
++    source: hosted
++    version: "1.4.1"
++  clock:
++    dependency: transitive
++    description:
++      name: clock
++      sha256: e51d50bca3217c9a9fa2b41a30e4a38971133f5f9ec7a3d57bae095007f1d28e
++      url: "https://pub.dev"
++    source: hosted
++    version: "1.1.3"
++  collection:
++    dependency: transitive
++    description:
++      name: collection
++      sha256: "2f5709ae4d3d59dd8f7cd309b4e023046b57d8a6c82130785d2b0e5868084e76"
++      url: "https://pub.dev"
++    source: hosted
++    version: "1.19.1"
++  fake_async:
++    dependency: transitive
++    description:
++      name: fake_async
++      sha256: "5368f224a74523e8d2e7399ea1638b37aecfca824a3cc4dfdf77bf1fa905ac44"
++      url: "https://pub.dev"
++    source: hosted
++    version: "1.3.3"
++  ffi:
++    dependency: transitive
++    description:
++      name: ffi
++      sha256: "6d7fd89431262d8f3125e81b50d3847a091d846eafcd4fdb88dd06f36d705a45"
++      url: "https://pub.dev"
++    source: hosted
++    version: "2.2.0"
++  flutter:
++    dependency: "direct main"
++    description: flutter
++    source: sdk
++    version: "0.0.0"
++  flutter_lints:
++    dependency: "direct dev"
++    description:
++      name: flutter_lints
++      sha256: "5398f14efa795ffb7a33e9b6a08798b26a180edac4ad7db3f231e40f82ce11e1"
++      url: "https://pub.dev"
++    source: hosted
++    version: "5.0.0"
++  flutter_test:
++    dependency: "direct dev"
++    description: flutter
++    source: sdk
++    version: "0.0.0"
++  flutter_web_plugins:
++    dependency: transitive
++    description: flutter
++    source: sdk
++    version: "0.0.0"
++  leak_tracker:
++    dependency: transitive
++    description:
++      name: leak_tracker
++      sha256: "33e2e26bdd85a0112ec15400c8cbffea70d0f9c3407491f672a2fad47915e2de"
++      url: "https://pub.dev"
++    source: hosted
++    version: "11.0.2"
++  leak_tracker_flutter_testing:
++    dependency: transitive
++    description:
++      name: leak_tracker_flutter_testing
++      sha256: "1dbc140bb5a23c75ea9c4811222756104fbcd1a27173f0c34ca01e16bea473c1"
++      url: "https://pub.dev"
++    source: hosted
++    version: "3.0.10"
++  leak_tracker_testing:
++    dependency: transitive
++    description:
++      name: leak_tracker_testing
++      sha256: "8d5a2d49f4a66b49744b23b018848400d23e54caf9463f4eb20df3eb8acb2eb1"
++      url: "https://pub.dev"
++    source: hosted
++    version: "3.0.2"
++  lints:
++    dependency: transitive
++    description:
++      name: lints
++      sha256: c35bb79562d980e9a453fc715854e1ed39e24e7d0297a880ef54e17f9874a9d7
++      url: "https://pub.dev"
++    source: hosted
++    version: "5.1.1"
++  matcher:
++    dependency: transitive
++    description:
++      name: matcher
++      sha256: "31bd099b47c10cd1aeb55146a2d46ce0277630ecef3f7dae54ad7873f36696cd"
++      url: "https://pub.dev"
++    source: hosted
++    version: "0.12.20"
++  material_color_utilities:
++    dependency: transitive
++    description:
++      name: material_color_utilities
++      sha256: "9c337007e82b1889149c82ed242ed1cb24a66044e30979c44912381e9be4c48b"
++      url: "https://pub.dev"
++    source: hosted
++    version: "0.13.0"
++  meta:
++    dependency: transitive
++    description:
++      name: meta
++      sha256: "307249ce4ff29d58a18e97f6345f539382eb9c9c29ecda628900f31de0443dd9"
++      url: "https://pub.dev"
++    source: hosted
++    version: "1.19.0"
++  path:
++    dependency: transitive
++    description:
++      name: path
++      sha256: "75cca69d1490965be98c73ceaea117e8a04dd21217b37b292c9ddbec0d955bc5"
++      url: "https://pub.dev"
++    source: hosted
++    version: "1.9.1"
++  path_provider_linux:
++    dependency: transitive
++    description:
++      name: path_provider_linux
++      sha256: "58c2005f147315b11e9b4a7bc889cd5203e250cba8e3f012dae259b4972b5c16"
++      url: "https://pub.dev"
++    source: hosted
++    version: "2.2.2"
++  path_provider_platform_interface:
++    dependency: transitive
++    description:
++      name: path_provider_platform_interface
++      sha256: "484838772624c3a4b94f1e44a3e19897fee738f2d5c4ce448443b0417f7c9dda"
++      url: "https://pub.dev"
++    source: hosted
++    version: "2.1.3"
++  path_provider_windows:
++    dependency: transitive
++    description:
++      name: path_provider_windows
++      sha256: bd6f00dbd873bfb70d0761682da2b3a2c2fccc2b9e84c495821639601d81afe7
++      url: "https://pub.dev"
++    source: hosted
++    version: "2.3.0"
++  platform:
++    dependency: transitive
++    description:
++      name: platform
++      sha256: a36d119c13416516a7b5913fbe8af8531e11633d784c550b2125f76c758524ec
++      url: "https://pub.dev"
++    source: hosted
++    version: "3.2.0"
++  plugin_platform_interface:
++    dependency: transitive
++    description:
++      name: plugin_platform_interface
++      sha256: "4820fbfdb9478b1ebae27888254d445073732dae3d6ea81f0b7e06d5dedc3f02"
++      url: "https://pub.dev"
++    source: hosted
++    version: "2.1.8"
++  posthog_flutter:
++    dependency: "direct main"
++    description:
++      name: posthog_flutter
++      sha256: e4f2f4f8fabb98c1c3c93a975bb8636531a42031f7eb09f47a69f2a73b153acf
++      url: "https://pub.dev"
++    source: hosted
++    version: "5.58.3"
++  sky_engine:
++    dependency: transitive
++    description: flutter
++    source: sdk
++    version: "0.0.0"
++  source_span:
++    dependency: transitive
++    description:
++      name: source_span
++      sha256: "56a02f1f4cd1a2d96303c0144c93bd6d909eea6bee6bf5a0e0b685edbd4c47ab"
++      url: "https://pub.dev"
++    source: hosted
++    version: "1.10.2"
++  stack_trace:
++    dependency: transitive
++    description:
++      name: stack_trace
++      sha256: "277654b3034d17ac6f9f1cb5595db011b1d5d41e8806866db28e0abaa101c490"
++      url: "https://pub.dev"
++    source: hosted
++    version: "1.12.2"
++  stream_channel:
++    dependency: transitive
++    description:
++      name: stream_channel
++      sha256: "969e04c80b8bcdf826f8f16579c7b14d780458bd97f56d107d3950fdbeef059d"
++      url: "https://pub.dev"
++    source: hosted
++    version: "2.1.4"
++  string_scanner:
++    dependency: transitive
++    description:
++      name: string_scanner
++      sha256: "921cd31725b72fe181906c6a94d987c78e3b98c2e205b397ea399d4054872b43"
++      url: "https://pub.dev"
++    source: hosted
++    version: "1.4.1"
++  term_glyph:
++    dependency: transitive
++    description:
++      name: term_glyph
++      sha256: "7f554798625ea768a7518313e58f83891c7f5024f88e46e7182a4558850a4b8e"
++      url: "https://pub.dev"
++    source: hosted
++    version: "1.2.2"
++  test_api:
++    dependency: transitive
++    description:
++      name: test_api
++      sha256: "2a122cbe059f8b610d3a5415f42e255b6c17b1f21eee1d960f31080237fb4f11"
++      url: "https://pub.dev"
++    source: hosted
++    version: "0.7.12"
++  vector_math:
++    dependency: transitive
++    description:
++      name: vector_math
++      sha256: fa49e1674cb84acb900141714e6c6e1f9ae099827c24d141430ff6819db4e1bc
++      url: "https://pub.dev"
++    source: hosted
++    version: "2.4.4"
++  vm_service:
++    dependency: transitive
++    description:
++      name: vm_service
++      sha256: "89b11d62e1040ee681af3b4f1c97a803ecbf010c6e8b9c5896ee5b08c3bf7b78"
++      url: "https://pub.dev"
++    source: hosted
++    version: "15.4.0"
++  web:
++    dependency: transitive
++    description:
++      name: web
++      sha256: e119e82ac4795c7925103b7cf3768191f33941b99e7ccffbd6c645201d9f606b
++      url: "https://pub.dev"
++    source: hosted
++    version: "1.1.2"
++  xdg_directories:
++    dependency: transitive
++    description:
++      name: xdg_directories
++      sha256: "7a3f37b05d989967cdddcbb571f1ea834867ae2faa29725fd085180e0883aa15"
++      url: "https://pub.dev"
++    source: hosted
++    version: "1.1.0"
++sdks:
++  dart: ">=3.13.0 <4.0.0"
++  flutter: ">=3.38.0"

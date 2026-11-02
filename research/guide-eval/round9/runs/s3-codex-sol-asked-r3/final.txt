@@ -1,0 +1,5 @@
+The job was running, but it could not report its failure. The log shows `claude` was not logged in; then the script assigned to zsh’s read-only `status` variable and stopped before notifying you. The notifier also ignored its configured Telegram token and would fall back to the locked keychain.
+
+I fixed the scripts and plist and documented the causes in [ANSWER.md](/tmp/h-3XFHou/ANSWER.md). Mocked tests confirmed that agent failure, empty output, and success now take the expected notification paths. No external service was contacted.
+
+The Mac still needs a valid CLI login, and the updated plist must be loaded there before the nightly job uses it.

@@ -1,0 +1,91 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..e428596
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,14 @@
++# Root Cause and Fix: Publishing Failure on Second Request
++
++## Root Cause
++On the first publish to an empty DynamoDB table, `table.scan()` returns no existing items (`similar: []`). Thus, no similarity calculation is stored.
++
++On subsequent publishes when the table already contains stories, `related(story, existing)` calls `similarity(story, other)`. The `similarity` function calculates a weighted score using Python floating-point arithmetic and `round(...)`, returning a Python `float`. When `table.put_item(Item=item)` is executed with items containing float values in `similar[i]["score"]`, DynamoDB / `boto3` rejects them with:
++```
++TypeError: Float types are not supported. Use Decimal types instead.
++```
++This uncaught exception causes `handler()` to log the error and return HTTP 500.
++
++## Fix
++1. **Code Fix ([`src/app.py`](file:///private/tmp/h-UUEINj/src/app.py))**: Converted the float score in `similarity()` to a `Decimal` (`Decimal(str(round(0.7 * tag_score + 0.3 * word_score, 4)))`), which is natively supported and expected by `boto3` / DynamoDB.
++2. **Regression Prevention ([`tests/test_publish.py`](file:///private/tmp/h-UUEINj/tests/test_publish.py))**: Added unit tests verifying that publishing to a non-empty table computes similarity scores and succeeds without raising `TypeError`, ensuring future changes cannot reintroduce this issue.
+diff --git a/src/app.py b/src/app.py
+index db49c5e..5931a84 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -4,6 +4,7 @@ Each story is stored in one DynamoDB item together with the three most similar
+ stories already in the library (``similar``), so the reader page can show
+ "related" without a query at read time.
+ """
++from decimal import Decimal
+ import json
+ import logging
+ import re
+@@ -27,7 +28,7 @@ def similarity(a, b):
+     tag_score = len(ta & tb) / len(ta | tb) if (ta | tb) else 0
+     wa, wb = words(a.get("body")), words(b.get("body"))
+     word_score = len(wa & wb) / len(wa | wb) if (wa | wb) else 0
+-    return round(0.7 * tag_score + 0.3 * word_score, 4)
++    return Decimal(str(round(0.7 * tag_score + 0.3 * word_score, 4)))
+ 
+ 
+ def related(story, existing):
+diff --git a/tests/test_publish.py b/tests/test_publish.py
+index 6c9ac44..a757e6b 100644
+--- a/tests/test_publish.py
++++ b/tests/test_publish.py
+@@ -23,6 +23,45 @@ class PublishTest(unittest.TestCase):
+         self.assertEqual(table.get_item(Key={"slug": "why-my-cron-ran-twice"})["Item"]["title"], "Why my cron ran twice")
+         self.assertEqual(table.scan()["Count"], 1)
+ 
++    def test_second_publish_computes_similarity_without_float_error(self):
++        table = FakeTable()
++        story1 = {
++            "slug": "why-my-cron-ran-twice",
++            "title": "Why my cron ran twice",
++            "tags": ["cron", "linux"],
++            "body": "Two crontabs, one for root and one for me, both had the line.",
++        }
++        story2 = {
++            "slug": "debugging-cron-jobs",
++            "title": "Debugging cron jobs",
++            "tags": ["cron", "monitoring"],
++            "body": "Check system logs and cron daemon output when debugging.",
++        }
++        app.publish(table, story1)
++        stored2 = app.publish(table, story2)
++        self.assertEqual(stored2["slug"], "debugging-cron-jobs")
++        self.assertEqual(len(stored2["similar"]), 1)
++        self.assertEqual(stored2["similar"][0]["slug"], "why-my-cron-ran-twice")
++
++    def test_handler_two_publishes(self):
++        table = FakeTable()
++        story1 = {
++            "slug": "why-my-cron-ran-twice",
++            "title": "Why my cron ran twice",
++            "tags": ["cron", "linux"],
++            "body": "Two crontabs, one for root and one for me, both had the line.",
++        }
++        story2 = {
++            "slug": "debugging-cron-jobs",
++            "title": "Debugging cron jobs",
++            "tags": ["cron", "monitoring"],
++            "body": "Check system logs and cron daemon output when debugging.",
++        }
++        res1 = app.handler({"body": __import__("json").dumps(story1)}, table)
++        self.assertEqual(res1["statusCode"], 201)
++        res2 = app.handler({"body": __import__("json").dumps(story2)}, table)
++        self.assertEqual(res2["statusCode"], 201)
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

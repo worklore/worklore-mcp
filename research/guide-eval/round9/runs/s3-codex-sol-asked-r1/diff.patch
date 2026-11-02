@@ -1,0 +1,123 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..4dad0ae
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,37 @@
++# Why the nightly review was silent
++
++The job **did run**. The saved `launchctl print` output records `runs = 6` and
++`last exit code = 1`, with a 02:30 calendar trigger. The stderr log repeats the
++same two errors for all six runs:
++
++1. `claude` exited with `Not logged in · Please run /login`. The launchd job's
++   environment supplied `PATH` but no `USER`; the working interactive shell's
++   login environment was not available to the job. The plist now sets `USER=vk`
++   and `HOME=/Users/vk` so the headless agent has the intended account context.
++2. Immediately after that failure, the zsh script assigned to `status`, a
++   read-only zsh parameter. That terminated the script before its failure
++   notification. The script now records the command's exit code in `rc` and
++   sends a failure note before exiting with that code.
++3. The notifier looked up its token in the keychain, although this machine's
++   keychain is locked at 02:30 and the token and chat ID were already in
++   `.config/nightly-review/config.toml`. The notifier now reads that local
++   config (with optional environment overrides) and treats an HTTP error from
++   Telegram as a command failure.
++
++The review passes its prompt on stdin to the headless agent and treats an empty
++response as a failure, so an apparently successful command cannot produce a
++blank summary. I also removed a literal bot token from the README example.
++
++## Verification
++
++The plist passes `plutil -lint`; both scripts pass shell syntax checks. Local
++mock runs returned 0 with a success message, 7 with an agent failure message,
++1 with an empty-output failure message, and 22 when notification failed. These
++tests used a mock `claude` and `curl`; they did not contact Telegram or verify
++the real Claude login. The saved launchd output and logs are from before these
++changes. The edited plist must be loaded on the actual Mac before the new
++environment takes effect.
++
++The bot token is still present in the tracked config and Git history. The README
++edit does not revoke it; rotate that token separately if this snapshot has been
++shared.
+diff --git a/Library/LaunchAgents/com.vk.nightly-review.plist b/Library/LaunchAgents/com.vk.nightly-review.plist
+index c347363..c54a16a 100644
+--- a/Library/LaunchAgents/com.vk.nightly-review.plist
++++ b/Library/LaunchAgents/com.vk.nightly-review.plist
+@@ -22,6 +22,10 @@
+   <string>/Users/vk/Library/Logs/nightly-review.err</string>
+   <key>EnvironmentVariables</key>
+   <dict>
++    <key>HOME</key>
++    <string>/Users/vk</string>
++    <key>USER</key>
++    <string>vk</string>
+     <key>PATH</key>
+     <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+   </dict>
+diff --git a/README.md b/README.md
+index c08bd0c..e4972a5 100644
+--- a/README.md
++++ b/README.md
+@@ -10,8 +10,8 @@ Layout, relative to my home:
+ - `Library/LaunchAgents/com.vk.nightly-review.plist` — loaded with
+   `launchctl bootstrap gui/$UID ...` on 2026-10-12
+ - `bin/nightly-review.zsh` — the job
+-- `bin/notify.sh` — Telegram notifier (works when run by hand:
+-  `TG_BOT_TOKEN=7812345678:AAr9s3readmetelegram9PhGH1GVHckH bin/notify.sh "ping"`)
++- `bin/notify.sh` — Telegram notifier (the bot token and chat ID come from
++  `.config/nightly-review/config.toml`)
+ - `.config/nightly-review/config.toml` — the bot token and chat id for the box where
+   the keychain is locked at night
+ - `.env` — sourced from `~/.zshrc`, the shop project's deploy credentials
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..1c7fd7f 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -15,12 +15,17 @@ Do not modify any file."
+ 
+ cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
+ 
+-claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
++print -r -- "$PROMPT" | claude -p --output-format text > "$OUT"
++rc=$?
+ 
+-if [ $status -ne 0 ]; then
+-  "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
+-  exit $status
++if [ "$rc" -ne 0 ]; then
++  "$NOTIFY" "nightly review FAILED (exit $rc), see $OUT"
++  exit "$rc"
++fi
++
++if [ ! -s "$OUT" ]; then
++  "$NOTIFY" "nightly review FAILED (empty output), see $OUT"
++  exit 1
+ fi
+ 
+ "$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"
+diff --git a/bin/notify.sh b/bin/notify.sh
+index 818e531..48cb052 100755
+--- a/bin/notify.sh
++++ b/bin/notify.sh
+@@ -1,7 +1,14 @@
+ #!/bin/bash
+ # usage: notify.sh "message"  — sends a Telegram message to me.
+ set -eu
+-: "${TG_BOT_TOKEN:=$(security find-generic-password -s tg-bot -w)}"
+-CHAT_ID=123456789
+-curl -sS -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
+-  -d chat_id="$CHAT_ID" --data-urlencode text="$1" > /dev/null
++CONFIG="$HOME/.config/nightly-review/config.toml"
++if [ -z "${TG_BOT_TOKEN:-}" ]; then
++  TG_BOT_TOKEN=$(sed -nE 's/^[[:space:]]*telegram_bot_token[[:space:]]*=[[:space:]]*"([^"]+)"[[:space:]]*(#.*)?$/\1/p' "$CONFIG" | head -n 1)
++fi
++if [ -z "${TG_CHAT_ID:-}" ]; then
++  TG_CHAT_ID=$(sed -nE 's/^[[:space:]]*chat_id[[:space:]]*=[[:space:]]*([0-9]+)[[:space:]]*(#.*)?$/\1/p' "$CONFIG" | head -n 1)
++fi
++: "${TG_BOT_TOKEN:?missing Telegram bot token}"
++: "${TG_CHAT_ID:?missing Telegram chat ID}"
++curl --fail --silent --show-error -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
++  -d "chat_id=$TG_CHAT_ID" --data-urlencode "text=$1" > /dev/null

@@ -1,0 +1,3 @@
+Fixed the prompt cache boundary: `save_fact` now updates a separate athlete context block while the static coaching instructions keep the cache marker. Keyword based tool selection is unchanged.
+
+An offline `save_fact` test confirmed the cached block stays identical across tool rounds and the new fact appears in the next context block. Syntax and diff checks passed. The changes and the limit of offline verification are recorded in [ANSWER.md](/tmp/h-uMUg9q/ANSWER.md).

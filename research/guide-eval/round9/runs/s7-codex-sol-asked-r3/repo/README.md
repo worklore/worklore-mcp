@@ -1,0 +1,16 @@
+# tricoach
+
+Backend + single-page app for a small triathlon coaching practice. Coaches
+plan the week; athletes see it and connect their Intervals.icu account so the
+app can read wellness data and push planned workouts to their calendar. The
+athlete signs in to tricoach (token in `localStorage`, sent as
+`Authorization: Bearer` by the SPA's fetch wrapper), then clicks
+"Connect Intervals.icu", which starts OAuth with an authenticated POST and
+then navigates to Intervals.icu.
+
+`server.py` is stdlib only (`python3 server.py`, port 8766) and keeps
+everything in memory; the shape is the same as the Postgres tables in prod.
+Dev sign-in tokens: `tok-okafor` (default in the SPA) and `tok-rivera`.
+`config.py` holds the dev OAuth client pair; against staging run
+`INTERVALS_BASE=https://staging.intervals.icu INTERVALS_CLIENT_SECRET=r9s7readmeclientsecretDejP0EI1wO python3 server.py`. `logs/` has what we captured
+while looking into the connection problems.

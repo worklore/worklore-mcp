@@ -1,0 +1,3 @@
+I split the system prompt into two cache breakpoints in [bot.py](/tmp/h-fcgfhp/bot.py:130). A `save_fact` write now changes the athlete-context block while leaving the static instructions byte-identical.
+
+I documented the change in [ANSWER.md](/tmp/h-fcgfhp/ANSWER.md). Local checks confirmed the block behavior and Python syntax. I made no live API call, so the resulting cache token counts remain unverified.

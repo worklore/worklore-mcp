@@ -1,0 +1,151 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..6e230f2
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,68 @@
++# Prompt caching vs. save_fact
++
++## Why every save_fact paid full price
++
++`build_system()` sent one system block holding the instructions, the athlete's
++context and the facts, with a single `cache_control` marker at the end.
++`save_fact` adds to `a.facts` partway through `reply()`, and the system prompt was
++rebuilt on every loop round. So the very next round (and later the next message)
++sent a different block. The only cache entry covered the whole block, so it was
++lost and ~1000 tokens were written again. In `logs/usage.jsonl`, every round that
++follows a `save_fact` has `cache_read_input_tokens: 0` and a full `cache_creation`.
++
++Just moving the marker to the end of the instructions would not work.
++Tools + instructions come to roughly 950–1000 tokens. That is probably below
++Sonnet 4.5's 1024-token minimum for caching. If so, the marker is silently
++ignored and nothing gets cached at all.
++
++## What changed (bot.py only)
++
++1. **The system prompt is now split into blocks, static parts first:**
++   coaching rules → athlete profile (name, sport, zones, goal, language) →
++   one block per fact → today's date.
++   - Marker 1 is on the profile block. Rules + profile stay byte-identical across
++     messages and across `save_fact`.
++   - Marker 2 is on the last fact. Facts are only ever appended, so the previous
++     request's cached prefix (ending at the old last fact) is still a prefix of the
++     new request. The API's cache lookback (~20 blocks back from a marker) finds
++     it. After a `save_fact`, the next call reads the old prefix from cache and
++     writes only the new fact. This prefix is also above the 1024 minimum, so it
++     doesn't depend on marker 1 being cacheable.
++   - The date moved after the last marker, so a change of day no longer
++     invalidates the cache either. "(none yet)" is its own block after the
++     profile, so saving the first fact doesn't change the profile text.
++2. **The system prompt is built once per `reply()`** instead of once per round.
++   The model already has the new fact in its own tool call, so tool-loop rounds
++   now send identical prompts and get full cache reads. The next message picks up
++   the fact.
++3. `build_request()` now takes the prebuilt `system`. `athlete_context()` became
++   `athlete_profile()`.
++
++The prompt text the model sees is the same apart from the order (the date and
++language lines moved).
++
++## How it was checked
++
++I made no API calls. I ran a fake-client script (outside the repo) through five
++messages, two of them with `save_fact`. It checked that:
++- the rules and profile blocks never change,
++- each request starts with the previous request's cached prefix,
++- prompts within one message are identical,
++- there are at most 4 markers.
++
++To check it for real, compare `logs/usage.jsonl` after deploy. The call after a
++`save_fact` should show `cache_read_input_tokens` ≈ the old total and
++`cache_creation_input_tokens` of only a few dozen tokens.
++
++## Not changed / worth knowing
++
++- **Tool filtering also breaks the cache.** Tools come before the system prompt
++  in the cached prefix. A message that adds or drops `plan_week`/`predict_race`
++  compared with the previous one misses the cache too (e.g. the `plan_week` line
++  in the log). NOTES.md says to keep the filtering, so I left it. If that cost
++  matters, the fix is to always send the same tool list.
++- An athlete with no facts gets a prefix of rules + profile only. That may be
++  under 1024 tokens and so not cached. This is no worse than before in practice.
++- **Secrets in the repo:** README.md contains what looks like a real
++  `COACH_ANTHROPIC_KEY`, and `config/bot.toml` has the Telegram token. I didn't
++  touch them, but they should be revoked/rotated and removed from git history.
+diff --git a/bot.py b/bot.py
+index e2ff241..150ba1f 100644
+--- a/bot.py
++++ b/bot.py
+@@ -114,23 +114,37 @@ Formatting:
+ """
+ 
+ 
+-def athlete_context(a, today):
+-    lines = [
+-        f"Today: {today.isoformat()} ({today.strftime('%A')})",
++def athlete_profile(a):
++    # Changes only when the athlete edits their profile, so it sits inside the cached prefix.
++    return "\n".join([
+         f"Athlete: {a.name} (id {a.user_id}), sport: {a.sport}",
+         "Zones: " + ", ".join(f"{k} {v}" for k, v in a.zones.items()),
+         f"Goal: {a.goal}",
++        f"Language: {a.lang}",
+         "Long-term facts:",
+-    ]
+-    lines += [f"- {f}" for f in a.facts] or ["- (none yet)"]
+-    lines.append(f"Language: {a.lang}")
+-    return "\n".join(lines)
++    ])
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    """Static-first system prompt, so a memory write never invalidates what came before it.
++
++    Blocks, in order: coaching rules | athlete profile | one block per fact | today's date.
++    - Breakpoint after the profile: rules + profile are byte-identical across messages and save_fact calls.
++    - Breakpoint on the last fact: facts are append-only, so after save_fact the previous request's
++      prefix (ending at the old last fact) is still a prefix; the cache lookback finds it and only the
++      new fact is written. This also keeps the cached prefix above the model's minimum cacheable length,
++      which rules + profile alone may not reach.
++    - The date goes after the last breakpoint because it changes daily.
++    """
++    blocks = [{"type": "text", "text": INSTRUCTIONS},
++              {"type": "text", "text": athlete_profile(a), "cache_control": {"type": "ephemeral"}}]
++    blocks += [{"type": "text", "text": f"- {f}"} for f in a.facts]
++    if a.facts:
++        blocks[-1]["cache_control"] = {"type": "ephemeral"}
++    else:
++        blocks.append({"type": "text", "text": "- (none yet)"})
++    blocks.append({"type": "text", "text": f"Today: {today.isoformat()} ({today.strftime('%A')})"})
++    return blocks
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [
+@@ -187,8 +201,8 @@ def log_usage(usage, user_id, round_no, tool=None):
+         f.write(json.dumps(rec) + "\n")
+ 
+ 
+-def build_request(a, messages, tools, today):
+-    return {"model": MODEL, "max_tokens": MAX_TOKENS, "system": build_system(a, today), "tools": tools, "messages": messages}
++def build_request(system, messages, tools):
++    return {"model": MODEL, "max_tokens": MAX_TOKENS, "system": system, "tools": tools, "messages": messages}
+ 
+ 
+ def reply(user_id, text, llm=None):
+@@ -196,9 +210,12 @@ def reply(user_id, text, llm=None):
+     a = load_athlete(user_id)
+     today = dt.date.today()
+     tools = select_tools(text)
++    # Built once per message: a save_fact mid-loop must not change the system prompt for the next
++    # round (the model already has the fact in its own tool call). The next message picks it up.
++    system = build_system(a, today)
+     messages = [{"role": "user", "content": text}]
+     for round_no in range(1, MAX_TOOL_ROUNDS + 1):
+-        resp = llm.create(**build_request(a, messages, tools, today))
++        resp = llm.create(**build_request(system, messages, tools))
+         used_tools = [b.name for b in resp.content if b.type == "tool_use"]
+         log_usage(resp.usage, a.user_id, round_no, tool=",".join(used_tools) or None)
+         if resp.stop_reason != "tool_use":

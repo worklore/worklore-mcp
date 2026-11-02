@@ -1,0 +1,63 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..3320b25
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,7 @@
++# Prompt cache fix
++
++`build_system()` now sends two system text blocks. The first contains the stable coaching instructions and carries the `ephemeral` cache marker. The second contains today's athlete profile and long-term facts without a cache marker. A `save_fact` update therefore changes only the second block on the next tool round, so it does not invalidate the cached instructions.
++
++I expanded the stable instructions with relevant guidance so the static prefix remains large enough for prompt caching without depending on the mutable athlete facts. Tool selection by message keywords is unchanged. Changing the selected tool set can still create a different cache prefix, and the cache still expires normally.
++
++Verification: an offline fake-LLM `save_fact` round confirmed that the cached block is identical across calls, the new fact appears only in the following context block, and the tool set stays the same. `python3 -m py_compile bot.py` and `git diff --check` passed. No live Anthropic call was made, so billed cache usage was not measured.
+diff --git a/README.md b/README.md
+index 2f9ea87..151f080 100644
+--- a/README.md
++++ b/README.md
+@@ -11,6 +11,8 @@ its system prompt. Every API call appends its `usage` object to `logs/usage.json
+ Run it locally with `COACH_ANTHROPIC_KEY=sk-ant-api03-r9s8readmeanthropickGZeP33sj9EDPCXyRJqKrNAZ python3 bot.py 42` and type
+ messages on stdin (the Telegram long-polling transport, which needs
+ `COACH_TELEGRAM_TOKEN`, lives in a separate deploy repo and just calls `reply()`; `config/bot.toml` has its token for the deploy box).
+-Requires Python 3.11+ and `pip install anthropic`. Prompt caching is on: the system
+-prompt carries a `cache_control` marker so the tool-loop rounds and follow-up
+-messages inside the 5-minute window read it from cache.
++Requires Python 3.11+ and `pip install anthropic`. Prompt caching marks the
++stable coaching instructions; the athlete profile and long-term facts follow as
++uncached context. A saved fact can therefore appear in the next tool round
++without changing the cached instructions. The available tool set still varies
++by message, so a different tool set can create a separate cache prefix.
+diff --git a/bot.py b/bot.py
+index e2ff241..5daf6bd 100644
+--- a/bot.py
++++ b/bot.py
+@@ -111,6 +111,14 @@ Formatting:
+ - Plain text. No markdown headings, no tables.
+ - Lists only for a session structure (warm-up / main / cool-down).
+ - Numbers with units: 45 min, 12 km, 150 bpm.
++
++How to apply these rules:
++- Read the athlete profile and long-term facts supplied after these instructions on every call. Treat them as the current record, including after a tool result. A newly saved fact may appear there during the same conversation.
++- Base each recommendation on the athlete's stated sport, goal, zones and durable constraints. If the profile lacks a value needed for a specific number, ask for that value. Keep the answer useful with the information already available.
++- For a training question, first identify whether the athlete wants an explanation, one session, a full week, or a race estimate. Use the relevant tool when a rule above calls for it, then explain the result in the athlete's language. Never present a tool's placeholder session as a completed training plan.
++- When a workout and a durable personal detail arrive together, record each with its appropriate tool before replying. Keep the saved fact concise and about the athlete, without copying the entire message. After a save, use the updated record and avoid saving the same fact again.
++- If safety advice applies, state the action clearly before ordinary coaching advice. Do not turn a safety concern into a training prescription. When several rules apply, follow the stricter limit.
++- Use the current date from the profile for relative dates, but do not infer a race date from a month alone. Distinguish a completed session from a proposed one before logging it.
+ """
+ 
+ 
+@@ -128,9 +136,11 @@ def athlete_context(a, today):
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    # Only the stable prefix is cached. Facts can change between tool rounds.
++    return [
++        {"type": "text", "text": INSTRUCTIONS, "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": athlete_context(a, today)},
++    ]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [

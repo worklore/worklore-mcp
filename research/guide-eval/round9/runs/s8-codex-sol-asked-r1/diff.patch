@@ -1,0 +1,30 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..f9da04a
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,5 @@
++# Prompt cache fix
++
++`build_system()` now sends two Anthropic text blocks with separate `cache_control: ephemeral` markers. The first contains only the fixed coaching instructions; the second contains the date and athlete context, including long-term facts. After `save_fact` changes that context, the fixed instruction block remains byte-identical, so the changed tail no longer invalidates its cache breakpoint.
++
++I verified locally that adding a fact changes only the second system block while the first block and selected tools stay identical. No API call was made, so cache read and creation token counts after this change still need a live check in `logs/usage.jsonl`.
+diff --git a/bot.py b/bot.py
+index e2ff241..67adf79 100644
+--- a/bot.py
++++ b/bot.py
+@@ -128,9 +128,11 @@ def athlete_context(a, today):
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    # Keep the stable instructions cached when athlete context changes.
++    return [
++        {"type": "text", "text": INSTRUCTIONS, "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": athlete_context(a, today), "cache_control": {"type": "ephemeral"}},
++    ]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [

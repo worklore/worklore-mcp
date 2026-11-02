@@ -1,0 +1,85 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..61069c8
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,25 @@
++# Postmortem: Second Publish 500 Error
++
++## Cause
++
++When the first story was published (`why-my-cron-ran-twice`), the DynamoDB table was empty. As a result:
++- `table.scan()` returned no items (`existing = []`).
++- `related(story, existing)` returned an empty list (`similar = []`).
++- No similarity score calculations were performed, so the item contained only strings, lists of strings, and integer timestamps, which DynamoDB / `boto3` accepts.
++
++When the second story was published:
++- `table.scan()` returned the previously published story.
++- `related(story, existing)` evaluated `similarity(story, other)`.
++- `similarity()` computed floating-point numbers (`round(0.7 * tag_score + 0.3 * word_score, 4)`).
++- When `table.put_item(Item=item)` was called, `boto3`'s DynamoDB serializer rejected the Python `float` with:
++  `TypeError: Float types are not supported. Use Decimal types instead.`
++- This uncaught `TypeError` was caught by `handler()`'s broad `except Exception:` block and logged as `ERROR stories publish failed` returning HTTP 500.
++
++---
++
++## Fix
++
++1. **Convert similarity scores to `Decimal`**:
++   In `src/app.py`, imported `Decimal` from Python's standard `decimal` module and converted the calculated score in `similarity()` using `Decimal(str(round(...)))`. DynamoDB requires decimal numbers to be passed as `Decimal` instances.
++2. **Added regression test**:
++   In `tests/test_publish.py`, added `test_publish_second_story_succeeds_with_similarity_scores` to verify publishing a second story when existing stories are present in the table, ensuring similarity calculations and storage succeed without type serialization errors.
+diff --git a/src/app.py b/src/app.py
+index db49c5e..af4bb08 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -8,6 +8,7 @@ import json
+ import logging
+ import re
+ import time
++from decimal import Decimal
+ 
+ log = logging.getLogger("stories")
+ 
+@@ -27,7 +28,7 @@ def similarity(a, b):
+     tag_score = len(ta & tb) / len(ta | tb) if (ta | tb) else 0
+     wa, wb = words(a.get("body")), words(b.get("body"))
+     word_score = len(wa & wb) / len(wa | wb) if (wa | wb) else 0
+-    return round(0.7 * tag_score + 0.3 * word_score, 4)
++    return Decimal(str(round(0.7 * tag_score + 0.3 * word_score, 4)))
+ 
+ 
+ def related(story, existing):
+diff --git a/tests/test_publish.py b/tests/test_publish.py
+index 6c9ac44..d65e2ec 100644
+--- a/tests/test_publish.py
++++ b/tests/test_publish.py
+@@ -23,6 +23,28 @@ class PublishTest(unittest.TestCase):
+         self.assertEqual(table.get_item(Key={"slug": "why-my-cron-ran-twice"})["Item"]["title"], "Why my cron ran twice")
+         self.assertEqual(table.scan()["Count"], 1)
+ 
++    def test_publish_second_story_succeeds_with_similarity_scores(self):
++        table = FakeTable()
++        story1 = {
++            "slug": "why-my-cron-ran-twice",
++            "title": "Why my cron ran twice",
++            "tags": ["cron", "linux"],
++            "body": "Two crontabs, one for root and one for me, both had the line.",
++        }
++        story2 = {
++            "slug": "understanding-crontab-scheduling",
++            "title": "Understanding Crontab Scheduling",
++            "tags": ["cron"],
++            "body": "Cron runs recurring jobs on Linux systems according to crontab entries.",
++        }
++        app.publish(table, story1)
++        stored2 = app.publish(table, story2)
++        self.assertEqual(len(stored2["similar"]), 1)
++        self.assertEqual(stored2["similar"][0]["slug"], "why-my-cron-ran-twice")
++        item2 = table.get_item(Key={"slug": "understanding-crontab-scheduling"})["Item"]
++        self.assertEqual(len(item2["similar"]), 1)
++
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

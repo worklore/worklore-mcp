@@ -1,0 +1,3 @@
+Fixed the generator to send Intervals.icu workout-builder text with the planned `% LTHR` ranges and repeat block, instead of the hand-built `workout_doc`. The readback showed that the old payload was stored, but the watch displayed zone boundaries rather than those ranges.
+
+I documented the change and its limits in [ANSWER.md](/tmp/h-ytz9SS/ANSWER.md). Local generation and syntax checks passed. No event was posted, so the watch result still needs confirmation after an authorized sync.

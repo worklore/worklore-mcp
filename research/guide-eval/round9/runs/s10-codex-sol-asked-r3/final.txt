@@ -1,0 +1,3 @@
+Implemented all six events from [docs/EVENTS.md](/tmp/h-q3mZMt/docs/EVENTS.md) on the registration and offers screens through the existing `Analytics.capture` wrapper. Email and phone values are never sent as properties. The changes and event behavior are documented in [ANSWER.md](/tmp/h-q3mZMt/ANSWER.md).
+
+Verification passed: `flutter analyze --no-pub` and `git diff --check`.

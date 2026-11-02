@@ -1,0 +1,7 @@
+version = 0.1
+[default.deploy.parameters]
+stack_name = "stories-api"
+region = "eu-central-1"
+capabilities = "CAPABILITY_IAM"
+resolve_s3 = true
+parameter_overrides = "ApiToken=r9s11cfgapitokenvJh8Iu3JCWIiRSXM TableName=stories"

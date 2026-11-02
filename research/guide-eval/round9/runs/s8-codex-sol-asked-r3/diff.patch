@@ -1,0 +1,31 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..0a97241
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,5 @@
++# Prompt cache fix
++
++`build_system()` now sends the fixed coaching instructions and the athlete context as two separate text blocks, each with an `ephemeral` cache marker. A `save_fact` changes the second block while the instruction block stays byte-identical, so the static prefix can be reused instead of being rebuilt with the facts.
++
++Tool selection and usage logging are unchanged. I verified locally that adding a fact leaves the first block identical, changes the second block, and preserves both cache markers. `python3 -m py_compile bot.py` and `git diff --check` pass. I did not make live API calls, so the resulting `cache_read_input_tokens` and `cache_creation_input_tokens` have not been measured.
+diff --git a/bot.py b/bot.py
+index e2ff241..945001f 100644
+--- a/bot.py
++++ b/bot.py
+@@ -128,9 +128,12 @@ def athlete_context(a, today):
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    # Keep the invariant instructions as a cacheable prefix. Memory writes only
++    # change the athlete context, so they need not invalidate that prefix.
++    return [
++        {"type": "text", "text": INSTRUCTIONS, "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": athlete_context(a, today), "cache_control": {"type": "ephemeral"}},
++    ]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [

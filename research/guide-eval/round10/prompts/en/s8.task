@@ -1,0 +1,1 @@
+Since the bot got long-term memory, every save_fact makes the next call pay full price for the whole system prompt (logs/usage.jsonl). Fix the caching so a memory write doesn't evict the static instructions. Write what you changed in ANSWER.md.

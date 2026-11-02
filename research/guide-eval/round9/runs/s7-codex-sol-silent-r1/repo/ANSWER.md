@@ -1,0 +1,9 @@
+# Intervals.icu connection failures
+
+1. **Connect returned 401 before OAuth began.** The SPA rendered a normal link to `/api/intervals/auth/init`. A browser navigation does not use the SPA's `fetch` wrapper, so it omitted the tricoach `Authorization: Bearer` header. The 2026-10-14 log records that exact unauthenticated GET. The button now calls the init endpoint through the authenticated wrapper, receives the authorization URL as JSON, and navigates to it.
+
+2. **The authorization request asked for overlapping scopes.** The link in the 2026-10-17 log requested both `ACTIVITY:READ` and `ACTIVITY:WRITE`, and both `CALENDAR:READ` and `CALENDAR:WRITE`; Intervals.icu returned `invalid_request` before consent. [Intervals.icu's OAuth documentation](https://forum.intervals.icu/t/intervals-icu-oauth-support/2759) says WRITE includes READ and specifies one access level per scope. The request now uses `ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE`. The overlap is the likely cause of that 400 based on the captured change and the documented scope format; the provider's generic response does not identify a parameter.
+
+3. **The app invented a one-hour token expiry.** Rivera's token response had an access token but neither `expires_in` nor a refresh token. The app substituted 3,600 seconds, then its refresher marked the connection expired. Intervals.icu [documents an access-token-only OAuth flow](https://forum.intervals.icu/t/intervals-icu-oauth-support/2759) without refresh tokens. Tokens with no provider expiry now remain connected; if the provider explicitly supplies an expiry, the app still follows it.
+
+The code exchange now sends the fields in Intervals.icu's documented form (`client_id`, `client_secret`, and `code`). Local tests cover authenticated initiation, requested scopes, the callback, and connection status beyond one hour. No live OAuth request was made.

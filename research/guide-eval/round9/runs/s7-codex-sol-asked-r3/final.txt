@@ -1,0 +1,3 @@
+Fixed the Intervals.icu connection flow. The Connect button now starts OAuth through an authenticated POST; the scope no longer repeats access areas; and tokens are no longer discarded after an invented one hour expiry. I also corrected the token exchange fields and made an API 401 prompt reconnection.
+
+The causes are documented in [ANSWER.md](/tmp/h-RmQBwb/ANSWER.md). Four local integration tests pass. A live Intervals.icu connection was not tested.

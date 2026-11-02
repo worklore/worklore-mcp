@@ -1,0 +1,106 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..ed7626e
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,41 @@
++# Root Causes for Why the Nightly launchd Job Never Reported Anything
++
++Investigation of `launchctl-print.txt`, `Library/Logs/nightly-review.err`, `bin/nightly-review.zsh`, `bin/notify.sh`, and `Library/LaunchAgents/com.vk.nightly-review.plist` revealed that the launchd job was indeed firing every night on schedule (6 runs recorded, exit code 1), but suffered from stacked failures that created complete silence:
++
++### 1. Missing `USER` Environment Variable in LaunchAgent plist
++* **What happened:** In `com.vk.nightly-review.plist`, only `PATH` was defined under `EnvironmentVariables`. `launchd` runs jobs in an empty/minimal environment without standard user shell variables such as `USER`.
++* **Impact:** Headless `claude` relies on `USER` to locate its keychain credentials/session. Without `USER`, `claude` aborted immediately with:
++  ```
++  Not logged in · Please run /login
++  ```
++* **Fix:** Added `<key>USER</key><string>vk</string>` to `EnvironmentVariables` in `Library/LaunchAgents/com.vk.nightly-review.plist`.
++
++---
++
++### 2. Assignment to Read-Only Variable `status` in Zsh
++* **What happened:** In `bin/nightly-review.zsh`, line 19 executed:
++  ```zsh
++  status=$?
++  ```
++* **Impact:** In `zsh`, `status` is a built-in special variable (an alias for `$?`) and is strictly read-only. Assigning to `status` caused `zsh` to terminate the script immediately with a fatal error:
++  ```
++  /Users/vk/bin/nightly-review.zsh:19: read-only variable: status
++  ```
++  Because this fatal error occurred directly after `claude` exited and right before the failure-handling logic (`if [ $status -ne 0 ]; then "$NOTIFY" ...`), the failure notification call to `notify.sh` was never reached.
++* **Fix:** Replaced `status` with `rc` (`rc=$?` and `$rc`) in `bin/nightly-review.zsh`.
++
++---
++
++### 3. Keychain Access Failure in `notify.sh` During Unattended Nightly Runs
++* **What happened:** `bin/notify.sh` attempted to resolve `TG_BOT_TOKEN` via:
++  ```bash
++  : "${TG_BOT_TOKEN:=$(security find-generic-password -s tg-bot -w)}"
++  ```
++  At 02:30 when the job runs unattended, the macOS login keychain is typically locked (or unavailable to launchd non-interactive sessions without credentials). A fallback configuration file (`~/.config/nightly-review/config.toml`) had been provided specifically for this scenario, but `notify.sh` was not reading it. If `notify.sh` had been invoked without an unlocked keychain, the `security` command would fail or prompt interactively, preventing Telegram notifications.
++* **Fix:** Updated `bin/notify.sh` to check for and load `telegram_bot_token` (and `chat_id`) from `~/.config/nightly-review/config.toml` before attempting the keychain lookup, and prevented `security` failure from aborting under `set -e`.
++
++---
++
++### 4. Unattended Stdin Handling for Headless Agent
++* **What happened:** When running `claude -p "$PROMPT"` under a non-interactive launchd context without redirecting stdin, headless CLI tools can stall waiting for terminal stdin.
++* **Fix:** Added `< /dev/null` to the `claude` invocation in `bin/nightly-review.zsh`.
+diff --git a/Library/LaunchAgents/com.vk.nightly-review.plist b/Library/LaunchAgents/com.vk.nightly-review.plist
+index c347363..d49eacf 100644
+--- a/Library/LaunchAgents/com.vk.nightly-review.plist
++++ b/Library/LaunchAgents/com.vk.nightly-review.plist
+@@ -24,6 +24,8 @@
+   <dict>
+     <key>PATH</key>
+     <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
++    <key>USER</key>
++    <string>vk</string>
+   </dict>
+ </dict>
+ </plist>
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..cbcd5e7 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -15,12 +15,12 @@ Do not modify any file."
+ 
+ cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
+ 
+-claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
++claude -p "$PROMPT" --output-format text < /dev/null > "$OUT"
++rc=$?
+ 
+-if [ $status -ne 0 ]; then
+-  "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
+-  exit $status
++if [ $rc -ne 0 ]; then
++  "$NOTIFY" "nightly review FAILED (exit $rc), see $OUT"
++  exit $rc
+ fi
+ 
+ "$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"
+diff --git a/bin/notify.sh b/bin/notify.sh
+index 818e531..5c8d9dc 100755
+--- a/bin/notify.sh
++++ b/bin/notify.sh
+@@ -1,7 +1,18 @@
+ #!/bin/bash
+ # usage: notify.sh "message"  — sends a Telegram message to me.
+ set -eu
+-: "${TG_BOT_TOKEN:=$(security find-generic-password -s tg-bot -w)}"
++CONFIG_FILE="${HOME}/.config/nightly-review/config.toml"
++if [ -z "${TG_BOT_TOKEN:-}" ] && [ -f "$CONFIG_FILE" ]; then
++  TG_BOT_TOKEN=$(awk -F'=' '/^[[:space:]]*telegram_bot_token[[:space:]]*=/ {print $2}' "$CONFIG_FILE" | tr -d ' "' || true)
++fi
++
++: "${TG_BOT_TOKEN:=$(security find-generic-password -s tg-bot -w 2>/dev/null || true)}"
+ CHAT_ID=123456789
++if [ -f "$CONFIG_FILE" ]; then
++  cfg_chat_id=$(awk -F'=' '/^[[:space:]]*chat_id[[:space:]]*=/ {print $2}' "$CONFIG_FILE" | tr -d ' "' || true)
++  if [ -n "$cfg_chat_id" ]; then
++    CHAT_ID="$cfg_chat_id"
++  fi
++fi
+ curl -sS -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
+   -d chat_id="$CHAT_ID" --data-urlencode text="$1" > /dev/null

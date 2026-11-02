@@ -1,0 +1,3 @@
+Fixed the Intervals.icu connection flow and documented the causes in [ANSWER.md](/tmp/h-5AJnZx/ANSWER.md). The Connect button now starts OAuth through an authenticated request, the requested scopes follow Intervals.icu’s documented format, and a token with no provider expiry is no longer expired after an invented hour.
+
+Three local tests pass. I did not make a live OAuth request or deploy anything.

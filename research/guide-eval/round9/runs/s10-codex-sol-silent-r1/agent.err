@@ -1,0 +1,14 @@
+  ok     EVAL_NO_SECRETS
+  ok     HOME
+  ok     LC_CTYPE
+  ok     LOGNAME
+  ok     PATH
+  ok     PWD
+  ok     SHELL
+  ok     SHLVL
+  ok     TERM
+  ok     TMPDIR
+  ok     USER
+verify: 11 names in the child, cli=codex, result=PASS (exit 0)
+Reading additional input from stdin...
+2026-11-02T02:14:39.437254Z ERROR codex_core::tools::router: error=exec_command failed: CreateProcess { message: "Rejected(\"`/bin/zsh -lc 'rm -f .flutter-plugins-dependencies pubspec.lock android/local.properties android/app/src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java && rm -rf .dart_tool && git status --short'` rejected: rm -f style commands are not permitted. Use a safer approach\")" }

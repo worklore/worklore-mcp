@@ -1,0 +1,85 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..b5cd417
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,7 @@
++# Second publish failure
++
++The first story has no existing stories to compare with, so `similar` is empty and DynamoDB accepts the item. On the second publish, `similarity()` produced a Python `float` for a related story's `score`. `publish()` put that float inside `similar`, and boto3's DynamoDB serializer raised `TypeError: Float types are not supported. Use Decimal types instead.` The handler caught that exception and returned HTTP 500.
++
++`similarity()` now calculates ratios, weights, and the four-place rounded score with `Decimal`, so related scores are valid DynamoDB values before they reach `put_item`. A regression test publishes two stories through the handler, checks both 201 responses, and checks the stored related score. The test failed with the original 500 and passes with the fix.
++
++Verified with `python3 -m unittest discover tests` (2 tests passed).
+diff --git a/src/app.py b/src/app.py
+index db49c5e..8da0211 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -8,6 +8,7 @@ import json
+ import logging
+ import re
+ import time
++from decimal import Decimal
+ 
+ log = logging.getLogger("stories")
+ 
+@@ -22,12 +23,12 @@ def words(text):
+ 
+ 
+ def similarity(a, b):
+-    """Shared-tag ratio (Jaccard), blended with shared words of the two bodies."""
++    """Shared-tag and body-word ratio, as a DynamoDB-compatible Decimal."""
+     ta, tb = set(a.get("tags", [])), set(b.get("tags", []))
+-    tag_score = len(ta & tb) / len(ta | tb) if (ta | tb) else 0
++    tag_score = Decimal(len(ta & tb)) / Decimal(len(ta | tb)) if (ta | tb) else Decimal(0)
+     wa, wb = words(a.get("body")), words(b.get("body"))
+-    word_score = len(wa & wb) / len(wa | wb) if (wa | wb) else 0
+-    return round(0.7 * tag_score + 0.3 * word_score, 4)
++    word_score = Decimal(len(wa & wb)) / Decimal(len(wa | wb)) if (wa | wb) else Decimal(0)
++    return (Decimal("0.7") * tag_score + Decimal("0.3") * word_score).quantize(Decimal("0.0001"))
+ 
+ 
+ def related(story, existing):
+diff --git a/tests/test_publish.py b/tests/test_publish.py
+index 6c9ac44..83db666 100644
+--- a/tests/test_publish.py
++++ b/tests/test_publish.py
+@@ -1,6 +1,8 @@
+ import os
+ import sys
+ import unittest
++import json
++from decimal import Decimal
+ 
+ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+ sys.path.insert(0, os.path.dirname(__file__))
+@@ -23,6 +25,29 @@ class PublishTest(unittest.TestCase):
+         self.assertEqual(table.get_item(Key={"slug": "why-my-cron-ran-twice"})["Item"]["title"], "Why my cron ran twice")
+         self.assertEqual(table.scan()["Count"], 1)
+ 
++    def test_second_publish_stores_decimal_similarity(self):
++        table = FakeTable()
++        first = {
++            "slug": "first-story",
++            "title": "First story",
++            "tags": ["python", "aws"],
++            "body": "alpha",
++        }
++        second = {
++            "slug": "second-story",
++            "title": "Second story",
++            "tags": ["python", "aws"],
++            "body": "beta",
++        }
++
++        for story in (first, second):
++            response = app.handler({"body": json.dumps(story)}, table)
++            self.assertEqual(response["statusCode"], 201)
++
++        stored = table.get_item(Key={"slug": "second-story"})["Item"]
++        self.assertEqual(stored["similar"], [{"slug": "first-story", "score": Decimal("0.7000")}])
++        self.assertEqual(table.scan()["Count"], 2)
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

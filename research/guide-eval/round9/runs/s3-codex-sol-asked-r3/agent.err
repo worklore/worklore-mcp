@@ -1,0 +1,14 @@
+  ok     EVAL_NO_SECRETS
+  ok     HOME
+  ok     LC_CTYPE
+  ok     LOGNAME
+  ok     PATH
+  ok     PWD
+  ok     SHELL
+  ok     SHLVL
+  ok     TERM
+  ok     TMPDIR
+  ok     USER
+verify: 11 names in the child, cli=codex, result=PASS (exit 0)
+Reading additional input from stdin...
+2026-11-02T02:44:53.802138Z ERROR codex_core::tools::router: error=exec_command failed: CreateProcess { message: "Rejected(\"`/bin/zsh -lc 'set -eu\\nfixture=$(mktemp -d ./nightly-test.XXXXXX)\\ntrap '\\\"'rm -rf \\\\\\\"\\\"'$fixture\\\"'\\\"' EXIT\\nmkdir -p \\\\\\\"\\\"'$fixture/home/bin\\\" \\\"$fixture/home/projects/shop\\\" \\\"$fixture/home/Library/Logs\\\" \\\"$fixture/home/.config/nightly-review\\\" \\\"$fixture/mock\\\"\\ncp bin/nightly-review.zsh bin/notify.sh \\\"$fixture/home/bin/\\\"\\ncp .config/n…835 chars truncated…for mode in fail empty success; do\\n  export MOCK_CLAUDE_MODE=\\\"$mode\\\"\\n  rc=0\\n  /bin/zsh \\\"$HOME/bin/nightly-review.zsh\\\" || rc=$?\\n  printf '\\\"'%s exit=%s\\\\\\\\n' \\\\\\\"\\\"'$mode\\\" \\\"$rc\\\"\\ndone\\nrg '\\\"'nightly review (FAILED|done)' \\\\\\\"\\\"'$MOCK_LOG\\\" | sed -E '\\\"'s#bot[\\\"'^/]+/sendMessage#bot<redacted>/sendMessage#'\\\"'\\\"` rejected: rm -f style commands are not permitted. Use a safer approach\")" }

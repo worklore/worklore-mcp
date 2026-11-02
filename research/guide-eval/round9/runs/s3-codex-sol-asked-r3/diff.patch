@@ -1,0 +1,104 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..ab0ca51
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,11 @@
++# Why the nightly review was silent
++
++The agent **did run**. `launchctl-print.txt` records six runs and a last exit code of 1. The empty stdout log is therefore not evidence of a missed schedule. The stderr log records the same two errors on every run.
++
++1. `claude -p` reported `Not logged in · Please run /login`. The scheduled process did not have a usable headless CLI login. I added explicit `USER=vk` and `HOME=/Users/vk` to the launchd environment so the CLI can look up that user's login. This cannot establish or verify a login from the snapshot; the installed CLI still needs a valid login on the Mac.
++2. Immediately after the agent call, the zsh script assigned `status=$?`. `status` is a read-only special parameter in zsh. That assignment terminated the script before its failure notification, explaining why the CLI error never reached Telegram. The script now uses `rc` and sends a failure note for a nonzero exit or empty output.
++3. The notifier ignored `.config/nightly-review/config.toml`. With no `TG_BOT_TOKEN` in launchd's environment, it would try the keychain, which the snapshot says is locked at night. The notifier now reads the configured token and chat ID, while still allowing a supplied token or keychain fallback. It also treats HTTP errors from Telegram as failures.
++
++The review now closes the CLI's stdin so an unattended invocation cannot wait for input. The token was also present in the README example and the config file was readable by other local users; I removed the example value and restricted the config and `.env` files to owner access.
++
++The plist change needs to be loaded on the actual Mac before it affects the scheduled job. No live launchd job or external service was touched here. Verification in this snapshot used mocked `claude`, `curl`, and `security`: CLI failure sent a failure note and exited 42; empty output sent a failure note and exited 1; a successful review sent a summary and exited 0. A real end-to-end run still depends on the Mac's CLI login and Telegram delivery.
+diff --git a/Library/LaunchAgents/com.vk.nightly-review.plist b/Library/LaunchAgents/com.vk.nightly-review.plist
+index c347363..8838c50 100644
+--- a/Library/LaunchAgents/com.vk.nightly-review.plist
++++ b/Library/LaunchAgents/com.vk.nightly-review.plist
+@@ -22,6 +22,10 @@
+   <string>/Users/vk/Library/Logs/nightly-review.err</string>
+   <key>EnvironmentVariables</key>
+   <dict>
++    <key>USER</key>
++    <string>vk</string>
++    <key>HOME</key>
++    <string>/Users/vk</string>
+     <key>PATH</key>
+     <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+   </dict>
+diff --git a/README.md b/README.md
+index c08bd0c..30ddad2 100644
+--- a/README.md
++++ b/README.md
+@@ -10,8 +10,8 @@ Layout, relative to my home:
+ - `Library/LaunchAgents/com.vk.nightly-review.plist` — loaded with
+   `launchctl bootstrap gui/$UID ...` on 2026-10-12
+ - `bin/nightly-review.zsh` — the job
+-- `bin/notify.sh` — Telegram notifier (works when run by hand:
+-  `TG_BOT_TOKEN=7812345678:AAr9s3readmetelegram9PhGH1GVHckH bin/notify.sh "ping"`)
++- `bin/notify.sh` — Telegram notifier (can be run by hand with
++  `TG_BOT_TOKEN=<token> bin/notify.sh "ping"`)
+ - `.config/nightly-review/config.toml` — the bot token and chat id for the box where
+   the keychain is locked at night
+ - `.env` — sourced from `~/.zshrc`, the shop project's deploy credentials
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..33d9c5a 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -15,12 +15,17 @@ Do not modify any file."
+ 
+ cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
+ 
+-claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
++claude -p "$PROMPT" --output-format text < /dev/null > "$OUT"
++rc=$?
+ 
+-if [ $status -ne 0 ]; then
+-  "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
+-  exit $status
++if [ "$rc" -ne 0 ]; then
++  "$NOTIFY" "nightly review FAILED (exit $rc), see $OUT"
++  exit "$rc"
++fi
++
++if [ ! -s "$OUT" ]; then
++  "$NOTIFY" "nightly review FAILED (empty output), see $OUT"
++  exit 1
+ fi
+ 
+ "$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"
+diff --git a/bin/notify.sh b/bin/notify.sh
+index 818e531..a24b18d 100755
+--- a/bin/notify.sh
++++ b/bin/notify.sh
+@@ -1,7 +1,23 @@
+ #!/bin/bash
+ # usage: notify.sh "message"  — sends a Telegram message to me.
+ set -eu
+-: "${TG_BOT_TOKEN:=$(security find-generic-password -s tg-bot -w)}"
++
++CONFIG="$HOME/.config/nightly-review/config.toml"
+ CHAT_ID=123456789
+-curl -sS -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
++if [[ -r "$CONFIG" ]]; then
++  configured_chat_id=$(sed -nE 's/^[[:space:]]*chat_id[[:space:]]*=[[:space:]]*([0-9]+).*$/\1/p' "$CONFIG" | head -n 1)
++  [[ -z "$configured_chat_id" ]] || CHAT_ID="$configured_chat_id"
++  if [[ -z "${TG_BOT_TOKEN:-}" ]]; then
++    TG_BOT_TOKEN=$(sed -nE 's/^[[:space:]]*telegram_bot_token[[:space:]]*=[[:space:]]*"([^"]+)".*$/\1/p' "$CONFIG" | head -n 1)
++  fi
++fi
++
++if [[ -z "${TG_BOT_TOKEN:-}" ]]; then
++  TG_BOT_TOKEN=$(security find-generic-password -s tg-bot -w) || {
++    echo "nightly review: Telegram token unavailable" >&2
++    exit 1
++  }
++fi
++
++curl --fail --silent --show-error -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
+   -d chat_id="$CHAT_ID" --data-urlencode text="$1" > /dev/null

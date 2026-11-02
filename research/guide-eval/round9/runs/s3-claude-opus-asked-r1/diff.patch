@@ -1,0 +1,125 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..031e878
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,57 @@
++# Why the nightly launchd job never reported anything
++
++The job *does* run. `launchctl-print.txt` shows `runs = 6`, `last exit code = 1`,
++and `Library/Logs/nightly-review.err` has one pair of lines per night. Three bugs
++stack up so that every run fails and nothing gets reported:
++
++1. **`claude -p` fails with "Not logged in · Please run /login".** Under launchd
++   the CLI doesn't get your login session. The plist sets only `PATH`, so
++   `USER` is missing and the CLI can't find its credentials in the keychain. On
++   top of that, the login keychain may be locked at 02:30. Because the prompt is
++   passed as an argument, stdin was also left open, which can hang `claude -p`
++   under launchd.
++2. **`status=$?` kills the script (`nightly-review.zsh:19: read-only variable: status`).**
++   In zsh, `status` is a read-only special parameter (it's the same as `$?`).
++   Assigning to it aborts the script on the line between the failed `claude`
++   call and the failure notification. So the failure note was never sent. This
++   is the reason there was *total* silence instead of a failure message.
++3. **`notify.sh` would have failed too.** It gets the bot token with
++   `security find-generic-password`. At night the keychain is locked, so that
++   call fails, and with `set -e` the script exits before `curl` runs. It never
++   read `~/.config/nightly-review/config.toml`, the file that exists for exactly
++   this case. (Testing it by hand works because you pass `TG_BOT_TOKEN` in the
++   environment and your keychain is unlocked.)
++
++## Fixes made
++
++- `bin/nightly-review.zsh`: use `rc=$?` instead of `status`. Run `claude` with
++  `< /dev/null` and write its stderr to `$OUT.err`. Treat a non-zero exit *or*
++  an empty output file as a failure, and put the start of the error in the
++  failure message.
++- `bin/notify.sh`: try the keychain first. If that fails, read
++  `telegram_bot_token` from `config.toml`. If there is still no token, print a
++  clear error to stderr and exit.
++- `com.vk.nightly-review.plist`: add `USER=vk` to `EnvironmentVariables` and add
++  `~/.local/bin` to `PATH`, which is where the native `claude` installer puts the
++  binary.
++- `config.toml`: set to `chmod 600` because it holds a bot token.
++
++Checks run: `zsh -n`, `bash -n` and `plutil -lint` pass. With stubbed `claude`,
++`security` and `curl`, the failure path now sends
++"nightly review FAILED (exit 1): Not logged in". `notify.sh` falls back to the
++config token when the keychain call fails.
++
++## What you still need to do (I didn't touch your live system)
++
++- Reload the agent:
++  `launchctl bootout gui/$UID/com.vk.nightly-review; launchctl bootstrap gui/$UID ~/Library/LaunchAgents/com.vk.nightly-review.plist`
++  Then test it with `launchctl kickstart -k gui/$UID/com.vk.nightly-review`.
++  Check that you get a Telegram message and a fresh, non-empty
++  `nightly-review-YYYY-MM-DD.md`.
++- If you still get "Not logged in" because the keychain is locked at 02:30, run
++  `claude setup-token`. Store the token in a file only you can read
++  (`chmod 600`), then `export CLAUDE_CODE_OAUTH_TOKEN` from it in the script.
++  Don't put it in the plist.
++- Security: `README.md` contains a Telegram bot token in plain text, and it is
++  not git-ignored. Remove it and revoke it with @BotFather. Do **not** source
++  `~/.env` (Stripe/AWS/DB secrets) in this job. The agent doesn't need them.
+diff --git a/Library/LaunchAgents/com.vk.nightly-review.plist b/Library/LaunchAgents/com.vk.nightly-review.plist
+index c347363..1f70198 100644
+--- a/Library/LaunchAgents/com.vk.nightly-review.plist
++++ b/Library/LaunchAgents/com.vk.nightly-review.plist
+@@ -23,7 +23,9 @@
+   <key>EnvironmentVariables</key>
+   <dict>
+     <key>PATH</key>
+-    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
++    <string>/Users/vk/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
++    <key>USER</key>
++    <string>vk</string>
+   </dict>
+ </dict>
+ </plist>
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..e1c80d7 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -15,12 +15,14 @@ Do not modify any file."
+ 
+ cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
+ 
+-claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
++# `status` is a read-only special parameter in zsh; assigning to it kills the
++# script before the failure notice. Use rc. Close stdin so claude -p never waits on it.
++claude -p "$PROMPT" --output-format text > "$OUT" 2>> "$OUT.err" < /dev/null
++rc=$?
+ 
+-if [ $status -ne 0 ]; then
+-  "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
+-  exit $status
++if [ $rc -ne 0 ] || [ ! -s "$OUT" ]; then
++  "$NOTIFY" "nightly review FAILED (exit $rc): $(head -c 300 "$OUT.err" 2>/dev/null)"
++  exit $(( rc ? rc : 1 ))
+ fi
+ 
+ "$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"
+diff --git a/bin/notify.sh b/bin/notify.sh
+index 818e531..bd671e2 100755
+--- a/bin/notify.sh
++++ b/bin/notify.sh
+@@ -1,7 +1,17 @@
+ #!/bin/bash
+ # usage: notify.sh "message"  — sends a Telegram message to me.
+ set -eu
+-: "${TG_BOT_TOKEN:=$(security find-generic-password -s tg-bot -w)}"
++# At 02:30 the login keychain may be locked, so `security` fails and set -e
++# kills us silently. Fall back to the config file (chmod 600).
++CONFIG="$HOME/.config/nightly-review/config.toml"
++if [ -z "${TG_BOT_TOKEN:-}" ]; then
++  TG_BOT_TOKEN=$(security find-generic-password -s tg-bot -w 2>/dev/null) ||
++    TG_BOT_TOKEN=$(sed -n 's/^telegram_bot_token *= *"\(.*\)"/\1/p' "$CONFIG" 2>/dev/null)
++fi
++if [ -z "${TG_BOT_TOKEN:-}" ]; then
++  echo "notify.sh: no Telegram token (keychain locked and $CONFIG unreadable)" >&2
++  exit 1
++fi
+ CHAT_ID=123456789
+ curl -sS -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
+   -d chat_id="$CHAT_ID" --data-urlencode text="$1" > /dev/null

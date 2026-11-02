@@ -1,0 +1,3 @@
+Fixed [gen.py](/tmp/h-6Ej06A/gen.py) to send each HR corridor with `start` and `end`. The previous `value` and `end` pair did not define a range in Intervals’ workout format.
+
+Added a regression check in [test_gen.py](/tmp/h-6Ej06A/test_gen.py) and documented the change in [ANSWER.md](/tmp/h-6Ej06A/ANSWER.md). The test passes. I did not push an event, so the watch display still needs verification.

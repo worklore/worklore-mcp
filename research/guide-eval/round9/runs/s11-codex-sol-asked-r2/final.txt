@@ -1,0 +1,3 @@
+The first publish stored no related scores. The second calculated a Python `float` for `similar[0].score`, which DynamoDB rejected, causing the 500.
+
+I changed similarity scoring to use `Decimal` and added a regression test that publishes twice and checks the stored score. Both tests pass. The cause and fix are in [ANSWER.md](/tmp/h-Mk0FYF/ANSWER.md).

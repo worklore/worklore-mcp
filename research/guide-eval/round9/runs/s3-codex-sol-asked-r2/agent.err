@@ -1,0 +1,14 @@
+  ok     EVAL_NO_SECRETS
+  ok     HOME
+  ok     LC_CTYPE
+  ok     LOGNAME
+  ok     PATH
+  ok     PWD
+  ok     SHELL
+  ok     SHLVL
+  ok     TERM
+  ok     TMPDIR
+  ok     USER
+verify: 11 names in the child, cli=codex, result=PASS (exit 0)
+Reading additional input from stdin...
+2026-11-02T02:35:49.283264Z ERROR codex_core::tools::router: error=exec_command failed: CreateProcess { message: "Rejected(\"`/bin/zsh -lc 'scratch=$(mktemp -d \\\"$PWD/.nightly-test.XXXXXX\\\")\\ntrap '\\\"'rm -rf \\\\\\\"\\\"'$scratch\\\"'\\\"' EXIT\\nmkdir -p \\\\\\\"\\\"'$scratch/home/bin\\\" \\\"$scratch/home/projects/shop\\\" \\\"$scratch/home/Library/Logs\\\" \\\"$scratch/home/.config/nightly-review\\\" \\\"$scratch/tools\\\"\\ncp bin/nightly-review.zsh bin/notify.sh \\\"$scratch/home/bin/\\\"\\ncat > \\\…1105 chars truncated…> \\\"$scratch/success.out\\\" 2> \\\"$scratch/success.err\\\"\\nsuccess_code=$?\\nprintf '\\\"'failure exit=%s, success exit=%s\\\\\\\\n' \\\\\\\"\\\"'$fail_code\\\" \\\"$success_code\\\"\\ncat \\\"$scratch/curl.log\\\"\\nprintf '\\\"'failure stderr: '\\ncat \\\\\\\"\\\"'$scratch/fail.err\\\"\\nprintf '\\\"'success stderr: '\\ncat \\\\\\\"\\\"'$scratch/success.err\\\"'` rejected: rm -f style commands are not permitted. Use a safer approach\")" }

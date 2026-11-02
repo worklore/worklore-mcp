@@ -1,0 +1,153 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..dd5ea43
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,72 @@
++# Prompt caching vs. save_fact — what changed
++
++## Why it broke
++
++`logs/usage.jsonl` shows the same pattern every time: the round right after a
++`save_fact` reads 0 from cache and writes the whole prompt again (~1000 tokens).
++There were two causes in `bot.py`:
++
++1. **The system prompt was rebuilt on every tool-loop round.** `run_tool` adds the
++   new fact to `a.facts`, and the next round called `build_system(a, today)` again.
++   So the prompt changed in the middle of a single reply.
++2. **The whole system prompt was one cached block**: instructions plus the athlete
++   context, with the facts in the middle (before `Language:`). The cache matches on
++   an exact prefix, so changing any byte of that block meant none of it could be
++   read from cache, including the instructions, which never change.
++
++## What changed (`bot.py`)
++
++- **The system prompt is built once per message** in `reply()` and the same copy
++  is sent on every loop round. `build_request` now takes `system` instead of
++  rebuilding it. The model still knows about the new fact from its own
++  `save_fact` call in the message history.
++- **The system prompt is now a list of blocks, set up so that adding a fact only
++  adds to the end:**
++
++  ```
++  [INSTRUCTIONS]*  [date + profile + zones + goal + language]  [- fact 1] ... [- fact N]*
++  ```
++  `*` = `cache_control: ephemeral` (2 of the 4 allowed markers).
++  - The instructions get their own marker and are byte-identical for all users
++    and all days.
++  - Each fact is its own block, and the facts come last. After a `save_fact`, the
++    previous request's cached prefix (which ended at the old last fact) still
++    matches the start of the new request exactly. The API checks for cache hits at
++    earlier block boundaries, so it reads that prefix from cache and only writes
++    the new fact block (~15 tokens) instead of ~1000.
++  - `Language:` moved above the facts, and the `- (none yet)` placeholder is gone.
++    The first fact would have replaced it and broken the prefix.
++- Tool keyword filtering is unchanged, as NOTES.md asks.
++
++## Expected effect
++
++| call | before | after |
++|---|---|---|
++| loop round after `save_fact` | write ~1000, read 0 | read ~1000, write 0 |
++| next message after `save_fact` | read ~1000 | read ~1000, write ~15 (new fact) |
++
++## Caveats
++
++- **Tools come before the system prompt in the cached prefix.** A message that
++  matches a keyword and adds the plan/race tools still misses once (for example
++  the 1305/1334-token writes in the log). That cost comes from tool filtering, not
++  from memory. Within one message the tool list doesn't change, so loop rounds
++  still hit.
++- **The instructions marker may be too short to cache on its own.** Sonnet 4.5
++  only caches a prefix of at least 1024 tokens. Tools plus instructions come to
++  about 800 tokens, so that marker probably does nothing on this model, and the
++  memory fix doesn't rely on it. It only helps for a new user or on a new day once
++  that prefix is long enough.
++- The date line is part of the profile block, so the first message of each day
++  writes the athlete tail again (once a day, as before).
++- The block-boundary lookback covers about 20 blocks. Facts are added one or two
++  per message, so that is far more than needed.
++
++## How I checked
++
++Offline only (no API calls). A fake LLM ran a `save_fact` reply plus one follow-up
++message. Both loop rounds sent the exact same `system`. The next message's blocks
++were the previous ones plus one new fact block at the end. `data/` and `logs/`
++were not touched. To confirm on the real API, look at the next `usage.jsonl`
++lines after a `save_fact`: round 2 should show `cache_read_input_tokens` ≈ the
++full prompt, and the next message a small `cache_creation_input_tokens`.
+diff --git a/bot.py b/bot.py
+index e2ff241..0908b3c 100644
+--- a/bot.py
++++ b/bot.py
+@@ -114,23 +114,35 @@ Formatting:
+ """
+ 
+ 
+-def athlete_context(a, today):
+-    lines = [
++def athlete_profile(a, today):
++    # Changes rarely (daily for the date line); facts are appended after it, one block each.
++    return "\n".join([
+         f"Today: {today.isoformat()} ({today.strftime('%A')})",
+         f"Athlete: {a.name} (id {a.user_id}), sport: {a.sport}",
+         "Zones: " + ", ".join(f"{k} {v}" for k, v in a.zones.items()),
+         f"Goal: {a.goal}",
+-        "Long-term facts:",
+-    ]
+-    lines += [f"- {f}" for f in a.facts] or ["- (none yet)"]
+-    lines.append(f"Language: {a.lang}")
+-    return "\n".join(lines)
++        f"Language: {a.lang}",
++        "Long-term facts (one per block below; none yet if nothing follows):",
++    ])
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    """System prompt as a list of blocks laid out for prefix caching.
++
++    [INSTRUCTIONS]* [profile] [fact 1] ... [fact N]*      (* = cache_control)
++
++    The instructions never change, so they get their own breakpoint. Facts are
++    append-only and come last, one block each: after a save_fact the previous
++    request's cached prefix (ending at the old last fact) is still a byte-exact
++    prefix of the new one, and the API's block-boundary lookback reads it from
++    cache; only the new fact is written. Nothing volatile may go after the facts.
++    """
++    blocks = [{"type": "text", "text": INSTRUCTIONS, "cache_control": {"type": "ephemeral"}},
++              {"type": "text", "text": athlete_profile(a, today)}]
++    # No "(none yet)" placeholder: it would be replaced by the first fact and break the prefix.
++    blocks += [{"type": "text", "text": f"- {f}"} for f in a.facts]
++    blocks[-1]["cache_control"] = {"type": "ephemeral"}
++    return blocks
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [
+@@ -187,8 +199,8 @@ def log_usage(usage, user_id, round_no, tool=None):
+         f.write(json.dumps(rec) + "\n")
+ 
+ 
+-def build_request(a, messages, tools, today):
+-    return {"model": MODEL, "max_tokens": MAX_TOKENS, "system": build_system(a, today), "tools": tools, "messages": messages}
++def build_request(system, messages, tools):
++    return {"model": MODEL, "max_tokens": MAX_TOKENS, "system": system, "tools": tools, "messages": messages}
+ 
+ 
+ def reply(user_id, text, llm=None):
+@@ -196,9 +208,12 @@ def reply(user_id, text, llm=None):
+     a = load_athlete(user_id)
+     today = dt.date.today()
+     tools = select_tools(text)
++    # Built once per message: a save_fact mid-loop must not change the prompt of the
++    # next round (the model already sees the fact in its own tool call).
++    system = build_system(a, today)
+     messages = [{"role": "user", "content": text}]
+     for round_no in range(1, MAX_TOOL_ROUNDS + 1):
+-        resp = llm.create(**build_request(a, messages, tools, today))
++        resp = llm.create(**build_request(system, messages, tools))
+         used_tools = [b.name for b in resp.content if b.type == "tool_use"]
+         log_usage(resp.usage, a.user_id, round_no, tool=",".join(used_tools) or None)
+         if resp.stop_reason != "tool_use":
