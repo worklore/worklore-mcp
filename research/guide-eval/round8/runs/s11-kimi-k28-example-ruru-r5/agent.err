@@ -1,0 +1,40 @@
+E
+.
+======================================================================
+ERROR: test_publish_second_story_scores_similarity (test_publish.PublishTest.test_publish_second_story_scores_similarity)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private/tmp/h-wchiqw/tests/test_publish.py", line 41, in test_publish_second_story_scores_similarity
+    stored = app.publish(table, second)
+  File "/private/tmp/h-wchiqw/tests/../src/app.py", line 63, in publish
+    table.put_item(Item=item)
+    ~~~~~~~~~~~~~~^^^^^^^^^^^
+  File "/private/tmp/h-wchiqw/tests/fake_dynamo.py", line 31, in put_item
+    _check(Item)
+    ~~~~~~^^^^^^
+  File "/private/tmp/h-wchiqw/tests/fake_dynamo.py", line 16, in _check
+    _check(v, f"{path}.{k}")
+    ~~~~~~^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/h-wchiqw/tests/fake_dynamo.py", line 20, in _check
+    _check(v, f"{path}[{i}]")
+    ~~~~~~^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/h-wchiqw/tests/fake_dynamo.py", line 16, in _check
+    _check(v, f"{path}.{k}")
+    ~~~~~~^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/h-wchiqw/tests/fake_dynamo.py", line 13, in _check
+    raise TypeError("Float types are not supported. Use Decimal types instead.")
+TypeError: Float types are not supported. Use Decimal types instead.
+
+----------------------------------------------------------------------
+Ran 2 tests in 0.001s
+
+FAILED (errors=1)
+.
+.
+----------------------------------------------------------------------
+Ran 2 tests in 0.000s
+
+OK
+ M src/app.py
+ M tests/test_publish.py
+?? ANSWER.md

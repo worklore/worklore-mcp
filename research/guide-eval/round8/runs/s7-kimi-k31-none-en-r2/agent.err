@@ -1,0 +1,23 @@
+Python 3.14.6
+2026-11-08 08:06:11 [http] POST /api/intervals/auth/init 401 (no Authorization header)
+2026-11-08 08:06:11 [http] "POST /api/intervals/auth/init HTTP/1.1" 401 -
+2026-11-08 08:06:11 [http] "POST /api/intervals/auth/init HTTP/1.1" 200 -
+2026-11-08 08:06:11 [http] "GET /api/intervals/auth/init HTTP/1.1" 302 -
+2026-11-08 08:06:11 [intervals] u_rivera: connected as athlete i98765 (non-expiring access token)
+2026-11-08 08:06:11 [http] "GET /api/intervals/callback?code=local-code&state=dV9yaXZlcmE6MTc5NDEzNTk3MToxMTU0ZjUyZmU5OTk5MjcyMzUyYTMzMjY1ZTNmMTc1ZA%3D%3D HTTP/1.1" 302 -
+2026-11-08 08:06:11 [http] "GET /api/intervals/status HTTP/1.1" 200 -
+2026-11-08 08:06:11 [http] "GET /api/intervals/wellness HTTP/1.1" 200 -
+Local OAuth callback, status, non-expiry refresh pass, and wellness flow passed.
+ M config.py
+ M server.py
+ M static/app.js
+?? ANSWER.md
+?? __pycache__/
+ M config.py
+ M server.py
+ M static/app.js
+?? ANSWER.md
+ config.py     |  2 +-
+ server.py     | 29 +++++++++++++++++------------
+ static/app.js | 12 +++++++++++-
+ 3 files changed, 29 insertions(+), 14 deletions(-)

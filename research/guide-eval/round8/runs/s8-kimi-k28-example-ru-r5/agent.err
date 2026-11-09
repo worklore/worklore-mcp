@@ -1,0 +1,69 @@
+Python 3.14.6
+ModuleNotFoundError: No module named 'anthropic'
+ac60edb base
+COMPILE_OK
+--- OLD (one block) ---
+round after save_fact    creation=  673  read=  106
+next message             creation=    0  read=  779
+--- NEW (two blocks) ---
+round after save_fact    creation=  673  read=  106
+next message             creation=    0  read=  779
+
+approx sizes: static instructions=621  per-athlete tail=56
+Traceback (most recent call last):
+  File "<stdin>", line 100, in <module>
+AssertionError: static block changed!
+--- OLD (one block) ---
+round after save_fact    creation=  779  read=    0
+next message             creation=    0  read=  779
+--- NEW (two blocks) ---
+round after save_fact    creation=   51  read=  727
+next message             creation=    0  read=  778
+
+approx static instructions=621
+static block byte-stable across save_fact: OK
+old code reproduces the incident (read=0, creation=~full prompt): OK
+new code: save_fact re-creates only the tail, static prefix stays cached: OK
+
+ALL CHECKS PASSED
+ M README.md
+ M bot.py
+ README.md | 5 +++--
+ bot.py    | 9 ++++++---
+ 2 files changed, 9 insertions(+), 5 deletions(-)
+ M README.md
+ M bot.py
+?? ANSWER.md
+diff --git a/README.md b/README.md
+index ebd390e..260632b 100644
+--- a/README.md
++++ b/README.md
+@@ -12,5 +12,6 @@ Run it locally with `COACH_ANTHROPIC_KEY=sk-ant-... python3 bot.py 42` and type
+ messages on stdin (the Telegram long-polling transport, which needs
+ `COACH_TELEGRAM_TOKEN`, lives in a separate deploy repo and just calls `reply()`).
+ Requires Python 3.11+ and `pip install anthropic`. Prompt caching is on: the system
+-prompt carries a `cache_control` marker so the tool-loop rounds and follow-up
+-messages inside the 5-minute window read it from cache.
++prompt carries two `cache_control` markers — one on the static instructions, one on
++the per-athlete tail — so a memory write re-caches only the tail, and the tool-loop
++rounds and follow-up messages inside the 5-minute window read the rest from cache.
+diff --git a/bot.py b/bot.py
+index e2ff241..b7f3ee3 100644
+--- a/bot.py
++++ b/bot.py
+@@ -128,9 +128,12 @@ def athlete_context(a, today):
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    # Two cached blocks, so a fact write only invalidates the tail: the prompt
++    # cache is a prefix hash, and save_fact must not evict the static instructions.
++    return [
++        {"type": "text", "text": INSTRUCTIONS, "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": athlete_context(a, today), "cache_control": {"type": "ephemeral"}},
++    ]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [

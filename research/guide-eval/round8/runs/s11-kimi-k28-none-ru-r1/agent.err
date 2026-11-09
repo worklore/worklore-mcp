@@ -1,0 +1,18 @@
+first publish OK
+second publish FAIL: Float types are not supported. Use Decimal types instead.
+test_handler_returns_201_on_second_publish (test_publish.PublishTest.test_handler_returns_201_on_second_publish) ... 
+ok
+test_publish_stores_story (test_publish.PublishTest.test_publish_stores_story) ... ok
+test_second_publish_stores_decimal_scores (test_publish.PublishTest.test_second_publish_stores_decimal_scores) ... 
+ok
+
+----------------------------------------------------------------------
+Ran 3 tests in 0.001s
+
+OK
+ M src/app.py
+ M tests/test_publish.py
+?? ANSWER.md
+ src/app.py            | 12 ++++++++----
+ tests/test_publish.py | 38 ++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 46 insertions(+), 4 deletions(-)

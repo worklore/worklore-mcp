@@ -1,0 +1,36 @@
+total 8
+drwxr-xr-x 4 valentinakoniukhova wheel  128 Nov  8 02:48 .
+drwxr-xr-x 5 valentinakoniukhova wheel  160 Nov  8 02:48 ..
+-rw-r--r-- 1 valentinakoniukhova wheel 1177 Nov  8 02:48 offer_screen.dart
+-rw-r--r-- 1 valentinakoniukhova wheel 2359 Nov  8 02:48 registration_screen.dart
+/Users/valentinakoniukhova/development/flutter/bin/flutter
+/Users/valentinakoniukhova/development/flutter/bin/dart
+name: kredito
+description: Consumer loan registration and offers.
+publish_to: "none"
+version: 1.3.0+27
+
+environment:
+  sdk: ^3.5.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  posthog_flutter: ^5.36.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true
+bash: /Users/valentinakoniukhova/development/flutter/bin/flutter: Operation not permitted
+bash: /Users/valentinakoniukhova/development/flutter/bin/dart: Operation not permitted
+exit: 0
+ M lib/screens/offer_screen.dart
+ M lib/screens/registration_screen.dart
+?? ANSWER.md
+ lib/screens/offer_screen.dart        | 31 ++++++++++++++++++++++++++-
+ lib/screens/registration_screen.dart | 41 ++++++++++++++++++++++++++++++++----
+ 2 files changed, 67 insertions(+), 5 deletions(-)

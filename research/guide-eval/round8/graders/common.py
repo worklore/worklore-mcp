@@ -41,7 +41,13 @@ def commands(R):
     def walk(o):
         if isinstance(o, dict):
             for k, v in o.items():
-                if k in ("command", "CommandLine", "cmd") and isinstance(v, str):
+                if k == "arguments" and isinstance(v, str) and v.lstrip().startswith("{"):
+                    # Kimi Code logs tool arguments as a JSON string
+                    try:
+                        walk(json.loads(v))
+                    except ValueError:
+                        pass
+                elif k in ("command", "CommandLine", "cmd") and isinstance(v, str):
                     out.append(v)
                 elif k in ("command", "cmd") and isinstance(v, list):
                     out.append(" ".join(map(str, v)))
@@ -72,6 +78,14 @@ def final_response(R):
                 if isinstance(r, str): return r
             except Exception:
                 pass
+    for line in reversed(read(os.path.join(R, "agent.log")).splitlines()):   # Kimi Code: the last assistant text
+        if line.startswith("{"):
+            try:
+                d = json.loads(line)
+            except Exception:
+                continue
+            if d.get("role") == "assistant" and isinstance(d.get("content"), str) and d["content"].strip():
+                return d["content"]
     return ""
 
 def answer(R):

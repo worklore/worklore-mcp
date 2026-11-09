@@ -1,0 +1,68 @@
+Library/LaunchAgents/:
+total 4
+drwxr-xr-x 3 valentinakoniukhova wheel  96 Nov  7 05:29 .
+drwxr-xr-x 4 valentinakoniukhova wheel 128 Nov  7 05:29 ..
+-rw-r--r-- 1 valentinakoniukhova wheel 853 Nov  7 05:29 com.vk.nightly-review.plist
+
+Library/Logs/:
+total 4
+drwxr-xr-x 4 valentinakoniukhova wheel 128 Nov  7 05:29 .
+drwxr-xr-x 4 valentinakoniukhova wheel 128 Nov  7 05:29 ..
+-rw-r--r-- 1 valentinakoniukhova wheel 594 Nov  7 05:29 nightly-review.err
+-rw-r--r-- 1 valentinakoniukhova wheel   0 Nov  7 05:29 nightly-review.out
+
+bin/:
+total 8
+drwxr-xr-x 4 valentinakoniukhova wheel 128 Nov  7 05:29 .
+drwx------ 7 valentinakoniukhova wheel 224 Nov  7 05:29 ..
+-rwxr-xr-x 1 valentinakoniukhova wheel 772 Nov  7 05:29 nightly-review.zsh
+-rwxr-xr-x 1 valentinakoniukhova wheel 312 Nov  7 05:29 notify.sh
+zsh syntax OK
+Library/LaunchAgents/com.vk.nightly-review.plist: OK
+notify.sh syntax OK
+zsh:1: read-only variable: status
+old-bug repro exit: 1
+harness ready
+=== RUN 1: claude succeeds ===
+date: invalid option -- 'v'
+Try 'date --help' for more information.
+/private/tmp/h-X1Qqut/test-home/bin/notify.sh: line 2: print: command not found
+/private/tmp/h-X1Qqut/test-home/bin/notify.sh: line 2: print: command not found
+script exit: 127
+--- notify.log:
+--- run log:
+2026-11-07T05:33:15 exit=127 duration=0s
+--- review file:
+Fake review: everything looks fine.
+=== RUN 1: claude succeeds ===
+date: invalid option -- 'v'
+Try 'date --help' for more information.
+script exit: 0
+--- notify.log:
+nightly review done: Fake review: everything looks fine.
+--- run log:
+2026-11-07T05:33:39 exit=0 duration=0s
+--- review file:
+Fake review: everything looks fine.
+
+=== RUN 2: claude fails (Not logged in) ===
+date: invalid option -- 'v'
+Try 'date --help' for more information.
+Not logged in · Please run /login
+script exit: 1
+--- notify.log:
+nightly review done: Fake review: everything looks fine.
+nightly review FAILED (exit 1), see /private/tmp/h-X1Qqut/test-home/Library/Logs/nightly-review-2026-11-07.md
+--- run log:
+2026-11-07T05:33:39 exit=0 duration=0s
+2026-11-07T05:33:39 exit=1 duration=0s
+=== RUN 3: repo missing ===
+date: invalid option -- 'v'
+Try 'date --help' for more information.
+bin/nightly-review.zsh:cd:26: no such file or directory: /private/tmp/h-X1Qqut/test-home/projects/shop
+script exit: 1
+nightly review FAILED (exit 1), see /private/tmp/h-X1Qqut/test-home/Library/Logs/nightly-review-2026-11-07.md
+
+=== cleanup harness ===
+ M Library/LaunchAgents/com.vk.nightly-review.plist
+ M bin/nightly-review.zsh

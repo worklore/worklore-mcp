@@ -1,0 +1,49 @@
+test_publish_stores_story (test_publish.PublishTest.test_publish_stores_story) ... 
+ok
+
+----------------------------------------------------------------------
+Ran 1 test in 0.000s
+
+OK
+publish failed
+Traceback (most recent call last):
+  File "/private/tmp/h-eq9Qsn/src/app.py", line 72, in handler
+    stored = publish(table, story)
+  File "/private/tmp/h-eq9Qsn/src/app.py", line 63, in publish
+    table.put_item(Item=item)
+    ~~~~~~~~~~~~~~^^^^^^^^^^^
+  File "/private/tmp/h-eq9Qsn/tests/fake_dynamo.py", line 31, in put_item
+    _check(Item)
+    ~~~~~~^^^^^^
+  File "/private/tmp/h-eq9Qsn/tests/fake_dynamo.py", line 16, in _check
+    _check(v, f"{path}.{k}")
+    ~~~~~~^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/h-eq9Qsn/tests/fake_dynamo.py", line 20, in _check
+    _check(v, f"{path}[{i}]")
+    ~~~~~~^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/h-eq9Qsn/tests/fake_dynamo.py", line 16, in _check
+    _check(v, f"{path}.{k}")
+    ~~~~~~^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/h-eq9Qsn/tests/fake_dynamo.py", line 13, in _check
+    raise TypeError("Float types are not supported. Use Decimal types instead.")
+TypeError: Float types are not supported. Use Decimal types instead.
+first:  201
+second: 500
+test_handler_publish_twice_returns_201 (test_publish.PublishTest.test_handler_publish_twice_returns_201) ... 
+ok
+test_publish_stores_story (test_publish.PublishTest.test_publish_stores_story) ... ok
+test_publish_with_existing_record_stores_decimal_scores (test_publish.PublishTest.test_publish_with_existing_record_stores_decimal_scores) ... ok
+
+----------------------------------------------------------------------
+Ran 3 tests in 0.000s
+
+OK
+first:  201
+second: 201
+score stored as: Decimal('0.0')
+Ran 3 tests in 0.000s
+
+OK
+ M src/app.py
+ M tests/test_publish.py
+?? ANSWER.md

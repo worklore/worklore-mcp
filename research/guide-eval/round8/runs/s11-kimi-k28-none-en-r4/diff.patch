@@ -1,0 +1,113 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..3f0d3a0
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,38 @@
++# Why the second publish returned 500
++
++## Cause
++
++`similarity()` in `src/app.py` returned a Python `float`
++(`round(0.7 * tag_score + 0.3 * word_score, 4)`), and that float was stored
++in each new item's `similar: [{slug, score}]` list. DynamoDB's wire format
++has no float type — boto3's serializer only accepts `Decimal` for numbers —
++so `table.put_item()` raised `TypeError: Float types are not supported. Use
++Decimal types instead.` (`logs/error.log` lines 3–25).
++
++The bug was invisible on the first publish: with an empty table, `related()`
++returns `[]`, so no float ever reached `put_item` and the item stored fine.
++Starting with the second publish there is at least one existing story, so
++`similar` contained a float `score` and every publish after the first failed
++with 500. The exception happened inside the broad `except Exception` in
++`handler()`, which is why the client saw a bare 500.
++
++## Fix
++
++`src/app.py:similarity()` now computes the score with `Decimal` arithmetic
++(`Decimal(count) / Decimal(count)` for the Jaccard ratios, weights as
++`Decimal("0.7")` / `Decimal("0.3")`, and `round(..., 4)` on the Decimal
++result), so the value is DynamoDB-safe by construction instead of being
++converted at the boundary.
++
++## So it can't come back
++
++`tests/test_publish.py` gains `test_second_publish_stores_similar_as_dynamodb_safe_numbers`:
++it publishes two overlapping stories through `handler()`, asserts both return
++201, and asserts the stored `similar` scores are `Decimal`. The in-memory
++`FakeTable` validates every item exactly like boto3's TypeSerializer (it
++rejects floats), so any future float reaching `put_item` — from this path or
++a new one — fails the test with the same `TypeError` production would raise.
++
++Verified with `python3 -m unittest discover tests` (2 tests, OK) and by
++replaying the logged scenario: three consecutive publishes all return 201
++with `Decimal` scores.
+diff --git a/src/app.py b/src/app.py
+index db49c5e..b5a1e2b 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -8,6 +8,7 @@ import json
+ import logging
+ import re
+ import time
++from decimal import Decimal
+ 
+ log = logging.getLogger("stories")
+ 
+@@ -24,10 +25,10 @@ def words(text):
+ def similarity(a, b):
+     """Shared-tag ratio (Jaccard), blended with shared words of the two bodies."""
+     ta, tb = set(a.get("tags", [])), set(b.get("tags", []))
+-    tag_score = len(ta & tb) / len(ta | tb) if (ta | tb) else 0
++    tag_score = Decimal(len(ta & tb)) / Decimal(len(ta | tb)) if (ta | tb) else Decimal(0)
+     wa, wb = words(a.get("body")), words(b.get("body"))
+-    word_score = len(wa & wb) / len(wa | wb) if (wa | wb) else 0
+-    return round(0.7 * tag_score + 0.3 * word_score, 4)
++    word_score = Decimal(len(wa & wb)) / Decimal(len(wa | wb)) if (wa | wb) else Decimal(0)
++    return round(Decimal("0.7") * tag_score + Decimal("0.3") * word_score, 4)
+ 
+ 
+ def related(story, existing):
+diff --git a/tests/test_publish.py b/tests/test_publish.py
+index 6c9ac44..961526f 100644
+--- a/tests/test_publish.py
++++ b/tests/test_publish.py
+@@ -1,6 +1,8 @@
++import json
+ import os
+ import sys
+ import unittest
++from decimal import Decimal
+ 
+ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+ sys.path.insert(0, os.path.dirname(__file__))
+@@ -23,6 +25,29 @@ class PublishTest(unittest.TestCase):
+         self.assertEqual(table.get_item(Key={"slug": "why-my-cron-ran-twice"})["Item"]["title"], "Why my cron ran twice")
+         self.assertEqual(table.scan()["Count"], 1)
+ 
++    def test_second_publish_stores_similar_as_dynamodb_safe_numbers(self):
++        table = FakeTable()
++        first = {
++            "slug": "why-my-cron-ran-twice",
++            "title": "Why my cron ran twice",
++            "tags": ["cron", "linux"],
++            "body": "Two crontabs, one for root and one for me, both had the line.",
++        }
++        second = {
++            "slug": "cron-in-containers",
++            "title": "Cron in containers",
++            "tags": ["cron"],
++            "body": "A fresh take on scheduling.",
++        }
++        r1 = app.handler({"body": json.dumps(first)}, table)
++        r2 = app.handler({"body": json.dumps(second)}, table)
++        self.assertEqual(r1["statusCode"], 201)
++        self.assertEqual(r2["statusCode"], 201)
++        stored = table.get_item(Key={"slug": "cron-in-containers"})["Item"]
++        self.assertEqual(stored["similar"], [{"slug": "why-my-cron-ran-twice", "score": Decimal("0.35")}])
++        for entry in stored["similar"]:
++            self.assertIsInstance(entry["score"], Decimal)
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

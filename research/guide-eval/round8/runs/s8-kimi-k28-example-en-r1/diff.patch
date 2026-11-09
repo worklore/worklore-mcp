@@ -1,0 +1,128 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..491c262
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,101 @@
++# ANSWER — memory writes no longer evict the static system prompt
++
++## What was wrong
++
++`build_system()` in `bot.py` assembled the system prompt as **one** text block —
++static coaching instructions plus the volatile per-athlete tail (date, profile,
++zones, goal, long-term facts) — with a single `cache_control: ephemeral` marker
++at the end. Anthropic's prompt cache is a prefix hash: one changed byte
++invalidates everything from that byte to the end of the cached block. So every
++`save_fact` rewrote the facts lines and evicted the entire prompt, including
++the ~780-token instruction text that never changes. `logs/usage.jsonl` shows it
++exactly: every call right after a `save_fact` has `cache_read_input_tokens: 0`
++and `cache_creation_input_tokens` ≈ the full prompt (1046 → 1061 → 1075 → 1090…),
++sometimes within the same message's tool loop.
++
++## The change (`bot.py`, `build_system`)
++
++Split the single block into two text blocks, each with its own
++`cache_control: {"type": "ephemeral"}` marker:
++
++- **Block 1 — static instructions.** `INSTRUCTIONS` is a module-level literal
++  with no interpolated dates, names, or counters, so it is byte-identical
++  across users and days. A memory write never touches it, so this chunk stays
++  hot.
++- **Block 2 — volatile tail.** Everything from `athlete_context()` (date,
++  athlete, zones, goal, facts, language). A `save_fact` now re-caches only
++  this ~240-token tail; the static prefix is still read at cache price.
++
++Nothing else changed: tools are still selected per message by keyword (byte-
++stable within a message's tool loop), all facts are still injected on every
++message (no per-message selection), and `log_usage` still records the cache
++fields from every response.
++
++## Verification
++
++No API key was available and no external calls were made, so I verified with a
++harness that simulates prefix-cache semantics (cacheable chunks end at each
++`cache_control` marker; the cached prefix includes the tools array; chunks
++keyed by exact content) and drives the real `reply()` loop through the note's
++scenario — a message, a message that triggers `save_fact`, then a follow-up —
++for both the old single-block `build_system` and the new one. The harness
++redirected `data/athletes.json` and `logs/usage.jsonl` to temp copies, so the
++repo's data and logs were not touched (confirmed afterward).
++
++Result (token counts approximate, `~len/4`):
++
++| call | BEFORE (one marker) | AFTER (two markers) |
++|---|---|---|
++| msg1 round 1 | create 777 | create 781 |
++| msg1 round 2 | read 777 | read 781 |
++| msg2 round 1 (the `save_fact` call) | read 777 | read 781 |
++| **msg2 round 2 (right after the write)** | **read 0, create 781** | **read 621, create 167** |
++| msg3 follow-up | read 781 | read 788 |
++
++Static instructions ≈ 621 tokens. After a memory write, the static block is
++still read from cache and only the ~167-token tail (context + tools) is
++re-created — versus a full ~781-token re-cache before. Follow-up messages and
++tool-loop rounds inside the TTL still read the whole prompt at cache price.
++Also `python3 -c "import bot"` passes without the anthropic SDK (the file's
++fallback wrapper still works).
++
++To confirm against the live API later: send two messages within 5 minutes
++(second must show `cache_read_input_tokens` ≈ whole prompt), trigger a memory
++write, then send a third — `cache_read` must still cover the static block and
++`cache_creation` must be roughly tail-sized only.
++
++## Which parts of the colleague's note applied
++
++Applied:
++
++- **The core fix: two `cache_control: ephemeral` markers** — block 1 = static
++  instructions, block 2 = volatile per-user tail (date, profile, zones, goal,
++  facts, language). This is exactly what was implemented.
++- **Byte-stability requirement for block 1** — audited `INSTRUCTIONS`: no
++  interpolation, no counters; safe as the static segment. The note's warning
++  about hunting interpolated values in the "static" block was checked.
++- **Keep tools byte-stable across calls** — already satisfied by the existing
++  keyword-filtered tool selection (core set always included, list constant
++  within a message's tool loop), so it was left untouched.
++- **Reject per-message personalization of cached content** (top-N fact
++  selection) — never existed in this codebase and was not added; all facts are
++  injected every message so the tail cache can hit.
++- **Read `usage` from every response** — `log_usage` already records
++  `cache_creation_input_tokens` / `cache_read_input_tokens`; used both the
++  existing log and the harness output to verify.
++
++Not applied / not applicable:
++
++- **Tool filtering as a win** — the note describes adding keyword-based tool
++  groups as its first win; this codebase already had it (NOTES.md dates it to
++  March). Nothing to do.
++- **The note's tools-above-system ordering nuance** — the concern that pulling
++  in an extra tool group re-reads everything once per message is inherent to
++  prefix caching and accepted; the default core tool set covers most messages,
++  and it is not a regression from this change.
++- **Reordering the tail "rarest-changing first"** — the note itself calls this
++  readability-only ("after the marker it's one hash anyway"), so the existing
++  `athlete_context` order was kept to minimize churn.
++- **The 4-marker allowance** — we use 2 of 4, as the note recommends; no
++  third marker was needed since the tools array is already byte-stable per
++  message.
+diff --git a/bot.py b/bot.py
+index e2ff241..8afdbaf 100644
+--- a/bot.py
++++ b/bot.py
+@@ -128,9 +128,13 @@ def athlete_context(a, today):
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    # Two cached blocks: block 1 is the static instructions (byte-stable, stays
++    # hot across memory writes); block 2 is the per-athlete tail (date, profile,
++    # facts). A save_fact only invalidates the tail, never the instructions.
++    return [
++        {"type": "text", "text": INSTRUCTIONS, "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": athlete_context(a, today), "cache_control": {"type": "ephemeral"}},
++    ]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [

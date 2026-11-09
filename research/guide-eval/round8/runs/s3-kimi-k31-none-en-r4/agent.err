@@ -1,0 +1,47 @@
+e0e0c36 (HEAD -> main) base
+stat: 
+cannot read file system information for '%Sp %N': No such file or directory
+  File: bin/nightly-review.zsh
+    ID: 100000f0000001a Namelen: ?       Type: apfs
+Block size: 4096       Fundamental block size: 4096
+Blocks: Total: 120699413  Free: 33418753   Available: 33418753
+Inodes: Total: 1342958865 Free: 1336750120
+  File: bin/notify.sh
+    ID: 100000f0000001a Namelen: ?       Type: apfs
+Block size: 4096       Fundamental block size: 4096
+Blocks: Total: 120699413  Free: 33418753   Available: 33418753
+Inodes: Total: 1342958865 Free: 1336750120
+  File: Library/LaunchAgents/com.vk.nightly-review.plist
+    ID: 100000f0000001a Namelen: ?       Type: apfs
+Block size: 4096       Fundamental block size: 4096
+Blocks: Total: 120699413  Free: 33418753   Available: 33418753
+Inodes: Total: 1342958865 Free: 1336750120
+/bin/zsh
+/usr/bin/plutil
+exit=1
+no notification sent
+exit=1
+Library/LaunchAgents/com.vk.nightly-review.plist: OK
+exit=0
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..f9f7692 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -16,11 +16,11 @@ Do not modify any file."
+ cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
+ 
+ claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
++exit_code=$?
+ 
+-if [ $status -ne 0 ]; then
+-  "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
+-  exit $status
++if [ $exit_code -ne 0 ]; then
++  "$NOTIFY" "nightly review FAILED (exit $exit_code), see $OUT"
++  exit $exit_code
+ fi
+ 
+ "$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"
+ M bin/nightly-review.zsh
+?? ANSWER.md

@@ -1,0 +1,38 @@
+Python 3.14.6
+ModuleNotFoundError: No module named 'anthropic'
+8fa576a base
+Traceback (most recent call last):
+  File "<stdin>", line 54, in <module>
+  File "/private/tmp/h-xbzpQG/bot.py", line 206, in reply
+    used_tools = [b.name for b in resp.content if b.type == "tool_use"]
+                                                  ^^^^^^
+AttributeError: 'B' object has no attribute 'type'
+replies: ok / ok
+instructions block: ~434 words of static prefix now cached independently
+ M bot.py
+ M logs/usage.jsonl
+?? __pycache__/
+ M bot.py
+diff --git a/bot.py b/bot.py
+index e2ff241..4ac92ee 100644
+--- a/bot.py
++++ b/bot.py
+@@ -128,9 +128,13 @@ def athlete_context(a, today):
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    # Two blocks so the cache breakpoint sits between the static instructions
++    # and the per-athlete context: a save_fact only changes the second, small
++    # block, and the cached instructions segment stays valid.
++    return [
++        {"type": "text", "text": INSTRUCTIONS, "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": athlete_context(a, today), "cache_control": {"type": "ephemeral"}},
++    ]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [
+ M bot.py
+?? ANSWER.md

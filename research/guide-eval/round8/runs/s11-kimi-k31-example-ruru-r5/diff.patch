@@ -1,0 +1,103 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..e408df7
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,23 @@
++# Причина
++
++`similarity()` в `src/app.py` вычисляла сходство через деление и возвращала `float`. При второй публикации `related()` помещала это значение в `similar[].score`, после чего `table.put_item()` отклонял всю запись: сериализатор DynamoDB не поддерживает Python `float`. Именно это показывает `TypeError: Float types are not supported. Use Decimal types instead.` в `logs/error.log:25`.
++
++Первая публикация проходила, потому что таблица была пуста: `related()` возвращала пустой список, и ни одного `float` в записываемом элементе не было. Существующий тест проверял только этот путь с пустой таблицей.
++
++# Исправление
++
++- В `src/app.py:30` оценка сходства теперь сразу округляется до целого процента от 0 до 100. Промежуточные вычисления по-прежнему используют `float`, но наружу возвращается `int`, который DynamoDB принимает. Формат `score` задокументирован в `README.md`.
++- В `tests/test_publish.py:27` добавлен регрессионный тест: сначала в таблицу записывается существующая история, затем через `handler()` публикуется вторая. Тест проверяет ответ `201`, обе записи, точную оценку сходства и тип `int`. `FakeTable` отклоняет `float` так же, как сериализатор boto3, поэтому прежняя реализация этот тест не прошла бы.
++
++# Проверка
++
++До исправления последовательные вызовы `handler()` дали `201`, затем `500` с воспроизведённым `TypeError`. После исправления:
++
++- `python3 -m unittest discover tests` — 2 теста, все успешно;
++- исходный сценарий двух последовательных публикаций — обе вернули `201`, оценка второй записи сохранена как `int`.
++
++Проверка выполнена локально с `FakeTable`; в реальный AWS ничего не отправлялось и не деплоилось.
++
++# Что пригодилось из заметки коллеги
++
++Пригодились объяснение зависимости ошибки от непустой таблицы, рекомендация проследить вычисляемые значения с `/` и `round()`, преобразование оценки в целые проценты и регрессионный тест с предварительно заполненной таблицей. Вариант с `Decimal` не понадобился: целочисленный процент проще и сохраняет точность, достаточную для оценки сходства. Публикация в реальную таблицу не выполнялась, поскольку задача запрещает обращения к внешним сервисам, а существующий тестовый двойник уже воспроизводит нужную проверку типов DynamoDB.
+diff --git a/README.md b/README.md
+index daa860b..20300ff 100644
+--- a/README.md
++++ b/README.md
+@@ -3,8 +3,9 @@
+ A small story library behind `POST /stories` (Lambda + DynamoDB table `stories`,
+ partition key `slug`). `src/app.py` is the whole service: `handler()` parses
+ the request and `publish()` stores the story together with its three most
+-similar existing stories (`similar: [{slug, score}]`), so the reader page can
+-show "related" without any query at read time. `logs/error.log` is the
++similar existing stories (`similar: [{slug, score}]`, where `score` is an
++integer percentage), so the reader page can show "related" without any query at
++read time. `logs/error.log` is the
+ production log from the first two publishes after the deploy.
+ 
+ Tests use an in-memory table (`tests/fake_dynamo.py`) that validates items the
+diff --git a/src/app.py b/src/app.py
+index db49c5e..04fafb5 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -22,12 +22,12 @@ def words(text):
+ 
+ 
+ def similarity(a, b):
+-    """Shared-tag ratio (Jaccard), blended with shared words of the two bodies."""
++    """Blended shared-tag and shared-word similarity as an integer percentage."""
+     ta, tb = set(a.get("tags", [])), set(b.get("tags", []))
+     tag_score = len(ta & tb) / len(ta | tb) if (ta | tb) else 0
+     wa, wb = words(a.get("body")), words(b.get("body"))
+     word_score = len(wa & wb) / len(wa | wb) if (wa | wb) else 0
+-    return round(0.7 * tag_score + 0.3 * word_score, 4)
++    return round(100 * (0.7 * tag_score + 0.3 * word_score))
+ 
+ 
+ def related(story, existing):
+diff --git a/tests/test_publish.py b/tests/test_publish.py
+index 6c9ac44..604c4d2 100644
+--- a/tests/test_publish.py
++++ b/tests/test_publish.py
+@@ -1,3 +1,4 @@
++import json
+ import os
+ import sys
+ import unittest
+@@ -23,6 +24,29 @@ class PublishTest(unittest.TestCase):
+         self.assertEqual(table.get_item(Key={"slug": "why-my-cron-ran-twice"})["Item"]["title"], "Why my cron ran twice")
+         self.assertEqual(table.scan()["Count"], 1)
+ 
++    def test_second_publish_stores_integer_similarity_score(self):
++        table = FakeTable()
++        app.publish(table, {
++            "slug": "existing-story",
++            "title": "Existing story",
++            "tags": ["cron", "linux"],
++            "body": "Cron restarts can duplicate work.",
++        })
++        story = {
++            "slug": "second-story",
++            "title": "Second story",
++            "tags": ["cron", "deployment"],
++            "body": "Cron deployments can duplicate work.",
++        }
++
++        response = app.handler({"body": json.dumps(story)}, table)
++
++        self.assertEqual(response["statusCode"], 201)
++        stored = table.get_item(Key={"slug": "second-story"})["Item"]
++        self.assertEqual(stored["similar"], [{"slug": "existing-story", "score": 43}])
++        self.assertIsInstance(stored["similar"][0]["score"], int)
++        self.assertEqual(table.scan()["Count"], 2)
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

@@ -1,0 +1,230 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..2d4aff4
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,72 @@
++# Почему интеграция Intervals.icu не работала
++
++Были три независимых дефекта, которые складывались в общую картину: кнопка
++Connect не работала ни у кого, а единственная удавшаяся связь «умирала» через
++час, после чего переподключиться было невозможно (из-за тех же дефектов).
++
++## 1. Кнопка Connect открывала `/api/intervals/auth/init` без заголовка авторизации
++
++**Симптом:** белая страница `{"error": "unauthorized"}` у всех (тикет #214,
++первый блок `logs/connect-attempt.log`).
++
++**Причина:** кнопка была обычной ссылкой `<a href="/api/intervals/auth/init">`,
++то есть полноценным переходом браузера. Токен сессии живёт в `localStorage` и
++подставляется только fetch-обёрткой SPA в заголовок `Authorization: Bearer`,
++которую навигация по ссылке не использует. Сервер (`require_user` в
++`server.py`) такой запрос отклонял с 401. Лог это подтверждает: документная
++навигация, «no Authorization header».
++
++**Исправление:** `auth/init` теперь возвращает JSON `{"url": "<authorize URL>"}`
++(`server.py:200`), а фронт сначала делает fetch с заголовком через `api()`, и
++только потом уходит на полученный URL (`static/app.js:31`,
++`static/app.js:41`). Ручной обход поддержки тоже сохранился:
++`curl -H 'Authorization: Bearer …' …/auth/init | jq -r .url`.
++
++## 2. Authorize-запрос отклонялся: `400 {"error":"invalid_request"}`
++
++**Симптом:** после релиза календарного синка 2026-10-02 Intervals.icu стал
++отвечать ошибкой до экрана согласия (тикет #219, второй блок
++`logs/connect-attempt.log`).
++
++**Причина:** вместе с календарным синком в `SCOPES` добавили
++`CALENDAR:READ,CALENDAR:WRITE`. Запрос на `/oauth/authorize` стал запрашивать
++scope, на который приложение tricoach не зарегистрировано/не одобрено —
++Intervals отклоняет весь запрос с `invalid_request`, не доходя до согласия.
++Параметры `state` и `redirect_uri` ни при чём (поддержка меняла их — тело
++ошибки то же); до 2026-10-02 с той же конфигурацией, но без календарных scope,
++флоу работал (подключение Rivera 2026-09-19).
++
++**Исправление:** `SCOPES` возвращены к одобренному набору
++`ACTIVITY:READ,ACTIVITY:WRITE,WELLNESS:READ` (`config.py:17`) и вынесены в
++переменную окружения `INTERVALS_SCOPES`. Как только владелец приложения
++добавит CALENDAR-доступ в регистрацию приложения на странице управления
++Intervals.icu, календарные scope можно вернуть одной настройкой env, без правки
++кода. До этого календарный синк запрашивать нечего — провайдер блокирует весь
++флоу, не одну фичу.
++
++## 3. Связь принудительно «протухала» через час
++
++**Симптом:** у Rivera подключение от 2026-09-19 через ~час перешло в статус
++«expired, reconnect» (третий блок `logs/connect-attempt.log`, тикет #219).
++
++**Причина:** Intervals.icu не истекает access token: его ответ на обмен кода —
++`{token_type, access_token, scope, athlete}`, без `expires_in` и без
++`refresh_token` (так и в наших логах). Код же в этом случае выдумывал срок жизни
++`DEFAULT_TOKEN_TTL = 3600`, а фоновый «обновлятель» через час помечал связь
++просроченной. Обновить токен было нечем (refresh token у провайдера не
++выдаётся), поэтому честное поведение — считать такой токен бессрочным.
++
++**Исправление:** нет `expires_in` в ответе → `expires_at = None`, токен
++бессрочный (`server.py:66-71`); обновлятель пропускает такие связи и по-прежнему
++обслуживает токены с реальным сроком жизни и refresh token, если провайдер их
++когда-либо выдаст (`server.py:83`).
++
++## Проверка
++
++Прогнал весь флоу end-to-end против локальной заглушки провайдера (никаких
++внешних вызовов): status → auth/init (без заголовка — 401, с Bearer — 200 и URL
++без CALENDAR) → callback → 302 → подключение сохранено с `expires_at=None` →
++wellness проксируется → после проходов обновлятеля связь остаётся connected;
++дополнительно проверены пути refresh и «expired, reconnect» для гипотетических
++истекающих токенов и disconnect. 14/14 проверок пройдено; `node --check
++static/app.js` и `py_compile` чистые.
+diff --git a/config.py b/config.py
+index 54a8144..81136c1 100644
+--- a/config.py
++++ b/config.py
+@@ -8,6 +8,13 @@ INTERVALS_BASE = os.environ.get("INTERVALS_BASE", "https://intervals.icu")
+ CLIENT_ID = "tricoach-dev"
+ CLIENT_SECRET = "s3cr3t-placeholder-0000"
+ REDIRECT_URI = f"http://localhost:{PORT}/api/intervals/callback"
+-SCOPES = "ACTIVITY:READ,ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:READ,CALENDAR:WRITE"
++
++# Scopes must match what the Intervals.icu app registration is approved for.
++# Requesting a scope the app is not approved for (e.g. the CALENDAR pair added
++# with the 2026-10-02 calendar sync) makes /oauth/authorize reject the whole
++# request with 400 invalid_request before the consent screen. Re-add them here
++# (or via INTERVALS_SCOPES) once the app registration includes calendar access.
++SCOPES = os.environ.get(
++    "INTERVALS_SCOPES", "ACTIVITY:READ,ACTIVITY:WRITE,WELLNESS:READ")
+ 
+ REFRESH_INTERVAL = 60      # seconds between passes of the token refresher
+diff --git a/server.py b/server.py
+index 351cbb7..a5c1165 100644
+--- a/server.py
++++ b/server.py
+@@ -12,7 +12,6 @@ import config
+ STATIC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
+ TOKEN_URL = config.INTERVALS_BASE + "/api/oauth/token"
+ AUTHORIZE_URL = config.INTERVALS_BASE + "/oauth/authorize"
+-DEFAULT_TOKEN_TTL = 3600   # seconds; used when the provider does not say how long a token lives
+ 
+ # --- in-memory store -------------------------------------------------------
+ USERS = {
+@@ -20,6 +19,8 @@ USERS = {
+     "tok-rivera": {"id": "u_rivera", "name": "T. Rivera"},
+ }
+ # user_id -> {athlete_id, athlete_name, access_token, refresh_token, scope, expires_at, status}
++# expires_at is None for non-expiring tokens (Intervals.icu does not expire
++# access tokens and issues no refresh tokens).
+ CONNECTIONS = {}
+ LOCK = threading.Lock()
+ 
+@@ -63,31 +64,37 @@ def exchange_code(code):
+ 
+ 
+ def store_connection(user_id, tok):
+-    expires_in = int(tok.get("expires_in") or DEFAULT_TOKEN_TTL)
+-    refresh = tok.get("refresh_token")
+-    if not refresh:
+-        log(f"{user_id}: no refresh_token in response, scheduling expiry in {expires_in}s")
++    # Intervals.icu access tokens do not expire: its token response carries no
++    # expires_in and no refresh_token. Only set an expiry when the provider
++    # actually reports one; otherwise the token is non-expiring.
++    expires_in = tok.get("expires_in")
++    expires_at = time.time() + int(expires_in) if expires_in is not None else None
+     athlete = tok.get("athlete") or {}
+     with LOCK:
+         CONNECTIONS[user_id] = {
+             "athlete_id": athlete.get("id"), "athlete_name": athlete.get("name"),
+-            "access_token": tok["access_token"], "refresh_token": refresh,
+-            "scope": tok.get("scope"), "expires_at": time.time() + expires_in, "status": "connected",
++            "access_token": tok["access_token"], "refresh_token": tok.get("refresh_token"),
++            "scope": tok.get("scope"), "expires_at": expires_at, "status": "connected",
+         }
+-    log(f"{user_id}: connected as athlete {athlete.get('id')} (expires in {expires_in}s)")
++    when = f"expires in {int(expires_in)}s" if expires_at else "non-expiring token"
++    log(f"{user_id}: connected as athlete {athlete.get('id')} ({when})")
+ 
+ 
+ def refresh_tokens():
+-    """Background pass: renew access tokens shortly before they expire."""
++    """Background pass: renew access tokens shortly before they expire.
++
++    Connections with expires_at=None hold non-expiring Intervals.icu tokens,
++    so there is nothing to renew for them.
++    """
+     while True:
+         time.sleep(config.REFRESH_INTERVAL)
+         now = time.time()
+         with LOCK:
+             for uid, c in CONNECTIONS.items():
+-                if c["status"] != "connected" or c["expires_at"] - now > 300:
++                if c["status"] != "connected" or not c["expires_at"] or c["expires_at"] - now > 300:
+                     continue
+                 if not c["refresh_token"]:
+-                    log(f"{uid}: token expiry passed and no refresh token on file -> expired, reconnect")
++                    log(f"{uid}: token expired and no refresh token on file -> expired, reconnect")
+                     c.update(status="expired, reconnect", access_token=None)
+                     continue
+                 try:
+@@ -95,9 +102,10 @@ def refresh_tokens():
+                         "grant_type": "refresh_token", "refresh_token": c["refresh_token"],
+                         "client_id": config.CLIENT_ID, "client_secret": config.CLIENT_SECRET,
+                     })
++                    expires_in = tok.get("expires_in")
+                     c.update(access_token=tok["access_token"],
+                              refresh_token=tok.get("refresh_token", c["refresh_token"]),
+-                             expires_at=now + int(tok["expires_in"]))
++                             expires_at=now + int(expires_in) if expires_in is not None else None)
+                     log(f"{uid}: token refreshed")
+                 except Exception as e:
+                     log(f"{uid}: refresh failed ({e}) -> expired, reconnect")
+@@ -185,14 +193,18 @@ class Handler(BaseHTTPRequestHandler):
+             return
+         self.send_json(404, {"error": "not found"})
+ 
+-    # Step 1: build the authorize URL and send the browser to Intervals.
++    # Step 1: build the authorize URL for the SPA. The browser cannot be sent
++    # here directly: the sign-in token travels on fetch's Authorization header
++    # only, and a plain link/navigation carries no header. The SPA calls this
++    # with fetch and then navigates to the returned URL.
+     def auth_init(self):
+         user = self.require_user()
+         if not user:
+             return
+         params = {"client_id": config.CLIENT_ID, "redirect_uri": config.REDIRECT_URI,
+                   "scope": config.SCOPES, "state": sign_state(user["id"])}
+-        self.redirect(AUTHORIZE_URL + "?" + urllib.parse.urlencode(params, safe=":,"))
++        url = AUTHORIZE_URL + "?" + urllib.parse.urlencode(params, safe=":,")
++        self.send_json(200, {"url": url})
+ 
+     # Step 2: Intervals redirects back here with ?code=&state=.
+     def callback(self, q):
+diff --git a/static/app.js b/static/app.js
+index 368922e..d91c795 100644
+--- a/static/app.js
++++ b/static/app.js
+@@ -24,13 +24,25 @@ async function render() {
+         <p><button class="btn" id="disconnect">Disconnect</button></p></div>`;
+     } else {
+       const why = st.status && st.status !== "disconnected" ? `<p class="muted">Status: ${esc(st.status)}</p>` : "";
++      // Plain <a href> won't work here: a document navigation carries no
++      // Authorization header, so /api/intervals/auth/init would 401. Fetch the
++      // authorize URL with the token and navigate to it in JS instead.
+       card = `<div class="card">Intervals.icu is not connected.${why}
+-        <p><a class="btn" href="/api/intervals/auth/init">Connect Intervals.icu</a></p></div>`;
++        <p><button class="btn" id="connect">Connect Intervals.icu</button></p></div>`;
+     }
+     root.className = "";
+     root.innerHTML = `<p>Signed in as <b>${esc(me.name)}</b>.</p>${card}`;
+     const d = document.getElementById("disconnect");
+     if (d) d.onclick = async () => { await api("/api/intervals/disconnect", { method: "POST" }); render(); };
++    const c = document.getElementById("connect");
++    if (c) c.onclick = async () => {
++      try {
++        const { url } = await api("/api/intervals/auth/init");
++        window.location.assign(url);
++      } catch (e) {
++        root.innerHTML = `<p class="card">Error: ${esc(e.message)}</p>`;
++      }
++    };
+   } catch (e) {
+     root.innerHTML = `<p class="card">Error: ${esc(e.message)}</p>`;
+   }

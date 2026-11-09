@@ -1,0 +1,210 @@
+lib/:
+analytics.dart
+main.dart
+screens
+
+lib/screens:
+offer_screen.dart
+registration_screen.dart
+name: kredito
+description: Consumer loan registration and offers.
+publish_to: "none"
+version: 1.3.0+27
+
+environment:
+  sdk: ^3.5.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  posthog_flutter: ^5.36.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true
+/Users/valentinakoniukhova/development/flutter/bin/flutter
+/Users/valentinakoniukhova/development/flutter/bin/dart
+bash: /Users/valentinakoniukhova/development/flutter/bin/dart: Operation not permitted
+bash: /Users/valentinakoniukhova/development/flutter/bin/flutter: Operation not permitted
+/Users/valentinakoniukhova/development/flutter/bin/dart
+/opt/homebrew/bin/dart
+/Users/valentinakoniukhova/development/flutter/bin/dart
+/Users/valentinakoniukhova/development/flutter/bin/flutter
+/Users/valentinakoniukhova/development/flutter/bin/flutter
+dart
+dartaotruntime
+dartvm
+done
+Warning: Package resolution error when reading "analysis_options.yaml" file:
+Failed to resolve package URI "package:flutter_lints/flutter.yaml" in include.
+Warning: Package resolution error when reading "analysis_options.yaml" file:
+Failed to resolve package URI "package:flutter_lints/flutter.yaml" in include.
+Formatted lib/screens/registration_screen.dart
+Formatted 4 files (1 changed) in 0.01 seconds.
+diff --git a/lib/screens/offer_screen.dart b/lib/screens/offer_screen.dart
+index 921ee59..0f6772f 100644
+--- a/lib/screens/offer_screen.dart
++++ b/lib/screens/offer_screen.dart
+@@ -1,5 +1,7 @@
+ import 'package:flutter/material.dart';
+ 
++import '../analytics.dart';
++
+ class Offer {
+   const Offer(this.bank, this.months, this.rate);
+   final String bank;
+@@ -20,25 +22,51 @@ const _offers = [
+   Offer('Nordlån', 60, 12.3),
+ ];
+ 
+-class OfferScreen extends StatelessWidget {
++class OfferScreen extends StatefulWidget {
+   const OfferScreen({super.key});
+ 
++  @override
++  State<OfferScreen> createState() => _OfferScreenState();
++}
++
++class _OfferScreenState extends State<OfferScreen> {
++  double? _scrollStart;
++
++  bool _onScroll(ScrollNotification notification) {
++    if (notification is ScrollStartNotification) {
++      _scrollStart = notification.metrics.pixels;
++    } else if (notification is ScrollEndNotification) {
++      final start = _scrollStart;
++      final offset = start == null
++          ? notification.metrics.pixels
++          : notification.metrics.pixels - start;
++      _scrollStart = null;
++      if (offset != 0) {
++        Analytics.capture('offers_scrolled', {'offset': offset});
++      }
++    }
++    return false;
++  }
++
+   @override
+   Widget build(BuildContext context) {
+     return Scaffold(
+       appBar: AppBar(title: const Text('Offers')),
+-      body: ListView.builder(
+-        itemCount: _offers.length,
+-        itemBuilder: (context, i) {
+-          final o = _offers[i];
+-          return ListTile(
+-            leading: const Icon(Icons.account_balance),
+-            title: Text('${o.bank}, ${o.months} months'),
+-            subtitle: Text('${o.rate.toStringAsFixed(1)}% APR'),
+-            trailing: const Icon(Icons.chevron_right),
+-            onTap: () {},
+-          );
+-        },
++      body: NotificationListener<ScrollNotification>(
++        onNotification: _onScroll,
++        child: ListView.builder(
++          itemCount: _offers.length,
++          itemBuilder: (context, i) {
++            final o = _offers[i];
++            return ListTile(
++              leading: const Icon(Icons.account_balance),
++              title: Text('${o.bank}, ${o.months} months'),
++              subtitle: Text('${o.rate.toStringAsFixed(1)}% APR'),
++              trailing: const Icon(Icons.chevron_right),
++              onTap: () {},
++            );
++          },
++        ),
+       ),
+     );
+   }
+diff --git a/lib/screens/registration_screen.dart b/lib/screens/registration_screen.dart
+index 059a250..219fd84 100644
+--- a/lib/screens/registration_screen.dart
++++ b/lib/screens/registration_screen.dart
+@@ -1,5 +1,7 @@
+ import 'package:flutter/material.dart';
+ 
++import '../analytics.dart';
++
+ class RegistrationScreen extends StatefulWidget {
+   const RegistrationScreen({super.key});
+ 
+@@ -12,6 +14,8 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
+   final _phone = TextEditingController();
+   double _amount = 50000;
+   bool _terms = false;
++  bool _emailStartedFired = false;
++  bool _phoneStartedFired = false;
+ 
+   @override
+   void dispose() {
+@@ -36,14 +40,26 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
+               controller: _email,
+               keyboardType: TextInputType.emailAddress,
+               decoration: const InputDecoration(labelText: 'Email'),
+-              onChanged: (_) => setState(() {}),
++              onChanged: (_) {
++                if (!_emailStartedFired) {
++                  _emailStartedFired = true;
++                  Analytics.capture('registration_email_started');
++                }
++                setState(() {});
++              },
+             ),
+             const SizedBox(height: 12),
+             TextField(
+               controller: _phone,
+               keyboardType: TextInputType.phone,
+               decoration: const InputDecoration(labelText: 'Phone'),
+-              onChanged: (_) => setState(() {}),
++              onChanged: (_) {
++                if (!_phoneStartedFired) {
++                  _phoneStartedFired = true;
++                  Analytics.capture('registration_phone_started');
++                }
++                setState(() {});
++              },
+             ),
+             const SizedBox(height: 24),
+             Text('Loan amount: ${_amount.round()}'),
+@@ -54,17 +70,31 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
+               value: _amount,
+               label: _amount.round().toString(),
+               onChanged: (v) => setState(() => _amount = v),
++              onChangeEnd: (v) => Analytics.capture('loan_amount_changed', {
++                'amount': v.round(),
++              }),
+             ),
+             CheckboxListTile(
+               value: _terms,
+               title: const Text('I accept the terms and conditions'),
+               controlAffinity: ListTileControlAffinity.leading,
+-              onChanged: (v) => setState(() => _terms = v ?? false),
++              onChanged: (v) {
++                setState(() => _terms = v ?? false);
++                if (v ?? false) {
++                  Analytics.capture('terms_accepted');
++                }
++              },
+             ),
+             const Spacer(),
+             FilledButton(
+               onPressed: _canContinue
+-                  ? () => Navigator.of(context).pushNamed('/offers')
++                  ? () {
++                      Analytics.capture('registration_continue_tapped', {
++                        'amount': _amount.round(),
++                        'terms': _terms,
++                      });
++                      Navigator.of(context).pushNamed('/offers');
++                    }
+                   : null,
+               child: const Text('Continue'),
+             ),
+ M lib/screens/offer_screen.dart
+ M lib/screens/registration_screen.dart

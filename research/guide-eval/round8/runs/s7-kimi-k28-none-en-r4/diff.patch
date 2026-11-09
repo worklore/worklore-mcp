@@ -1,0 +1,176 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..6d8b456
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,69 @@
++# Intervals.icu connection — root causes
++
++Three independent bugs stacked on top of each other; every athlete hit #1,
++and anyone who got past it hit #2, so no one could connect. Bug #3 killed the
++one connection that was made by hand.
++
++## 1. Connect button sends no credentials → 401 for everyone
++
++- **Where:** `static/app.js` (Connect control), `server.py` `auth_init`.
++- **Cause:** the Connect control was a plain `<a href="/api/intervals/auth/init">`.
++  That is a full-page browser navigation, so it carries none of the request
++  headers the SPA's `api()` fetch wrapper sets — in particular no
++  `Authorization: Bearer <token>`. The endpoint requires that header
++  (`require_user`), so every click ended on `401 {"error": "unauthorized"}`.
++  Confirmed by `logs/connect-attempt.log` §1: the browser request shows no
++  Authorization header, and the server logged `401 (no Authorization header)`.
++- **Fix:** the button now calls `/api/intervals/auth/init` through `api()`
++  (which attaches the Bearer token); the endpoint answers `200 {"url": ...}`
++  and the SPA navigates the browser there. (JSON instead of the old bare 302,
++  because fetch would otherwise follow the redirect cross-origin to
++  intervals.icu and hit CORS.)
++
++## 2. Authorize request missing `response_type=code` → 400 from Intervals.icu
++
++- **Where:** `server.py` `auth_init` (authorize URL construction).
++- **Cause:** the authorize URL was built without `response_type`, which
++  RFC 6749 §4.1.1 makes a required parameter of the authorization-code grant.
++  Intervals.icu rejects such requests with `400 {"error":"invalid_request"}`
++  before the consent screen — exactly the body in
++  `logs/connect-attempt.log` §2. The note there that removing/changing
++  `state` or `redirect_uri` gives the same body rules those out; the missing
++  parameter is `response_type`. This regressed when the calendar sync shipped
++  on 2026-10-02 (the same change that added the CALENDAR scopes to the
++  authorize request); the pasted-link workaround from September died with it.
++- **Fix:** `auth_init` now sends `response_type=code`. The scopes in
++  `config.py` are valid Intervals.icu scopes (ACTIVITY/WELLNESS/CALENDAR ×
++  READ/WRITE per the provider's docs) and were not the problem.
++
++## 3. Non-expiring Intervals.icu tokens "expire" after 1 hour → "reconnect"
++
++- **Where:** `server.py` `store_connection` / `refresh_tokens` /
++  `DEFAULT_TOKEN_TTL`.
++- **Cause:** Intervals.icu token responses contain **no `expires_in` and no
++  `refresh_token`** (see the 2026-09-19 response in
++  `logs/connect-attempt.log` §3, which matches the provider's documented
++  response shape). Its access tokens live until the athlete revokes access.
++  The server instead assumed a fabricated 3600 s TTL whenever the provider
++  omitted `expires_in`, and the background refresher then flipped the
++  connection to `expired, reconnect` an hour later even though the token was
++  still valid — which is why T. Rivera was told to reconnect the next morning
++  (ticket #219).
++- **Fix:** a missing `expires_in` is now stored as a non-expiring connection
++  (`expires_at = None`), and the refresher skips those. A provider-reported
++  `expires_in` is still honored, and the refresh-token path is kept for
++  providers that issue refresh tokens.
++
++## Verification
++
++All against a localhost mock of the Intervals.icu API/OAuth endpoints
++(documented behavior; nothing external was contacted):
++
++- init without token → 401; init with bearer → 200 JSON URL containing
++  `response_type=code` and the calendar scopes.
++- authorize URL without `response_type` → 400 `invalid_request` (reproduces
++  the prod failure; the fixed server no longer emits such URLs).
++- full OAuth flow → callback stores the connection → `status` shows
++  connected → `wellness` proxies through.
++- connection still `connected` after a full refresher pass (previously it
++  would read `expired, reconnect` once the fabricated TTL elapsed).
+diff --git a/server.py b/server.py
+index 351cbb7..bf1576d 100644
+--- a/server.py
++++ b/server.py
+@@ -12,14 +12,14 @@ import config
+ STATIC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
+ TOKEN_URL = config.INTERVALS_BASE + "/api/oauth/token"
+ AUTHORIZE_URL = config.INTERVALS_BASE + "/oauth/authorize"
+-DEFAULT_TOKEN_TTL = 3600   # seconds; used when the provider does not say how long a token lives
+ 
+ # --- in-memory store -------------------------------------------------------
+ USERS = {
+     "tok-okafor": {"id": "u_okafor", "name": "C. Okafor"},
+     "tok-rivera": {"id": "u_rivera", "name": "T. Rivera"},
+ }
+-# user_id -> {athlete_id, athlete_name, access_token, refresh_token, scope, expires_at, status}
++# user_id -> {athlete_id, athlete_name, access_token, refresh_token, scope,
++#             expires_at (None = non-expiring), status}
+ CONNECTIONS = {}
+ LOCK = threading.Lock()
+ 
+@@ -63,18 +63,23 @@ def exchange_code(code):
+ 
+ 
+ def store_connection(user_id, tok):
+-    expires_in = int(tok.get("expires_in") or DEFAULT_TOKEN_TTL)
++    # Intervals.icu sends no expires_in: its tokens live until the athlete
++    # revokes access. Only an expiry the provider actually reports is honored.
++    expires_in = tok.get("expires_in")
++    expires_at = time.time() + int(expires_in) if expires_in is not None else None
+     refresh = tok.get("refresh_token")
+-    if not refresh:
++    if expires_in is None:
++        log(f"{user_id}: no expires_in in token response; token does not expire")
++    elif not refresh:
+         log(f"{user_id}: no refresh_token in response, scheduling expiry in {expires_in}s")
+     athlete = tok.get("athlete") or {}
+     with LOCK:
+         CONNECTIONS[user_id] = {
+             "athlete_id": athlete.get("id"), "athlete_name": athlete.get("name"),
+             "access_token": tok["access_token"], "refresh_token": refresh,
+-            "scope": tok.get("scope"), "expires_at": time.time() + expires_in, "status": "connected",
++            "scope": tok.get("scope"), "expires_at": expires_at, "status": "connected",
+         }
+-    log(f"{user_id}: connected as athlete {athlete.get('id')} (expires in {expires_in}s)")
++    log(f"{user_id}: connected as athlete {athlete.get('id')}")
+ 
+ 
+ def refresh_tokens():
+@@ -84,7 +89,8 @@ def refresh_tokens():
+         now = time.time()
+         with LOCK:
+             for uid, c in CONNECTIONS.items():
+-                if c["status"] != "connected" or c["expires_at"] - now > 300:
++                if c["status"] != "connected" or c["expires_at"] is None \
++                        or c["expires_at"] - now > 300:
+                     continue
+                 if not c["refresh_token"]:
+                     log(f"{uid}: token expiry passed and no refresh token on file -> expired, reconnect")
+@@ -185,14 +191,16 @@ class Handler(BaseHTTPRequestHandler):
+             return
+         self.send_json(404, {"error": "not found"})
+ 
+-    # Step 1: build the authorize URL and send the browser to Intervals.
++    # Step 1: build the authorize URL; the SPA navigates the browser to it.
+     def auth_init(self):
+         user = self.require_user()
+         if not user:
+             return
+-        params = {"client_id": config.CLIENT_ID, "redirect_uri": config.REDIRECT_URI,
+-                  "scope": config.SCOPES, "state": sign_state(user["id"])}
+-        self.redirect(AUTHORIZE_URL + "?" + urllib.parse.urlencode(params, safe=":,"))
++        params = {"response_type": "code", "client_id": config.CLIENT_ID,
++                  "redirect_uri": config.REDIRECT_URI, "scope": config.SCOPES,
++                  "state": sign_state(user["id"])}
++        url = AUTHORIZE_URL + "?" + urllib.parse.urlencode(params, safe=":,")
++        self.send_json(200, {"url": url})
+ 
+     # Step 2: Intervals redirects back here with ?code=&state=.
+     def callback(self, q):
+diff --git a/static/app.js b/static/app.js
+index 368922e..13e34ba 100644
+--- a/static/app.js
++++ b/static/app.js
+@@ -25,10 +25,15 @@ async function render() {
+     } else {
+       const why = st.status && st.status !== "disconnected" ? `<p class="muted">Status: ${esc(st.status)}</p>` : "";
+       card = `<div class="card">Intervals.icu is not connected.${why}
+-        <p><a class="btn" href="/api/intervals/auth/init">Connect Intervals.icu</a></p></div>`;
++        <p><button class="btn" id="connect">Connect Intervals.icu</button></p></div>`;
+     }
+     root.className = "";
+     root.innerHTML = `<p>Signed in as <b>${esc(me.name)}</b>.</p>${card}`;
++    const c = document.getElementById("connect");
++    if (c) c.onclick = async () => {
++      const { url } = await api("/api/intervals/auth/init");
++      window.location.href = url;
++    };
+     const d = document.getElementById("disconnect");
+     if (d) d.onclick = async () => { await api("/api/intervals/disconnect", { method: "POST" }); render(); };
+   } catch (e) {

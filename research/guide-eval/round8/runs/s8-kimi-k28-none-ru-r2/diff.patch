@@ -1,0 +1,91 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..806c8c3
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,46 @@
++# Что изменено
++
++## Проблема
++
++`build_system()` собирал системный промпт в один текстовый блок: статические
++инструкции (~1000 токенов) + контекст атлета (профиль, зоны, цель, список
++фактов) — и ставил `cache_control` на этот блок целиком. Кеш промпта в Anthropic
++префиксный: при изменении текста инвалидируется всё от первого отличающегося
++символа. Каждый `save_fact` дописывает факт в конец списка → меняется текст
++блока → кеш-попадание на следующем вызове равно нулю, и ~1000 токенов
++инструкций заново пишутся в кеш (`cache_creation_input_tokens ~1000`,
++`cache_read_input_tokens: 0` на втором раунде после каждого `save_fact` в
++`logs/usage.jsonl`).
++
++## Исправление
++
++- `bot.py`, `build_system()`: системный промпт теперь два блока вместо одного —
++  1. статические `INSTRUCTIONS` с маркером `cache_control` (точка разрыва кеша
++     сразу после инструкций);
++  2. динамический `athlete_context()` (дата, профиль, факты) без маркера.
++- `README.md`: описание кеширования приведено в соответствие с новой схемой.
++
++Изменения фактов теперь попадают только во второй, немаркированный блок:
++префикс запроса до точки разрыва остаётся байт-в-байт прежним, поэтому
++инструкции читаются из кеша, а добавленный факт оплачивается как обычные
++input-токены (единицы токенов вместо ~1000 за пересоздание кеша). Дата
++`Today:` изначально живёт в контекстном блоке, так что смена дня тоже не
++трогает кеш. Статический блок одинаков для всех атлетов — бонусом инструкции
++теперь попадают в кеш и между пользователями (первое сообщение нового атлета
++читает уже подогретый кеш, как у пользователя 77 в логе раньше не получалось).
++
++## Проверка
++
++- `build_system()` возвращает два блока, маркер только на первом.
++- После `run_tool(a, "save_fact", ...)` повторный запрос содержит тот же
++  байт-в-байт первый блок; меняется только второй (в нём появляется новый факт).
++- Полный цикл `reply()` с фейковым LLM (раунд `save_fact` + финальный текст)
++  работает, логирование usage не затронуто.
++- `data/athletes.json` и `logs/usage.jsonl` после проверки восстановлены
++  (`git checkout`), сторонних файлов не осталось.
++
++Замечание: строки лога с `cache_creation ~1300` после `plan_week` /
++`predict_race` — отдельное явление (между сообщениями меняется блок tools,
++идущий после системного промпта, поэтому суффикс кеша пересоздаётся). На
++статические инструкции это после исправления не влияет — они теперь
++заканчиваются точкой разрыва до блока tools и продолжают попадать в кеш.
+diff --git a/README.md b/README.md
+index ebd390e..6a6eb88 100644
+--- a/README.md
++++ b/README.md
+@@ -11,6 +11,9 @@ its system prompt. Every API call appends its `usage` object to `logs/usage.json
+ Run it locally with `COACH_ANTHROPIC_KEY=sk-ant-... python3 bot.py 42` and type
+ messages on stdin (the Telegram long-polling transport, which needs
+ `COACH_TELEGRAM_TOKEN`, lives in a separate deploy repo and just calls `reply()`).
+-Requires Python 3.11+ and `pip install anthropic`. Prompt caching is on: the system
+-prompt carries a `cache_control` marker so the tool-loop rounds and follow-up
+-messages inside the 5-minute window read it from cache.
++Requires Python 3.11+ and `pip install anthropic`. Prompt caching is on: the
++static instructions are sent as their own system block with a `cache_control`
++marker, ahead of a second, unmarked block with the per-athlete context, so
++`save_fact` changing the facts list does not invalidate the cached
++instructions, and the tool-loop rounds and follow-up messages inside the
++5-minute window read them from cache.
+diff --git a/bot.py b/bot.py
+index e2ff241..1250b19 100644
+--- a/bot.py
++++ b/bot.py
+@@ -128,9 +128,14 @@ def athlete_context(a, today):
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    # Two blocks, static first: the cache breakpoint sits right after
++    # INSTRUCTIONS. Prompt caching is prefix-based, so a save_fact that grows
++    # the facts list changes only the second block and the cached instructions
++    # are still read back instead of being re-created.
++    return [
++        {"type": "text", "text": INSTRUCTIONS, "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": athlete_context(a, today)},
++    ]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [

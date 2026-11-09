@@ -1,0 +1,37 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..6e0a1e6
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,15 @@
++# HR range fix
++
++Changed `hr_target` in `gen.py` to emit HR corridors as:
++
++```json
++{"units": "%lthr", "start": 68, "end": 75}
++```
++
++instead of using `value` for the lower bound. In the Intervals workout schema, `start`/`end` creates an Instant-HR corridor, while `value`/`end` creates a Lap-HR target that Garmin maps to its own zone boundaries. That mapping was why the watch clamped every corridor to its configured zones.
++
++The values remain percentages of LTHR rather than absolute bpm, so Intervals will continue converting them with its stored athlete threshold (172 bpm for this plan). No plan values, durations, or repeat structure were changed.
++
++Verified locally by generating `plans/tempo-run.json` and checking all four HR objects use `start`/`end` with the planned ranges: 68–75, 88–93, 75–82, and 65–72% LTHR. Nothing was deployed or synced, so the result has not been retested on the watch.
++
++Source for the `start`/`end` export behavior: [Exact HR corridors on Garmin from Intervals.icu API workouts](https://worklore.dev/s/2026-05-12-exact-hr-corridors-on-garmin-from-intervals-icu-api-workouts).
+diff --git a/gen.py b/gen.py
+index be0b3bc..875e096 100755
+--- a/gen.py
++++ b/gen.py
+@@ -8,9 +8,9 @@ import sys
+ 
+ 
+ def hr_target(step):
+-    """HR corridor for a step, as a percentage of the athlete's LTHR."""
++    """Instant-HR corridor for a step, as a percentage of the athlete's LTHR."""
+     lo, hi = step["hr_pct"]
+-    return {"units": "%lthr", "value": lo, "end": hi}
++    return {"units": "%lthr", "start": lo, "end": hi}
+ 
+ 
+ def build_step(step):

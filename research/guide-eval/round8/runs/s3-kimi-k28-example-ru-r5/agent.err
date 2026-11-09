@@ -1,0 +1,55 @@
+Library/LaunchAgents/:
+total 4
+drwxr-xr-x 3 valentinakoniukhova wheel  96 Nov  8 22:51 .
+drwxr-xr-x 4 valentinakoniukhova wheel 128 Nov  8 22:51 ..
+-rw-r--r-- 1 valentinakoniukhova wheel 853 Nov  8 22:51 com.vk.nightly-review.plist
+
+Library/Logs/:
+total 4
+drwxr-xr-x 4 valentinakoniukhova wheel 128 Nov  8 22:51 .
+drwxr-xr-x 4 valentinakoniukhova wheel 128 Nov  8 22:51 ..
+-rw-r--r-- 1 valentinakoniukhova wheel 594 Nov  8 22:51 nightly-review.err
+-rw-r--r-- 1 valentinakoniukhova wheel   0 Nov  8 22:51 nightly-review.out
+
+bin/:
+total 8
+drwxr-xr-x 4 valentinakoniukhova wheel 128 Nov  8 22:51 .
+drwx------ 7 valentinakoniukhova wheel 224 Nov  8 22:51 ..
+-rwxr-xr-x 1 valentinakoniukhova wheel 772 Nov  8 22:51 nightly-review.zsh
+-rwxr-xr-x 1 valentinakoniukhova wheel 312 Nov  8 22:51 notify.sh
+zsh syntax OK
+Library/LaunchAgents/com.vk.nightly-review.plist: OK
+zsh:1: read-only variable: status
+/bin/bash: print: command not found
+rc=1 reached
+== case: ok == script rc=0
+-- sent to telegram:
+nightly review done: Review looks fine.
+SUMMARY
+-- job stdout:
+nightly-review finished: rc=0 after 0s
+-- job stderr:
+date: invalid option -- 'v'
+Try 'date --help' for more information.
+== case: fail == script rc=1
+-- sent to telegram:
+nightly review FAILED (exit 1), see /private/tmp/h-jRsE1t/.test-harness/home/Library/Logs/nightly-review-2026-11-08.md
+-- job stdout:
+nightly-review finished: rc=1 after 0s
+-- job stderr:
+date: invalid option -- 'v'
+Try 'date --help' for more information.
+Not logged in · Please run /login
+== case: empty == script rc=1
+-- sent to telegram:
+nightly review FAILED (empty output), see /private/tmp/h-jRsE1t/.test-harness/home/Library/Logs/nightly-review-2026-11-08.md
+-- job stdout:
+nightly-review finished: rc=1 after 0s
+-- job stderr:
+date: invalid option -- 'v'
+Try 'date --help' for more information.
+ M Library/LaunchAgents/com.vk.nightly-review.plist
+ M bin/nightly-review.zsh
+ Library/LaunchAgents/com.vk.nightly-review.plist |  6 ++++++
+ bin/nightly-review.zsh                           | 17 ++++++++++++-----
+ 2 files changed, 18 insertions(+), 5 deletions(-)

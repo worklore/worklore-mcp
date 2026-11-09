@@ -1,0 +1,245 @@
+/Users/valentinakoniukhova/development/flutter/bin/flutter
+/Users/valentinakoniukhova/development/flutter/bin/dart
+bash: /Users/valentinakoniukhova/development/flutter/bin/dart: Operation not permitted
+bash: /Users/valentinakoniukhova/development/flutter/bin/flutter: Operation not permitted
+/Users/valentinakoniukhova/development/flutter/bin/dart
+/opt/homebrew/bin/dart
+/Users/valentinakoniukhova/development/flutter/bin/dart
+/Users/valentinakoniukhova/development/flutter/bin/flutter
+/Users/valentinakoniukhova/development/flutter/bin/flutter
+-rwxr-xr-x 1 valentinakoniukhova staff 2160 Aug 18 11:36 /Users/valentinakoniukhova/development/flutter/bin/dart
+-rwxr-xr-x 1 valentinakoniukhova staff 2385 Aug 18 11:36 /Users/valentinakoniukhova/development/flutter/bin/flutter
+Dart SDK version: 3.11.5 (stable) (Wed Apr 15 00:36:32 2026 -0700) on "macos_arm64"
+Warning: Package resolution error when reading "analysis_options.yaml" file:
+Failed to resolve package URI "package:flutter_lints/flutter.yaml" in include.
+Formatted lib/screens/registration_screen.dart
+Formatted 2 files (1 changed) in 0.01 seconds.
+total 12
+drwx------   8 valentinakoniukhova wheel   256 Nov  8 13:27 .
+drwxrwxrwt 564 root                wheel 18048 Nov  8 13:29 ..
+drwxr-xr-x  12 valentinakoniukhova wheel   384 Nov  8 13:28 .git
+-rw-r--r--   1 valentinakoniukhova wheel   656 Nov  8 13:27 README.md
+-rw-r--r--   1 valentinakoniukhova wheel    44 Nov  8 13:27 analysis_options.yaml
+drwxr-xr-x   3 valentinakoniukhova wheel    96 Nov  8 13:27 docs
+drwxr-xr-x   5 valentinakoniukhova wheel   160 Nov  8 13:27 lib
+-rw-r--r--   1 valentinakoniukhova wheel   316 Nov  8 13:27 pubspec.yaml
+diff --git a/lib/screens/offer_screen.dart b/lib/screens/offer_screen.dart
+index 921ee59..c9a10ae 100644
+--- a/lib/screens/offer_screen.dart
++++ b/lib/screens/offer_screen.dart
+@@ -1,5 +1,7 @@
+ import 'package:flutter/material.dart';
+ 
++import '../analytics.dart';
++
+ class Offer {
+   const Offer(this.bank, this.months, this.rate);
+   final String bank;
+@@ -27,18 +29,26 @@ class OfferScreen extends StatelessWidget {
+   Widget build(BuildContext context) {
+     return Scaffold(
+       appBar: AppBar(title: const Text('Offers')),
+-      body: ListView.builder(
+-        itemCount: _offers.length,
+-        itemBuilder: (context, i) {
+-          final o = _offers[i];
+-          return ListTile(
+-            leading: const Icon(Icons.account_balance),
+-            title: Text('${o.bank}, ${o.months} months'),
+-            subtitle: Text('${o.rate.toStringAsFixed(1)}% APR'),
+-            trailing: const Icon(Icons.chevron_right),
+-            onTap: () {},
+-          );
++      body: NotificationListener<ScrollEndNotification>(
++        onNotification: (notification) {
++          Analytics.capture('offers_scrolled', {
++            'offset': notification.metrics.pixels,
++          });
++          return false;
+         },
++        child: ListView.builder(
++          itemCount: _offers.length,
++          itemBuilder: (context, i) {
++            final o = _offers[i];
++            return ListTile(
++              leading: const Icon(Icons.account_balance),
++              title: Text('${o.bank}, ${o.months} months'),
++              subtitle: Text('${o.rate.toStringAsFixed(1)}% APR'),
++              trailing: const Icon(Icons.chevron_right),
++              onTap: () {},
++            );
++          },
++        ),
+       ),
+     );
+   }
+diff --git a/lib/screens/registration_screen.dart b/lib/screens/registration_screen.dart
+index 059a250..91b8d1c 100644
+--- a/lib/screens/registration_screen.dart
++++ b/lib/screens/registration_screen.dart
+@@ -1,5 +1,7 @@
+ import 'package:flutter/material.dart';
+ 
++import '../analytics.dart';
++
+ class RegistrationScreen extends StatefulWidget {
+   const RegistrationScreen({super.key});
+ 
+@@ -12,6 +14,8 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
+   final _phone = TextEditingController();
+   double _amount = 50000;
+   bool _terms = false;
++  bool _emailInputFired = false;
++  bool _phoneInputFired = false;
+ 
+   @override
+   void dispose() {
+@@ -36,14 +40,26 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
+               controller: _email,
+               keyboardType: TextInputType.emailAddress,
+               decoration: const InputDecoration(labelText: 'Email'),
+-              onChanged: (_) => setState(() {}),
++              onChanged: (_) {
++                setState(() {});
++                if (!_emailInputFired) {
++                  _emailInputFired = true;
++                  Analytics.capture('registration_email_started');
++                }
++              },
+             ),
+             const SizedBox(height: 12),
+             TextField(
+               controller: _phone,
+               keyboardType: TextInputType.phone,
+               decoration: const InputDecoration(labelText: 'Phone'),
+-              onChanged: (_) => setState(() {}),
++              onChanged: (_) {
++                setState(() {});
++                if (!_phoneInputFired) {
++                  _phoneInputFired = true;
++                  Analytics.capture('registration_phone_started');
++                }
++              },
+             ),
+             const SizedBox(height: 24),
+             Text('Loan amount: ${_amount.round()}'),
+@@ -54,17 +70,31 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
+               value: _amount,
+               label: _amount.round().toString(),
+               onChanged: (v) => setState(() => _amount = v),
++              onChangeEnd: (v) => Analytics.capture('loan_amount_changed', {
++                'amount': v.round(),
++              }),
+             ),
+             CheckboxListTile(
+               value: _terms,
+               title: const Text('I accept the terms and conditions'),
+               controlAffinity: ListTileControlAffinity.leading,
+-              onChanged: (v) => setState(() => _terms = v ?? false),
++              onChanged: (v) {
++                setState(() => _terms = v ?? false);
++                if (v ?? false) {
++                  Analytics.capture('terms_accepted');
++                }
++              },
+             ),
+             const Spacer(),
+             FilledButton(
+               onPressed: _canContinue
+-                  ? () => Navigator.of(context).pushNamed('/offers')
++                  ? () {
++                      Analytics.capture('registration_continue_tapped', {
++                        'amount': _amount.round(),
++                        'terms': _terms,
++                      });
++                      Navigator.of(context).pushNamed('/offers');
++                    }
+                   : null,
+               child: const Text('Continue'),
+             ),
+Analyzing h-4unohn...
+
+  error - lib/analytics.dart:1:8 - Target of URI doesn't exist: 'package:posthog_flutter/posthog_flutter.dart'. Try creating the file referenced by the URI, or try using a URI for a file that does exist. - uri_does_not_exist
+  error - lib/analytics.dart:6:20 - The method 'PostHogConfig' isn't defined for the type 'Analytics'. Try correcting the name to the name of an existing method, or defining a method named 'PostHogConfig'. - undefined_method
+  error - lib/analytics.dart:9:11 - The method 'Posthog' isn't defined for the type 'Analytics'. Try correcting the name to the name of an existing method, or defining a method named 'Posthog'. - undefined_method
+  error - lib/analytics.dart:14:7 - The method 'Posthog' isn't defined for the type 'Analytics'. Try correcting the name to the name of an existing method, or defining a method named 'Posthog'. - undefined_method
+  error - lib/main.dart:1:8 - Target of URI doesn't exist: 'package:flutter/material.dart'. Try creating the file referenced by the URI, or try using a URI for a file that does exist. - uri_does_not_exist
+  error - lib/main.dart:2:8 - Target of URI doesn't exist: 'package:posthog_flutter/posthog_flutter.dart'. Try creating the file referenced by the URI, or try using a URI for a file that does exist. - uri_does_not_exist
+  error - lib/main.dart:9:3 - Undefined name 'WidgetsFlutterBinding'. Try correcting the name to one that is defined, or defining the name. - undefined_identifier
+  error - lib/main.dart:11:3 - The function 'runApp' isn't defined. Try importing the library that defines 'runApp', correcting the name to the name of an existing function, or defining a function named 'runApp'. - undefined_function
+  error - lib/main.dart:14:26 - Classes can only extend other classes. Try specifying a different superclass, or removing the extends clause. - extends_non_class
+  error - lib/main.dart:15:27 - No associated named super constructor parameter. Try changing the name to the name of an existing named super constructor parameter, or creating such named parameter. - super_formal_parameter_without_associated_named
+  error - lib/main.dart:18:3 - Undefined class 'Widget'. Try changing the name to the name of an existing class, or creating a class with the name 'Widget'. - undefined_class
+  error - lib/main.dart:18:16 - Undefined class 'BuildContext'. Try changing the name to the name of an existing class, or creating a class with the name 'BuildContext'. - undefined_class
+  error - lib/main.dart:19:12 - The method 'PostHogWidget' isn't defined for the type 'KreditoApp'. Try correcting the name to the name of an existing method, or defining a method named 'PostHogWidget'. - undefined_method
+  error - lib/main.dart:20:14 - The method 'MaterialApp' isn't defined for the type 'KreditoApp'. Try correcting the name to the name of an existing method, or defining a method named 'MaterialApp'. - undefined_method
+  error - lib/main.dart:22:16 - The method 'ThemeData' isn't defined for the type 'KreditoApp'. Try correcting the name to the name of an existing method, or defining a method named 'ThemeData'. - undefined_method
+  error - lib/main.dart:22:43 - Undefined name 'Colors'. Try correcting the name to one that is defined, or defining the name. - undefined_identifier
+  error - lib/main.dart:23:30 - The method 'PosthogObserver' isn't defined for the type 'KreditoApp'. Try correcting the name to the name of an existing method, or defining a method named 'PosthogObserver'. - undefined_method
+  error - lib/screens/offer_screen.dart:1:8 - Target of URI doesn't exist: 'package:flutter/material.dart'. Try creating the file referenced by the URI, or try using a URI for a file that does exist. - uri_does_not_exist
+  error - lib/screens/offer_screen.dart:25:27 - Classes can only extend other classes. Try specifying a different superclass, or removing the extends clause. - extends_non_class
+  error - lib/screens/offer_screen.dart:26:28 - No associated named super constructor parameter. Try changing the name to the name of an existing named super constructor parameter, or creating such named parameter. - super_formal_parameter_without_associated_named
+  error - lib/screens/offer_screen.dart:29:3 - Undefined class 'Widget'. Try changing the name to the name of an existing class, or creating a class with the name 'Widget'. - undefined_class
+  error - lib/screens/offer_screen.dart:29:16 - Undefined class 'BuildContext'. Try changing the name to the name of an existing class, or creating a class with the name 'BuildContext'. - undefined_class
+  error - lib/screens/offer_screen.dart:30:12 - The method 'Scaffold' isn't defined for the type 'OfferScreen'. Try correcting the name to the name of an existing method, or defining a method named 'Scaffold'. - undefined_method
+  error - lib/screens/offer_screen.dart:31:15 - The method 'AppBar' isn't defined for the type 'OfferScreen'. Try correcting the name to the name of an existing method, or defining a method named 'AppBar'. - undefined_method
+  error - lib/screens/offer_screen.dart:31:35 - The name 'Text' isn't a class. Try correcting the name to match an existing class. - creation_with_non_type
+  error - lib/screens/offer_screen.dart:32:13 - The method 'NotificationListener' isn't defined for the type 'OfferScreen'. Try correcting the name to the name of an existing method, or defining a method named 'NotificationListener'. - undefined_method
+  error - lib/screens/offer_screen.dart:32:34 - The name 'ScrollEndNotification' isn't a type, so it can't be used as a type argument. Try correcting the name to an existing type, or defining a type named 'ScrollEndNotification'. - non_type_as_type_argument
+  error - lib/screens/offer_screen.dart:39:16 - Undefined name 'ListView'. Try correcting the name to one that is defined, or defining the name. - undefined_identifier
+  error - lib/screens/offer_screen.dart:43:20 - The method 'ListTile' isn't defined for the type 'OfferScreen'. Try correcting the name to the name of an existing method, or defining a method named 'ListTile'. - undefined_method
+  error - lib/screens/offer_screen.dart:44:30 - The name 'Icon' isn't a class. Try correcting the name to match an existing class. - creation_with_non_type
+  error - lib/screens/offer_screen.dart:44:35 - Undefined name 'Icons'. Try correcting the name to one that is defined, or defining the name. - undefined_identifier
+  error - lib/screens/offer_screen.dart:45:22 - The method 'Text' isn't defined for the type 'OfferScreen'. Try correcting the name to the name of an existing method, or defining a method named 'Text'. - undefined_method
+  error - lib/screens/offer_screen.dart:46:25 - The method 'Text' isn't defined for the type 'OfferScreen'. Try correcting the name to the name of an existing method, or defining a method named 'Text'. - undefined_method
+  error - lib/screens/offer_screen.dart:47:31 - The name 'Icon' isn't a class. Try correcting the name to match an existing class. - creation_with_non_type
+  error - lib/screens/offer_screen.dart:47:36 - Undefined name 'Icons'. Try correcting the name to one that is defined, or defining the name. - undefined_identifier
+  error - lib/screens/registration_screen.dart:1:8 - Target of URI doesn't exist: 'package:flutter/material.dart'. Try creating the file referenced by the URI, or try using a URI for a file that does exist. - uri_does_not_exist
+  error - lib/screens/registration_screen.dart:5:34 - Classes can only extend other classes. Try specifying a different superclass, or removing the extends clause. - extends_non_class
+  error - lib/screens/registration_screen.dart:6:35 - No associated named super constructor parameter. Try changing the name to the name of an existing named super constructor parameter, or creating such named parameter. - super_formal_parameter_without_associated_named
+  error - lib/screens/registration_screen.dart:9:3 - Undefined class 'State'. Try changing the name to the name of an existing class, or creating a class with the name 'State'. - undefined_class
+  error - lib/screens/registration_screen.dart:12:40 - Classes can only extend other classes. Try specifying a different superclass, or removing the extends clause. - extends_non_class
+  error - lib/screens/registration_screen.dart:13:18 - The method 'TextEditingController' isn't defined for the type '_RegistrationScreenState'. Try correcting the name to the name of an existing method, or defining a method named 'TextEditingController'. - undefined_method
+  error - lib/screens/registration_screen.dart:14:18 - The method 'TextEditingController' isn't defined for the type '_RegistrationScreenState'. Try correcting the name to the name of an existing method, or defining a method named 'TextEditingController'. - undefined_method
+  error - lib/screens/registration_screen.dart:24:11 - The method 'dispose' isn't defined in a superclass of '_RegistrationScreenState'. Try correcting the name to the name of an existing method, or defining a method named 'dispose' in a superclass. - undefined_super_member
+  error - lib/screens/registration_screen.dart:31:3 - Undefined class 'Widget'. Try changing the name to the name of an existing class, or creating a class with the name 'Widget'. - undefined_class
+  error - lib/screens/registration_screen.dart:31:16 - Undefined class 'BuildContext'. Try changing the name to the name of an existing class, or creating a class with the name 'BuildContext'. - undefined_class
+  error - lib/screens/registration_screen.dart:32:12 - The method 'Scaffold' isn't defined for the type '_RegistrationScreenState'. Try correcting the name to the name of an existing method, or defining a method named 'Scaffold'. - undefined_method
+  error - lib/screens/registration_screen.dart:33:15 - The method 'AppBar' isn't defined for the type '_RegistrationScreenState'. Try correcting the name to the name of an existing method, or defining a method named 'AppBar'. - undefined_method
+  error - lib/screens/registration_screen.dart:33:35 - The name 'Text' isn't a class. Try correcting the name to match an existing class. - creation_with_non_type
+  error - lib/screens/registration_screen.dart:34:13 - The method 'Padding' isn't defined for the type '_RegistrationScreenState'. Try correcting the name to the name of an existing method, or defining a method named 'Padding'. - undefined_method
+  error - lib/screens/registration_screen.dart:35:24 - Undefined name 'EdgeInsets'. Try correcting the name to one that is defined, or defining the name. - undefined_identifier
+  error - lib/screens/registration_screen.dart:36:16 - The method 'Column' isn't defined for the type '_RegistrationScreenState'. Try correcting the name to the name of an existing method, or defining a method named 'Column'. - undefined_method
+  error - lib/screens/registration_screen.dart:37:31 - Undefined name 'CrossAxisAlignment'. Try correcting the name to one that is defined, or defining the name. - undefined_identifier
+  error - lib/screens/registration_screen.dart:39:13 - The method 'TextField' isn't defined for the type '_RegistrationScreenState'. Try correcting the name to the name of an existing method, or defining a method named 'TextField'. - undefined_method
+  error - lib/screens/registration_screen.dart:41:29 - Undefined name 'TextInputType'. Try correcting the name to one that is defined, or defining the name. - undefined_identifier
+  error - lib/screens/registration_screen.dart:42:33 - The name 'InputDecoration' isn't a class. Try correcting the name to match an existing class. - creation_with_non_type
+  error - lib/screens/registration_screen.dart:44:17 - The method 'setState' isn't defined for the type '_RegistrationScreenState'. Try correcting the name to the name of an existing method, or defining a method named 'setState'. - undefined_method
+  error - lib/screens/registration_screen.dart:51:19 - The name 'SizedBox' isn't a class. Try correcting the name to match an existing class. - creation_with_non_type
+  error - lib/screens/registration_screen.dart:52:13 - The method 'TextField' isn't defined for the type '_RegistrationScreenState'. Try correcting the name to the name of an existing method, or defining a method named 'TextField'. - undefined_method
+  error - lib/screens/registration_screen.dart:54:29 - Undefined name 'TextInputType'. Try correcting the name to one that is defined, or defining the name. - undefined_identifier
+  error - lib/screens/registration_screen.dart:55:33 - The name 'InputDecoration' isn't a class. Try correcting the name to match an existing class. - creation_with_non_type
+  error - lib/screens/registration_screen.dart:57:17 - The method 'setState' isn't defined for the type '_RegistrationScreenState'. Try correcting the name to the name of an existing method, or defining a method named 'setState'. - undefined_method
+  error - lib/screens/registration_screen.dart:64:19 - The name 'SizedBox' isn't a class. Try correcting the name to match an existing class. - creation_with_non_type
+  error - lib/screens/registration_screen.dart:65:13 - The method 'Text' isn't defined for the type '_RegistrationScreenState'. Try correcting the name to the name of an existing method, or defining a method named 'Text'. - undefined_method
+  error - lib/screens/registration_screen.dart:66:13 - The method 'Slider' isn't defined for the type '_RegistrationScreenState'. Try correcting the name to the name of an existing method, or defining a method named 'Slider'. - undefined_method
+  error - lib/screens/registration_screen.dart:72:33 - The method 'setState' isn't defined for the type '_RegistrationScreenState'. Try correcting the name to the name of an existing method, or defining a method named 'setState'. - undefined_method
+  error - lib/screens/registration_screen.dart:77:13 - The method 'CheckboxListTile' isn't defined for the type '_RegistrationScreenState'. Try correcting the name to the name of an existing method, or defining a method named 'CheckboxListTile'. - undefined_method
+  error - lib/screens/registration_screen.dart:79:28 - The name 'Text' isn't a class. Try correcting the name to match an existing class. - creation_with_non_type
+  error - lib/screens/registration_screen.dart:80:32 - Undefined name 'ListTileControlAffinity'. Try correcting the name to one that is defined, or defining the name. - undefined_identifier
+  error - lib/screens/registration_screen.dart:82:17 - The method 'setState' isn't defined for the type '_RegistrationScreenState'. Try correcting the name to the name of an existing method, or defining a method named 'setState'. - undefined_method
+  error - lib/screens/registration_screen.dart:88:19 - The name 'Spacer' isn't a class. Try correcting the name to match an existing class. - creation_with_non_type
+  error - lib/screens/registration_screen.dart:89:13 - The method 'FilledButton' isn't defined for the type '_RegistrationScreenState'. Try correcting the name to the name of an existing method, or defining a method named 'FilledButton'. - undefined_method
+  error - lib/screens/registration_screen.dart:96:23 - Undefined name 'Navigator'. Try correcting the name to one that is defined, or defining the name. - undefined_identifier
+  error - lib/screens/registration_screen.dart:99:28 - The name 'Text' isn't a class. Try correcting the name to match an existing class. - creation_with_non_type
+warning - analysis_options.yaml:1:10 - The URI 'package:flutter_lints/flutter.yaml' included in '/private/tmp/h-4unohn/analysis_options.yaml' can't be found when analyzing '/private/tmp/h-4unohn'. - include_file_not_found
+warning - lib/main.dart:18:10 - The method doesn't override an inherited method. Try updating this class to match the superclass, or removing the override annotation. - override_on_non_overriding_member
+warning - lib/screens/offer_screen.dart:29:10 - The method doesn't override an inherited method. Try updating this class to match the superclass, or removing the override annotation. - override_on_non_overriding_member
+warning - lib/screens/registration_screen.dart:9:29 - The method doesn't override an inherited method. Try updating this class to match the superclass, or removing the override annotation. - override_on_non_overriding_member
+warning - lib/screens/registration_screen.dart:21:8 - The method doesn't override an inherited method. Try updating this class to match the superclass, or removing the override annotation. - override_on_non_overriding_member
+warning - lib/screens/registration_screen.dart:31:10 - The method doesn't override an inherited method. Try updating this class to match the superclass, or removing the override annotation. - override_on_non_overriding_member
+
+79 issues found.
+ M lib/screens/offer_screen.dart
+ M lib/screens/registration_screen.dart
+?? ANSWER.md

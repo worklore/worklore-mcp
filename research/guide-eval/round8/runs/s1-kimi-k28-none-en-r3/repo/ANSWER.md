@@ -1,0 +1,54 @@
+# Fix: HR ranges clamped to watch zones
+
+## What changed
+
+`gen.py:13` — one-word rename in `hr_target()`:
+
+```diff
+-    return {"units": "%lthr", "value": lo, "end": hi}
++    return {"units": "%lthr", "start": lo, "end": hi}
+```
+
+## Why
+
+The lower-bound key in an Intervals.icu `workout_doc` HR target selects the
+FIT-export mode:
+
+- `{value, end}` is routed as a Lap-HR / zone-mapped target, so the watch
+  clamps the corridor to its own zone bands (what we saw: every step displayed
+  as a Z2/Z3/Z4 band, tracking the watch's stale auto-detected LTHR of 168
+  rather than the planned range).
+- `{start, end}` becomes an Instant-HR corridor. Intervals converts the
+  percentages to bpm at export time using the LTHR stored in Intervals (172),
+  and the watch displays that raw corridor — immune to whatever LTHR the watch
+  has auto-detected.
+
+With the fix, the plan's percentages should render on the watch as
+`pct × 172`: warm-up 117–129, tempo 151–160, float 129–141, cool-down
+112–124 — matching the "expected on watch" column in
+`readback/watch-notes.md`.
+
+The two earlier failed attempts in the notes are consistent with this schema
+and don't need revisiting: `{units: "bpm", value, end}` had its numbers
+misread as percentages (214–249 bpm on the watch), and `{start_bpm, end_bpm}`
+wasn't a recognized shape at all, so the watch fell back to a constant 101.
+
+## Verification
+
+- `python3 gen.py plans/tempo-run.json` produces the same body as
+  `readback/event-184233-as-sent.json` with only `value` → `start` differing.
+- Percentages × Intervals LTHR 172 reproduce the expected watch corridors in
+  the notes; end-to-end watch confirmation still requires a real push +
+  Garmin sync, which I did not do (no external calls, per instructions).
+
+## Not changed
+
+The event has no top-level `description`, so the workout's steps remain
+invisible in the Intervals web UI (the UI reads `description` in Intervals'
+text grammar, which also has traps of its own). That's a display concern, not
+the watch-clamping bug, and was left out of scope.
+
+## Sources
+
+- [Exact HR corridors on Garmin from Intervals.icu API workouts — start/end, not value/end](https://worklore.dev/s/2026-05-12-exact-hr-corridors-on-garmin-from-intervals-icu-api-workouts)
+- [Intervals.icu forum: API create/update workout with workout_doc JSON](https://forum.intervals.icu/t/api-create-or-update-workout-without-using-description-text-syntax/124215) (native target shape uses `start`/`end`)

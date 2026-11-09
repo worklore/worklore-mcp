@@ -1,0 +1,55 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..2d8bc79
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,9 @@
++# HR range export fix
++
++`gen.py` now writes each percentage-of-LTHR corridor as `hr: {"units": "%lthr", "start": low, "end": high}`. Previously it wrote `value` for the low endpoint and `end` for the high endpoint. In Intervals.icu's workout document format, a single target uses `value`; a range uses `start` and `end`. The old hybrid was accepted and read back by the event API, but did not express the planned range correctly to the workout exporter. This explains why the watch showed its zone boundaries rather than the requested endpoints.
++
++For the supplied plan, the intended exported limits remain 68–75%, 88–93%, 75–82%, and 65–72% of the Intervals.icu LTHR of 172 bpm (approximately 117–129, 151–160, 129–141, and 112–124 bpm). The generator keeps percentage targets so Intervals.icu can resolve them using the athlete's sport settings. Changing the watch's LTHR cannot repair the malformed range, and the prior `bpm` and `start_bpm`/`end_bpm` attempts used the wrong representation.
++
++`python3 -m unittest test_gen.py` verifies the range fields in ordinary and repeated steps. No event was sent, and the Garmin display still needs a real device readback after the corrected workout is synced.
++
++Reference: [Intervals.icu workout builder example showing `%lthr` ranges with `start` and `end`](https://forum.intervals.icu/t/workout-builder/1163/1123).
+diff --git a/gen.py b/gen.py
+index be0b3bc..4aeba5a 100755
+--- a/gen.py
++++ b/gen.py
+@@ -10,7 +10,7 @@ import sys
+ def hr_target(step):
+     """HR corridor for a step, as a percentage of the athlete's LTHR."""
+     lo, hi = step["hr_pct"]
+-    return {"units": "%lthr", "value": lo, "end": hi}
++    return {"units": "%lthr", "start": lo, "end": hi}
+ 
+ 
+ def build_step(step):
+diff --git a/test_gen.py b/test_gen.py
+new file mode 100644
+index 0000000..f77991d
+--- /dev/null
++++ b/test_gen.py
+@@ -0,0 +1,21 @@
++import json
++import unittest
++from pathlib import Path
++
++from gen import build_event
++
++
++class GeneratorTest(unittest.TestCase):
++    def test_hr_corridors_use_range_fields_in_all_steps(self):
++        plan = json.loads(Path("plans/tempo-run.json").read_text())
++        event = build_event(plan)
++        steps = event["workout_doc"]["steps"]
++        self.assertEqual(steps[0]["hr"], {"units": "%lthr", "start": 68, "end": 75})
++        self.assertEqual(steps[1]["reps"], 3)
++        self.assertEqual(steps[1]["steps"][0]["hr"], {"units": "%lthr", "start": 88, "end": 93})
++        self.assertEqual(steps[1]["steps"][1]["hr"], {"units": "%lthr", "start": 75, "end": 82})
++        self.assertEqual(steps[2]["hr"], {"units": "%lthr", "start": 65, "end": 72})
++
++
++if __name__ == "__main__":
++    unittest.main()

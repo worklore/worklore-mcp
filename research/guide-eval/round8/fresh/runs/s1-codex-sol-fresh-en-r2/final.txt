@@ -1,0 +1,3 @@
+Fixed the generator to emit HR corridors with `start` and `end`, the [Intervals.icu range fields](https://forum.intervals.icu/t/workout-builder/1163/1123), instead of the malformed `value` and `end` pair. The change and its rationale are in [ANSWER.md](/tmp/h-HZiS5u/ANSWER.md); the code is in [gen.py](/tmp/h-HZiS5u/gen.py).
+
+The local regression test passes, including repeated steps. I did not send a workout to Intervals.icu, so the corrected watch display still needs a device readback.

@@ -1,0 +1,46 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..0ade83f
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,20 @@
++# Причины
++
++1. **Скрипт обрывался до отправки любого уведомления.** В `bin/nightly-review.zsh` код возврата сохранялся в переменную `status`. В `zsh` это служебная переменная только для чтения, поэтому присваивание `status=$?` завершало скрипт с ошибкой. Проверка результата и оба вызова `notify.sh` находились ниже и не выполнялись ни при успехе, ни при ошибке. Это подтверждают шесть повторяющихся сообщений `read-only variable: status` в `Library/Logs/nightly-review.err` и `last exit code = 1` в `launchctl-print.txt`.
++
++2. **Сам запуск ревью также был неуспешен.** Перед ошибкой присваивания `claude` каждый раз сообщал `Not logged in · Please run /login`. Таким образом, после исправления скрипта текущее состояние авторизации приведёт к failure-уведомлению, а не к summary.
++
++# Исправление
++
++В `bin/nightly-review.zsh` переменная `status` заменена на обычную `exit_code`. Теперь ненулевой код `claude` вызывает `notify.sh` с текстом ошибки и возвращается из скрипта, а успешное ревью вызывает уведомление с summary.
++
++Plist и расписание менять не потребовалось: LaunchAgent шесть раз запускал правильный скрипт в 02:30.
++
++# Проверка
++
++- `/bin/zsh -n bin/nightly-review.zsh` и `/bin/bash -n bin/notify.sh` прошли.
++- С локальными заглушками без сети проверены три пути: ошибка `claude` с кодом 7 отправляет failure-уведомление и возвращает 7; успех отправляет summary и возвращает 0; отсутствующий репозиторий отправляет отдельное уведомление и возвращает 1.
++
++# Что останется сделать на реальной машине
++
++Авторизовать `claude` интерактивно (`/login`), чтобы вместо failure-уведомлений начали приходить результаты ревью. В рамках работы со снимком вход не выполнялся, файлы не развёртывались и уведомления наружу не отправлялись.
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..f9f7692 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -16,11 +16,11 @@ Do not modify any file."
+ cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
+ 
+ claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
++exit_code=$?
+ 
+-if [ $status -ne 0 ]; then
+-  "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
+-  exit $status
++if [ $exit_code -ne 0 ]; then
++  "$NOTIFY" "nightly review FAILED (exit $exit_code), see $OUT"
++  exit $exit_code
+ fi
+ 
+ "$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"

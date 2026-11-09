@@ -1,0 +1,14 @@
+first publish OK
+second publish FAILED: Float types are not supported. Use Decimal types instead.
+test_publish_stores_story (test_publish.PublishTest.test_publish_stores_story) ... 
+ok
+test_second_publish_stores_similar_scores (test_publish.PublishTest.test_second_publish_stores_similar_scores) ... ok
+
+----------------------------------------------------------------------
+Ran 2 tests in 0.000s
+
+OK
+second publish OK, similar = [{'slug': 'why-my-cron-ran-twice', 'score': Decimal('0.2333')}]
+ M src/app.py
+ M tests/test_publish.py
+?? ANSWER.md

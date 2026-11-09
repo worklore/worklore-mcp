@@ -1,0 +1,49 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..6966146
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,9 @@
++# Что изменено
++
++Причина лишнего списания: `build_system()` помещала статические инструкции и контекст спортсмена, включая долговременные факты, в один кешируемый блок. После `save_fact` менялся весь блок, поэтому следующий запрос не мог переиспользовать кеш инструкций.
++
++- В `bot.py` системный промпт разделён на два блока. Первый содержит только неизменные `INSTRUCTIONS` и сохраняет `cache_control: {"type": "ephemeral"}`. Второй содержит динамический `athlete_context()` и не имеет маркера кеширования.
++- Теперь `save_fact` меняет только некешируемый контекст спортсмена; кешируемый префикс со статическими инструкциями остаётся неизменным.
++- Описание кеширования в `README.md` приведено в соответствие с новым поведением.
++
++Проверка: локально прогнан полный двухраундовый `reply()` с имитированным ответом API и вызовом `save_fact`. Подтверждено, что факт сохраняется, между раундами меняется только второй системный блок, а первый кешируемый блок совпадает полностью. Внешние API-вызовы не выполнялись.
+diff --git a/README.md b/README.md
+index ebd390e..ff3a15b 100644
+--- a/README.md
++++ b/README.md
+@@ -11,6 +11,8 @@ its system prompt. Every API call appends its `usage` object to `logs/usage.json
+ Run it locally with `COACH_ANTHROPIC_KEY=sk-ant-... python3 bot.py 42` and type
+ messages on stdin (the Telegram long-polling transport, which needs
+ `COACH_TELEGRAM_TOKEN`, lives in a separate deploy repo and just calls `reply()`).
+-Requires Python 3.11+ and `pip install anthropic`. Prompt caching is on: the system
+-prompt carries a `cache_control` marker so the tool-loop rounds and follow-up
+-messages inside the 5-minute window read it from cache.
++Requires Python 3.11+ and `pip install anthropic`. Prompt caching is on: the static
++coaching instructions are a separate system block with a `cache_control` marker,
++so changes to the athlete's profile or long-term facts do not invalidate them.
++Tool-loop rounds and follow-up messages inside the 5-minute window read that block
++from cache.
+diff --git a/bot.py b/bot.py
+index e2ff241..25f74fb 100644
+--- a/bot.py
++++ b/bot.py
+@@ -128,9 +128,10 @@ def athlete_context(a, today):
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    return [
++        {"type": "text", "text": INSTRUCTIONS, "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": athlete_context(a, today)},
++    ]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [

@@ -1,0 +1,150 @@
+.
+
+----------------------------------------------------------------------
+Ran 1 test in 0.000s
+
+OK
+publish failed
+Traceback (most recent call last):
+  File "/private/tmp/h-C2lkN5/src/app.py", line 72, in handler
+    stored = publish(table, story)
+  File "/private/tmp/h-C2lkN5/src/app.py", line 63, in publish
+    table.put_item(Item=item)
+    ~~~~~~~~~~~~~~^^^^^^^^^^^
+  File "/private/tmp/h-C2lkN5/tests/fake_dynamo.py", line 31, in put_item
+    _check(Item)
+    ~~~~~~^^^^^^
+  File "/private/tmp/h-C2lkN5/tests/fake_dynamo.py", line 16, in _check
+    _check(v, f"{path}.{k}")
+    ~~~~~~^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/h-C2lkN5/tests/fake_dynamo.py", line 20, in _check
+    _check(v, f"{path}[{i}]")
+    ~~~~~~^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/h-C2lkN5/tests/fake_dynamo.py", line 16, in _check
+    _check(v, f"{path}.{k}")
+    ~~~~~~^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/h-C2lkN5/tests/fake_dynamo.py", line 13, in _check
+    raise TypeError("Float types are not supported. Use Decimal types instead.")
+TypeError: Float types are not supported. Use Decimal types instead.
+first-story 201 {"slug": "first-story"}
+second-story 500 {"error": "Internal Server Error"}
+.
+publish failed
+Traceback (most recent call last):
+  File "/private/tmp/h-C2lkN5/tests/../src/app.py", line 72, in handler
+    stored = publish(table, story)
+  File "/private/tmp/h-C2lkN5/tests/../src/app.py", line 63, in publish
+    table.put_item(Item=item)
+    ~~~~~~~~~~~~~~^^^^^^^^^^^
+  File "/private/tmp/h-C2lkN5/tests/fake_dynamo.py", line 31, in put_item
+    _check(Item)
+    ~~~~~~^^^^^^
+  File "/private/tmp/h-C2lkN5/tests/fake_dynamo.py", line 16, in _check
+    _check(v, f"{path}.{k}")
+    ~~~~~~^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/h-C2lkN5/tests/fake_dynamo.py", line 20, in _check
+    _check(v, f"{path}[{i}]")
+    ~~~~~~^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/h-C2lkN5/tests/fake_dynamo.py", line 16, in _check
+    _check(v, f"{path}.{k}")
+    ~~~~~~^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/h-C2lkN5/tests/fake_dynamo.py", line 13, in _check
+    raise TypeError("Float types are not supported. Use Decimal types instead.")
+TypeError: Float types are not supported. Use Decimal types instead.
+F
+
+======================================================================
+FAIL: test_second_publish_stores_integer_similarity_scores (test_publish.PublishTest.test_second_publish_stores_integer_similarity_scores)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private/tmp/h-C2lkN5/tests/test_publish.py", line 46, in test_second_publish_stores_integer_similarity_scores
+    self.assertEqual([response["statusCode"] for response in responses], [201, 201])
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: Lists differ: [201, 500] != [201, 201]
+
+First differing element 1:
+500
+201
+
+- [201, 500]
+?       ^ ^
+
++ [201, 201]
+?       ^ ^
+
+
+----------------------------------------------------------------------
+Ran 2 tests in 0.001s
+
+FAILED (failures=1)
+.
+.
+----------------------------------------------------------------------
+Ran 2 tests in 0.000s
+
+OK
+first-story 201 {"slug": "first-story"}
+second-story 201 {"slug": "second-story"}
+[{'slug': 'first-story', 'score': 85}]
+ M src/app.py
+ M tests/test_publish.py
+?? ANSWER.md
+diff --git a/src/app.py b/src/app.py
+index db49c5e..fb8b8e4 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -22,12 +22,12 @@ def words(text):
+ 
+ 
+ def similarity(a, b):
+-    """Shared-tag ratio (Jaccard), blended with shared words of the two bodies."""
++    """Return shared-tag and shared-word similarity as an integer percentage."""
+     ta, tb = set(a.get("tags", [])), set(b.get("tags", []))
+     tag_score = len(ta & tb) / len(ta | tb) if (ta | tb) else 0
+     wa, wb = words(a.get("body")), words(b.get("body"))
+     word_score = len(wa & wb) / len(wa | wb) if (wa | wb) else 0
+-    return round(0.7 * tag_score + 0.3 * word_score, 4)
++    return round(100 * (0.7 * tag_score + 0.3 * word_score))
+ 
+ 
+ def related(story, existing):
+diff --git a/tests/test_publish.py b/tests/test_publish.py
+index 6c9ac44..d826fb7 100644
+--- a/tests/test_publish.py
++++ b/tests/test_publish.py
+@@ -1,3 +1,4 @@
++import json
+ import os
+ import sys
+ import unittest
+@@ -23,6 +24,30 @@ class PublishTest(unittest.TestCase):
+         self.assertEqual(table.get_item(Key={"slug": "why-my-cron-ran-twice"})["Item"]["title"], "Why my cron ran twice")
+         self.assertEqual(table.scan()["Count"], 1)
+ 
++    def test_second_publish_stores_integer_similarity_scores(self):
++        table = FakeTable()
++        stories = [
++            {
++                "slug": "first-story",
++                "title": "First",
++                "tags": ["cron"],
++                "body": "one cron job",
++            },
++            {
++                "slug": "second-story",
++                "title": "Second",
++                "tags": ["cron"],
++                "body": "another cron job",
++            },
++        ]
++
++        responses = [app.handler({"body": json.dumps(story)}, table) for story in stories]
++
++        self.assertEqual([response["statusCode"] for response in responses], [201, 201])
++        stored = table.get_item(Key={"slug": "second-story"})["Item"]
++        self.assertEqual(stored["similar"], [{"slug": "first-story", "score": 85}])
++        self.assertIsInstance(stored["similar"][0]["score"], int)
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

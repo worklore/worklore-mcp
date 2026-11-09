@@ -1,0 +1,51 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..3967262
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,12 @@
++# Cache fix
++
++Changed `build_system()` in `bot.py` to return two system blocks:
++
++1. The static `INSTRUCTIONS`, with the `cache_control: {"type": "ephemeral"}` marker.
++2. The changing athlete context (date, profile, goal, zones, and long-term facts), without a cache marker.
++
++Previously, the instructions and athlete context were cached as one block. A `save_fact` changed that block's text, so the next tool-loop request could not reuse the cached instructions. Now a memory write changes only the uncached athlete-context block, leaving the static instruction prefix available for cache reads on later rounds and messages.
++
++Also updated `README.md` to describe the split prompt caching behavior.
++
++Verified locally with a fake LLM through the complete `reply()`/`save_fact` tool loop: both requests had identical cached instruction blocks, while only the athlete-context block changed. `python3 -m py_compile bot.py` also passed. No external API calls were made.
+diff --git a/README.md b/README.md
+index ebd390e..4d40b88 100644
+--- a/README.md
++++ b/README.md
+@@ -11,6 +11,7 @@ its system prompt. Every API call appends its `usage` object to `logs/usage.json
+ Run it locally with `COACH_ANTHROPIC_KEY=sk-ant-... python3 bot.py 42` and type
+ messages on stdin (the Telegram long-polling transport, which needs
+ `COACH_TELEGRAM_TOKEN`, lives in a separate deploy repo and just calls `reply()`).
+-Requires Python 3.11+ and `pip install anthropic`. Prompt caching is on: the system
+-prompt carries a `cache_control` marker so the tool-loop rounds and follow-up
+-messages inside the 5-minute window read it from cache.
++Requires Python 3.11+ and `pip install anthropic`. Prompt caching is on: the static
++instructions carry a `cache_control` marker in a separate system block from the
++per-athlete context, so memory writes do not invalidate the cached instructions.
++Tool-loop rounds and follow-up messages inside the 5-minute window read them from cache.
+diff --git a/bot.py b/bot.py
+index e2ff241..25f74fb 100644
+--- a/bot.py
++++ b/bot.py
+@@ -128,9 +128,10 @@ def athlete_context(a, today):
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    return [
++        {"type": "text", "text": INSTRUCTIONS, "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": athlete_context(a, today)},
++    ]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [

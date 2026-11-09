@@ -1,0 +1,44 @@
+publish failed
+Traceback (most recent call last):
+  File "/private/tmp/h-6DfelL/src/app.py", line 72, in handler
+    stored = publish(table, story)
+  File "/private/tmp/h-6DfelL/src/app.py", line 63, in publish
+    table.put_item(Item=item)
+    ~~~~~~~~~~~~~~^^^^^^^^^^^
+  File "/private/tmp/h-6DfelL/tests/fake_dynamo.py", line 31, in put_item
+    _check(Item)
+    ~~~~~~^^^^^^
+  File "/private/tmp/h-6DfelL/tests/fake_dynamo.py", line 16, in _check
+    _check(v, f"{path}.{k}")
+    ~~~~~~^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/h-6DfelL/tests/fake_dynamo.py", line 20, in _check
+    _check(v, f"{path}[{i}]")
+    ~~~~~~^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/h-6DfelL/tests/fake_dynamo.py", line 16, in _check
+    _check(v, f"{path}.{k}")
+    ~~~~~~^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/h-6DfelL/tests/fake_dynamo.py", line 13, in _check
+    raise TypeError("Float types are not supported. Use Decimal types instead.")
+TypeError: Float types are not supported. Use Decimal types instead.
+first:  {'statusCode': 201, 'body': '{"slug": "why-my-cron-ran-twice"}'}
+second: {'statusCode': 500, 'body': '{"error": "Internal Server Error"}'}
+test_publish_stores_story (test_publish.PublishTest.test_publish_stores_story) ... 
+ok
+test_second_publish_stores_similar_as_dynamodb_safe_numbers (test_publish.PublishTest.test_second_publish_stores_similar_as_dynamodb_safe_numbers) ... 
+ok
+
+----------------------------------------------------------------------
+Ran 2 tests in 0.001s
+
+OK
+201 {"slug": "why-my-cron-ran-twice"}
+201 {"slug": "second-story"}
+201 {"slug": "third-story"}
+similar: [{'slug': 'why-my-cron-ran-twice', 'score': Decimal('0.2548')}, {'slug': 'second-story', 'score': Decimal('0.0000')}]
+score types: ['Decimal', 'Decimal']
+ M src/app.py
+ M tests/test_publish.py
+?? ANSWER.md
+ src/app.py            |  7 ++++---
+ tests/test_publish.py | 25 +++++++++++++++++++++++++
+ 2 files changed, 29 insertions(+), 3 deletions(-)

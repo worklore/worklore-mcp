@@ -1,0 +1,176 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..cc82d35
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,37 @@
++# Analytics event implementation
++
++Implemented all events from `docs/EVENTS.md` through the existing `Analytics.capture` wrapper.
++
++## Registration screen
++
++In `lib/screens/registration_screen.dart`:
++
++- `registration_email_started` fires on the first email edit per screen state, guarded by `_emailInputFired`.
++- `registration_phone_started` fires on the first phone edit per screen state, guarded by `_phoneInputFired`.
++- `loan_amount_changed` fires from the slider's `onChangeEnd`, with the final `amount` as a rounded integer.
++- `terms_accepted` fires only when the checkbox changes to checked, not when it is unchecked.
++- `registration_continue_tapped` fires when the enabled Continue button is tapped, before navigation, with integer `amount` and boolean `terms` properties.
++- Email addresses and phone numbers are never included in event properties.
++
++## Offers screen
++
++In `lib/screens/offer_screen.dart`:
++
++- Wrapped the offers list in `NotificationListener<ScrollEndNotification>`.
++- `offers_scrolled` fires when a scroll ends, with `offset` set to `notification.metrics.pixels` (a double), rather than firing on every scroll update.
++
++## Colleague's note
++
++The applicable guidance was:
++
++- Guard text-field `onChanged` analytics with once-only flags to avoid an event per keystroke.
++- Put slider analytics in `onChangeEnd` while leaving UI updates in `onChanged`.
++- Use `ScrollEndNotification` instead of scroll-update notifications or controller listeners.
++- Keep the specified event names and properties unchanged and avoid sensitive field values.
++
++The focus-loss/final-field-value guidance did not apply because none of these events requires a text field's final value. No external PostHog reporting, deployment, or live quota reproduction was performed.
++
++## Verification
++
++- `git diff --check` passed.
++- `dart format` and `flutter analyze` could not run: macOS returned `Operation not permitted` (exit code 126) for both SDK executables under `/Users/valentinakoniukhova/development/flutter/bin/`.
+diff --git a/lib/screens/offer_screen.dart b/lib/screens/offer_screen.dart
+index 921ee59..c9a10ae 100644
+--- a/lib/screens/offer_screen.dart
++++ b/lib/screens/offer_screen.dart
+@@ -1,5 +1,7 @@
+ import 'package:flutter/material.dart';
+ 
++import '../analytics.dart';
++
+ class Offer {
+   const Offer(this.bank, this.months, this.rate);
+   final String bank;
+@@ -27,18 +29,26 @@ class OfferScreen extends StatelessWidget {
+   Widget build(BuildContext context) {
+     return Scaffold(
+       appBar: AppBar(title: const Text('Offers')),
+-      body: ListView.builder(
+-        itemCount: _offers.length,
+-        itemBuilder: (context, i) {
+-          final o = _offers[i];
+-          return ListTile(
+-            leading: const Icon(Icons.account_balance),
+-            title: Text('${o.bank}, ${o.months} months'),
+-            subtitle: Text('${o.rate.toStringAsFixed(1)}% APR'),
+-            trailing: const Icon(Icons.chevron_right),
+-            onTap: () {},
+-          );
++      body: NotificationListener<ScrollEndNotification>(
++        onNotification: (notification) {
++          Analytics.capture('offers_scrolled', {
++            'offset': notification.metrics.pixels,
++          });
++          return false;
+         },
++        child: ListView.builder(
++          itemCount: _offers.length,
++          itemBuilder: (context, i) {
++            final o = _offers[i];
++            return ListTile(
++              leading: const Icon(Icons.account_balance),
++              title: Text('${o.bank}, ${o.months} months'),
++              subtitle: Text('${o.rate.toStringAsFixed(1)}% APR'),
++              trailing: const Icon(Icons.chevron_right),
++              onTap: () {},
++            );
++          },
++        ),
+       ),
+     );
+   }
+diff --git a/lib/screens/registration_screen.dart b/lib/screens/registration_screen.dart
+index 059a250..a1f8845 100644
+--- a/lib/screens/registration_screen.dart
++++ b/lib/screens/registration_screen.dart
+@@ -1,5 +1,7 @@
+ import 'package:flutter/material.dart';
+ 
++import '../analytics.dart';
++
+ class RegistrationScreen extends StatefulWidget {
+   const RegistrationScreen({super.key});
+ 
+@@ -12,6 +14,8 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
+   final _phone = TextEditingController();
+   double _amount = 50000;
+   bool _terms = false;
++  bool _emailInputFired = false;
++  bool _phoneInputFired = false;
+ 
+   @override
+   void dispose() {
+@@ -36,14 +40,26 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
+               controller: _email,
+               keyboardType: TextInputType.emailAddress,
+               decoration: const InputDecoration(labelText: 'Email'),
+-              onChanged: (_) => setState(() {}),
++              onChanged: (_) {
++                setState(() {});
++                if (!_emailInputFired) {
++                  _emailInputFired = true;
++                  Analytics.capture('registration_email_started');
++                }
++              },
+             ),
+             const SizedBox(height: 12),
+             TextField(
+               controller: _phone,
+               keyboardType: TextInputType.phone,
+               decoration: const InputDecoration(labelText: 'Phone'),
+-              onChanged: (_) => setState(() {}),
++              onChanged: (_) {
++                setState(() {});
++                if (!_phoneInputFired) {
++                  _phoneInputFired = true;
++                  Analytics.capture('registration_phone_started');
++                }
++              },
+             ),
+             const SizedBox(height: 24),
+             Text('Loan amount: ${_amount.round()}'),
+@@ -54,17 +70,30 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
+               value: _amount,
+               label: _amount.round().toString(),
+               onChanged: (v) => setState(() => _amount = v),
++              onChangeEnd: (v) =>
++                  Analytics.capture('loan_amount_changed', {'amount': v.round()}),
+             ),
+             CheckboxListTile(
+               value: _terms,
+               title: const Text('I accept the terms and conditions'),
+               controlAffinity: ListTileControlAffinity.leading,
+-              onChanged: (v) => setState(() => _terms = v ?? false),
++              onChanged: (v) {
++                setState(() => _terms = v ?? false);
++                if (_terms) {
++                  Analytics.capture('terms_accepted');
++                }
++              },
+             ),
+             const Spacer(),
+             FilledButton(
+               onPressed: _canContinue
+-                  ? () => Navigator.of(context).pushNamed('/offers')
++                  ? () {
++                      Analytics.capture('registration_continue_tapped', {
++                        'amount': _amount.round(),
++                        'terms': _terms,
++                      });
++                      Navigator.of(context).pushNamed('/offers');
++                    }
+                   : null,
+               child: const Text('Continue'),
+             ),

@@ -1,0 +1,59 @@
+# Why the nightly job never reported anything
+
+The job itself ran fine — `launchctl print` shows `runs = 6`, and the plist's
+stderr log captured a failure every night. The problem is inside
+`bin/nightly-review.zsh`: two independent defects that compound.
+
+## Cause 1 — the script crashes before it can ever notify (`status` is read-only in zsh)
+
+`bin/nightly-review.zsh:19` does:
+
+```zsh
+status=$?
+```
+
+In zsh, `status` is a **read-only special variable** (an alias for `$?`), so the
+assignment fails and the shell aborts the script on that line — before the
+`if [ ... -ne 0 ]` block that calls `notify.sh`. This is fatal **unconditionally**:
+it kills the script even on nights when `claude` succeeds, so neither the
+"done" nor the "FAILED" Telegram branch could ever run.
+
+Evidence: `Library/Logs/nightly-review.err` contains
+`/Users/vk/bin/nightly-review.zsh:19: read-only variable: status` on all 6 runs,
+and `launchctl print` shows `last exit code = 1`. Reproduced locally with stub
+`claude`/`notify.sh`: script exits 1, `notify.sh` never invoked. This is the
+direct reason zero Telegram messages arrived.
+
+## Cause 2 — `claude` is not authenticated in the launchd environment
+
+Every run's stderr also shows:
+
+```
+Not logged in · Please run /login
+```
+
+`claude` exits 1 because the launchd-spawned session has no usable credentials,
+even though the interactive shell is logged in (on macOS, Claude Code keeps its
+OAuth credentials in the login Keychain / `~/.claude`, which the background job
+cannot read at 02:30). So even with Cause 1 fixed, the review would still fail
+every night until `claude` is authenticated in a way the job can use. That step
+needs an interactive login, so it must be done on the real machine (`claude`
+login from a session whose credentials the LaunchAgent can read — e.g. while the
+login keychain is unlocked, then verify with one manual `launchctl kickstart`).
+
+## Fixes applied
+
+- `bin/nightly-review.zsh:19` — renamed `status` to `rc` (the actual bug).
+- Added `|| echo "nightly-review: notify.sh failed" >&2` to all three
+  `notify.sh` calls, so a failing notifier leaves a trace in
+  `Library/Logs/nightly-review.err` instead of vanishing silently.
+
+Verified with a stub harness: the failure path now sends
+"nightly review FAILED (exit 1) ..." and the success path sends
+"nightly review done: <summary>".
+
+## Minor observation (not a cause)
+
+`claude ... > "$OUT"` creates `nightly-review-<date>.md` even when `claude`
+fails, via redirection. Expect empty `.md` files in `~/Library/Logs` from the
+failed nights.

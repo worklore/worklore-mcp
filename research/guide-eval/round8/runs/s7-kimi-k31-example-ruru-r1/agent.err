@@ -1,0 +1,44 @@
+9c96208 base
+2026-11-07 22:28:37 [http] GET /api/intervals/auth/init 401 (no Authorization header)
+2026-11-07 22:28:37 [http] "GET /api/intervals/auth/init HTTP/1.1" 401 -
+browser GET init: 401 {"error": "unauthorized"}
+2026-11-07 22:28:37 [http] "POST /api/intervals/auth/init HTTP/1.1" 404 -
+fetch POST init: 404 {"error": "not found"}
+token fields: ['client_id', 'client_secret', 'code', 'grant_type', 'redirect_uri']
+2026-11-07 22:28:37 [intervals] u_rivera: no refresh_token in response, scheduling expiry in 3600s
+2026-11-07 22:28:37 [intervals] u_rivera: connected as athlete i98765 (expires in 3600s)
+invented lifetime seconds: 3600
+duplicated scope families: ACTIVITY:READ,ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:READ,CALENDAR:WRITE
+server.py: syntax OK
+config.py: syntax OK
+2026-11-07 22:30:46 [http] "GET /api/intervals/auth/init HTTP/1.1" 404 -
+2026-11-07 22:30:46 [http] POST /api/intervals/auth/init 401 (no Authorization header)
+2026-11-07 22:30:46 [http] "POST /api/intervals/auth/init HTTP/1.1" 401 -
+2026-11-07 22:30:46 [http] "POST /api/intervals/auth/init HTTP/1.1" 200 -
+2026-11-07 22:30:46 [intervals] u_okafor: connected as athlete i98765
+2026-11-07 22:30:46 [http] "GET /api/intervals/callback?code=local-code&state=dV9va2Fmb3I6MTc5NDEwMTQ0NjoxYmFkMDRmYjhlNzk4MjIyZmRlYjYzYzUzMjJjNzNlNw%3D%3D HTTP/1.1" 302 -
+2026-11-07 22:30:46 [http] "GET /api/intervals/status HTTP/1.1" 200 -
+2026-11-07 22:30:46 [http] "GET /api/intervals/wellness HTTP/1.1" 200 -
+2026-11-07 22:30:46 [intervals] u_okafor: Intervals returned 401 -> revoked, reconnect
+2026-11-07 22:30:46 [http] "GET /api/intervals/wellness HTTP/1.1" 401 -
+2026-11-07 22:30:46 [http] "GET /api/intervals/status HTTP/1.1" 200 -
+2026-11-07 22:30:46 [http] "GET /api/intervals/wellness HTTP/1.1" 409 -
+PASS: authenticated POST init returns an authorize URL
+PASS: scopes contain each family once; WRITE implies READ
+PASS: callback exchanges only client_id, client_secret and code
+PASS: non-expiring token remains connected without refresh metadata
+PASS: wellness uses Bearer token and athlete id
+PASS: provider 401 clears the token and requires reconnection
+ M config.py
+ M server.py
+ M static/app.js
+?? ANSWER.md
+?? __pycache__/
+ config.py     |  4 +---
+ server.py     | 57 ++++++++++++++-------------------------------------------
+ static/app.js | 16 +++++++++++++++-
+ 3 files changed, 30 insertions(+), 47 deletions(-)
+ M config.py
+ M server.py
+ M static/app.js
+?? ANSWER.md

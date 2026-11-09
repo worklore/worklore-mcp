@@ -1,0 +1,121 @@
+873b8ab base
+---
+873b8ab 2026-11-08 base
+total 20
+drwx------   8 valentinakoniukhova wheel   256 Nov  8 13:35 .
+drwxrwxrwt 564 root                wheel 18048 Nov  8 13:39 ..
+drwxr-xr-x  12 valentinakoniukhova wheel   384 Nov  8 13:35 .git
+-rw-r--r--   1 valentinakoniukhova wheel   780 Nov  8 13:35 README.md
+-rw-r--r--   1 valentinakoniukhova wheel   556 Nov  8 13:35 config.py
+drwxr-xr-x   4 valentinakoniukhova wheel   128 Nov  8 13:35 logs
+-rw-r--r--   1 valentinakoniukhova wheel 10239 Nov  8 13:35 server.py
+drwxr-xr-x   4 valentinakoniukhova wheel   128 Nov  8 13:35 static
+873b8ab base
+* main
+COMMIT_EDITMSG
+HEAD
+config
+description
+hooks
+index
+info
+logs
+objects
+refs
+--- 1. SPA fetch to auth/init WITH Bearer header (what the fixed Connect button does):
+{"authorize_url": "http://127.0.0.1:9876/oauth/authorize?client_id=tricoach-dev&redirect_uri=http:%2F%2Flocalhost:8766%2Fapi%2Fintervals%2Fcallback&scope=ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE&state=dV9va2Fmb3I6aW50ZXJ2YWxzX29hdXRoOjE3OTQxNTYyMTI6YTI1NWVmZThjNjllMWFjM2VhNzk4YjljMDY5NGQ0NGM%3D"}
+
+--- 2. Old broken scopes must be rejected by provider-side scope validation:
+400
+--- 3. Old pre-calendar scopes (one variant per scope) — the mock-doc accepts this shape:
+302
+COMMAND   PID                USER   FD   TYPE             DEVICE SIZE/OFF NODE NAME
+Python  84285 valentinakoniukhova    3u  IPv4 0x923c902982a3fd90      0t0  TCP 127.0.0.1:8766 (LISTEN)
+---
+---
+COMMAND   PID                USER   FD   TYPE             DEVICE SIZE/OFF NODE NAME
+Python  21574 valentinakoniukhova    3u  IPv4 0x2e797a66035fa2d0      0t0  TCP 127.0.0.1:8899 (LISTEN)
+---
+/bin/bash: /bin/ps: Operation not permitted
+COMMAND   PID                USER   FD   TYPE             DEVICE SIZE/OFF                NODE NAME
+Python  84285 valentinakoniukhova  cwd    DIR               1,15       64           446611891 /private/tmp/h-unWmrw
+Python  84285 valentinakoniukhova  txt    REG               1,15    33568           373723653 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/Resources/Python.app/Contents/MacOS/Python
+Python  84285 valentinakoniukhova  txt    REG               1,15    77808           373725091 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_struct.cpython-314-darwin.so
+Python  84285 valentinakoniukhova  txt    REG               1,15    54416           373725141 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/binascii.cpython-314-darwin.so
+Python  84285 valentinakoniukhova  txt    REG               1,15    80448           373725016 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_hashlib.cpython-314-darwin.so
+Python  84285 valentinakoniukhova  txt    REG               1,15    72112           373724965 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_blake2.cpython-314-darwin.so
+Python  84285 valentinakoniukhova  txt    REG               1,15    72912           373725034 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_json.cpython-314-darwin.so
+Python  84285 valentinakoniukhova  txt    REG               1,15   128960           373725023 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_hmac.cpython-314-darwin.so
+Python  84285 valentinakoniukhova  txt    REG               1,15    76176           373725192 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/zlib.cpython-314-darwin.so
+Python  84285 valentinakoniukhova  txt    REG               1,15  2289328 1152921500312524696 /usr/lib/dyld
+Python  84285 valentinakoniukhova  txt    REG               1,15    55056           373724968 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_bz2.cpython-314-darwin.so
+Python  84285 valentinakoniukhova  txt    REG               1,15    74704           373725039 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_lzma.cpython-314-darwin.so
+Python  84285 valentinakoniukhova  txt    REG               1,15    53040           373724963 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_bisect.cpython-314-darwin.so
+Python  84285 valentinakoniukhova  txt    REG               1,15    53952           373725061 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_random.cpython-314-darwin.so
+Python  84285 valentinakoniukhova  txt    REG               1,15   167520           409198589 /opt/homebrew/Cellar/xz/5.8.4/lib/liblzma.5.dylib
+Python  84285 valentinakoniukhova  txt    REG               1,15    96752           373725135 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_zstd.cpython-314-darwin.so
+Python  84285 valentinakoniukhova  txt    REG               1,15    93472           373725152 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/math.cpython-314-darwin.so
+Python  84285 valentinakoniukhova  txt    REG               1,15    53344           373725067 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_scproxy.cpython-314-darwin.so
+Python  84285 valentinakoniukhova  txt    REG               1,15   115824           373725078 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_socket.cpython-314-darwin.so
+Python  84285 valentinakoniukhova  txt    REG               1,15    74992           373725166 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/select.cpython-314-darwin.so
+Python  84285 valentinakoniukhova  txt    REG               1,15    67496           420764876 /Library/Preferences/Logging/.plist-cache.UiDks5Jd
+Python  84285 valentinakoniukhova  txt    REG               1,15   653328           296355327 /opt/homebrew/Cellar/zstd/1.5.7_1/lib/libzstd.1.5.7.dylib
+Python  84285 valentinakoniukhova  txt    REG               1,15   205312           373725083 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_ssl.cpython-314-darwin.so
+Python  84285 valentinakoniukhova  txt    REG               1,15  5467872           373723646 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/Python
+Python  84285 valentinakoniukhova  txt    REG               1,15   888320           409198867 /opt/homebrew/Cellar/openssl@3/3.6.4/lib/libssl.3.dylib
+Python  84285 valentinakoniukhova  txt    REG               1,15   783632           373725174 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/unicodedata.cpython-314-darwin.so
+Python  84285 valentinakoniukhova  txt    REG               1,15  4870816           409198864 /opt/homebrew/Cellar/openssl@3/3.6.4/lib/libcrypto.3.dylib
+Python  84285 valentinakoniukhova    0r   CHR                3,2      0t0                 336 /dev/null
+Python  84285 valentinakoniukhova    1w   REG               1,15     3126           446613145 /private/tmp/h-unWmrw/.tmp-test/server.log
+---
+COMMAND   PID                USER   FD   TYPE DEVICE SIZE/OFF      NODE NAME
+Python  84285 valentinakoniukhova  cwd    DIR   1,15       64 446611891 /private/tmp/h-unWmrw
+=== 1. auth/init WITHOUT header (old browser-navigation behavior):
+401
+=== 2. auth/init WITH Bearer header (what the fixed Connect button fetches):
+http://127.0.0.1:8899/oauth/authorize?response_type=code&client_id=tricoach-dev&redirect_uri=http:%2F%2Flocalhost:18766%2Fapi%2Fintervals%2Fcallback&scope=ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE&state=dV9va2Fmb3I6MTc5NDE1NjI4Nzo2ZDhlZTBhYWJlOGE5NTExOTllNmVhMzYyOGFiNTBhNg%3D%3D
+=== 3. Provider authorize step (mock enforces documented scope rules):
+302
+=== 4. Follow the consent redirect into the OAuth callback:
+302 -> http://localhost:18766/api/intervals/callback?code=mock-code-1234&state=dV9va2Fmb3I6MTc5NDE1NjI4Nzo2ZDhlZTBhYWJlOGE5NTExOTllNmVhMzYyOGFiNTBhNg%3D%3D
+302 -> http://localhost:18766/?connected=1
+=== 5. Status after connect:
+{"connected": true, "status": "connected", "scope": "ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE", "athlete": {"id": "i98765", "name": "T. Rivera"}}
+
+=== 6. Wellness proxy:
+{"id": "2026-11-08", "weight": 70.1, "resting_heart_rate": 52}
+
+=== after 65s (was: dead at the 1h mark):
+{"connected": true, "status": "connected", "scope": "ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE", "athlete": {"id": "i98765", "name": "T. Rivera"}}
+
+=== wellness when athlete revoked the app (API 401s):
+{"error": "intervals returned 401"}
+401
+=== status flips to reconnect only now:
+{"connected": false, "status": "expired, reconnect"}
+
+=== disconnect + full reconnect flow again:
+disconnect: 200
+callback: 302 -> http://localhost:18766/?connected=1
+{"connected": true, "status": "connected", "scope": "ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE", "athlete": {"id": "i98765", "name": "T. Rivera"}}
+
+{"id": "2026-11-08", "weight": 70.1, "resting_heart_rate": 52}
+
+=== old broken scope string against mock scope validation (regression check):
+400 (old SCOPES, 400 expected)
+=== old pre-calendar single-variant scopes still accepted:
+302 (302 expected)
+ M config.py
+ M server.py
+ M static/app.js
+---
+README.md
+config.py
+logs
+server.py
+static
+ config.py     |  2 +-
+ server.py     | 45 +++++++++++++++++++++++++++++++--------------
+ static/app.js |  9 ++++++++-
+ 3 files changed, 40 insertions(+), 16 deletions(-)
+syntax OK

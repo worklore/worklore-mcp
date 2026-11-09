@@ -1,0 +1,79 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..a8466cd
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,53 @@
++# Почему nightly-review молчал
++
++Задача в launchd работала штатно: 6 запусков за 6 ночей (`runs = 6`),
++триггер 02:30 корректный, `state = waiting`. Молчание было полностью
++следствием двух проблем внутри `bin/nightly-review.zsh`.
++
++## Причина 1 (корневая): claude под launchd не авторизован
++
++Каждый запуск `claude -p ...` падал сразу с сообщением:
++
++```
++Not logged in · Please run /login
++```
++
++(видно в `Library/Logs/nightly-review.err`, повторяется на каждый из 6 запусков;
++`last exit code = 1` в `launchctl-print.txt`). То есть обзор коммитов ни разу
++не выполнялся.
++
++launchd-задача не наследует окружение интерактивной оболочки: plist задаёт
++только `PATH`. Если логин claude держится на переменных из `~/.zshrc`
++(например `ANTHROPIC_API_KEY` / `CLAUDE_CODE_OAUTH_TOKEN`) или на доступе
++к связке ключей, недоступном из контекста фоновой задачи, claude в задаче
++видит себя «не залогиненным», хотя в терминале работает.
++
++Это единственное, что нельзя починить из снапшота — нужен повторный вход:
++либо выполнить `claude /login` в окружении, чьи креды доступны задаче
++(связка ключей логин-сеанса), либо, если авторизация строится на env-переменных,
++прописать токен в `EnvironmentVariables` plist'а.
++
++## Причина 2 (почему не пришло даже сообщение об ошибке): `status` в zsh
++
++`status` — встроенная **read-only** переменная zsh (аналог `$?`). Строка
++
++```zsh
++status=$?
++```
++
++падала с фатальной ошибкой `read-only variable: status` (строка 19 лога),
++и zsh аварийно завершал скрипт на месте с exit 1. Ветка
++`if [ $status -ne 0 ] → notify "nightly review FAILED"` была недостижима,
++поэтому Telegram молчал даже об ошибках. Поведение подтверждено на тестовом
++скрипте: присвоение в `status` обрывает неинтерактивный zsh до `echo`.
++
++**Исправлено:** переменная переименована в `rc` в `bin/nightly-review.zsh`
++(ветка уведомления проверена на модельном прогоне — сообщение об ошибке
++теперь уходит, exit-код claude сохраняется).
++
++## Итог
++
++- Расписание и launchd — исправны, трогать не нужно.
++- После фикса при следующей неудаче придёт «nightly review FAILED (exit N)»;
++  реальные саммари появятся после устранения причины 1 (авторизация claude
++  для launchd-контекста). Текст ошибки claude пишется в `nightly-review.err`.
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..bf005f5 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -16,11 +16,11 @@ Do not modify any file."
+ cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
+ 
+ claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
++rc=$?
+ 
+-if [ $status -ne 0 ]; then
+-  "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
+-  exit $status
++if [ $rc -ne 0 ]; then
++  "$NOTIFY" "nightly review FAILED (exit $rc), see $OUT"
++  exit $rc
+ fi
+ 
+ "$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"

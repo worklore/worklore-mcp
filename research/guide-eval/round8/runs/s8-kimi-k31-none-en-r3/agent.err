@@ -1,0 +1,42 @@
+PASS: save_fact changes only the uncached athlete-context block; cached instructions remain identical.
+ M README.md
+ M bot.py
+?? ANSWER.md
+?? __pycache__/
+diff --git a/README.md b/README.md
+index ebd390e..f30e0d3 100644
+--- a/README.md
++++ b/README.md
+@@ -11,6 +11,8 @@ its system prompt. Every API call appends its `usage` object to `logs/usage.json
+ Run it locally with `COACH_ANTHROPIC_KEY=sk-ant-... python3 bot.py 42` and type
+ messages on stdin (the Telegram long-polling transport, which needs
+ `COACH_TELEGRAM_TOKEN`, lives in a separate deploy repo and just calls `reply()`).
+-Requires Python 3.11+ and `pip install anthropic`. Prompt caching is on: the system
+-prompt carries a `cache_control` marker so the tool-loop rounds and follow-up
+-messages inside the 5-minute window read it from cache.
++Requires Python 3.11+ and `pip install anthropic`. Prompt caching is on: the static
++coaching instructions form a separate system block with a `cache_control` marker,
++while the mutable athlete context is uncached. Tool-loop rounds and follow-up
++messages inside the 5-minute window can therefore reuse the instructions even
++after `save_fact` changes long-term memory.
+diff --git a/bot.py b/bot.py
+index e2ff241..25f74fb 100644
+--- a/bot.py
++++ b/bot.py
+@@ -128,9 +128,10 @@ def athlete_context(a, today):
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    return [
++        {"type": "text", "text": INSTRUCTIONS, "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": athlete_context(a, today)},
++    ]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [
+ M README.md
+ M bot.py
+?? ANSWER.md

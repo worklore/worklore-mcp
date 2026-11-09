@@ -1,0 +1,42 @@
+Library/LaunchAgents/:
+total 4
+drwxr-xr-x 3 valentinakoniukhova wheel  96 Nov  8 03:36 .
+drwxr-xr-x 4 valentinakoniukhova wheel 128 Nov  8 03:36 ..
+-rw-r--r-- 1 valentinakoniukhova wheel 853 Nov  8 03:36 com.vk.nightly-review.plist
+
+Library/Logs/:
+total 4
+drwxr-xr-x 4 valentinakoniukhova wheel 128 Nov  8 03:36 .
+drwxr-xr-x 4 valentinakoniukhova wheel 128 Nov  8 03:36 ..
+-rw-r--r-- 1 valentinakoniukhova wheel 594 Nov  8 03:36 nightly-review.err
+-rw-r--r-- 1 valentinakoniukhova wheel   0 Nov  8 03:36 nightly-review.out
+zsh-status-test.zsh:4: read-only variable: status
+script exit: 1
+zsh syntax OK
+Library/LaunchAgents/com.vk.nightly-review.plist: OK
+=== run 1: claude fails (login case) ===
+Not logged in · Please run /login
+nightly-review: claude exited 1 after 0s
+=== run 1: claude fails (login case) ===
+Not logged in · Please run /login
+nightly-review: claude exited 1 after 0s
+script exit: 1
+--- notify.log:
+TELEGRAM: nightly review FAILED (exit 1), see /private/tmp/h-LpEjJC/.tmp-verify/home/Library/Logs/nightly-review-2026-11-08.md
+TELEGRAM: nightly review FAILED (exit 1), see /private/tmp/h-LpEjJC/.tmp-verify/home/Library/Logs/nightly-review-2026-11-08.md
+--- err log:
+cat: .tmp-verify/home/Library/Logs/nightly-review.err
+: No such file or directory
+=== run 2: claude succeeds ===
+nightly-review: claude exited 0 after 0s
+script exit: 0
+--- last notify line:
+Summary: one risky commit in payments, rest trivial.
+=== run 3: repo missing ===
+bin/nightly-review.zsh:cd:18: no such file or directory: /private/tmp/h-LpEjJC/.tmp-verify/home/projects/shop
+script exit: 1
+--- last notify line:
+TELEGRAM: nightly review: repo missing
+4
+ M Library/LaunchAgents/com.vk.nightly-review.plist
+ M bin/nightly-review.zsh

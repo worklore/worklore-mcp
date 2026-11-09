@@ -6,7 +6,7 @@
 #   none-ru      task in Russian, no story
 #   example-ru   task in Russian + the note prefix in Russian + the story in English
 #   example-ruru task in Russian + the note prefix in Russian + the story in Russian
-# agents: claude-opus claude-sonnet claude-haiku codex-sol codex-sol-low agy-argon-high agy-argon-low agy-flash-low agy-oss
+# agents: claude-opus claude-sonnet claude-haiku codex-sol codex-sol-low agy-argon-high agy-argon-low agy-flash-low agy-oss kimi-k28 kimi-k31
 # The agent works in a fresh neutral dir /tmp/h-XXXXXX; graders, stories and other runs live elsewhere.
 set -u
 D="$(cd "$(dirname "$0")" && pwd)"
@@ -39,7 +39,17 @@ codex_run() { cd "$W" && timeout $T "${E[@]}" codex exec --skip-git-repo-check -
       -m "$1" -c model_reasoning_effort="\"$2\"" -C "$W" --json -o "$R/final.txt" "$P" < /dev/null > "$R/agent.log" 2> "$R/agent.err"; }
 agy_run() { cd "$W" && timeout $T "${E[@]}" ~/.local/bin/agy --model "$1" --dangerously-skip-permissions --add-dir "$W" \
       --disable-slash-commands --output-format stream-json -p "$P" < /dev/null > "$R/agent.log" 2> "$R/agent.err"; }
+# Kimi Code: added 2026-11-07. It has a real shell and its output goes to Moonshot's API, so on top of the env allowlist it
+# runs under kimi-sandbox.sb (no reading or writing the real home except its own login folder, no launchctl, no keychain)
+# with an empty scratch HOME, so the agent's tools (git, npm) start clean. Network stays open, as in every other lane.
+kimi_run() { local REAL="$HOME" SH SK; SH=$(mktemp -d /tmp/khome-XXXXXX); SK=$(mktemp -d /tmp/noskills-XXXXXX)
+  ( cd "$W" && . "$D/../sandbox/env.sh" && export HOME="$SH" && sandbox_exec sandbox-exec -D HOME="$REAL" -f "$D/kimi-sandbox.sb" \
+      env KIMI_CODE_HOME="$REAL/.kimi-code" KIMI_CODE_NO_AUTO_UPDATE=1 timeout $T "$REAL/.kimi-code/bin/kimi" -m "$1" -p "$P" \
+      --output-format stream-json --skills-dir "$SK" < /dev/null > "$R/agent.log" 2> "$R/agent.err" )
+  local rc=$?; rm -rf "$SH" "$SK"; return $rc; }
 case $A in
+  kimi-k28)       kimi_run kimi-code/kimi-for-coding;;
+  kimi-k31)       kimi_run kimi-code/k3.1-pro;;
   claude-opus)    claude_run claude-opus-5-5;;
   claude-sonnet)  claude_run claude-sonnet-5-5;;
   claude-haiku)   claude_run claude-haiku-5-5;;
@@ -60,6 +70,9 @@ limit=false
 if grep -v rate_limit_info "$R/agent.err" "$R/agent.log" 2>/dev/null | grep -qiE "hit your limit|usage limit|limit reached|rate limit exceeded|too many requests|out of credits|resource.?exhausted|insufficient_quota|quota exceeded|\"status\": ?429|status code 429|overloaded_error" \
    && [ $((end-start)) -lt 90 ]; then limit=true; fi
 # A provider outage mid-run (Antigravity 503 "no capacity", agy exit 3) is not a result either, whatever the wall time.
+# Kimi stops mid-run when the 5-hour quota runs out, and its web search starts failing with the same quota
+# error first, so either one means the run is not a result, however long it ran.
+if grep -qE "provider.api_error: You've reached your 5-hour usage limit|exceeded_current_quota_error" "$R/agent.err" "$R/agent.log" 2>/dev/null; then limit=true; fi
 if [ "$rc" = 3 ] || grep -qiE "UNAVAILABLE \(code 503\)|No capacity available|experiencing high traffic" "$R/agent.err" 2>/dev/null; then limit=true; fi
 echo "{\"id\":\"$ID\",\"story\":\"$S\",\"agent\":\"$A\",\"arm\":\"$ARM\",\"task_lang\":\"$TL\",\"story_lang\":\"${SL:-none}\",\"rep\":$REP,\"exit_code\":$rc,\"wall_s\":$((end-start)),\"limit\":$limit}" > "$R/meta.json"
 python3 "$D/graders/grade_$S.py" "$R" > "$R/grade.json" 2> "$R/grade.err"

@@ -1,0 +1,13 @@
+./bin/nightly-review.zsh
+./bin/notify.sh
+./Library/Logs/nightly-review.out
+./Library/Logs/nightly-review.err
+./Library/LaunchAgents/com.vk.nightly-review.plist
+./README.md
+./launchctl-print.txt
+/tmp/t.zsh:4: read-only variable: status
+exit=1
+NOTIFY: nightly review FAILED (exit 1), see /tmp/nr-test.md
+exit=1
+ M bin/nightly-review.zsh
+?? ANSWER.md

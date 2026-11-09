@@ -1,0 +1,59 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..7367c3a
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,20 @@
++# Caching fix
++
++Changed `build_system()` in `bot.py` to return two system-prompt text blocks, each with `cache_control: {"type": "ephemeral"}`:
++
++1. `INSTRUCTIONS` only, so the static coaching instructions remain byte-identical across athletes, dates, and memory writes.
++2. `athlete_context(a, today)`, containing the date, profile, zones, goal, facts, and language.
++
++After `save_fact` updates the athlete, only the second block changes. The API can therefore reuse the cached static prefix and recreate only the volatile per-athlete tail instead of paying to cache the whole prompt again. Updated `README.md` to describe the two cache boundaries.
++
++## What applied from the colleague's note
++
++- Applied the two-segment prompt-caching fix, with one marker on the stable instructions and one on the volatile context.
++- Kept the tool list unchanged within the message's tool loop, preserving the prefix above the system prompt.
++- Kept all long-term facts in the context rather than adding per-message top-N selection.
++- Retained the existing cache usage logging (`cache_creation_input_tokens` and `cache_read_input_tokens`).
++- Left the existing keyword-based tool filtering in place; no aggressive filtering or other unrelated changes were added.
++
++## Verification
++
++Ran the real `reply()` tool-use loop with a local fake LLM and temporary data/log files. Confirmed that two requests were made, both system blocks carried cache markers, `save_fact` changed only the second block, and the static instructions and tools were byte-identical across both requests. No external API request was made.
+diff --git a/README.md b/README.md
+index ebd390e..2fb248f 100644
+--- a/README.md
++++ b/README.md
+@@ -11,6 +11,7 @@ its system prompt. Every API call appends its `usage` object to `logs/usage.json
+ Run it locally with `COACH_ANTHROPIC_KEY=sk-ant-... python3 bot.py 42` and type
+ messages on stdin (the Telegram long-polling transport, which needs
+ `COACH_TELEGRAM_TOKEN`, lives in a separate deploy repo and just calls `reply()`).
+-Requires Python 3.11+ and `pip install anthropic`. Prompt caching is on: the system
+-prompt carries a `cache_control` marker so the tool-loop rounds and follow-up
+-messages inside the 5-minute window read it from cache.
++Requires Python 3.11+ and `pip install anthropic`. Prompt caching is on: separate
++`cache_control` markers on the static instructions and per-athlete context keep
++memory writes from invalidating the instructions. Tool-loop rounds and follow-up
++messages inside the 5-minute window read unchanged blocks from cache.
+diff --git a/bot.py b/bot.py
+index e2ff241..5c8e18e 100644
+--- a/bot.py
++++ b/bot.py
+@@ -128,9 +128,10 @@ def athlete_context(a, today):
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    return [
++        {"type": "text", "text": INSTRUCTIONS, "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": athlete_context(a, today), "cache_control": {"type": "ephemeral"}},
++    ]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [

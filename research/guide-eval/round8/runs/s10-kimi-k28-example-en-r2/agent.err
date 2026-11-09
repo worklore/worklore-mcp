@@ -1,0 +1,187 @@
+offer_screen.dart
+registration_screen.dart
+name: kredito
+description: Consumer loan registration and offers.
+publish_to: "none"
+version: 1.3.0+27
+
+environment:
+  sdk: ^3.5.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  posthog_flutter: ^5.36.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true
+/Users/valentinakoniukhova/development/flutter/bin/flutter
+/Users/valentinakoniukhova/development/flutter/bin/dart
+---
+1d7ddf1 base
+bash: /Users/valentinakoniukhova/development/flutter/bin/flutter: Operation not permitted
+EXIT: 126
+-rwxr-xr-x 1 valentinakoniukhova staff 2385 Aug 18 11:36 /Users/valentinakoniukhova/development/flutter/bin/flutter
+bash: /Users/valentinakoniukhova/development/flutter/bin/dart: Operation not permitted
+dart
+dartaotruntime
+dartvm
+done
+ls: 
+cannot access '/usr/local/bin/dart': No such file or directory
+lrwxr-xr-x 1 valentinakoniukhova admin 30 May  5  2026 /opt/homebrew/bin/dart -> ../Cellar/dart/3.11.5/bin/dart
+Dart SDK version: 3.11.5 (stable) (Wed Apr 15 00:36:32 2026 -0700) on "macos_arm64"
+/bin/bash: /usr/local/bin/dart: No such file or directory
+---
+ls: 
+cannot access '/Users/valentinakoniukhova/development/flutter/packages/flutter/.dart_tool/package_config.json': No such file or directory
+Dart SDK version: 3.13.0 (stable) (Wed Aug 5 00:28:05 2026 -0700) on "macos_arm64"
+head: cannot open '/Users/valentinakoniukhova/development/flutter/packages/flutter/.dart_tool/package_config.json' for reading: No such file or directory
+head: cannot open '/Users/valentinakoniukhova/development/flutter/bin/flutter' for reading: Operation not permitted
+ls: 
+cannot open directory '/Users/valentinakoniukhova/development/flutter/bin/cache/': Operation not permitted
+Error: Error when reading '/Users/valentinakoniukhova/development/flutter/.dart_tool/package_config.json': Operation not permitted
+/Users/valentinakoniukhova/development/flutter/bin/cache/flutter_tools.snapshot: Error: Error when reading '/Users/valentinakoniukhova/development/flutter/bin/cache/flutter_tools.snapshot': Operation not permitted
+Dart SDK version: 3.13.0 (stable) (Wed Aug 5 00:28:05 2026 -0700) on "macos_arm64"
+rc=0
+head: cannot open '/Users/valentinakoniukhova/development/flutter/packages/flutter/lib/src/material/slider.dart' for reading: Operation not permitted
+head: cannot open '/Users/valentinakoniukhova/development/flutter/packages/flutter/pubspec.yaml' for reading: Operation not permitted
+cat: /Users/valentinakoniukhova/development/flutter/version: No such file or directory
+ls: 
+cannot open directory '/Users/valentinakoniukhova/development/': Operation not permitted
+homebrew
+Devin-389f2f38-1688-4706-b9a6-2c233cb55678.sock
+Devin-6c5839c5-dc71-4449-acd3-8be2136d2c1c.sock
+a.json
+aimyear-reminders.err
+aimyear-reminders.log
+b.json
+b26.md
+c.json
+cachetest
+cc-daemon-501
+/dev/disk3s1s1  461G  347G  114G  76% /
+HTTP/2 200 
+x-guploader-uploadid: AFy3sg3npRF0Sz2p9g0W-pSEQlmMqOjqY3DDXL0uejIPPSPtfQg2P5fT_VdS9sz84z-5xtDKoMbdZO4
+x-goog-generation: 1793817832012292
+https://storage.googleapis.com/flutter_infra_release/releases/stable/macos/flutter_macos_3.47.9-stable.zip
+3.47.9
+Warning: Package resolution error when reading "analysis_options.yaml" file:
+Failed to resolve package URI "package:flutter_lints/flutter.yaml" in include.
+Formatted lib/screens/registration_screen.dart
+Formatted 2 files (1 changed) in 0.01 seconds.
+ lib/screens/offer_screen.dart        | 30 +++++++++++++++++-----------
+ lib/screens/registration_screen.dart | 38 ++++++++++++++++++++++++++++++++----
+ 2 files changed, 53 insertions(+), 15 deletions(-)
+diff --git a/lib/screens/registration_screen.dart b/lib/screens/registration_screen.dart
+index 059a250..1c8472b 100644
+--- a/lib/screens/registration_screen.dart
++++ b/lib/screens/registration_screen.dart
+@@ -1,5 +1,7 @@
+ import 'package:flutter/material.dart';
+ 
++import '../analytics.dart';
++
+ class RegistrationScreen extends StatefulWidget {
+   const RegistrationScreen({super.key});
+ 
+@@ -12,6 +14,8 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
+   final _phone = TextEditingController();
+   double _amount = 50000;
+   bool _terms = false;
++  bool _emailStartedFired = false;
++  bool _phoneStartedFired = false;
+ 
+   @override
+   void dispose() {
+@@ -36,14 +40,26 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
+               controller: _email,
+               keyboardType: TextInputType.emailAddress,
+               decoration: const InputDecoration(labelText: 'Email'),
+-              onChanged: (_) => setState(() {}),
++              onChanged: (_) {
++                setState(() {});
++                if (!_emailStartedFired) {
++                  _emailStartedFired = true;
++                  Analytics.capture('registration_email_started');
++                }
++              },
+             ),
+             const SizedBox(height: 12),
+             TextField(
+               controller: _phone,
+               keyboardType: TextInputType.phone,
+               decoration: const InputDecoration(labelText: 'Phone'),
+-              onChanged: (_) => setState(() {}),
++              onChanged: (_) {
++                setState(() {});
++                if (!_phoneStartedFired) {
++                  _phoneStartedFired = true;
++                  Analytics.capture('registration_phone_started');
++                }
++              },
+             ),
+             const SizedBox(height: 24),
+             Text('Loan amount: ${_amount.round()}'),
+@@ -54,17 +70,31 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
+               value: _amount,
+               label: _amount.round().toString(),
+               onChanged: (v) => setState(() => _amount = v),
++              onChangeEnd: (v) => Analytics.capture('loan_amount_changed', {
++                'amount': v.round(),
++              }),
+             ),
+             CheckboxListTile(
+               value: _terms,
+Waiting 1s / 1m 30s · 1 background task still running
+Waiting 2s / 1m 30s · 1 background task still running
+Waiting 3s / 1m 30s · 1 background task still running
+Waiting 4s / 1m 30s · 1 background task still running
+Waiting 5s / 1m 30s · 1 background task still running
+Waiting 6s / 1m 30s · 1 background task still running
+Waiting 7s / 1m 30s · 1 background task still running
+Waiting 8s / 1m 30s · 1 background task still running
+Waiting 9s / 1m 30s · 1 background task still running
+Waiting 10s / 1m 30s · 1 background task still running
+Waiting 11s / 1m 30s · 1 background task still running
+Waiting 12s / 1m 30s · 1 background task still running
+Waiting 13s / 1m 30s · 1 background task still running
+Waiting 14s / 1m 30s · 1 background task still running
+Waiting 15s / 1m 30s · 1 background task still running
+Flutter 3.47.9 • channel stable • https://github.com/flutter/flutter.git
+Framework • revision c197ca5199 (10 days ago) • 2026-10-29 10:10:20 -0400
+Engine • hash 9e025265bef30b838c0c1b68cad19decf97048f2 (revision 89c39edfdf) (11 days ago) • 2026-10-27 19:51:20.000Z
+Tools • Dart 3.13.7 • DevTools 2.60.0
++ xdg_directories 1.1.0
+Changed 36 dependencies!
+4 packages have newer versions incompatible with dependency constraints.
+Try `flutter pub outdated` for more information.
+Upgrading analysis_options.yaml to exclude build and platform directories.
+Analyzing h-uBVpwv...                                           
+No issues found! (ran in 6.0s)
+ M analysis_options.yaml
+ M lib/screens/offer_screen.dart
+ M lib/screens/registration_screen.dart
+?? .dart_tool/
+?? ANSWER.md
+?? pubspec.lock
+---
+diff --git a/analysis_options.yaml b/analysis_options.yaml
+index f9b3034..801d885 100644
+--- a/analysis_options.yaml
++++ b/analysis_options.yaml
+@@ -1 +1,4 @@
++analyzer:
++  exclude:
++    - build/**
+ include: package:flutter_lints/flutter.yaml
+---
+no .gitignore
+ M lib/screens/offer_screen.dart
+ M lib/screens/registration_screen.dart
+?? ANSWER.md

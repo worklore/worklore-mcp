@@ -1,0 +1,74 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..01ca894
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,7 @@
++# Причины сбоя интеграции Intervals.icu
++
++1. **Кнопка Connect не передавала учётные данные tricoach.** Ссылка в `static/app.js` выполняла обычную навигацию браузера на `/api/intervals/auth/init`, а не вызов через `fetch`-обёртку. Поэтому заголовок `Authorization: Bearer ...` отсутствовал, и сервер возвращал 401 всем атлетам. Теперь кнопка получает authorize URL авторизованным API-запросом и только затем перенаправляет браузер.
++
++2. **Authorize-запрос содержал неподдерживаемый scope `CALENDAR:READ`.** После добавления календарной синхронизации Intervals.icu отклонял весь запрос с `invalid_request` ещё до экрана согласия. Для нужной записи тренировок в календарь оставлен поддерживаемый `CALENDAR:WRITE`; недопустимый scope удалён из `config.py`.
++
++3. **Не запрашивался offline-доступ.** Без `access_type=offline` Intervals.icu выдал только access token, без refresh token. Код использовал срок жизни по умолчанию 3600 секунд и по истечении часа не мог обновить токен, поэтому менял статус на `expired, reconnect`. Параметр `access_type=offline` добавлен в authorize-запрос в `server.py`; существующий фоновый обновлятор теперь получает и сохраняет refresh token, включая его ротацию.
+diff --git a/config.py b/config.py
+index 54a8144..0681c6f 100644
+--- a/config.py
++++ b/config.py
+@@ -8,6 +8,6 @@ INTERVALS_BASE = os.environ.get("INTERVALS_BASE", "https://intervals.icu")
+ CLIENT_ID = "tricoach-dev"
+ CLIENT_SECRET = "s3cr3t-placeholder-0000"
+ REDIRECT_URI = f"http://localhost:{PORT}/api/intervals/callback"
+-SCOPES = "ACTIVITY:READ,ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:READ,CALENDAR:WRITE"
++SCOPES = "ACTIVITY:READ,ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE"
+ 
+ REFRESH_INTERVAL = 60      # seconds between passes of the token refresher
+diff --git a/server.py b/server.py
+index 351cbb7..6e145a4 100644
+--- a/server.py
++++ b/server.py
+@@ -185,14 +185,15 @@ class Handler(BaseHTTPRequestHandler):
+             return
+         self.send_json(404, {"error": "not found"})
+ 
+-    # Step 1: build the authorize URL and send the browser to Intervals.
++    # Step 1: build the authorize URL for the SPA to open in the browser.
+     def auth_init(self):
+         user = self.require_user()
+         if not user:
+             return
+         params = {"client_id": config.CLIENT_ID, "redirect_uri": config.REDIRECT_URI,
+-                  "scope": config.SCOPES, "state": sign_state(user["id"])}
+-        self.redirect(AUTHORIZE_URL + "?" + urllib.parse.urlencode(params, safe=":,"))
++                  "scope": config.SCOPES, "state": sign_state(user["id"]), "access_type": "offline"}
++        authorize_url = AUTHORIZE_URL + "?" + urllib.parse.urlencode(params, safe=":,")
++        self.send_json(200, {"authorize_url": authorize_url})
+ 
+     # Step 2: Intervals redirects back here with ?code=&state=.
+     def callback(self, q):
+diff --git a/static/app.js b/static/app.js
+index 368922e..296da62 100644
+--- a/static/app.js
++++ b/static/app.js
+@@ -25,10 +25,20 @@ async function render() {
+     } else {
+       const why = st.status && st.status !== "disconnected" ? `<p class="muted">Status: ${esc(st.status)}</p>` : "";
+       card = `<div class="card">Intervals.icu is not connected.${why}
+-        <p><a class="btn" href="/api/intervals/auth/init">Connect Intervals.icu</a></p></div>`;
++        <p><button class="btn" id="connect">Connect Intervals.icu</button></p></div>`;
+     }
+     root.className = "";
+     root.innerHTML = `<p>Signed in as <b>${esc(me.name)}</b>.</p>${card}`;
++    const c = document.getElementById("connect");
++    if (c) c.onclick = async () => {
++      c.disabled = true;
++      try {
++        const auth = await api("/api/intervals/auth/init");
++        window.location.assign(auth.authorize_url);
++      } catch (e) {
++        root.innerHTML = `<p class="card">Error: ${esc(e.message)}</p>`;
++      }
++    };
+     const d = document.getElementById("disconnect");
+     if (d) d.onclick = async () => { await api("/api/intervals/disconnect", { method: "POST" }); render(); };
+   } catch (e) {

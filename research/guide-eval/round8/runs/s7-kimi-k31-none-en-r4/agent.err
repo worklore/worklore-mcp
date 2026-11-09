@@ -1,0 +1,174 @@
+cebb9cd (HEAD -> main) base
+2026-11-08 13:37:25 [http] GET /api/intervals/auth/init 401 (no Authorization header)
+2026-11-08 13:37:25 [http] "GET /api/intervals/auth/init HTTP/1.1" 401 -
+2026-11-08 13:37:25 [http] "GET /api/intervals/auth/init HTTP/1.1" 200 -
+2026-11-08 13:37:25 [intervals] u_rivera: connected as athlete i98765 (no expiry supplied)
+2026-11-08 13:37:25 [http] "GET /api/intervals/callback?code=local-code&state=dV9yaXZlcmE6MTc5NDE1NTg0NTpjZWE1MzIzMTA2MmMzOGQ3ODEwNzQ4MjQ0YTM0MTVmMw%3D%3D HTTP/1.1" 302 -
+2026-11-08 13:37:25 [http] "GET /?connected=1 HTTP/1.1" 200 -
+Traceback (most recent call last):
+  File "<stdin>", line 74, in <module>
+AssertionError: callback did not redirect
+2026-11-08 13:37:49 [http] GET /api/intervals/auth/init 401 (no Authorization header)
+2026-11-08 13:37:49 [http] "GET /api/intervals/auth/init HTTP/1.1" 401 -
+2026-11-08 13:37:49 [http] "GET /api/intervals/auth/init HTTP/1.1" 200 -
+2026-11-08 13:37:49 [intervals] u_rivera: connected as athlete i98765 (no expiry supplied)
+2026-11-08 13:37:49 [http] "GET /api/intervals/callback?code=local-code&state=dV9yaXZlcmE6MTc5NDE1NTg2OTphOTZkNzdmZWJjN2MzODhjOGU2MWE1MTE4MmU2ZGZiNw%3D%3D HTTP/1.1" 302 -
+2026-11-08 13:37:49 [http] "GET /api/intervals/status HTTP/1.1" 200 -
+2026-11-08 13:37:50 [http] "GET /api/intervals/wellness HTTP/1.1" 403 -
+Traceback (most recent call last):
+  File "<stdin>", line 87, in <module>
+  File "<stdin>", line 54, in request
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/urllib/request.py", line 493, in open
+    response = meth(req, response)
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/urllib/request.py", line 602, in http_response
+    response = self.parent.error(
+        'http', request, response, code, msg, hdrs)
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/urllib/request.py", line 531, in error
+    return self._call_chain(*args)
+           ~~~~~~~~~~~~~~~~^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/urllib/request.py", line 464, in _call_chain
+    result = func(*args)
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/urllib/request.py", line 611, in http_error_default
+    raise HTTPError(req.full_url, code, msg, hdrs, fp)
+urllib.error.HTTPError: HTTP Error 403: Forbidden
+2026-11-08 13:37:51 [intervals] u_test: token refreshed
+expiring token refresh: PASS
+token without expires_in remains connected: PASS
+Connect click sends bearer token and navigates to returned URL: PASS
+2026-11-08 13:38:18 [http] GET /api/intervals/auth/init 401 (no Authorization header)
+2026-11-08 13:38:18 [http] "GET /api/intervals/auth/init HTTP/1.1" 401 -
+2026-11-08 13:38:18 [http] "GET /api/intervals/auth/init HTTP/1.1" 200 -
+2026-11-08 13:38:18 [intervals] u_rivera: connected as athlete i98765 (no expiry supplied)
+2026-11-08 13:38:18 [http] "GET /api/intervals/callback?code=local-code&state=dV9yaXZlcmE6MTc5NDE1NTg5ODphNDlhNzExMWRiZGY2ZDUzMTAwM2M2NTFmNjE0N2E5Yg%3D%3D HTTP/1.1" 302 -
+2026-11-08 13:38:18 [http] "GET /api/intervals/status HTTP/1.1" 200 -
+2026-11-08 13:38:18 [http] "GET /api/intervals/wellness HTTP/1.1" 200 -
+local OAuth callback, non-expiring token, status, and wellness proxy: PASS
+ M config.py
+ M server.py
+ M static/app.js
+?? ANSWER.md
+?? __pycache__/
+diff --git a/config.py b/config.py
+index 54a8144..e39e425 100644
+--- a/config.py
++++ b/config.py
+@@ -8,6 +8,6 @@ INTERVALS_BASE = os.environ.get("INTERVALS_BASE", "https://intervals.icu")
+ CLIENT_ID = "tricoach-dev"
+ CLIENT_SECRET = "s3cr3t-placeholder-0000"
+ REDIRECT_URI = f"http://localhost:{PORT}/api/intervals/callback"
+-SCOPES = "ACTIVITY:READ,ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:READ,CALENDAR:WRITE"
++SCOPES = "ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE"
+ 
+ REFRESH_INTERVAL = 60      # seconds between passes of the token refresher
+diff --git a/server.py b/server.py
+index 351cbb7..82983f6 100644
+--- a/server.py
++++ b/server.py
+@@ -12,7 +12,6 @@ import config
+ STATIC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
+ TOKEN_URL = config.INTERVALS_BASE + "/api/oauth/token"
+ AUTHORIZE_URL = config.INTERVALS_BASE + "/oauth/authorize"
+-DEFAULT_TOKEN_TTL = 3600   # seconds; used when the provider does not say how long a token lives
+ 
+ # --- in-memory store -------------------------------------------------------
+ USERS = {
+@@ -63,18 +62,18 @@ def exchange_code(code):
+ 
+ 
+ def store_connection(user_id, tok):
+-    expires_in = int(tok.get("expires_in") or DEFAULT_TOKEN_TTL)
++    expires_in = tok.get("expires_in")
++    expires_at = time.time() + int(expires_in) if expires_in is not None else None
+     refresh = tok.get("refresh_token")
+-    if not refresh:
+-        log(f"{user_id}: no refresh_token in response, scheduling expiry in {expires_in}s")
+     athlete = tok.get("athlete") or {}
+     with LOCK:
+         CONNECTIONS[user_id] = {
+             "athlete_id": athlete.get("id"), "athlete_name": athlete.get("name"),
+             "access_token": tok["access_token"], "refresh_token": refresh,
+-            "scope": tok.get("scope"), "expires_at": time.time() + expires_in, "status": "connected",
++            "scope": tok.get("scope"), "expires_at": expires_at, "status": "connected",
+         }
+-    log(f"{user_id}: connected as athlete {athlete.get('id')} (expires in {expires_in}s)")
++    expiry = f"expires in {expires_in}s" if expires_at is not None else "no expiry supplied"
++    log(f"{user_id}: connected as athlete {athlete.get('id')} ({expiry})")
+ 
+ 
+ def refresh_tokens():
+@@ -84,10 +83,11 @@ def refresh_tokens():
+         now = time.time()
+         with LOCK:
+             for uid, c in CONNECTIONS.items():
+-                if c["status"] != "connected" or c["expires_at"] - now > 300:
++                if (c["status"] != "connected" or c["expires_at"] is None
++                        or c["expires_at"] - now > 300):
+                     continue
+                 if not c["refresh_token"]:
+-                    log(f"{uid}: token expiry passed and no refresh token on file -> expired, reconnect")
++                    log(f"{uid}: token is near expiry and no refresh token is on file -> expired, reconnect")
+                     c.update(status="expired, reconnect", access_token=None)
+                     continue
+                 try:
+@@ -95,9 +95,10 @@ def refresh_tokens():
+                         "grant_type": "refresh_token", "refresh_token": c["refresh_token"],
+                         "client_id": config.CLIENT_ID, "client_secret": config.CLIENT_SECRET,
+                     })
++                    expires_in = tok.get("expires_in")
+                     c.update(access_token=tok["access_token"],
+                              refresh_token=tok.get("refresh_token", c["refresh_token"]),
+-                             expires_at=now + int(tok["expires_in"]))
++                             expires_at=now + int(expires_in) if expires_in is not None else None)
+                     log(f"{uid}: token refreshed")
+                 except Exception as e:
+                     log(f"{uid}: refresh failed ({e}) -> expired, reconnect")
+@@ -185,14 +186,15 @@ class Handler(BaseHTTPRequestHandler):
+             return
+         self.send_json(404, {"error": "not found"})
+ 
+-    # Step 1: build the authorize URL and send the browser to Intervals.
++    # Step 1: return the authorize URL to the SPA, which navigates the browser to Intervals.
+     def auth_init(self):
+         user = self.require_user()
+         if not user:
+             return
+         params = {"client_id": config.CLIENT_ID, "redirect_uri": config.REDIRECT_URI,
+                   "scope": config.SCOPES, "state": sign_state(user["id"])}
+-        self.redirect(AUTHORIZE_URL + "?" + urllib.parse.urlencode(params, safe=":,"))
++        authorize_url = AUTHORIZE_URL + "?" + urllib.parse.urlencode(params, safe=":,")
++        self.send_json(200, {"authorize_url": authorize_url})
+ 
+     # Step 2: Intervals redirects back here with ?code=&state=.
+     def callback(self, q):
+diff --git a/static/app.js b/static/app.js
+index 368922e..66b6481 100644
+--- a/static/app.js
++++ b/static/app.js
+@@ -25,10 +25,22 @@ async function render() {
+     } else {
+       const why = st.status && st.status !== "disconnected" ? `<p class="muted">Status: ${esc(st.status)}</p>` : "";
+       card = `<div class="card">Intervals.icu is not connected.${why}
+-        <p><a class="btn" href="/api/intervals/auth/init">Connect Intervals.icu</a></p></div>`;
++        <p><button class="btn" id="connect">Connect Intervals.icu</button></p>
++        <p class="muted" id="connect-error" role="alert"></p></div>`;
+     }
+     root.className = "";
+     root.innerHTML = `<p>Signed in as <b>${esc(me.name)}</b>.</p>${card}`;
++    const connect = document.getElementById("connect");
++    if (connect) connect.onclick = async () => {
++      connect.disabled = true;
++      try {
++        const data = await api("/api/intervals/auth/init");
++        window.location.assign(data.authorize_url);
++      } catch (e) {
++        connect.disabled = false;
++        document.getElementById("connect-error").textContent = e.message;
++      }
++    };
+     const d = document.getElementById("disconnect");
+     if (d) d.onclick = async () => { await api("/api/intervals/disconnect", { method: "POST" }); render(); };
+   } catch (e) {
+ M config.py
+ M server.py
+ M static/app.js
+?? ANSWER.md

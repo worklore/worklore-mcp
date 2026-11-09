@@ -1,0 +1,45 @@
+app.js OK
+2026-11-08 23:52:02 [http] "GET /api/intervals/auth/init HTTP/1.1" 404 -
+PASS GET /auth/init -> 404 (moved to POST)
+2026-11-08 23:52:02 [http] POST /api/intervals/auth/init 401 (no Authorization header)
+2026-11-08 23:52:02 [http] "POST /api/intervals/auth/init HTTP/1.1" 401 -
+PASS POST /auth/init w/o auth -> 401
+2026-11-08 23:52:02 [http] "POST /api/intervals/auth/init HTTP/1.1" 200 -
+PASS POST /auth/init -> 200
+PASS scope each area once
+PASS no READ+WRITE pair for same area
+PASS state present
+2026-11-08 23:52:02 [http] "GET /api/intervals/callback?code=x&state=dV9va2Fmb3I6MTc5NDE5MTcyMjplODUwNmIzMWMwODc4OGVmMWVhM2I0NDI4N2QzZTMzNg== HTTP/1.1" 400 -
+PASS stale state -> 400
+2026-11-08 23:52:02 [http] "GET /api/intervals/callback?code=x&state=dV9va2Fmb3I6MTc5NDE5MjcyMjo2Yzg3NDFhYThhYWE1YjM5NzZlMzI5MzRiODA4OTRkYwAA HTTP/1.1" 400 -
+PASS tampered state -> 400
+2026-11-08 23:52:02 [intervals] u_okafor: connected as athlete i111 (token does not expire)
+2026-11-08 23:52:02 [http] "GET /api/intervals/callback?code=fake-code&state=dV9va2Fmb3I6MTc5NDE5MjcyMjo2Yzg3NDFhYThhYWE1YjM5NzZlMzI5MzRiODA4OTRkYw== HTTP/1.1" 302 -
+PASS callback -> 302 to /?connected=1
+2026-11-08 23:52:02 [http] "GET /api/intervals/status HTTP/1.1" 200 -
+PASS status connected
+2026-11-08 23:52:02 [http] "GET /api/intervals/status HTTP/1.1" 200 -
+PASS rivera still disconnected
+PASS no refresh_token/expires_at stored
+2026-11-08 23:52:02 [http] "GET /api/intervals/wellness HTTP/1.1" 200 -
+PASS wellness 200 while token alive
+2026-11-08 23:52:02 [intervals] u_okafor: intervals returned 401, token revoked -> disconnected
+2026-11-08 23:52:02 [http] "GET /api/intervals/wellness HTTP/1.1" 409 -
+PASS wellness 401 from provider -> 409 reconnect
+2026-11-08 23:52:02 [http] "GET /api/intervals/status HTTP/1.1" 200 -
+PASS status -> disconnected after 401
+2026-11-08 23:52:02 [http] "GET /api/intervals/wellness HTTP/1.1" 409 -
+PASS wellness when not connected -> 409
+PASS token exchange: only client_id/secret/code
+PASS token URL correct
+
+ALL PASS
+ M config.py
+ M server.py
+ M static/app.js
+?? ANSWER.md
+?? __pycache__/
+ M config.py
+ M server.py
+ M static/app.js
+?? ANSWER.md

@@ -1,0 +1,68 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..26e2352
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,28 @@
++# Что изменил
++
++- В `bot.py` функция `build_system` теперь возвращает два текстовых блока вместо одного:
++  1. статические `INSTRUCTIONS`;
++  2. изменяемый `athlete_context` с датой, профилем, зонами, целью, фактами и языком.
++- Оба блока имеют собственный `cache_control: {"type": "ephemeral"}`. Поэтому `save_fact` меняет только второй блок, а кеш статических инструкций не инвалидируется.
++- Статический блок не содержит подставляемых значений. Разделитель между частями сохранён, поэтому объединённый текст системного промпта остался прежним.
++- Выбор и порядок инструментов не менялись. Описание кеширования обновлено в `README.md`.
++
++# Что пригодилось из заметки
++
++- Основное решение: два сегмента с отдельными маркерами `cache_control`, чтобы изменение памяти перекешировало только пользовательский хвост.
++- Требование побайтовой стабильности статического блока и всего, что находится выше него в префиксе, включая схемы инструментов.
++- Отказ от отбора top-N фактов под каждое сообщение: такой отбор делал бы изменяемый блок разным и мешал попаданиям в кеш.
++- Поля `cache_creation_input_tokens` и `cache_read_input_tokens` как способ проверки результата. Существующие записи в `logs/usage.jsonl` подтвердили исходную проблему: после `save_fact` чтение из кеша падало до нуля, а создание кеша снова охватывало весь промпт.
++- Фильтрация инструментов уже была реализована в проекте; её оставил без изменений.
++
++# Проверка
++
++Локально прогнал `reply()` с имитированным ответом Claude, который вызывает `save_fact`, и со вторым ответом в цикле инструментов. Проверено:
++
++- в запросах два системных блока, у обоих есть маркер ephemeral;
++- до и после `save_fact` статический блок полностью совпадает;
++- новый факт появляется только в блоке контекста атлета;
++- объединённый текст системного промпта совпадает с прежним форматом;
++- ответ бота успешно возвращается.
++
++Внешний API не вызывался, файлы данных и журнал `usage.jsonl` не изменялись. Поэтому фактические значения `cache_read_input_tokens` после изменения не измерялись; при работе с API после записи факта статический блок должен попадать в `cache_read`, а создание кеша должно относиться только к изменившемуся контексту.
+diff --git a/README.md b/README.md
+index ebd390e..6d56621 100644
+--- a/README.md
++++ b/README.md
+@@ -11,6 +11,8 @@ its system prompt. Every API call appends its `usage` object to `logs/usage.json
+ Run it locally with `COACH_ANTHROPIC_KEY=sk-ant-... python3 bot.py 42` and type
+ messages on stdin (the Telegram long-polling transport, which needs
+ `COACH_TELEGRAM_TOKEN`, lives in a separate deploy repo and just calls `reply()`).
+-Requires Python 3.11+ and `pip install anthropic`. Prompt caching is on: the system
+-prompt carries a `cache_control` marker so the tool-loop rounds and follow-up
+-messages inside the 5-minute window read it from cache.
++Requires Python 3.11+ and `pip install anthropic`. Prompt caching is on: static
++instructions and per-athlete context are separate system blocks, each with its own
++`cache_control` marker. Tool-loop rounds and follow-up messages inside the 5-minute
++window can read both from cache; after `save_fact`, only the athlete context is
++recreated while the static instructions remain cached.
+diff --git a/bot.py b/bot.py
+index e2ff241..5685690 100644
+--- a/bot.py
++++ b/bot.py
+@@ -128,9 +128,10 @@ def athlete_context(a, today):
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    return [
++        {"type": "text", "text": INSTRUCTIONS + "\n\n", "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": athlete_context(a, today), "cache_control": {"type": "ephemeral"}},
++    ]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [

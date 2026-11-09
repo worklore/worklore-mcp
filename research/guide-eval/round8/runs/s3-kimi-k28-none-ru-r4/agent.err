@@ -1,0 +1,36 @@
+-rw-r--r-- 1 valentinakoniukhova wheel 594 Nov  9 01:32 Library/Logs/nightly-review.err
+-rw-r--r-- 1 valentinakoniukhova wheel   0 Nov  9 01:32 Library/Logs/nightly-review.out
+
+Library/LaunchAgents:
+total 4
+drwxr-xr-x 3 valentinakoniukhova wheel  96 Nov  9 01:32 .
+drwxr-xr-x 4 valentinakoniukhova wheel 128 Nov  9 01:32 ..
+-rw-r--r-- 1 valentinakoniukhova wheel 853 Nov  9 01:32 com.vk.nightly-review.plist
+
+Library/Logs:
+total 4
+drwxr-xr-x 4 valentinakoniukhova wheel 128 Nov  9 01:32 .
+drwxr-xr-x 4 valentinakoniukhova wheel 128 Nov  9 01:32 ..
+-rw-r--r-- 1 valentinakoniukhova wheel 594 Nov  9 01:32 nightly-review.err
+-rw-r--r-- 1 valentinakoniukhova wheel   0 Nov  9 01:32 nightly-review.out
+bin/nightly-review.zsh: Paul Falstad's zsh script text executable, ASCII text
+bin/notify.sh:          Bourne-Again shell script text executable, Unicode text, UTF-8 text
+zsh:1: read-only variable: status
+exit=1
+---
+rc=1 reached
+exit=0
+syntax OK
+== claude-fail: script exit=1
+== claude-fail: notify received:
+nightly review FAILED (exit 1): Not logged in · Please run /login | logs: /private/tmp/h-QGNDus/.test/fakehome/Library/Logs/nightly-review-2026-11-09.md, /private/tmp/h-QGNDus/.test/fakehome/Library/Logs/nightly-review-2026-11-09.err.log
+
+== claude-empty: script exit=1
+== claude-empty: notify received:
+nightly review produced empty output: 
+
+== claude-ok: script exit=0
+== claude-ok: notify received:
+nightly review done: Fake review summary: everything looks fine.
+
+ M bin/nightly-review.zsh

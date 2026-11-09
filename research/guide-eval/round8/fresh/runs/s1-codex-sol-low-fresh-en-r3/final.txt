@@ -1,0 +1,3 @@
+Updated [gen.py](/tmp/h-lEpDuE/gen.py) to emit Intervals.icu structured workout text with explicit `% LTHR` ranges and repeats. The previous `workout_doc` was accepted on readback, but the watch showed zone boundaries; [ANSWER.md](/tmp/h-lEpDuE/ANSWER.md) records the reason for the change and the supporting format references. I also updated [README.md](/tmp/h-lEpDuE/README.md).
+
+The sample plan generates all four planned ranges and the `3x` repeat, and `git diff --check` passes. Watch behavior remains unverified because no workout was sent to an external service.

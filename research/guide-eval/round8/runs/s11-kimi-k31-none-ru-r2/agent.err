@@ -1,0 +1,82 @@
+.
+
+----------------------------------------------------------------------
+Ran 1 test in 0.000s
+
+OK
+.
+.
+----------------------------------------------------------------------
+Ran 2 tests in 0.000s
+
+OK
+diff --git a/src/app.py b/src/app.py
+index db49c5e..0be884a 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -8,6 +8,7 @@ import json
+ import logging
+ import re
+ import time
++from decimal import Decimal
+ 
+ log = logging.getLogger("stories")
+ 
+@@ -27,7 +28,8 @@ def similarity(a, b):
+     tag_score = len(ta & tb) / len(ta | tb) if (ta | tb) else 0
+     wa, wb = words(a.get("body")), words(b.get("body"))
+     word_score = len(wa & wb) / len(wa | wb) if (wa | wb) else 0
+-    return round(0.7 * tag_score + 0.3 * word_score, 4)
++    score = round(0.7 * tag_score + 0.3 * word_score, 4)
++    return Decimal(str(score))
+ 
+ 
+ def related(story, existing):
+diff --git a/tests/test_publish.py b/tests/test_publish.py
+index 6c9ac44..936efb2 100644
+--- a/tests/test_publish.py
++++ b/tests/test_publish.py
+@@ -1,6 +1,8 @@
++import json
+ import os
+ import sys
+ import unittest
++from decimal import Decimal
+ 
+ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+ sys.path.insert(0, os.path.dirname(__file__))
+@@ -23,6 +25,31 @@ class PublishTest(unittest.TestCase):
+         self.assertEqual(table.get_item(Key={"slug": "why-my-cron-ran-twice"})["Item"]["title"], "Why my cron ran twice")
+         self.assertEqual(table.scan()["Count"], 1)
+ 
++    def test_second_publish_with_similar_story_succeeds(self):
++        table = FakeTable()
++        stories = [
++            {
++                "slug": "first-story",
++                "title": "First story",
++                "tags": ["cron"],
++                "body": "A cron story.",
++            },
++            {
++                "slug": "second-story",
++                "title": "Second story",
++                "tags": ["cron"],
++                "body": "A cron story.",
++            },
++        ]
++
++        for story in stories:
++            response = app.handler({"body": json.dumps(story)}, table)
++            self.assertEqual(response["statusCode"], 201, response["body"])
++
++        stored = table.get_item(Key={"slug": "second-story"})["Item"]
++        self.assertEqual(stored["similar"], [{"slug": "first-story", "score": Decimal("1.0")}])
++        self.assertEqual(table.scan()["Count"], 2)
++
+ 
+ if __name__ == "__main__":
+     unittest.main()
+ M src/app.py
+ M tests/test_publish.py
+?? ANSWER.md

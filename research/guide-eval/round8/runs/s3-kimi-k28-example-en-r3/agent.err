@@ -1,0 +1,42 @@
+/private/tmp/h-M5MoFD/bin/nightly-review.zsh
+/private/tmp/h-M5MoFD/bin/notify.sh
+/private/tmp/h-M5MoFD/Library/Logs/nightly-review.out
+/private/tmp/h-M5MoFD/Library/Logs/nightly-review.err
+/private/tmp/h-M5MoFD/Library/LaunchAgents/com.vk.nightly-review.plist
+/private/tmp/h-M5MoFD/README.md
+/private/tmp/h-M5MoFD/launchctl-print.txt
+zsh:1: read-only variable: status
+exit=1
+Not logged in · Please run /login
+bin/nightly-review.zsh:19: read-only variable: status
+(no notifications - confirmed silent)
+nightly-review-2026-11-08.md
+zsh syntax OK
+/private/tmp/h-M5MoFD/Library/LaunchAgents/com.vk.nightly-review.plist: OK
+=== CASE 1: claude fails (not logged in) ===
+Not logged in · Please run /login
+[nightly-review] FAILED (exit 1) after 0s, see /tmp/nr-test/home/Library/Logs/nightly-review-2026-11-08.md
+exit=1
+--- notify.log:
+NOTIFY: nightly review FAILED (exit 1), see /tmp/nr-test/home/Library/Logs/nightly-review-2026-11-08.md
+=== CASE 2: claude succeeds ===
+[nightly-review] OK in 0s, wrote /tmp/nr-test/home/Library/Logs/nightly-review-2026-11-08.md
+exit=0
+--- notify.log:
+NOTIFY: nightly review done: Review: all 3 commits look safe. No risky changes found.
+Summary:
+- 2 small bugfixes
+- 1 dependency bump
+--- what claude received on stdin:
+MOCK-RECEIVED-PROMPT: Review the commits in this repository since 2026-11-07.
+For ...
+--- OUT file:
+Review: all 3 commits look safe. No risky changes found.
+Summary:
+- 2 small bugfixes
+- 1 dependency bump
+/private/tmp/h-M5MoFD/bin/nightly-review.zsh:cd:18: no such file or directory: /tmp/nr-test/home/projects/shop
+exit=1
+NOTIFY: nightly review: repo missing
+ M Library/LaunchAgents/com.vk.nightly-review.plist
+ M bin/nightly-review.zsh

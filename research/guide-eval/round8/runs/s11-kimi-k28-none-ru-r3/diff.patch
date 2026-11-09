@@ -1,0 +1,146 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..d881b49
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,27 @@
++# Почему вторая публикация возвращала 500
++
++## Причина
++
++`similarity()` в `src/app.py` возвращала `float` (`round(0.7 * tag_score + 0.3 * word_score, 4)`),
++и этот float попадал в поле `similar[].score` сохраняемого item. DynamoDB не поддерживает
++float — boto3 бросает `TypeError: Float types are not supported. Use Decimal types instead.`
++
++Первая публикация проходила, потому что таблица была пуста: `existing` пустой →
++`similar` = `[]` → ни одного float в item → `put_item` успешен (это и есть строка
++`similar=0 stored` в логе). Со второй публикации в таблице уже есть истории,
++`related()` кладёт в item словарь с float-полем `score`, и каждый `put_item`
++падает с этой TypeError, оборачиваясь в 500 (`logs/error.log`, строки 27–35).
++
++## Исправление (src/app.py)
++
++1. Корень дефекта: `similarity()` теперь считает в `Decimal` и возвращает `Decimal`
++   (арифметика `Decimal(len(...) / len(...))`, веса `Decimal("0.7")` / `Decimal("0.3")`).
++2. Страховка от повторения класса ошибки: `publish()` перед `put_item` прогоняет item
++   через `dynamo_safe()` — рекурсивно конвертирует любые float в Decimal. Если в будущем
++   в item добавится ещё одно float-поле, оно не уронит endpoint.
++
++## Тест
++
++`tests/test_publish.py`: `test_second_publish_stores_similar_as_decimal` публикует две
++истории и проверяет, что score в `similar` — `Decimal`, а таблица приняла оба item.
++Прогон: `python3 -m unittest discover tests` — 2 теста OK.
+diff --git a/src/app.py b/src/app.py
+index db49c5e..a68d591 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -8,6 +8,7 @@ import json
+ import logging
+ import re
+ import time
++from decimal import Decimal
+ 
+ log = logging.getLogger("stories")
+ 
+@@ -24,10 +25,10 @@ def words(text):
+ def similarity(a, b):
+     """Shared-tag ratio (Jaccard), blended with shared words of the two bodies."""
+     ta, tb = set(a.get("tags", [])), set(b.get("tags", []))
+-    tag_score = len(ta & tb) / len(ta | tb) if (ta | tb) else 0
++    tag_score = Decimal(len(ta & tb)) / Decimal(len(ta | tb)) if (ta | tb) else Decimal(0)
+     wa, wb = words(a.get("body")), words(b.get("body"))
+-    word_score = len(wa & wb) / len(wa | wb) if (wa | wb) else 0
+-    return round(0.7 * tag_score + 0.3 * word_score, 4)
++    word_score = Decimal(len(wa & wb)) / Decimal(len(wa | wb)) if (wa | wb) else Decimal(0)
++    return round(Decimal("0.7") * tag_score + Decimal("0.3") * word_score, 4)
+ 
+ 
+ def related(story, existing):
+@@ -48,6 +49,19 @@ def validate(story):
+         raise ValueError("bad slug")
+ 
+ 
++def dynamo_safe(value):
++    """DynamoDB has no float type; convert any float to Decimal, recursively."""
++    if isinstance(value, bool) or value is None or isinstance(value, (int, str, bytes, Decimal)):
++        return value
++    if isinstance(value, float):
++        return Decimal(str(value))
++    if isinstance(value, dict):
++        return {k: dynamo_safe(v) for k, v in value.items()}
++    if isinstance(value, (list, tuple, set, frozenset)):
++        return [dynamo_safe(v) for v in value]
++    return value
++
++
+ def publish(table, story):
+     """Store ``story`` with its related stories. Returns the stored item."""
+     validate(story)
+@@ -60,7 +74,7 @@ def publish(table, story):
+         "published_at": int(time.time()),
+         "similar": related(story, existing),
+     }
+-    table.put_item(Item=item)
++    table.put_item(Item=dynamo_safe(item))
+     log.info("publish slug=%s similar=%d stored", item["slug"], len(item["similar"]))
+     return item
+ 
+diff --git a/tests/test_publish.py b/tests/test_publish.py
+index 6c9ac44..1e2e3e8 100644
+--- a/tests/test_publish.py
++++ b/tests/test_publish.py
+@@ -1,6 +1,7 @@
+ import os
+ import sys
+ import unittest
++from decimal import Decimal
+ 
+ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+ sys.path.insert(0, os.path.dirname(__file__))
+@@ -8,21 +9,38 @@ sys.path.insert(0, os.path.dirname(__file__))
+ import app  # noqa: E402
+ from fake_dynamo import FakeTable  # noqa: E402
+ 
++STORY = {
++    "slug": "why-my-cron-ran-twice",
++    "title": "Why my cron ran twice",
++    "tags": ["cron", "linux"],
++    "body": "Two crontabs, one for root and one for me, both had the line.",
++}
++
++SECOND_STORY = {
++    "slug": "dedupe-cron-output",
++    "title": "Dedupe cron output",
++    "tags": ["cron"],
++    "body": "Two crontabs ran the same line, so the report duplicated.",
++}
++
+ 
+ class PublishTest(unittest.TestCase):
+     def test_publish_stores_story(self):
+         table = FakeTable()
+-        story = {
+-            "slug": "why-my-cron-ran-twice",
+-            "title": "Why my cron ran twice",
+-            "tags": ["cron", "linux"],
+-            "body": "Two crontabs, one for root and one for me, both had the line.",
+-        }
+-        stored = app.publish(table, story)
++        stored = app.publish(table, STORY)
+         self.assertEqual(stored["slug"], "why-my-cron-ran-twice")
+         self.assertEqual(table.get_item(Key={"slug": "why-my-cron-ran-twice"})["Item"]["title"], "Why my cron ran twice")
+         self.assertEqual(table.scan()["Count"], 1)
+ 
++    def test_second_publish_stores_similar_as_decimal(self):
++        table = FakeTable()
++        app.publish(table, STORY)
++        stored = app.publish(table, SECOND_STORY)
++        self.assertEqual(table.scan()["Count"], 2)
++        (entry,) = stored["similar"]
++        self.assertEqual(entry["slug"], "why-my-cron-ran-twice")
++        self.assertIsInstance(entry["score"], Decimal)
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

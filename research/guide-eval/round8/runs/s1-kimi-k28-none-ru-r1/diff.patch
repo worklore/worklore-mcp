@@ -1,0 +1,102 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..2777b79
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,52 @@
++# Что было не так и что изменено
++
++## Причина
++
++Часы показывали собственные зональные диапазоны, потому что `gen.py` отправлял
++HR-таргет в формате, которого Intervals.icu не знает:
++
++```json
++"hr": {"units": "%lthr", "value": 68, "end": 75}
++```
++
++API такой JSON принимает (он хранит `workout_doc` как есть — поэтому readback
++совпадает с отправленным), но при экспорте в Garmin цель не распознаётся, и
++в тренировку часов уходит не коридор, а зоны — поэтому все четыре шага
++отображались полосами Z2/Z3/Z4 часов, и смена LTHR на часах лишь двигала эти
++полосы. Прошлые попытки (`units: "bpm"` с абсолютными значениями → 214–249 bpm,
++`start_bpm`/`end_bpm` → константа 101) — это те же неправильные поля, часы
++получали мусор или зону по умолчанию.
++
++## Исправление (`gen.py`)
++
++1. Таргет теперь в документированной форме `workout_doc` — объект `target`
++   со строкой `value`:
++   `"target": {"type": "HR", "value": "117-129bpm"}` (было `"hr"` с
++   `units`/`value`/`end`).
++2. Конвертация %LTHR → bpm перенесена из (неработавшего) предположения
++   «Intervals сам конвертирует» в генератор: по константе `LTHR = 172`
++   (порог атлета из README) считаются абсолютные границы коридора. Так таргет
++   не зависит от того, какие зоны и пороги настроены на часах.
++
++План (`plans/*.json`) не менялся — он по-прежнему хранит проценты LTHR.
++
++## Проверка
++
++`python3 gen.py plans/tempo-run.json` даёт коридоры, совпадающие с колонкой
++«expected on watch» из `readback/watch-notes.md`:
++
++| step | planned (% LTHR) | теперь в JSON |
++|---|---|---|
++| Warm-up easy | 68–75 | 117–129 bpm |
++| Tempo | 88–93 | 151–160 bpm |
++| Float | 75–82 | 129–141 bpm |
++| Cool-down | 65–72 | 112–124 bpm |
++
++Ничего наружу не отправлялось: `push.sh` не запускался, изменения только
++локальные (генератор + README + этот файл).
++
++## Что осталось проверить на устройстве
++
++Формат `target {"type": "HR", "value": "min-maxbpm"}` — документированный
++Intervals.icu, но после пуша стоит сверить с readback: новое событие должно
++прийти с `target` в `workout_doc`, и часы должны показать коридоры, а не зоны.
+diff --git a/README.md b/README.md
+index 31b0941..4b8a9c6 100644
+--- a/README.md
++++ b/README.md
+@@ -10,7 +10,9 @@ exports them to the athlete's Garmin watch through Garmin Connect.
+   notes on what the watch displayed.
+ 
+ Athlete thresholds live in Intervals (LTHR 172 for this athlete). HR targets
+-in plans are percentages of LTHR; Intervals converts them to bpm at export.
++in plans are percentages of LTHR; `gen.py` converts them to absolute bpm
++(`target: {"type": "HR", "value": "117-129bpm"}`) so the watch shows the
++planned corridors instead of its own zone bands.
+ 
+ ```
+ python3 gen.py plans/tempo-run.json > event.json
+diff --git a/gen.py b/gen.py
+index be0b3bc..86c9180 100755
+--- a/gen.py
++++ b/gen.py
+@@ -6,17 +6,21 @@ Usage: python3 gen.py plans/tempo-run.json > event.json
+ import json
+ import sys
+ 
++# Athlete threshold from Intervals (see README). HR corridors in plans are
++# percentages of LTHR; the watch needs absolute bpm.
++LTHR = 172
++
+ 
+ def hr_target(step):
+-    """HR corridor for a step, as a percentage of the athlete's LTHR."""
++    """HR corridor for a step as absolute bpm (Intervals workout_doc format)."""
+     lo, hi = step["hr_pct"]
+-    return {"units": "%lthr", "value": lo, "end": hi}
++    return {"type": "HR", "value": f"{round(LTHR * lo / 100)}-{round(LTHR * hi / 100)}bpm"}
+ 
+ 
+ def build_step(step):
+     out = {"duration": step["minutes"] * 60}
+     if "hr_pct" in step:
+-        out["hr"] = hr_target(step)
++        out["target"] = hr_target(step)
+     if "label" in step:
+         out["text"] = step["label"]
+     return out

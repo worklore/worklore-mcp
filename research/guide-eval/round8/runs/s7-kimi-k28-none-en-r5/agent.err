@@ -1,0 +1,164 @@
+653e3c2 base
+---
+commit 653e3c2857251dc4858df4f277f089eff79ba46e
+Author: dev <dev@local>
+Date:   Sun Nov 8 23:02:27 2026 -0300
+
+    base
+
+ README.md                |  14 +++
+ config.py                |  13 +++
+ logs/connect-attempt.log |  41 ++++++++
+ logs/support-tickets.md  |  30 ++++++
+ server.py                | 244 +++++++++++++++++++++++++++++++++++++++++++++++
+ static/app.js            |  39 ++++++++
+ static/index.html        |  18 ++++
+ 7 files changed, 399 insertions(+)
+python OK
+js OK
+[fake-intervals] "GET / HTTP/1.1" 404 -
+[fake-intervals] "GET / HTTP/1.1" 404 -
+[fake-intervals] "GET / HTTP/1.1" 404 -
+[fake-intervals] "GET / HTTP/1.1" 404 -
+[fake-intervals] "GET / HTTP/1.1" 404 -
+[fake-intervals] "GET / HTTP/1.1" 404 -
+[fake-intervals] "GET / HTTP/1.1" 404 -
+[fake-intervals] "GET / HTTP/1.1" 404 -
+[fake-intervals] "GET / HTTP/1.1" 404 -
+[fake-intervals] "GET / HTTP/1.1" 404 -
+[fake-intervals] "GET / HTTP/1.1" 404 -
+[fake-intervals] "GET / HTTP/1.1" 404 -
+[fake-intervals] "GET / HTTP/1.1" 404 -
+[fake-intervals] "GET / HTTP/1.1" 404 -
+[fake-intervals] "GET / HTTP/1.1" 404 -
+[fake-intervals] "GET / HTTP/1.1" 404 -
+[fake-intervals] "GET / HTTP/1.1" 404 -
+[fake-intervals] "GET / HTTP/1.1" 404 -
+[fake-intervals] "GET / HTTP/1.1" 404 -
+[fake-intervals] "GET / HTTP/1.1" 404 -
+[fake-intervals] "GET / HTTP/1.1" 404 -
+[fake-intervals] "GET / HTTP/1.1" 404 -
+[fake-intervals] "GET / HTTP/1.1" 404 -
+[fake-intervals] "GET / HTTP/1.1" 404 -
+[fake-intervals] "GET / HTTP/1.1" 404 -
+[fake-intervals] "GET / HTTP/1.1" 404 -
+[fake-intervals] "GET / HTTP/1.1" 404 -
+[fake-intervals] "GET / HTTP/1.1" 404 -
+[fake-intervals] "GET / HTTP/1.1" 404 -
+[fake-intervals] "GET / HTTP/1.1" 404 -
+[fake-intervals] "GET / HTTP/1.1" 404 -
+[fake-intervals] "GET / HTTP/1.1" 404 -
+[fake-intervals] "GET / HTTP/1.1" 404 -
+[fake-intervals] "GET / HTTP/1.1" 404 -
+[fake-intervals] "GET / HTTP/1.1" 404 -
+[fake-intervals] "GET / HTTP/1.1" 404 -
+[fake-intervals] "GET / HTTP/1.1" 404 -
+[fake-intervals] "GET / HTTP/1.1" 404 -
+[fake-intervals] "GET / HTTP/1.1" 404 -
+[fake-intervals] "GET / HTTP/1.1" 404 -
+[fake-intervals] "GET / HTTP/1.1" 404 -
+[fake-intervals] "GET / HTTP/1.1" 404 -
+[fake-intervals] "GET / HTTP/1.1" 404 -
+[fake-intervals] "GET / HTTP/1.1" 404 -
+[fake-intervals] "GET / HTTP/1.1" 404 -
+[fake-intervals] "GET / HTTP/1.1" 404 -
+[fake-intervals] "GET / HTTP/1.1" 404 -
+[fake-intervals] "GET / HTTP/1.1" 404 -
+[fake-intervals] "GET / HTTP/1.1" 404 -
+[fake-intervals] "GET / HTTP/1.1" 404 -
+[fake-intervals] "GET / HTTP/1.1" 404 -
+[fake-intervals] "GET / HTTP/1.1" 404 -
+[fake-intervals] "GET / HTTP/1.1" 404 -
+[fake-intervals] "GET / HTTP/1.1" 404 -
+[fake-intervals] "GET / HTTP/1.1" 404 -
+[fake-intervals] "GET / HTTP/1.1" 404 -
+[fake-intervals] "GET / HTTP/1.1" 404 -
+[fake-intervals] "GET / HTTP/1.1" 404 -
+[fake-intervals] "GET / HTTP/1.1" 404 -
+[fake-intervals] "GET / HTTP/1.1" 404 -
+[fake-intervals] "GET / HTTP/1.1" 404 -
+[fake-intervals] "GET / HTTP/1.1" 404 -
+[fake-intervals] "GET / HTTP/1.1" 404 -
+[fake-intervals] "GET / HTTP/1.1" 404 -
+[fake-intervals] "GET / HTTP/1.1" 404 -
+[fake-intervals] "GET / HTTP/1.1" 404 -
+[fake-intervals] "GET / HTTP/1.1" 404 -
+[fake-intervals] "GET / HTTP/1.1" 404 -
+[fake-intervals] "GET / HTTP/1.1" 404 -
+[fake-intervals] "GET / HTTP/1.1" 404 -
+[fake-intervals] "GET / HTTP/1.1" 404 -
+[fake-intervals] "GET / HTTP/1.1" 404 -
+[fake-intervals] "GET / HTTP/1.1" 404 -
+[fake-intervals] "GET / HTTP/1.1" 404 -
+[fake-intervals] "GET / HTTP/1.1" 404 -
+[fake-intervals] "GET / HTTP/1.1" 404 -
+[fake-intervals] "GET / HTTP/1.1" 404 -
+[fake-intervals] "GET / HTTP/1.1" 404 -
+[fake-intervals] "GET / HTTP/1.1" 404 -
+[fake-intervals] "GET / HTTP/1.1" 404 -
+[fake-intervals] "GET / HTTP/1.1" 404 -
+[fake-intervals] "GET / HTTP/1.1" 404 -
+[fake-intervals] "GET / HTTP/1.1" 404 -
+[fake-intervals] "GET / HTTP/1.1" 404 -
+[fake-intervals] "GET / HTTP/1.1" 404 -
+[fake-intervals] "GET / HTTP/1.1" 404 -
+[fake-intervals] "GET / HTTP/1.1" 404 -
+[fake-intervals] "GET / HTTP/1.1" 404 -
+[fake-intervals] "GET / HTTP/1.1" 404 -
+[fake-intervals] "GET / HTTP/1.1" 404 -
+[fake-intervals] "GET / HTTP/1.1" 404 -
+[fake-intervals] "GET / HTTP/1.1" 404 -
+[fake-intervals] "GET / HTTP/1.1" 404 -
+[fake-intervals] "GET / HTTP/1.1" 404 -
+[fake-intervals] "GET / HTTP/1.1" 404 -
+[fake-intervals] "GET / HTTP/1.1" 404 -
+[fake-intervals] "GET / HTTP/1.1" 404 -
+[fake-intervals] "GET / HTTP/1.1" 404 -
+[fake-intervals] "GET / HTTP/1.1" 404 -
+Traceback (most recent call last):
+  File "/private/tmp/h-1khnkQ/.e2e/drive.py", line 64, in <module>
+    wait_port(8899, fake)
+    ~~~~~~~~~^^^^^^^^^^^^
+  File "/private/tmp/h-1khnkQ/.e2e/drive.py", line 56, in wait_port
+    raise RuntimeError(f"server on port {port} did not start")
+RuntimeError: server on port 8899 did not start
+[fake-intervals] "GET / HTTP/1.1" 404 -
+[fake-intervals] "GET /oauth/authorize?client_id=tricoach-dev&redirect_uri=http:%2F%2Flocalhost:8766%2Fapi%2Fintervals%2Fcallback&response_type=code&scope=ACTIVITY:READ,ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:READ,CALENDAR:WRITE&state=dV9va2Fmb3I6MTc5NDE5MDc0NzozZDI4YzNhYjA5NGZmZjZmMWFmNTc2YjgyN2VkMzI5Mw%3D%3D HTTP/1.1" 400 -
+[fake-intervals] "GET /oauth/authorize?client_id=tricoach-dev&redirect_uri=http:%2F%2Flocalhost:8766%2Fapi%2Fintervals%2Fcallback&response_type=code&scope=ACTIVITY:READ,ACTIVITY:WRITE,WELLNESS:READ&state=dV9va2Fmb3I6MTc5NDE5MDc0NzozZDI4YzNhYjA5NGZmZjZmMWFmNTc2YjgyN2VkMzI5Mw%3D%3D HTTP/1.1" 302 -
+[fake-intervals] "POST /api/oauth/token HTTP/1.1" 200 -
+[fake-intervals] "GET /api/v1/athlete/i12345/wellness HTTP/1.1" 200 -
+PASS sign-in works  [{"id": "u_okafor", "name": "C. Okafor"}]
+PASS auth/init returns authorize URL  [{"url": "http://127.0.0.1:8899/oauth/authorize?client_id=tricoach-dev&redirect_uri=http:%2F%2Flocalhost:8766%2Fapi%2Fintervals%2Fcallback&response_type=code&scope=ACTIVITY:READ,ACTIVITY:WRITE,WELLNESS:READ&state=dV9va2Fmb3I6MTc5NDE5MDc0NzozZDI4YzNhYjA5NGZmZjZmMWFmNTc2YjgyN2VkMzI5Mw%3D%3D"}]
+PASS no unregistered CALENDAR scopes  [ACTIVITY:READ,ACTIVITY:WRITE,WELLNESS:READ]
+PASS response_type=code sent
+PASS old scope list -> 400 invalid_request (reproduces log)  [{"error": "invalid_request"}]
+FAIL authorize redirects to callback with code+state  [http://localhost:8766/api/intervals/callback?code=fake-code-123&state=dV9va2Fmb3I6MTc5NDE5MDc0NzozZDI4YzNhYjA5NGZmZjZmMWFmNTc2YjgyN2VkMzI5Mw%3D%3D]
+PASS callback completes, redirects to /?connected=1  [{'Server': 'BaseHTTP/0.6 Python/3.14.6', 'Date': 'Mon, 09 Nov 2026 02:19:07 GMT', 'Location': '/?connected=1'}]
+PASS status: connected  [{"connected": true, "status": "connected", "scope": "ACTIVITY:READ,ACTIVITY:WRITE,WELLNESS:READ", "athlete": {"id": "i12345", "name": "C. Okafor"}}]
+PASS wellness proxy works  [[{"id": "2026-11-08", "weight": 70.2}]]
+waiting 70s so the refresher thread runs a full pass...
+PASS still connected after refresher pass (no spurious expiry)  [{"connected": true, "status": "connected", "scope": "ACTIVITY:READ,ACTIVITY:WRITE,WELLNESS:READ", "athlete": {"id": "i12345", "name": "C. Okafor"}}]
+PASS server logged non-expiring token
+PASS no 'expired, reconnect' for the healthy connection
+
+FAILURES: authorize redirects to callback with code+state
+[fake-intervals] "GET / HTTP/1.1" 404 -
+[fake-intervals] "GET /oauth/authorize?client_id=tricoach-dev&redirect_uri=http:%2F%2Flocalhost:8766%2Fapi%2Fintervals%2Fcallback&response_type=code&scope=ACTIVITY:READ,ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:READ,CALENDAR:WRITE&state=dV9va2Fmb3I6MTc5NDE5MDg1MTo2MjYwYjM5MmU1OTM3MDA4MTY4YmVlNjMzNGU3YzMzYg%3D%3D HTTP/1.1" 400 -
+[fake-intervals] "GET /oauth/authorize?client_id=tricoach-dev&redirect_uri=http:%2F%2Flocalhost:8766%2Fapi%2Fintervals%2Fcallback&response_type=code&scope=ACTIVITY:READ,ACTIVITY:WRITE,WELLNESS:READ&state=dV9va2Fmb3I6MTc5NDE5MDg1MTo2MjYwYjM5MmU1OTM3MDA4MTY4YmVlNjMzNGU3YzMzYg%3D%3D HTTP/1.1" 302 -
+[fake-intervals] "POST /api/oauth/token HTTP/1.1" 200 -
+[fake-intervals] "GET /api/v1/athlete/i12345/wellness HTTP/1.1" 200 -
+PASS sign-in works  [{"id": "u_okafor", "name": "C. Okafor"}]
+PASS auth/init returns authorize URL  [{"url": "http://127.0.0.1:8899/oauth/authorize?client_id=tricoach-dev&redirect_uri=http:%2F%2Flocalhost:8766%2Fapi%2Fintervals%2Fcallback&response_type=code&scope=ACTIVITY:READ,ACTIVITY:WRITE,WELLNESS:READ&state=dV9va2Fmb3I6MTc5NDE5MDg1MTo2MjYwYjM5MmU1OTM3MDA4MTY4YmVlNjMzNGU3YzMzYg%3D%3D"}]
+PASS no unregistered CALENDAR scopes  [ACTIVITY:READ,ACTIVITY:WRITE,WELLNESS:READ]
+PASS response_type=code sent
+PASS old scope list -> 400 invalid_request (reproduces log)  [{"error": "invalid_request"}]
+PASS authorize redirects to callback with code+state  [http://localhost:8766/api/intervals/callback?code=fake-code-123&state=dV9va2Fmb3I6MTc5NDE5MDg1MTo2MjYwYjM5MmU1OTM3MDA4MTY4YmVlNjMzNGU3YzMzYg%3D%3D]
+PASS callback completes, redirects to /?connected=1  [{'Server': 'BaseHTTP/0.6 Python/3.14.6', 'Date': 'Mon, 09 Nov 2026 02:20:52 GMT', 'Location': '/?connected=1'}]
+PASS status: connected  [{"connected": true, "status": "connected", "scope": "ACTIVITY:READ,ACTIVITY:WRITE,WELLNESS:READ", "athlete": {"id": "i12345", "name": "C. Okafor"}}]
+PASS wellness proxy works  [[{"id": "2026-11-08", "weight": 70.2}]]
+waiting 70s so the refresher thread runs a full pass...
+PASS still connected after refresher pass (no spurious expiry)  [{"connected": true, "status": "connected", "scope": "ACTIVITY:READ,ACTIVITY:WRITE,WELLNESS:READ", "athlete": {"id": "i12345", "name": "C. Okafor"}}]
+PASS server logged non-expiring token
+PASS no 'expired, reconnect' for the healthy connection
+
+ALL CHECKS PASSED

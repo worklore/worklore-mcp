@@ -1,0 +1,52 @@
+381a482 (HEAD -> main) base
+stat: 
+cannot read file system information for '%Sp %N': No such file or directory
+  File: bin/nightly-review.zsh
+    ID: 100000f0000001a Namelen: ?       Type: apfs
+Block size: 4096       Fundamental block size: 4096
+Blocks: Total: 120699413  Free: 29887380   Available: 29887380
+Inodes: Total: 1202132654 Free: 1195495200
+  File: bin/notify.sh
+    ID: 100000f0000001a Namelen: ?       Type: apfs
+Block size: 4096       Fundamental block size: 4096
+Blocks: Total: 120699413  Free: 29887380   Available: 29887380
+Inodes: Total: 1202132654 Free: 1195495200
+  File: Library/LaunchAgents/com.vk.nightly-review.plist
+    ID: 100000f0000001a Namelen: ?       Type: apfs
+Block size: 4096       Fundamental block size: 4096
+Blocks: Total: 120699413  Free: 29887380   Available: 29887380
+Inodes: Total: 1202132654 Free: 1195495200
+zsh:1: read-only variable: status
+observed shell exit: 1
+Library/LaunchAgents/com.vk.nightly-review.plist: OK
+bin/nightly-review.zsh:18: no such file or directory: /private/tmp/h-gjng34/.nightly-review-test/Library/Logs/nightly-review-2026-11-08.md
+/bin/bash: line 6: print: command not found
+Not logged in · Please run /login
+unexpected failure notification: nightly review FAILED (exit 1), see /private/tmp/h-gjng34/.nightly-review-test/Library/Logs/nightly-review-2026-11-08.md
+nightly review FAILED (exit 23), see /private/tmp/h-gjng34/.nightly-review-test/Library/Logs/nightly-review-2026-11-08.md
+Not logged in · Please run /login
+Library/LaunchAgents/com.vk.nightly-review.plist: OK
+failure notification, success notification, saved output, and syntax all verified
+ M bin/nightly-review.zsh
+?? ANSWER.md
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..f9f7692 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -16,11 +16,11 @@ Do not modify any file."
+ cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
+ 
+ claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
++exit_code=$?
+ 
+-if [ $status -ne 0 ]; then
+-  "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
+-  exit $status
++if [ $exit_code -ne 0 ]; then
++  "$NOTIFY" "nightly review FAILED (exit $exit_code), see $OUT"
++  exit $exit_code
+ fi
+ 
+ "$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"
+Library/LaunchAgents/com.vk.nightly-review.plist: OK

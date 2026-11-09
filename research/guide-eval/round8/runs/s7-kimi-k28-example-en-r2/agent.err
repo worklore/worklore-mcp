@@ -1,0 +1,90 @@
+--- mock health ---
+000
+2026-11-08 07:56:50 [intervals] serving on http://localhost:8766 (intervals: http://127.0.0.1:9876)
+----------------------------------------
+Exception occurred during processing of request from ('127.0.0.1', 51792)
+Traceback (most recent call last):
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 697, in process_request_thread
+    self.finish_request(request, client_address)
+    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 362, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 766, in __init__
+    self.handle()
+    ~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 496, in handle
+    self.handle_one_request()
+    ~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 484, in handle_one_request
+    method()
+    ~~~~~~^^
+  File "/private/tmp/h-unWmrw/.tmp-test/mock_intervals.py", line 36, in do_GET
+    loc = f"{q['redirect_uri']}?code=mock-code-1&state={urllib.parse.quote(q['state'])}"
+             ~^^^^^^^^^^^^^^^^
+KeyError: 'redirect_uri'
+----------------------------------------
+COMMAND   PID                USER   FD   TYPE             DEVICE SIZE/OFF NODE NAME
+Python  84284 valentinakoniukhova    3u  IPv4 0x6171546ec28486ee      0t0  TCP localhost:sd (LISTEN)
+Python  84285 valentinakoniukhova    3u  IPv4 0x923c902982a3fd90      0t0  TCP localhost:8766 (LISTEN)
+PASS init POST returns 200 + authorize_url {"authorize_url": "http://127.0.0.1:9876/oauth/authorize?client_id=tricoach-dev&redirect_uri=http:%2F%2Flocalhost:8766%2
+PASS init without header still 401 (guard intact) 401
+PASS no duplicated scope areas ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE
+PASS old duplicated scope rejected 400 {"error": "invalid_request"}
+FAIL authorize accepts fixed scope (302) 200
+Traceback (most recent call last):
+  File "/private/tmp/h-unWmrw/.tmp-test/e2e_test.py", line 61, in <module>
+    cb = urllib.parse.urlsplit(hdrs["Location"])
+                               ~~~~^^^^^^^^^^^^
+KeyError: 'Location'
+PASS init POST returns 200 + authorize_url {"authorize_url": "http://127.0.0.1:9876/oauth/authorize?client_id=tricoach-dev&redirect_uri=http:%2F%2Flocalhost:8766%2
+PASS init without header still 401 (guard intact) 401
+PASS no duplicated scope areas ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE
+Traceback (most recent call last):
+  File "/private/tmp/h-unWmrw/.tmp-test/e2e_test.py", line 64, in <module>
+    st, _, body = authorize(bad)
+                  ~~~~~~~~~^^^^^
+  File "/private/tmp/h-unWmrw/.tmp-test/e2e_test.py", line 45, in authorize
+    return req(MOCK, parts.path + "?" + parts.query, follow=False)
+  File "/private/tmp/h-unWmrw/.tmp-test/e2e_test.py", line 32, in req
+    with op.urlopen(r, timeout=10) as resp:
+         ^^^^^^^^^^
+AttributeError: 'OpenerDirector' object has no attribute 'urlopen'
+PASS init POST returns 200 + authorize_url {"authorize_url": "http://127.0.0.1:9876/oauth/authorize?client_id=tricoach-dev&redirect_uri=http:%2F%2Flocalhost:8766%2
+PASS init without header still 401 (guard intact) 401
+PASS no duplicated scope areas ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE
+PASS old duplicated scope rejected 400 {"error": "invalid_request"}
+PASS authorize accepts fixed scope (302) 302
+PASS redirects to our callback 
+PASS callback succeeds (302 to /?connected=1) 302
+PASS status connected as athlete i98765 {"connected": true, "status": "connected", "scope": "ACTIVITY:WRITE,WELLNESS:READ", "athlete": {"id": "i98765", "name": "T. Rivera"}}
+PASS wellness 200 with data 200
+PASS still connected (no fake expiry scheduled) {"connected": true, "status": "connected", "scope": "ACTIVITY:WRITE,WELLNESS:READ", "athlete": {"id": "i98765", "name": "T. Rivera"}}
+PASS wellness 409 after provider-side revoke 409
+PASS status flips to reconnect {"connected": false, "status": "reconnect"}
+PASS token exchange fields are exactly client_id/client_secret/code [["client_id", "client_secret", "code"]]
+PASS reconnect flow restores connection {"connected": true, "status": "connected", "scope": "ACTIVITY:WRITE,WELLNESS:READ", "athlete": {"id": "i98765", "name": "T. Rivera"}}
+
+13 checks, 0 failed
+2026-11-08 07:59:29 [http] "GET /api/intervals/auth/init HTTP/1.1" 200 -
+2026-11-08 07:59:29 [intervals] u_okafor: connected as athlete i98765
+2026-11-08 07:59:29 [http] "GET /api/intervals/callback?code=mock-code-1&state=dV9va2Fmb3I6aW50ZXJ2YWxzX29hdXRoOjE3OTQxMzU1Njk6NzZjM2UzYTM4MTliOTYxMmJhODZmOWFjYjMxYzk2Mzg%3D HTTP/1.1" 302 -
+2026-11-08 07:59:29 [http] "GET /?connected=1 HTTP/1.1" 200 -
+2026-11-08 07:59:29 [http] "GET /api/intervals/status HTTP/1.1" 200 -
+ M config.py
+ M server.py
+ M static/app.js
+?? __pycache__/
+ M config.py
+ M server.py
+ M static/app.js
+ M config.py
+ M server.py
+ M static/app.js
+?? ANSWER.md
+ANSWER.md
+README.md
+config.py
+logs
+server.py
+static

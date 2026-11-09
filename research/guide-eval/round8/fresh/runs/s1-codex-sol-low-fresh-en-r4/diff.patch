@@ -1,0 +1,67 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..6999304
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,9 @@
++# HR corridor fix
++
++`gen.py` now emits each HR range as `%lthr` with `start` and `end`. The previous `value`/`end` shape selected the zone or lap HR path, which explains why the Forerunner showed its own zone boundaries. Percentages stay relative to the LTHR stored in Intervals.icu; the generator does not bake in the watch's threshold or use absolute `bpm` fields.
++
++The event also includes an Intervals workout `description` with the same ranges, repeat block, and `hr=1s` on every HR step. This makes the text representation available to the current workout export path and requests Instant HR for Garmin. `workout_doc.target` explicitly selects HR.
++
++I generated the sample event locally and checked that all four corridors and the three-repeat block appear in both representations. No event was sent to Intervals.icu, so watch display still needs an end-to-end check on a newly exported workout.
++
++References: [Intervals.icu API workout fields](https://forum.intervals.icu/t/downloading-planned-workouts-from-the-api/93737), [Instant HR option](https://forum.intervals.icu/t/power-and-hr-targets-for-garmin-workouts/2926), [description and export behavior](https://forum.intervals.icu/t/events-created-via-api-with-workout-doc-the-web-download-produces-an-empty-fit-while-the-api-download-does-not-which-representation-feeds-device-sync/132326).
+diff --git a/gen.py b/gen.py
+index be0b3bc..d041112 100755
+--- a/gen.py
++++ b/gen.py
+@@ -10,7 +10,29 @@ import sys
+ def hr_target(step):
+     """HR corridor for a step, as a percentage of the athlete's LTHR."""
+     lo, hi = step["hr_pct"]
+-    return {"units": "%lthr", "value": lo, "end": hi}
++    return {"units": "%lthr", "start": lo, "end": hi}
++
++
++def description_step(step):
++    label = step.get("label", "")
++    minutes = step["minutes"]
++    duration = f"{minutes}m"
++    target = ""
++    if "hr_pct" in step:
++        lo, hi = step["hr_pct"]
++        target = f" {lo}-{hi}% LTHR hr=1s"
++    return f"- {' '.join(part for part in (label, duration) if part)}{target}"
++
++
++def build_description(plan):
++    blocks = []
++    for block in plan["steps"]:
++        if "repeat" in block:
++            blocks.append("\n".join([f'{block["repeat"]}x',
++                                     *(description_step(s) for s in block["steps"])]))
++        else:
++            blocks.append(description_step(block))
++    return "\n\n".join(blocks)
+ 
+ 
+ def build_step(step):
+@@ -32,7 +54,7 @@ def build_doc(plan):
+             })
+         else:
+             steps.append(build_step(block))
+-    return {"steps": steps}
++    return {"target": "HR", "steps": steps}
+ 
+ 
+ def build_event(plan):
+@@ -41,6 +63,7 @@ def build_event(plan):
+         "type": plan["sport"],
+         "name": plan["name"],
+         "start_date_local": plan["date"] + "T00:00:00",
++        "description": build_description(plan),
+         "workout_doc": build_doc(plan),
+     }
+ 

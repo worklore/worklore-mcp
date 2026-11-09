@@ -1,0 +1,20 @@
+dc24f66 base
+Traceback (most recent call last):
+Python 3.14.6
+Traceback (most recent call last):
+  File "<stdin>", line 25, in <module>
+  File "<stdin>", line 15, in __init__
+  File "<stdin>", line 15, in <genexpr>
+AttributeError: 'Block' object has no attribute 'type'
+ M bot.py
+?? __pycache__/
+calls: 3, 2 blocks each
+static block byte-identical across all calls: 2486 chars
+tail round1: 305 chars | tail round2 (post-save_fact): 334 chars | tail msg2: 334 chars
+rendered prompt text matches old single-block format byte-for-byte
+tools stable within a message's tool loop: OK
+ALL CHECKS PASSED
+ M bot.py
+ M bot.py
+?? ANSWER.md
+compile OK

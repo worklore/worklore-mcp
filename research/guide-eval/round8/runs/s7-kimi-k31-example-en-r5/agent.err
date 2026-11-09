@@ -1,0 +1,54 @@
+2026-11-08 02:56:38 [http] POST /api/intervals/auth/init 401 (no Authorization header)
+2026-11-08 02:56:38 [http] "POST /api/intervals/auth/init HTTP/1.1" 401 -
+2026-11-08 02:56:38 [http] "POST /api/intervals/auth/init HTTP/1.1" 200 -
+2026-11-08 02:56:38 [intervals] u_okafor: connected as athlete i98765
+2026-11-08 02:56:38 [http] "GET /api/intervals/callback?code=oauth-code&state=aW50ZXJ2YWxzX29hdXRoOnVfb2thZm9yOjE3OTQxMTczOTg6NGJjNmIyYTk3MDM5OTliZTIzYWNlMjNiNDlkNzY1OWQ%3D HTTP/1.1" 302 -
+Traceback (most recent call last):
+  File "<stdin>", line 94, in <module>
+  File "<stdin>", line 79, in call
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/__init__.py", line 352, in loads
+    return _default_decoder.decode(s)
+           ~~~~~~~~~~~~~~~~~~~~~~~^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/decoder.py", line 345, in decode
+    obj, end = self.raw_decode(s, idx=_w(s, 0).end())
+               ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/decoder.py", line 363, in raw_decode
+    raise JSONDecodeError("Expecting value", s, err.value) from None
+json.decoder.JSONDecodeError: Expecting value: line 1 column 1 (char 0)
+PASS: Python syntax
+2026-11-08 02:57:00 [http] POST /api/intervals/auth/init 401 (no Authorization header)
+2026-11-08 02:57:00 [http] "POST /api/intervals/auth/init HTTP/1.1" 401 -
+2026-11-08 02:57:00 [http] "POST /api/intervals/auth/init HTTP/1.1" 200 -
+2026-11-08 02:57:00 [intervals] u_okafor: connected as athlete i98765
+2026-11-08 02:57:00 [http] "GET /api/intervals/callback?code=oauth-code&state=aW50ZXJ2YWxzX29hdXRoOnVfb2thZm9yOjE3OTQxMTc0MjA6MjgzMjc1ZDkxNjgxYWJhNTA0MTNmZGJlODMxMzRmYzI%3D HTTP/1.1" 302 -
+2026-11-08 02:57:00 [http] "GET /api/intervals/status HTTP/1.1" 200 -
+2026-11-08 02:57:00 [http] "GET /api/intervals/wellness HTTP/1.1" 200 -
+2026-11-08 02:57:00 [intervals] u_okafor: Intervals.icu returned 401 -> revoked, reconnect
+2026-11-08 02:57:00 [http] "GET /api/intervals/wellness HTTP/1.1" 401 -
+2026-11-08 02:57:00 [http] "GET /api/intervals/status HTTP/1.1" 200 -
+2026-11-08 02:57:00 [http] "POST /api/intervals/auth/init HTTP/1.1" 200 -
+2026-11-08 02:57:00 [intervals] u_okafor: connected Intervals.icu athlete does not match this account
+2026-11-08 02:57:00 [http] "GET /api/intervals/callback?code=oauth-code&state=aW50ZXJ2YWxzX29hdXRoOnVfb2thZm9yOjE3OTQxMTc0MjA6MjgzMjc1ZDkxNjgxYWJhNTA0MTNmZGJlODMxMzRmYzI%3D HTTP/1.1" 409 -
+2026-11-08 02:57:00 [http] "POST /api/intervals/auth/init HTTP/1.1" 200 -
+2026-11-08 02:57:00 [intervals] u_okafor: connected as athlete i98765
+2026-11-08 02:57:00 [http] "GET /api/intervals/callback?code=oauth-code&state=aW50ZXJ2YWxzX29hdXRoOnVfb2thZm9yOjE3OTQxMTc0MjA6MjgzMjc1ZDkxNjgxYWJhNTA0MTNmZGJlODMxMzRmYzI%3D HTTP/1.1" 302 -
+2026-11-08 02:57:00 [http] "GET /api/intervals/status HTTP/1.1" 200 -
+PASS: authenticated init, authorize URL, code exchange, connection, wellness, revocation, mismatch guard, and reconnect
+ M config.py
+ M server.py
+ M static/app.js
+?? ANSWER.md
+?? __pycache__/
+ config.py     |  4 +--
+ server.py     | 82 ++++++++++++++++++++++++-----------------------------------
+ static/app.js | 14 +++++++++-
+ 3 files changed, 47 insertions(+), 53 deletions(-)
+total 24
+drwxr-xr-x  4 valentinakoniukhova wheel   128 Nov  8 02:56 .
+drwx------ 10 valentinakoniukhova wheel   320 Nov  8 02:57 ..
+-rw-r--r--  1 valentinakoniukhova wheel   583 Nov  8 02:56 config.cpython-314.pyc
+-rw-r--r--  1 valentinakoniukhova wheel 17517 Nov  8 02:56 server.cpython-314.pyc
+ M config.py
+ M server.py
+ M static/app.js
+?? ANSWER.md

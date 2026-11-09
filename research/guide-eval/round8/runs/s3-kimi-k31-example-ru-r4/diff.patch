@@ -1,0 +1,82 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..5f001d7
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,36 @@
++# Почему ночная задача молчала
++
++`launchd` запускал задачу: в `launchctl-print.txt` записаны `runs = 6` и `last exit code = 1`. Проблема была не в расписании, а в самом запуске и в пути уведомления об ошибке.
++
++В `Library/Logs/nightly-review.err` каждый из шести запусков содержит одну и ту же пару ошибок:
++
++1. `Not logged in · Please run /login` — headless-клиент `claude` не мог авторизоваться. В plist был настроен только `PATH`, но не было `USER`, необходимого клиенту для доступа к ключам в Keychain в контексте `launchd`.
++2. `read-only variable: status` — после завершения `claude` скрипт выполнял `status=$?`. В zsh `status` является встроенной переменной только для чтения; попытка присваивания аварийно завершает скрипт. Поэтому выполнение не доходило до условия и вызова `notify.sh` ни при ошибке, ни при успехе. Это также воспроизведено отдельной командой zsh: присваивание завершилось кодом 1, а следующая команда не выполнилась.
++
++Дополнительно был устранён риск ожидания ввода: prompt передавался аргументом без перенаправления stdin. Теперь он передаётся через stdin, после чего поток ввода закрывается.
++
++# Что исправлено
++
++- В `bin/nightly-review.zsh` код возврата сохраняется в `rc`, а не в `status`.
++- Prompt передаётся командой `print -r -- "$PROMPT" | claude -p ...`.
++- Добавлена проверка непустого отчёта: даже при коде возврата 0 пустой файл считается ошибкой, о которой отправляется уведомление.
++- В `Library/LaunchAgents/com.vk.nightly-review.plist` добавлено `EnvironmentVariables.USER = vk`.
++
++# Какие части заметки коллеги пригодились
++
++- Сначала проверить факт запусков через `launchctl print`: счётчик запусков и код возврата сразу опровергли версию о неработающем расписании.
++- Читать `StandardErrorPath` до предположений: журнал содержал обе непосредственные ошибки.
++- Заменить `status=$?` на `rc=$?`.
++- Передать prompt через stdin и задать `USER` в `EnvironmentVariables`.
++- Проверять не только код возврата, но и реальный результат; отдельно проверить успешный и аварийный пути уведомлений.
++
++Советы про watchdog и обязательное логирование длительности не потребовались для устранения найденных ошибок.
++
++# Проверка
++
++- Синтаксис обоих скриптов проверен через `zsh -n` и `bash -n`; plist прошёл `plutil -lint`, значение `USER` извлечено и проверено.
++- Полный сценарий выполнен с локальными заглушками `claude` и `notify.sh`, без сети: prompt получен через stdin, отчёт создан, успешное уведомление вызвано.
++- При принудительной ошибке `claude` с кодом 42 скрипт вернул 42 и вызвал уведомление об ошибке.
++- При пустом отчёте и коде `claude` 0 скрипт вернул 1 и вызвал уведомление об ошибке.
++
++Реальные `launchctl kickstart`, Claude, Keychain и Telegram не вызывались: работа ограничена снимком в текущей директории и запрещает обращения к внешним сервисам.
+diff --git a/Library/LaunchAgents/com.vk.nightly-review.plist b/Library/LaunchAgents/com.vk.nightly-review.plist
+index c347363..d49eacf 100644
+--- a/Library/LaunchAgents/com.vk.nightly-review.plist
++++ b/Library/LaunchAgents/com.vk.nightly-review.plist
+@@ -24,6 +24,8 @@
+   <dict>
+     <key>PATH</key>
+     <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
++    <key>USER</key>
++    <string>vk</string>
+   </dict>
+ </dict>
+ </plist>
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..28ca076 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -15,12 +15,17 @@ Do not modify any file."
+ 
+ cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
+ 
+-claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
++print -r -- "$PROMPT" | claude -p --output-format text > "$OUT"
++rc=$?
+ 
+-if [ $status -ne 0 ]; then
+-  "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
+-  exit $status
++if [ $rc -ne 0 ]; then
++  "$NOTIFY" "nightly review FAILED (exit $rc), see $OUT"
++  exit $rc
++fi
++
++if [ ! -s "$OUT" ]; then
++  "$NOTIFY" "nightly review FAILED: empty output, see $OUT"
++  exit 1
+ fi
+ 
+ "$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"

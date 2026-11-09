@@ -1,0 +1,81 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..e52102a
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,9 @@
++# Generator fix
++
++`gen.py` now emits each HR range as `%lthr` with `start` and `end`, instead of `value` and `end`. The old shape was accepted by the API but exported as a zone target, which explains why the watch displayed its own zone boundaries. Explicit endpoints preserve the planned corridor when Intervals converts it using its LTHR.
++
++The event now also includes a top-level workout `description` in Intervals.icu's text grammar, with repeat blocks. The current export path parses that description for device sync; a populated `workout_doc` alone does not establish that the workout will export as intended.
++
++Verified locally with the tempo-run plan: all four HR ranges match the input, and the description contains the three-repeat block. I did not sync to a watch, so the device result remains unverified.
++
++References: [Intervals.icu API discussion](https://forum.intervals.icu/t/api-access-to-intervals-icu/609), [API workout export discussion](https://forum.intervals.icu/t/events-created-via-api-with-workout-doc-the-web-download-produces-an-empty-fit-while-the-api-download-does-not-which-representation-feeds-device-sync/132326), [HR corridor readback example](https://worklore.dev/s/2026-05-12-exact-hr-corridors-on-garmin-from-intervals-icu-api-workouts).
+diff --git a/README.md b/README.md
+index 31b0941..fa141ee 100644
+--- a/README.md
++++ b/README.md
+@@ -4,13 +4,15 @@ Generates structured triathlon workouts and pushes them to Intervals.icu, which
+ exports them to the athlete's Garmin watch through Garmin Connect.
+ 
+ - `gen.py` turns a plan (`plans/*.json`) into the body for
+-  `POST /api/v1/athlete/{id}/events` (an event with `workout_doc`).
++  `POST /api/v1/athlete/{id}/events` (an event with parsed `description`
++  and `workout_doc`).
+ - `push.sh` posts it (needs `INTERVALS_API_KEY` and `ATHLETE_ID`).
+ - `readback/` holds what the API returned for the last pushed event and
+   notes on what the watch displayed.
+ 
+ Athlete thresholds live in Intervals (LTHR 172 for this athlete). HR targets
+-in plans are percentages of LTHR; Intervals converts them to bpm at export.
++in plans are percentages of LTHR; Intervals converts the explicit `start`/`end`
++corridors to bpm at export.
+ 
+ ```
+ python3 gen.py plans/tempo-run.json > event.json
+diff --git a/gen.py b/gen.py
+index be0b3bc..ac54e52 100755
+--- a/gen.py
++++ b/gen.py
+@@ -10,7 +10,30 @@ import sys
+ def hr_target(step):
+     """HR corridor for a step, as a percentage of the athlete's LTHR."""
+     lo, hi = step["hr_pct"]
+-    return {"units": "%lthr", "value": lo, "end": hi}
++    return {"units": "%lthr", "start": lo, "end": hi}
++
++
++def describe_step(step):
++    """Emit a step in Intervals.icu's workout description grammar."""
++    target = ""
++    if "hr_pct" in step:
++        lo, hi = step["hr_pct"]
++        target = f" {lo}-{hi}% LTHR"
++    label = f"{step['label']} " if step.get("label") else ""
++    return f"- {label}{step['minutes']}m{target}"
++
++
++def build_description(plan):
++    blocks = []
++    for block in plan["steps"]:
++        if "repeat" in block:
++            blocks.append("\n".join(
++                [f"{block['repeat']}x"] +
++                [describe_step(step) for step in block["steps"]]
++            ))
++        else:
++            blocks.append(describe_step(block))
++    return "\n\n".join(blocks)
+ 
+ 
+ def build_step(step):
+@@ -41,6 +64,7 @@ def build_event(plan):
+         "type": plan["sport"],
+         "name": plan["name"],
+         "start_date_local": plan["date"] + "T00:00:00",
++        "description": build_description(plan),
+         "workout_doc": build_doc(plan),
+     }
+ 

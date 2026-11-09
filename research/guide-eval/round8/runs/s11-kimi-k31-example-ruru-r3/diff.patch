@@ -1,0 +1,91 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..853e6b0
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,19 @@
++# Причина
++
++`similarity()` в `src/app.py` вычисляет оценку через деление и `round()`, поэтому возвращает `float`. При первой публикации таблица пуста, `related()` возвращает пустой список `similar`, и в `put_item` не попадает ни одного `float`. При второй публикации в `similar` появляется запись с оценкой типа `float`. Сериализатор boto3 не поддерживает этот тип для DynamoDB и выбрасывает `TypeError: Float types are not supported. Use Decimal types instead.` Именно этот сбой записан в `logs/error.log`; общий обработчик исключений превращает его в ответ 500.
++
++# Исправление
++
++В `src/app.py` оценка преобразуется в `Decimal` через `Decimal(str(similarity(...)))` при формировании записи о похожей истории. `Decimal` поддерживается DynamoDB, а преобразование через строку сохраняет уже округлённое десятичное значение без двоичных артефактов `float`. Шкала оценки и точность остались прежними.
++
++В `tests/test_publish.py` добавлен регрессионный тест двух последовательных публикаций через `handler()`: первая создаёт исходное состояние таблицы, вторая проходит ветку вычисления похожести. Тест проверяет ответы 201 и тип сохранённой оценки `Decimal`. `FakeTable` рекурсивно проверяет вложенные значения, поэтому возврат `float` в `similar` снова сломает тест.
++
++Проверка: `python3 -m unittest discover tests` — 2 теста, успешно. Отдельное воспроизведение двух запросов также вернуло 201 для обеих публикаций.
++
++# Что пригодилось из заметки коллеги
++
++- Объяснение зависимости от состояния: пустая таблица скрывает ошибку, а вторая запись впервые выполняет код вычисления похожести.
++- Рекомендация проследить результаты деления и округления до записи DynamoDB и преобразовать их в поддерживаемый числовой тип на границе записи.
++- Идея регрессионного теста, который сначала заполняет таблицу, а затем проверяет следующую запись.
++
++Переход на целые проценты не использован: он изменил бы формат хранимой оценки и снизил точность, тогда как `Decimal` устраняет причину без такого изменения. Публикация в реальную таблицу не выполнялась; локальный `FakeTable` специально воспроизводит проверку типов boto3.
+diff --git a/src/app.py b/src/app.py
+index db49c5e..c18364f 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -8,6 +8,7 @@ import json
+ import logging
+ import re
+ import time
++from decimal import Decimal
+ 
+ log = logging.getLogger("stories")
+ 
+@@ -35,7 +36,8 @@ def related(story, existing):
+     for other in existing:
+         if other["slug"] == story["slug"]:
+             continue
+-        scored.append({"slug": other["slug"], "score": similarity(story, other)})
++        score = Decimal(str(similarity(story, other)))
++        scored.append({"slug": other["slug"], "score": score})
+     scored.sort(key=lambda s: s["score"], reverse=True)
+     return scored[:TOP_N]
+ 
+diff --git a/tests/test_publish.py b/tests/test_publish.py
+index 6c9ac44..9beca79 100644
+--- a/tests/test_publish.py
++++ b/tests/test_publish.py
+@@ -1,6 +1,8 @@
++import json
+ import os
+ import sys
+ import unittest
++from decimal import Decimal
+ 
+ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+ sys.path.insert(0, os.path.dirname(__file__))
+@@ -23,6 +25,30 @@ class PublishTest(unittest.TestCase):
+         self.assertEqual(table.get_item(Key={"slug": "why-my-cron-ran-twice"})["Item"]["title"], "Why my cron ran twice")
+         self.assertEqual(table.scan()["Count"], 1)
+ 
++    def test_second_publish_stores_related_scores(self):
++        table = FakeTable()
++        first = {
++            "slug": "first-story",
++            "title": "First story",
++            "tags": ["cron", "linux"],
++            "body": "A cron job ran twice.",
++        }
++        second = {
++            "slug": "second-story",
++            "title": "Second story",
++            "tags": ["cron"],
++            "body": "Another cron job ran twice.",
++        }
++
++        first_response = app.handler({"body": json.dumps(first)}, table)
++        self.assertEqual(first_response["statusCode"], 201)
++        second_response = app.handler({"body": json.dumps(second)}, table)
++        self.assertEqual(second_response["statusCode"], 201)
++
++        stored = table.get_item(Key={"slug": second["slug"]})["Item"]
++        self.assertEqual(stored["similar"][0]["slug"], first["slug"])
++        self.assertIsInstance(stored["similar"][0]["score"], Decimal)
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

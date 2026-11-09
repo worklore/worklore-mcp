@@ -1,0 +1,149 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..aa4229b
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,66 @@
++# Why the second publish returned 500 — cause and fix
++
++## Cause
++
++`similarity()` in `src/app.py` returned a Python `float` (`round()` of a blend of
++two divisions). The `similar` list it feeds goes straight into
++`table.put_item(Item=...)`, and boto3's DynamoDB serializer rejects floats with
++exactly the error in `logs/error.log`:
++
++    TypeError: Float types are not supported. Use Decimal types instead.
++
++The bug only shows up on the second write because of existing state: on the
++first publish the table is empty, so `related()` returns `[]` and no float ever
++reaches the item — matching the log line `similar=0` on the successful 201.
++From the second publish on, there is at least one existing story, scores get
++computed, and every `put_item` fails during client-side serialization (the
++request never reaches DynamoDB). This is a state-dependent code path
++(similarity scoring) that the empty-database test never exercised.
++
++## Fix
++
++Convert the score to `Decimal` at the boundary, in `similarity()`
++(`src/app.py:31`):
++
++```python
++return Decimal(str(round(0.7 * tag_score + 0.3 * word_score, 4)))
++```
++
++`Decimal(str(...))` keeps the existing 4-decimal rounding behavior and avoids
++`Decimal(float)` representation artifacts (e.g. `Decimal(0.2965)` would carry
++binary-float noise; `Decimal("0.2965")` is exact). DynamoDB accepts ints,
++strings, and Decimals, so no other item field needed changes.
++
++To make sure the bug cannot come back, the test suite now covers the populated
++path: `test_publish_with_existing_story_stores_similar_scores` in
++`tests/test_publish.py` seeds the table with one record, publishes a second
++story, and asserts the stored `similar` entries carry `Decimal` scores — the
++exact input the fake table (and real boto3) would reject as floats.
++
++Verified:
++- `python3 -m unittest discover tests` — 2 tests pass.
++- End-to-end through `handler()`: first publish 201, second publish 201 with
++  `similar: [{'slug': 'why-my-cron-ran-twice', 'score': Decimal('0.2965')}]`.
++
++## Which parts of the colleague's note applied
++
++Applied:
++- The root cause is identical: floats are not valid DynamoDB values and must be
++  converted to `Decimal` at the boundary.
++- The explanation of why the first write survived (empty table → no computed
++  scores → no floats) matches this case exactly, down to the `similar=0` log
++  line.
++- The core practice: add a test that seeds the table with one record and then
++  writes a second one, so state-dependent code (here, similarity scoring)
++  actually executes under test. That test is now in `tests/test_publish.py`.
++
++Adapted, not taken literally:
++- The note's fix was "scores became integer percentages." Here scores stay
++  fractional (Jaccard blend rounded to 4 decimals), so the conversion is to
++  `Decimal(str(round(...)))` instead of `int`.
++
++Ignored:
++- "publish twice against a real table" — the repo's ground rules forbid
++  touching external services, and `tests/fake_dynamo.py` already validates
++  items the way boto3's TypeSerializer does, so it reproduces the rejection
++  faithfully.
+diff --git a/src/app.py b/src/app.py
+index db49c5e..af4bb08 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -8,6 +8,7 @@ import json
+ import logging
+ import re
+ import time
++from decimal import Decimal
+ 
+ log = logging.getLogger("stories")
+ 
+@@ -27,7 +28,7 @@ def similarity(a, b):
+     tag_score = len(ta & tb) / len(ta | tb) if (ta | tb) else 0
+     wa, wb = words(a.get("body")), words(b.get("body"))
+     word_score = len(wa & wb) / len(wa | wb) if (wa | wb) else 0
+-    return round(0.7 * tag_score + 0.3 * word_score, 4)
++    return Decimal(str(round(0.7 * tag_score + 0.3 * word_score, 4)))
+ 
+ 
+ def related(story, existing):
+diff --git a/tests/test_publish.py b/tests/test_publish.py
+index 6c9ac44..f445626 100644
+--- a/tests/test_publish.py
++++ b/tests/test_publish.py
+@@ -1,6 +1,7 @@
+ import os
+ import sys
+ import unittest
++from decimal import Decimal
+ 
+ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+ sys.path.insert(0, os.path.dirname(__file__))
+@@ -8,21 +9,36 @@ sys.path.insert(0, os.path.dirname(__file__))
+ import app  # noqa: E402
+ from fake_dynamo import FakeTable  # noqa: E402
+ 
++STORY = {
++    "slug": "why-my-cron-ran-twice",
++    "title": "Why my cron ran twice",
++    "tags": ["cron", "linux"],
++    "body": "Two crontabs, one for root and one for me, both had the line.",
++}
++
+ 
+ class PublishTest(unittest.TestCase):
+     def test_publish_stores_story(self):
+         table = FakeTable()
+-        story = {
+-            "slug": "why-my-cron-ran-twice",
+-            "title": "Why my cron ran twice",
+-            "tags": ["cron", "linux"],
+-            "body": "Two crontabs, one for root and one for me, both had the line.",
+-        }
+-        stored = app.publish(table, story)
++        stored = app.publish(table, STORY)
+         self.assertEqual(stored["slug"], "why-my-cron-ran-twice")
+         self.assertEqual(table.get_item(Key={"slug": "why-my-cron-ran-twice"})["Item"]["title"], "Why my cron ran twice")
+         self.assertEqual(table.scan()["Count"], 1)
+ 
++    def test_publish_with_existing_story_stores_similar_scores(self):
++        table = FakeTable()
++        app.publish(table, STORY)
++        second = app.publish(table, {
++            "slug": "dedupe-cron-emails",
++            "title": "Dedupe your cron emails",
++            "tags": ["cron", "mail"],
++            "body": "Two cron jobs mailed me the same report, so I filtered one.",
++        })
++        self.assertEqual(table.scan()["Count"], 2)
++        self.assertTrue(second["similar"])
++        for entry in second["similar"]:
++            self.assertIsInstance(entry["score"], Decimal)
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

@@ -1,0 +1,16 @@
+654dec3 base
+before save_fact: cached prefix 2594 of 2939 system chars, marker blocks: 1
+after save_fact:  cached prefix 2594 of 2965 system chars
+cached prefix byte-identical across save_fact -> cache hit, only the tail is reprocessed
+Traceback (most recent call last):
+  File "<stdin>", line 62, in <module>
+  File "/private/tmp/h-muUJrH/bot.py", line 208, in reply
+    log_usage(resp.usage, a.user_id, round_no, tool=",".join(used_tools) or None)
+                                                    ~~~~~~~~^^^^^^^^^^^^
+TypeError: sequence item 0: expected str instance, NoneType found
+tool loop end-to-end OK: 2 rounds, save_fact inside the loop, reply returned
+ M bot.py
+ M bot.py
+?? ANSWER.md
+ bot.py | 11 ++++++++---
+ 1 file changed, 8 insertions(+), 3 deletions(-)

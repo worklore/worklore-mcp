@@ -1,0 +1,114 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..6651193
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,44 @@
++# Почему вторая публикация возвращала 500
++
++## Причина
++
++`similarity()` в `src/app.py` возвращала Python-float (`round(0.7 * tag_score + 0.3 * word_score, 4)`),
++а DynamoDB через boto3 не принимает float — только `int`, `Decimal`, `str` и т.д.
++(`TypeError: Float types are not supported. Use Decimal types instead.` в `logs/error.log`).
++
++Почему падение проявлялось только со второй публикации: `related()` вычисляет
++похожесть только по уже существующим записям. Первая публикация пишет в пустую
++таблицу → `similar` — пустой список → float в item не попадает → запись успешна.
++Вторая публикация находит первую запись → в `similar` попадают float-оценки →
++`table.put_item(Item=item)` падает → handler ловит исключение и возвращает 500.
++
++Тест `test_publish_stores_story` воспроизводил только «пустую» ветку, поэтому баг
++не ловился в тестах.
++
++## Исправление
++
++- `src/app.py`: `similarity()` теперь возвращает `Decimal(str(round(..., 4)))` —
++  конвертация в `Decimal` на границе записи, `str()` гарантирует точное
++  десятичное представление вместо бинарных артефактов float.
++- `tests/test_publish.py`: добавлен тест `test_publish_with_existing_story_computes_similarity` —
++  сидирует таблицу одной записью и публикует вторую через `handler`, проверяя
++  статус 201 и что оценки в `similar` имеют тип `Decimal`.
++
++Проверка: `python3 -m unittest discover -s tests` — 2 теста OK; ручной прогон
++трёх публикаций подряд через `handler` — все возвращают 201.
++
++## Что пригодилось из заметки коллеги
++
++- Диагноз «float в DynamoDB падает только при второй записи, потому что первая
++  идёт по пустой таблице» — совпал с нашим случаем один в один и сразу указал
++  на `similarity()`.
++- Совет «проследить каждое вычисляемое значение, попадающее в запись, и
++  сконвертировать в int/Decimal на границе» — применён как основной фикс.
++- Совет «тест на запись должен сидировать таблицу одной записью, чтобы
++  state-dependent код (похожесть) реально исполнялся» — применён: новый тест
++  покрывает именно этот путь.
++
++Не пригодилось: перевод оценок в целые проценты (в нашем случае дробная
++точность осознанно сохранена через `Decimal`), а также grep-проверка `round(`
++и делений по кодовой базе — в проекте единственное такое место было в
++`similarity()`.
+diff --git a/src/app.py b/src/app.py
+index db49c5e..af4bb08 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -8,6 +8,7 @@ import json
+ import logging
+ import re
+ import time
++from decimal import Decimal
+ 
+ log = logging.getLogger("stories")
+ 
+@@ -27,7 +28,7 @@ def similarity(a, b):
+     tag_score = len(ta & tb) / len(ta | tb) if (ta | tb) else 0
+     wa, wb = words(a.get("body")), words(b.get("body"))
+     word_score = len(wa & wb) / len(wa | wb) if (wa | wb) else 0
+-    return round(0.7 * tag_score + 0.3 * word_score, 4)
++    return Decimal(str(round(0.7 * tag_score + 0.3 * word_score, 4)))
+ 
+ 
+ def related(story, existing):
+diff --git a/tests/test_publish.py b/tests/test_publish.py
+index 6c9ac44..58b3319 100644
+--- a/tests/test_publish.py
++++ b/tests/test_publish.py
+@@ -1,6 +1,8 @@
++import json
+ import os
+ import sys
+ import unittest
++from decimal import Decimal
+ 
+ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+ sys.path.insert(0, os.path.dirname(__file__))
+@@ -23,6 +25,29 @@ class PublishTest(unittest.TestCase):
+         self.assertEqual(table.get_item(Key={"slug": "why-my-cron-ran-twice"})["Item"]["title"], "Why my cron ran twice")
+         self.assertEqual(table.scan()["Count"], 1)
+ 
++    def test_publish_with_existing_story_computes_similarity(self):
++        table = FakeTable()
++        first = {
++            "slug": "why-my-cron-ran-twice",
++            "title": "Why my cron ran twice",
++            "tags": ["cron", "linux"],
++            "body": "Two crontabs, one for root and one for me, both had the line.",
++        }
++        app.publish(table, first)
++
++        second = {
++            "slug": "cron-dst-bite-me",
++            "title": "Cron, DST and me",
++            "tags": ["cron", "dst"],
++            "body": "The cron job ran twice that night, once before the clock change and once after.",
++        }
++        response = app.handler({"body": json.dumps(second)}, table)
++        self.assertEqual(response["statusCode"], 201)
++
++        stored = table.get_item(Key={"slug": "cron-dst-bite-me"})["Item"]
++        self.assertEqual(len(stored["similar"]), 1)
++        self.assertIsInstance(stored["similar"][0]["score"], Decimal)
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

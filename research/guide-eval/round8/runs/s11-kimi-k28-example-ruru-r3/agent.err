@@ -1,0 +1,40 @@
+.
+E
+
+======================================================================
+ERROR: test_second_publish_with_existing_story (test_publish.PublishTest.test_second_publish_with_existing_story)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private/tmp/h-FKnBex/tests/test_publish.py", line 42, in test_second_publish_with_existing_story
+    stored = app.publish(table, second)
+  File "/private/tmp/h-FKnBex/tests/../src/app.py", line 63, in publish
+    table.put_item(Item=item)
+    ~~~~~~~~~~~~~~^^^^^^^^^^^
+  File "/private/tmp/h-FKnBex/tests/fake_dynamo.py", line 31, in put_item
+    _check(Item)
+    ~~~~~~^^^^^^
+  File "/private/tmp/h-FKnBex/tests/fake_dynamo.py", line 16, in _check
+    _check(v, f"{path}.{k}")
+    ~~~~~~^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/h-FKnBex/tests/fake_dynamo.py", line 20, in _check
+    _check(v, f"{path}[{i}]")
+    ~~~~~~^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/h-FKnBex/tests/fake_dynamo.py", line 16, in _check
+    _check(v, f"{path}.{k}")
+    ~~~~~~^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/h-FKnBex/tests/fake_dynamo.py", line 13, in _check
+    raise TypeError("Float types are not supported. Use Decimal types instead.")
+TypeError: Float types are not supported. Use Decimal types instead.
+
+----------------------------------------------------------------------
+Ran 2 tests in 0.001s
+
+FAILED (errors=1)
+.
+.
+----------------------------------------------------------------------
+Ran 2 tests in 0.000s
+
+OK
+1st: 201
+2nd: 201 [{'slug': 'why-my-cron-ran-twice', 'score': 28}]

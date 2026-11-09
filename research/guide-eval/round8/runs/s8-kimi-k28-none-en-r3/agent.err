@@ -1,0 +1,35 @@
+1af9ad5 base
+INSTRUCTIONS chars: 2484 approx tokens: 621
+context chars: 305 approx tokens: 76
+blocks: 1
+{'type': 'ephemeral'} 'You are Pace, an endurance coach for recreational runners an'
+all checks passed
+ M bot.py
+ M logs/usage.jsonl
+?? __pycache__/
+ M bot.py
+?? __pycache__/
+ M bot.py
+ M bot.py
+?? ANSWER.md
+diff --git a/bot.py b/bot.py
+index e2ff241..195b5ba 100644
+--- a/bot.py
++++ b/bot.py
+@@ -128,9 +128,13 @@ def athlete_context(a, today):
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    # Two cached segments: the static coaching rules first, then the
++    # per-athlete context. A save_fact only changes the small second
++    # segment, so the instructions stay cached instead of being re-created.
++    return [
++        {"type": "text", "text": INSTRUCTIONS, "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": athlete_context(a, today), "cache_control": {"type": "ephemeral"}},
++    ]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [

@@ -1,0 +1,50 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..3cacca5
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,10 @@
++# Исправление кеширования
++
++Причина: `build_system()` объединял статические правила и контекст спортсмена в один блок с `cache_control`. После `save_fact` менялся список фактов, а вместе с ним и весь кешируемый префикс. Поэтому следующий вызов снова оплачивал создание кеша для всех инструкций, что видно по `cache_read_input_tokens: 0` в `logs/usage.jsonl`.
++
++Изменения:
++- В `bot.py` системный промпт разделён на два блока. Первый содержит только неизменный `INSTRUCTIONS` и сохраняет `cache_control: {"type": "ephemeral"}`.
++- Профиль, дата, цели, зоны и долговременные факты перенесены во второй блок без `cache_control`. `save_fact` теперь меняет только этот некешируемый блок.
++- Описание поведения кеша обновлено в `README.md`.
++
++Проверка: локально выполнен двухраундовый сценарий `reply()` с поддельным LLM и вызовом `save_fact`, без обращения к API и без записи в данные спортсменов. Проверено, что новый факт появляется во втором запросе, а первый системный блок с инструкциями остаётся неизменным; `git diff --check` также проходит. Фактические значения `cache_read_input_tokens` без вызова внешнего API не измерялись.
+diff --git a/README.md b/README.md
+index ebd390e..a41db66 100644
+--- a/README.md
++++ b/README.md
+@@ -11,6 +11,8 @@ its system prompt. Every API call appends its `usage` object to `logs/usage.json
+ Run it locally with `COACH_ANTHROPIC_KEY=sk-ant-... python3 bot.py 42` and type
+ messages on stdin (the Telegram long-polling transport, which needs
+ `COACH_TELEGRAM_TOKEN`, lives in a separate deploy repo and just calls `reply()`).
+-Requires Python 3.11+ and `pip install anthropic`. Prompt caching is on: the system
+-prompt carries a `cache_control` marker so the tool-loop rounds and follow-up
+-messages inside the 5-minute window read it from cache.
++Requires Python 3.11+ and `pip install anthropic`. Prompt caching is on: only the
++static coaching instructions carry a `cache_control` marker. The athlete profile
++and long-term facts are a separate, uncached system block, so saving a fact does
++not invalidate the cached instructions. Tool-loop rounds and follow-up messages
++inside the 5-minute window can read the static block from cache.
+diff --git a/bot.py b/bot.py
+index e2ff241..25f74fb 100644
+--- a/bot.py
++++ b/bot.py
+@@ -128,9 +128,10 @@ def athlete_context(a, today):
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    return [
++        {"type": "text", "text": INSTRUCTIONS, "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": athlete_context(a, today)},
++    ]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [

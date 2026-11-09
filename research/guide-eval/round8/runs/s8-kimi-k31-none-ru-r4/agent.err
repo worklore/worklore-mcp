@@ -1,0 +1,51 @@
+ M README.md
+ M bot.py
+Traceback (most recent call last):
+  File "<stdin>", line 53, in <module>
+AssertionError
+replies: saved ok
+requests: 3
+0 blocks: 2 static matches: True context: 'Today: 2026-11-07 (Saturday)\nAthlete: athlete (id test-user), sport: running\nZones: Z1 <135, Z2 135-150, Z3 150-162, Z4 162-172, Z5 >172\nGoal: finish a half marathon\nLong-term facts:\n- (none yet)\nLanguage: en'
+1 blocks: 2 static matches: True context: 'Today: 2026-11-07 (Saturday)\nAthlete: athlete (id test-user), sport: running\nZones: Z1 <135, Z2 135-150, Z3 150-162, Z4 162-172, Z5 >172\nGoal: finish a half marathon\nLong-term facts:\n- Prefers morning runs\nLanguage: en'
+2 blocks: 2 static matches: True context: 'Today: 2026-11-07 (Saturday)\nAthlete: athlete (id test-user), sport: running\nZones: Z1 <135, Z2 135-150, Z3 150-162, Z4 162-172, Z5 >172\nGoal: finish a half marathon\nLong-term facts:\n- Prefers morning runs\nLanguage: en'
+saved facts: ['Prefers morning runs']
+Traceback (most recent call last):
+  File "<stdin>", line 44, in <module>
+AssertionError: fact not persisted exactly once
+OK: save_fact changes only the dynamic block; static cached instructions remain identical across 3 requests.
+diff --git a/README.md b/README.md
+index ebd390e..161de15 100644
+--- a/README.md
++++ b/README.md
+@@ -11,6 +11,7 @@ its system prompt. Every API call appends its `usage` object to `logs/usage.json
+ Run it locally with `COACH_ANTHROPIC_KEY=sk-ant-... python3 bot.py 42` and type
+ messages on stdin (the Telegram long-polling transport, which needs
+ `COACH_TELEGRAM_TOKEN`, lives in a separate deploy repo and just calls `reply()`).
+-Requires Python 3.11+ and `pip install anthropic`. Prompt caching is on: the system
+-prompt carries a `cache_control` marker so the tool-loop rounds and follow-up
+-messages inside the 5-minute window read it from cache.
++Requires Python 3.11+ and `pip install anthropic`. Prompt caching is on: the static
++coaching instructions are a separate system block with a `cache_control` marker, so
++changes to the athlete context do not invalidate them. Tool-loop rounds and follow-up
++messages inside the 5-minute window read the instructions from cache.
+diff --git a/bot.py b/bot.py
+index e2ff241..25f74fb 100644
+--- a/bot.py
++++ b/bot.py
+@@ -128,9 +128,10 @@ def athlete_context(a, today):
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    return [
++        {"type": "text", "text": INSTRUCTIONS, "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": athlete_context(a, today)},
++    ]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [
+ M README.md
+ M bot.py
+?? ANSWER.md

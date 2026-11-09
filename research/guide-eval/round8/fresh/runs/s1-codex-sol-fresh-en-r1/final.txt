@@ -1,0 +1,3 @@
+Fixed the generator to emit native Intervals.icu workout text with the planned `% LTHR` ranges and repeat block, and to select HR as the target. The previous `workout_doc` readback showed the API had stored the steps, but did not establish what its [device export](https://forum.intervals.icu/t/events-created-via-api-with-workout-doc-the-web-download-produces-an-empty-fit-while-the-api-download-does-not-which-representation-feeds-device-sync/132326) would send.
+
+The change and reasoning are in [ANSWER.md](/tmp/h-J8GQy4/ANSWER.md). The regression test passes; watch behavior still needs a device check. No event was pushed.

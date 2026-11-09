@@ -1,0 +1,136 @@
+current (safe=':,'): client_id=tricoach-dev&redirect_uri=http:%2F%2Flocalhost:8766%2Fapi%2Fintervals%2Fcallback&scope=ACTIVITY:READ,ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:READ,CALENDAR:WRITE&state=dV9va2Fmb3I6MTc5MjY4MTAwMDpiNjM1ZjBiZjU1M2ZjZWQ0YmM4ODNjMTExZmI4MDJhMw%3D%3D
+
+fixed   (default)  : client_id=tricoach-dev&redirect_uri=http%3A%2F%2Flocalhost%3A8766%2Fapi%2Fintervals%2Fcallback&scope=ACTIVITY%3AREAD%2CACTIVITY%3AWRITE%2CWELLNESS%3AREAD%2CCALENDAR%3AREAD%2CCALENDAR%3AWRITE&state=dV9va2Fmb3I6MTc5MjY4MTAwMDpiNjM1ZjBiZjU1M2ZjZWQ0YmM4ODNjMTExZmI4MDJhMw%3D%3D
+--- no header (browser navigation) ---
+HTTP/1.0 401 Unauthorized
+Server: BaseHTTP/0.6 Python/3.14.6
+Date: Sat, 07 Nov 2026 13:00:50 GMT
+Content-Type: application/json
+Content-Length: 25
+
+{"error": "unauthorized"}
+
+--- with header ---
+HTTP/1.0 302 Found
+Server: BaseHTTP/0.6 Python/3.14.6
+Date: Sat, 07 Nov 2026 13:00:50 GMT
+Location: https://intervals.icu/oauth/authorize?client_id=tricoach-dev&redirect_uri=http:%2F%2Flocalhost:8766%2Fapi%2Fintervals%2Fcallback&scope=ACTIVITY:READ,ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:READ,CALENDAR:WRITE&state=dV9va2Fmb3I6MTc5NDA1NjQ1MDoxZWE0YTQ3MDYxMjI1MGIzNzEwYTQ1ODgwZDczNmVjMw%3D%3D
+
+=== 1. auth/init WITHOUT token (old link behavior) ===
+{"error": "unauthorized"}
+
+=== 2. auth/init WITH token (new SPA behavior) ===
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+    import sys,json; print(json.load(sys.stdin)["url"])
+                           ~~~~~~~~~^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/__init__.py", line 298, in load
+    return loads(fp.read(),
+        cls=cls, object_hook=object_hook,
+        parse_float=parse_float, parse_int=parse_int,
+        parse_constant=parse_constant, object_pairs_hook=object_pairs_hook, **kw)
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/__init__.py", line 352, in loads
+    return _default_decoder.decode(s)
+           ~~~~~~~~~~~~~~~~~~~~~~~^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/decoder.py", line 345, in decode
+    obj, end = self.raw_decode(s, idx=_w(s, 0).end())
+               ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/decoder.py", line 363, in raw_decode
+    raise JSONDecodeError("Expecting value", s, err.value) from None
+json.decoder.JSONDecodeError: Expecting value: line 1 column 1 (char 0)
+
+
+=== 3. strict mock authorize (would 400 on raw ':') ===
+curl: option : bla
+nk argument where content is expected
+curl: try 'curl --help' or 'curl --manual' for more information
+2026-11-07 10:03:32 [intervals] serving on http://localhost:8766 (intervals: http://127.0.0.1:8899)
+Traceback (most recent call last):
+  File "/private/tmp/h-RVyWxT/server.py", line 269, in <module>
+    ThreadingHTTPServer(("127.0.0.1", config.PORT), Handler).serve_forever()
+    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^2026-11-07 10:03:33 [http] GET /api/intervals/auth/init 401 (no Authorization header)
+2026-11-07 10:03:33 [http] "GET /api/intervals/auth/init HTTP/1.1" 401 -
+2026-11-07 10:03:33 [http] "GET /api/intervals/auth/init HTTP/1.1" 302 -
+3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+OSError: [Errno 48] Address already in use
+---
+COMMAND   PID                USER   FD   TYPE             DEVICE SIZE/OFF NODE NAME
+Python  43074 valentinakoniukhova    3u  IPv4 0x1954a59f572a0fe1      0t0  TCP 127.0.0.1:8766 (LISTEN)
+HTTP/1.0 302 Found
+Server: BaseHTTP/0.6 Python/3.14.6
+Date: Sat, 07 Nov 2026 13:03:42 GMT
+Location: https://intervals.icu/oauth/authorize?client_id=tricoach-dev&redirect_uri=http:%2F%2Flocalhost:8766%2Fapi%2Fintervals%2Fcallback&scope=ACTIVITY:READ,ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:READ,CALENDAR:WRITE&state=dV9va2Fmb3I6MTc5NDA1NjYyMjo0NTkxZjg4OWFiOTQ3ZDU4NTkxM2VjMDg2NjYzYTMzZg%3D%3D
+
+Python  43262 valentinakoniukhova    3u  IPv4 0x3226677775e25cea      0t0  TCP 127.0.0.1:8766 (LISTEN)
+=== 1. auth/init WITHOUT token (old link behavior) ===
+{"error": "unauthorized"}
+
+=== 2. auth/init WITH token (new SPA behavior) ===
+http://127.0.0.1:8899/oauth/authorize?response_type=code&client_id=tricoach-dev&redirect_uri=http%3A%2F%2Flocalhost%3A8766%2Fapi%2Fintervals%2Fcallback&scope=ACTIVITY%3AREAD%2CACTIVITY%3AWRITE%2CWELLNESS%3AREAD%2CCALENDAR%3AREAD%2CCALENDAR%3AWRITE&state=dV9va2Fmb3I6MTc5NDA1NjYzNTowMzE0M2E4OTU1Y2RhYzViYzJiMjlhYjMxYzI4NWMyMw%3D%3D
+
+=== 3. strict mock authorize ===
+302 -> http://localhost:8766/api/intervals/callback?code=code-rivera&state=dV9va2Fmb3I6MTc5NDA1NjYzNTowMzE0M2E4OTU1Y2RhYzViYzJiMjlhYjMxYzI4NWMyMw==
+=== 4. callback -> token exchange (Rivera-style response: no expires_in/refresh_token) ===
+302 -> http://localhost:8766/?connected=1
+=== 5. status ===
+{"connected": true, "status": "connected", "scope": "ACTIVITY:WRITE,WELLNESS:READ", "athlete": {"id": "i98765", "name": "T. Rivera"}}
+
+=== 6. wellness via provider ===
+[{"id": "2026-11-07", "restingHR": 48}]
+
+=== 7. tampered state -> 400 ===
+400
+=== 8. provider now rejects the token (401) -> status flips to expired ===
+Traceback (most recent call last):
+  File "<stdin>", line 3, in <module>
+KeyError: 'u_rivera'
+[{"id": "2026-11-07", "restingHR": 48}]
+
+{"connected": true, "status": "connected", "scope": "ACTIVITY:WRITE,WELLNESS:READ", "athlete": {"id": "i98765", "name": "T. Rivera"}}
+
+patched
+=== full flow: rivera (token response w/o expires_in/refresh_token) ===
+callback: 302
+{"connected": true, "status": "connected", "scope": "ACTIVITY:WRITE,WELLNESS:READ", "athlete": {"id": "i98765", "name": "T. Rivera"}}
+
+[{"id": "2026-11-07", "restingHR": 48}]
+
+=== provider revokes token -> wellness 409, status expired ===
+{"error": "intervals not connected"}
+ [409]
+{"connected": false, "status": "expired, reconnect"}
+
+=== okafor: token WITH refresh_token + expires_in=90 -> auto-refresh ===
+callback: 302
+{"connected": true, "status": "connected", "scope": "ACTIVITY:WRITE,WELLNESS:READ", "athlete": {"id": "i98765", "name": "T. Rivera"}}
+
+=== server log ===
+2026-11-07 10:06:06 [intervals] serving on http://localhost:8766 (intervals: http://127.0.0.1:8899)
+2026-11-07 10:06:07 [http] "GET /api/intervals/auth/init HTTP/1.1" 200 -
+2026-11-07 10:06:07 [intervals] u_okafor: connected as athlete i11111
+2026-11-07 10:06:07 [http] "GET /api/intervals/callback?code=code-okafor&state=dV9va2Fmb3I6MTc5NDA1Njc2NzpmMDhjOWUyZDVlNWI3MGFlZTQzNDY2OWMzYjJkYWZjMw== HTTP/1.1" 302 -
+2026-11-07 10:06:07 [http] "GET /api/intervals/status HTTP/1.1" 200 -
+2026-11-07 10:07:06 [intervals] u_okafor: token refreshed
+=== status after refresh window ===
+{"connected": true, "status": "connected", "scope": "ACTIVITY:READ,ACTIVITY:WRITE,WELLNESS:READ", "athlete": {"id": "i11111", "name": "C. Okafor"}}
+
+[{"id": "2026-11-07", "restingHR": 48}]
+
+app.js OK
+index: 200
+app.js: 200
+server.py OK
+cleanup done
+ M server.py
+ M static/app.js
+?? __pycache__/
+ M server.py
+ M static/app.js
+ server.py     | 53 +++++++++++++++++++++++++++++++++++++++--------------
+ static/app.js | 15 ++++++++++++++-
+ 2 files changed, 53 insertions(+), 15 deletions(-)

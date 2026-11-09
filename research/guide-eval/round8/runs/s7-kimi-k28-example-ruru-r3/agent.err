@@ -1,0 +1,106 @@
+--- stub up:
+200
+== 1. POST init (authenticated) ==
+{"authorize_url": "https://intervals.icu/oauth/authorize?client_id=tricoach-dev&redirect_uri=http:%2F%2Flocalhost:8766%2Fapi%2Fintervals%2Fcallback&scope=ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE&state=dV9va2Fmb3I6MTc5NDE3MzYyNjppbnRlcnZhbHNfb2F1dGg6MmFiNDIxNzAyYmU0NTU3MGYwNDBkMjYyOGJhNDMyZWU%3D"}
+scope=ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE
+Traceback (most recent call last):
+  File "<stdin>", line 2, in <module>
+  File "<frozen os>", line 709, in __getitem__
+KeyError: 'URL'
+== 2. callback with code+state (as Intervals would redirect) ==
+502 -> 
+== 3. status ==
+{"connected": false, "status": "disconnected"}
+
+== 4. wellness via stored token ==
+{"error": "intervals not connected"}
+
+== 5. bad state rejected ==
+400
+== 6. no-auth POST init -> 401; GET init -> 404 ==
+401
+404
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+OSError: [Errno 48] Address already in use
+COMMAND   PID                USER   FD   TYPE             DEVICE SIZE/OFF NODE NAME
+Python  48308 valentinakoniukhova    3u  IPv4 0xfc7dd0ea3c77c7a3      0t0  TCP 127.0.0.1:8766 (LISTEN)
+---
+/bin/bash: /bin/ps: Operation not permitted
+---
+2026-11-08 18:33:36 [intervals] serving on http://localhost:8766 (intervals: http://localhost:8799)
+Traceback (most recent call last):
+  File "/private/tmp/h-93RoVm/server.py", line 234, in <module>
+    ThreadingHTTPServer(("127.0.0.1", config.PORT), Handler).serve_forever()
+    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+OSError: [Errno 48] Address already in use
+COMMAND   PID                USER   FD   TYPE             DEVICE SIZE/OFF NODE NAME
+Python  48831 valentinakoniukhova    3u  IPv4 0x58d711d49fad52b0      0t0  TCP 127.0.0.1:8799 (LISTEN)
+== stub token endpoint direct ==
+{"token_type": "bearer", "access_token": "stub-at-123", "scope": "ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE", "athlete": {"id": "i11111", "name": "Stub Athlete"}}
+
+== tricoach log tail ==
+ports free
+== 1. POST init ==
+{"authorize_url": "http://localhost:8799/oauth/authorize?client_id=tricoach-dev&redirect_uri=http:%2F%2Flocalhost:8766%2Fapi%2Fintervals%2Fcallback&scope=ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE&state=dV9va2Fmb3I6MTc5NDE3Mzc3MjpiZmQ1OTQwZGU3OWZjM2I4NWZjZTNlMjNjZGViNjE0Yg%3D%3D"}
+== 2. callback (fake Intervals redirect) ==
+302 -> http://localhost:8766/?connected=1
+== 3. status ==
+{"connected": true, "status": "connected", "scope": "ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE", "athlete": {"id": "i11111", "name": "Stub Athlete"}}
+
+== 4. wellness ==
+[{"date": "2026-11-08", "sleep_score": 88}]
+
+== 5. bad state -> 400; bad code -> 502; no-auth init -> 401; GET init -> 404 ==
+400
+502
+401
+404
+== mismatch: reconnect returns a different athlete -> 409, old link kept ==
+{"error": "another Intervals.icu account is already linked to this profile"}
+
+409
+{"connected": true, "status": "connected", "scope": "ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE", "athlete": {"id": "i11111", "name": "Stub Athlete"}}
+== token revoked on Intervals side: wellness -> 409, connection cleared ==
+{"error": "intervals disconnected, please reconnect"}
+
+409
+== status after 401: disconnected, UI will offer Connect again ==
+{"connected": false, "status": "disconnected"}
+
+== reconnect after revocation works (fresh code exchange) ==
+302
+{"connected": true, "status": "connected", "scope": "ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE", "athlete": {"id": "i11111", "name": "Stub Athlete"}}
+== static files ==
+index: 200
+app.js: 200
+== syntax ==
+py ok
+== no leftovers of removed expiry/refresh logic ==
+server.py:66:    # Intervals.icu tokens never expire and there is no refresh_token; the
+== status still connected (no fake expiry) ==
+{"connected": true, "status": "connected", "scope": "ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE", "athlete": {"id": "i11111", "name": "Stub Athlete"}}
+ M config.py
+ M server.py
+ M static/app.js
+ M config.py
+ M server.py
+ M static/app.js
+?? ANSWER.md
+ANSWER.md
+README.md
+config.py
+logs
+server.py
+static

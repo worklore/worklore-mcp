@@ -1,0 +1,68 @@
+a308e82 base
+commit a308e828346e33df2391a18981424d082265184d
+Author: dev <dev@local>
+Date:   Sun Nov 8 03:17:05 2026 -0300
+
+    base
+
+ README.md                          | 18 +++++++++++++
+ gen.py                             | 52 ++++++++++++++++++++++++++++++++++++++
+ plans/tempo-run.json               | 13 ++++++++++
+ push.sh                            |  6 +++++
+ readback/event-184233-as-sent.json | 51 +++++++++++++++++++++++++++++++++++++
+ readback/watch-notes.md            | 21 +++++++++++++++
+ 6 files changed, 161 insertions(+)
+{
+  "category": "WORKOUT",
+  "type": "Run",
+  "name": "Tempo run 45",
+  "start_date_local": "2026-10-20T00:00:00",
+  "workout_doc": {
+    "steps": [
+      {
+        "duration": 600,
+        "target": {
+          "units": "bpm",
+          "min": 117,
+          "max": 129
+        },
+        "text": "Warm-up easy"
+      },
+      {
+        "reps": 3,
+        "steps": [
+          {
+            "duration": 480,
+            "target": {
+              "units": "bpm",
+              "min": 151,
+              "max": 160
+            },
+            "text": "Tempo"
+          },
+          {
+            "duration": 120,
+            "target": {
+              "units": "bpm",
+              "min": 129,
+              "max": 141
+            },
+            "text": "Float"
+          }
+        ]
+      },
+      {
+        "duration": 300,
+        "target": {
+          "units": "bpm",
+          "min": 112,
+          "max": 124
+        },
+        "text": "Cool-down"
+      }
+    ]
+  }
+}
+ M README.md
+ M gen.py
+ M plans/tempo-run.json

@@ -1,0 +1,18 @@
+4444f75 base
+Python 3.14.6
+ModuleNotFoundError: No module named 'anthropic'
+1. OK: two blocks, cache_control only on the static instructions block
+2. OK: after save_fact the marked static block is byte-identical; only the unmarked context block changed: True
+3. OK: reply() tool loop works with the two-block system prompt, output: Noted.
+ M README.md
+ M bot.py
+?? __pycache__/
+ README.md |  9 ++++++---
+ bot.py    | 11 ++++++++---
+ 2 files changed, 14 insertions(+), 6 deletions(-)
+ M README.md
+ M bot.py
+syntax OK
+ M README.md
+ M bot.py
+?? ANSWER.md

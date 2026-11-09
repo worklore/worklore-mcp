@@ -1,0 +1,71 @@
+Library/LaunchAgents/:
+total 4
+drwxr-xr-x 3 valentinakoniukhova wheel  96 Nov  8 03:24 .
+drwxr-xr-x 4 valentinakoniukhova wheel 128 Nov  8 03:24 ..
+-rw-r--r-- 1 valentinakoniukhova wheel 853 Nov  8 03:24 com.vk.nightly-review.plist
+
+Library/Logs/:
+total 4
+drwxr-xr-x 4 valentinakoniukhova wheel 128 Nov  8 03:24 .
+drwxr-xr-x 4 valentinakoniukhova wheel 128 Nov  8 03:24 ..
+-rw-r--r-- 1 valentinakoniukhova wheel 594 Nov  8 03:24 nightly-review.err
+-rw-r--r-- 1 valentinakoniukhova wheel   0 Nov  8 03:24 nightly-review.out
+
+bin/:
+total 8
+drwxr-xr-x 4 valentinakoniukhova wheel 128 Nov  8 03:24 .
+drwx------ 7 valentinakoniukhova wheel 224 Nov  8 03:24 ..
+-rwxr-xr-x 1 valentinakoniukhova wheel 772 Nov  8 03:24 nightly-review.zsh
+-rwxr-xr-x 1 valentinakoniukhova wheel 312 Nov  8 03:24 notify.sh
+/bin/zsh
+/opt/homebrew/bin/bash
+zsh 5.9 (arm64-apple-darwin24.0)
+harness ready
+Not logged in · Please run /login
+harness/copies/nightly-review.orig.zsh:19: read-only variable: status
+---- exit code: 1
+---- notify.log (should NOT exist):
+cat: harness/home/notify.log: No such file or directory
+== failure path (claude exits 1):
+Not logged in · Please run /login
+exit code: 1
+
+== notify.log:
+NOTIFY: nightly review FAILED (exit 1), see /private/tmp/h-mCEJQT/harness/home/Library/Logs/nightly-review-2026-11-08.md
+
+== .md output files written:
+nightly-review-2026-11-08.md
+== success path:
+exit code: 0
+NOTIFY: nightly review done: Summary: 3 commits, nothing risky.
+
+== repo-missing path:
+bin/nightly-review.zsh:cd:16: no such file or directory: /private/tmp/h-mCEJQT/harness/home/projects/shop
+exit code: 1
+NOTIFY: nightly review: repo missing
+
+== syntax check:
+OK
+ M bin/nightly-review.zsh
+?? ANSWER.md
+--- final diff ---
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..bf005f5 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -16,11 +16,11 @@ Do not modify any file."
+ cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
+ 
+ claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
++rc=$?
+ 
+-if [ $status -ne 0 ]; then
+-  "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
+-  exit $status
++if [ $rc -ne 0 ]; then
++  "$NOTIFY" "nightly review FAILED (exit $rc), see $OUT"
++  exit $rc
+ fi
+ 
+ "$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"

@@ -1,0 +1,115 @@
+total 4
+drwxr-xr-x 4 valentinakoniukhova wheel 128 Nov  8 13:31 .
+drwxr-xr-x 4 valentinakoniukhova wheel 128 Nov  8 13:31 ..
+-rw-r--r-- 1 valentinakoniukhova wheel 594 Nov  8 13:31 nightly-review.err
+-rw-r--r-- 1 valentinakoniukhova wheel   0 Nov  8 13:31 nightly-review.out
+total 4
+drwxr-xr-x 3 valentinakoniukhova wheel  96 Nov  8 13:31 .
+drwxr-xr-x 4 valentinakoniukhova wheel 128 Nov  8 13:31 ..
+-rw-r--r-- 1 valentinakoniukhova wheel 853 Nov  8 13:31 com.vk.nightly-review.plist
+zsh syntax OK
+bash syntax OK
+Library/LaunchAgents/com.vk.nightly-review.plist: OK
+zsh:1: read-only variable: status
+exit=1
+---
+rc=1 reachable
+ M Library/LaunchAgents/com.vk.nightly-review.plist
+ M bin/nightly-review.zsh
+f51b207 base
+=== orig-fail (agent rc=1, script exit=1) ===
+--- notifications:
+(none)
+--- stderr:
+/private/tmp/h-8jXEta/.verify/home/bin/nightly-review-orig.zsh:19: read-only variable: status
+--- stdout:
+=== fixed-fail (agent rc=1, script exit=1) ===
+--- notifications:
+(none)
+--- stderr:
+/private/tmp/h-8jXEta/.verify/home/bin/nightly-review.zsh:16: EPOCHSECONDS: parameter not set
+--- stdout:
+=== fixed-ok (agent rc=0, script exit=1) ===
+--- notifications:
+(none)
+--- stderr:
+/private/tmp/h-8jXEta/.verify/home/bin/nightly-review.zsh:16: EPOCHSECONDS: parameter not set
+--- stdout:
+=== prompt captured via stdin (first line) ===
+head: cannot open '.verify/claude-stdin.txt' for reading: No such file or directory
+=== orig-fail (agent rc=1, script exit=1) ===
+--- notifications:
+(none — SILENCE)
+--- stderr:
+/private/tmp/h-8jXEta/.verify/home/bin/nightly-review-orig.zsh:19: read-only variable: status
+--- stdout:
+(empty)
+=== fixed-fail (agent rc=1, script exit=1) ===
+--- notifications:
+nightly review FAILED (exit 1), see /private/tmp/h-8jXEta/.verify/home/Library/Logs/nightly-review-2026-11-08.md
+--- stderr:
+(empty)
+--- stdout:
+(empty)
+=== fixed-ok (agent rc=0, script exit=0) ===
+--- notifications:
+nightly review done: FAKE SUMMARY
+--- stderr:
+(empty)
+--- stdout:
+run took 0s
+=== prompt delivered to agent via stdin ===
+Review the commits in this repository since 2026-11-07.
+For each commit: one line on what it changes and whether anything looks risky
+(migrations, auth, payments, deleted tests).
+End with a three-line summary I can read on my phone.
+Do not modify any file.
+exit=1
+--- notifications:
+nightly review done: FAKE SUMMARY
+nightly review: repo missing
+diff --git a/Library/LaunchAgents/com.vk.nightly-review.plist b/Library/LaunchAgents/com.vk.nightly-review.plist
+index c347363..ade4f34 100644
+--- a/Library/LaunchAgents/com.vk.nightly-review.plist
++++ b/Library/LaunchAgents/com.vk.nightly-review.plist
+@@ -24,6 +24,10 @@
+   <dict>
+     <key>PATH</key>
+     <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
++    <key>HOME</key>
++    <string>/Users/vk</string>
++    <key>USER</key>
++    <string>vk</string>
+   </dict>
+ </dict>
+ </plist>
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..ffa6e19 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -13,14 +13,17 @@ For each commit: one line on what it changes and whether anything looks risky
+ End with a three-line summary I can read on my phone.
+ Do not modify any file."
+ 
++started=$(date +%s)
++
+ cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
+ 
+-claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
++print -r -- "$PROMPT" | claude -p --output-format text > "$OUT"
++rc=$?
+ 
+-if [ $status -ne 0 ]; then
+-  "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
+-  exit $status
++if [ $rc -ne 0 ]; then
++  "$NOTIFY" "nightly review FAILED (exit $rc), see $OUT"
++  exit $rc
+ fi
+ 
+ "$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"
++print -r -- "run took $(( $(date +%s) - started ))s"
+ M Library/LaunchAgents/com.vk.nightly-review.plist
+ M bin/nightly-review.zsh
+?? ANSWER.md

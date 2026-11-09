@@ -147,7 +147,7 @@
 
 ## Web use: runs with at least one web search or fetch (and the number of calls), per agent and arm
 
-Counted from the harness logs: Claude Code `WebSearch`/`WebFetch` tool calls, Codex `web_search` events, Antigravity `search_web`/`read_url_content` calls.
+Counted from the harness logs: Claude Code `WebSearch`/`WebFetch` tool calls, Codex `web_search` events, Antigravity `search_web`/`read_url_content` calls (each step once; before 2026-11-09 a step was counted once per logged state, which doubled the number of calls).
 
 | agent | none-en | example-en | none-ru | example-ru | example-ruru |
 |---|---|---|---|---|---|
@@ -156,8 +156,8 @@ Counted from the harness logs: Claude Code `WebSearch`/`WebFetch` tool calls, Co
 | claude-haiku | 8/30 (10) | 1/30 (1) | 6/30 (8) | 1/30 (1) | 4/30 (4) |
 | codex-sol | 9/30 (27) | 3/30 (3) | 0/30 (0) | 0/30 (0) | 0/30 (0) |
 | codex-sol-low | 10/30 (23) | 1/30 (1) | 0/30 (0) | 0/30 (0) | 0/30 (0) |
-| agy-flash-low | 13/30 (476) | 0/30 (0) | 10/30 (426) | 0/30 (0) | 0/30 (0) |
-| agy-oss | 3/30 (14) | 2/30 (8) | 3/30 (6) | 0/30 (0) | 1/30 (2) |
+| agy-flash-low | 13/30 (238) | 0/30 (0) | 10/30 (213) | 0/30 (0) | 0/30 (0) |
+| agy-oss | 3/30 (7) | 2/30 (4) | 3/30 (3) | 0/30 (0) | 1/30 (1) |
 
 ### Web use per story, all agents: runs with a web call / runs
 

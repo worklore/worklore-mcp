@@ -1,0 +1,19 @@
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+    import anthropic
+ModuleNotFoundError: No module named 'anthropic'
+fa8bec0 base
+call                   OLD created/read NEW created/read
+msg1 r1 (save_fact)        697/0            700/0       
+msg1 r2                    701/0             83/621     
+msg2 r1                      0/701            0/704     
+msg3 r1 (plan_week)          0/701            0/704     
+msg3 r2                      0/701            0/704     
+
+static instructions block ~621 fake tokens
+OK: after save_fact the static block stays cached; only the tail is re-created
+build_system OK: 2 blocks, both cached, block1 == INSTRUCTIONS byte-for-byte
+ M bot.py
+?? __pycache__/
+ bot.py | 11 ++++++++---
+ 1 file changed, 8 insertions(+), 3 deletions(-)

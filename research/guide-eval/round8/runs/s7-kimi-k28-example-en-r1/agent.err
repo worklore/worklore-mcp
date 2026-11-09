@@ -1,0 +1,176 @@
+Traceback (most recent call last):
+  File "/private/tmp/h-sybNHP/fake_intervals_e2e.py", line 184, in <module>
+    main()
+    ~~~~^^
+  File "/private/tmp/h-sybNHP/fake_intervals_e2e.py", line 85, in main
+    fake = ThreadingHTTPServer(("127.0.0.1", FAKE_PORT), Fake)
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+OSError: [Errno 48] Address already in use
+COMMAND   PID                USER   FD   TYPE             DEVICE SIZE/OFF NODE NAME
+Python  68767 valentinakoniukhova    3u  IPv4 0x7fccb4613ef0a81c      0t0  TCP 127.0.0.1:8767 (LISTEN)
+---
+COMMAND     PID                USER   FD   TYPE             DEVICE SIZE/OFF NODE NAME
+rapportd    607 valentinakoniukhova    8u  IPv4 0xd800f15351678777      0t0  TCP *:54161 (LISTEN)
+rapportd    607 valentinakoniukhova    9u  IPv6 0x383759458bf8edd5      0t0  TCP *:54161 (LISTEN)
+ControlCe   679 valentinakoniukhova    8u  IPv4 0xb4ad84a6b8060e2a      0t0  TCP *:7000 (LISTEN)
+ControlCe   679 valentinakoniukhova    9u  IPv6 0x2e7afdb25d328bdb      0t0  TCP *:7000 (LISTEN)
+ControlCe   679 valentinakoniukhova   10u  IPv4 0xa132c4fec86c0263      0t0  TCP *:5000 (LISTEN)
+ControlCe   679 valentinakoniukhova   11u  IPv6 0x2837e5467ef47fa5      0t0  TCP *:5000 (LISTEN)
+postgres   2042 valentinakoniukhova    7u  IPv6 0x2dced161d436d656      0t0  TCP [::1]:5432 (LISTEN)
+postgres   2042 valentinakoniukhova    8u  IPv4 0x1cd1b88479d3acaa      0t0  TCP 127.0.0.1:5432 (LISTEN)
+Python     2052 valentinakoniukhova    3u  IPv4 0x799e629ff2fd2b4c      0t0  TCP 127.0.0.1:8765 (LISTEN)
+adb        3312 valentinakoniukhova   16u  IPv4 0xffcacb721640285a      0t0  TCP 127.0.0.1:5037 (LISTEN)
+Python    10299 valentinakoniukhova    3u  IPv4 0x4fde424cfce3f27a      0t0  TCP 127.0.0.1:8787 (LISTEN)
+postgres  12593 valentinakoniukhova    7u  IPv6 0x5f9bb86183d2b506      0t0  TCP [::1]:5433 (LISTEN)
+postgres  12593 valentinakoniukhova    8u  IPv4 0xf420d86856c9cfcf      0t0  TCP 127.0.0.1:5433 (LISTEN)
+node      20647 valentinakoniukhova   16u  IPv6 0x6c3ff346c38fcf05      0t0  TCP *:59384 (LISTEN)
+node      27489 valentinakoniukhova   16u  IPv6 0x25efcc69f64ce0ab      0t0  TCP *:59703 (LISTEN)
+node      29126 valentinakoniukhova   16u  IPv6 0xbbe529fd6c4ed05f      0t0  TCP [::1]:9711 (LISTEN)
+node      29126 valentinakoniukhova   17u  IPv6 0x6662f49ec986f6e2      0t0  TCP [::1]:9710 (LISTEN)
+Devin\x20 46030 valentinakoniukhova   48u  IPv4 0xf4fd00ab12e7810e      0t0  TCP 127.0.0.1:26438 (LISTEN)
+Devin\x20 46030 valentinakoniukhova   49u  IPv4 0x116b3e1cf1d529a9      0t0  TCP 127.0.0.1:52152 (LISTEN)
+
+--- server log tail ---
+2026-11-07 15:15:25 [http] "GET / HTTP/1.1" 200 -
+2026-11-07 15:15:25 [http] "GET / HTTP/1.1" 200 -
+2026-11-07 15:15:25 [http] "GET / HTTP/1.1" 200 -
+2026-11-07 15:15:26 [http] "GET / HTTP/1.1" 200 -
+2026-11-07 15:15:26 [http] "GET / HTTP/1.1" 200 -
+2026-11-07 15:15:26 [http] "GET / HTTP/1.1" 200 -
+2026-11-07 15:15:26 [http] "GET / HTTP/1.1" 200 -
+2026-11-07 15:15:26 [http] "GET / HTTP/1.1" 200 -
+server did not start
+
+--- server log tail ---
+2026-11-07 15:15:46 [intervals] serving on http://localhost:8766 (intervals: http://localhost:8791)
+2026-11-07 15:15:46 [http] GET /api/me 401 (no Authorization header)
+2026-11-07 15:15:46 [http] "GET /api/me HTTP/1.1" 401 -
+2026-11-07 15:15:46 [http] "GET / HTTP/1.1" 200 -
+Traceback (most recent call last):
+  File "/private/tmp/h-sybNHP/fake_intervals_e2e.py", line 184, in <module>
+    main()
+    ~~~~^^
+  File "/private/tmp/h-sybNHP/fake_intervals_e2e.py", line 105, in main
+    s, _, _ = req("GET", "/")
+              ~~~^^^^^^^^^^^^
+  File "/private/tmp/h-sybNHP/fake_intervals_e2e.py", line 72, in req
+    return resp.status, dict(resp.headers), json.loads(resp.read().decode() or "{}")
+                                            ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/__init__.py", line 352, in loads
+    return _default_decoder.decode(s)
+           ~~~~~~~~~~~~~~~~~~~~~~~^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/decoder.py", line 345, in decode
+    obj, end = self.raw_decode(s, idx=_w(s, 0).end())
+               ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/decoder.py", line 363, in raw_decode
+    raise JSONDecodeError("Expecting value", s, err.value) from None
+json.decoder.JSONDecodeError: Expecting value: line 1 column 1 (char 0)
+PASS index serves 
+PASS init without auth still 401s {'error': 'unauthorized'}
+PASS init POST returns authorize_url 
+PASS scope has no duplicated areas ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE
+PASS state signed with purpose + user 
+PASS state TTL is 15min 1794075366
+PASS old GET init is gone (404) 404
+PASS callback with bad state rejected 
+PASS callback with expired state rejected 400
+FAIL callback connects (302) 200 None
+PASS status connected as i12345 {'connected': True, 'status': 'connected', 'scope': 'ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE', 'athlete': {'id': 'i12345', 'name': 'Athlete i12345'}}
+PASS wellness proxy works [{'id': 1, 'athlete_id': 'i12345'}]
+PASS account mismatch rejected with 409 409 {'error': 'intervals account mismatch'}
+PASS original connection untouched after mismatch 
+FAIL reconnect with same athlete allowed 200
+PASS exchange sends only client_id/secret/code [{'client_id': 'tricoach-dev', 'client_secret': 's3cr3t-placeholder-0000', 'code': 'code-okafor-1'}, {'client_id': 'tricoach-dev', 'client_secret': 's3cr3t-placeholder-0000', 'code': 'code-okafor-2'}, {'client_id': 'tricoach-dev', 'client_secret': 's3cr3t-placeholder-0000', 'code': 'code-okafor-1'}]
+PASS 401 from intervals clears connection 409 {'error': 'intervals disconnected, reconnect your account'}
+PASS status shows disconnected after 401 {'connected': False, 'status': 'disconnected'}
+FAIL second user connects via POST init 200
+
+16/19 passed
+
+--- server log tail ---
+2026-11-07 15:16:06 [http] "GET /?connected=1 HTTP/1.1" 200 -
+2026-11-07 15:16:06 [intervals] u_okafor: connection cleared (intervals API returned 401)
+2026-11-07 15:16:06 [http] "GET /api/intervals/wellness HTTP/1.1" 409 -
+2026-11-07 15:16:06 [http] "GET /api/intervals/status HTTP/1.1" 200 -
+2026-11-07 15:16:06 [http] "POST /api/intervals/auth/init HTTP/1.1" 200 -
+2026-11-07 15:16:06 [intervals] u_rivera: connected as athlete i12345 (token is valid until revoked)
+2026-11-07 15:16:06 [http] "GET /api/intervals/callback?code=code-okafor-1&state=dV9yaXZlcmE6aW50ZXJ2YWxzX29hdXRoOjE3OTQwNzUzNjY6NWUwZTE3NzUzOGY4MzI1ODc0NjFiYWFhMGQ3YmFmMzI%3D HTTP/1.1" 302 -
+2026-11-07 15:16:06 [http] "GET /?connected=1 HTTP/1.1" 200 -
+FAILURES: callback connects (302), reconnect with same athlete allowed, second user connects via POST init
+PASS index serves 
+PASS init without auth still 401s {'error': 'unauthorized'}
+PASS init POST returns authorize_url 
+PASS scope has no duplicated areas ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE
+PASS state signed with purpose + user 
+PASS state TTL is 15min 1794075391
+PASS old GET init is gone (404) 404
+PASS callback with bad state rejected 
+PASS callback with expired state rejected 400
+PASS callback connects (302) 302 /?connected=1
+PASS status connected as i12345 {'connected': True, 'status': 'connected', 'scope': 'ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE', 'athlete': {'id': 'i12345', 'name': 'Athlete i12345'}}
+PASS wellness proxy works [{'id': 1, 'athlete_id': 'i12345'}]
+
+--- server log tail ---
+2026-11-07 15:16:31 [http] "POST /api/intervals/auth/init HTTP/1.1" 200 -
+2026-11-07 15:16:31 [intervals] u_okafor: connected as athlete i12345 (token is valid until revoked)
+2026-11-07 15:16:31 [http] "GET /api/intervals/callback?code=code-okafor-1&state=dV9va2Fmb3I6aW50ZXJ2YWxzX29hdXRoOjE3OTQwNzUzOTE6MjNiN2U1OGIwOTRhZjg0NDM1ZmY3YjBkMjE0YzU4MTI%3D HTTP/1.1" 302 -
+2026-11-07 15:16:31 [http] "GET /api/intervals/status HTTP/1.1" 200 -
+2026-11-07 15:16:31 [http] "GET /api/intervals/wellness HTTP/1.1" 200 -
+2026-11-07 15:16:31 [http] "POST /api/intervals/auth/init HTTP/1.1" 200 -
+2026-11-07 15:16:31 [intervals] u_okafor: account mismatch: connected as i12345, callback is i99999; rejected
+2026-11-07 15:16:31 [http] "GET /api/intervals/callback?code=code-okafor-2&state=dV9va2Fmb3I6aW50ZXJ2YWxzX29hdXRoOjE3OTQwNzUzOTE6MjNiN2U1OGIwOTRhZjg0NDM1ZmY3YjBkMjE0YzU4MTI%3D HTTP/1.1" 409 -
+Traceback (most recent call last):
+  File "/private/tmp/h-sybNHP/fake_intervals_e2e.py", line 208, in <module>
+    main()
+    ~~~~^^
+  File "/private/tmp/h-sybNHP/fake_intervals_e2e.py", line 172, in main
+    check("account mismatch rejected with 409", s == 409 and "mismatch" in body.get("error", ""), f"{s} {body}")
+                                                                           ^^^^^^^^
+AttributeError: 'str' object has no attribute 'get'
+PASS index serves 
+PASS init without auth still 401s {'error': 'unauthorized'}
+PASS init POST returns authorize_url 
+PASS scope has no duplicated areas ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE
+PASS state signed with purpose + user 
+PASS state TTL is 15min 1794075406
+PASS old GET init is gone (404) 404
+PASS callback with bad state rejected 
+PASS callback with expired state rejected 400
+PASS callback connects (302) 302 /?connected=1
+PASS status connected as i12345 {'connected': True, 'status': 'connected', 'scope': 'ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE', 'athlete': {'id': 'i12345', 'name': 'Athlete i12345'}}
+PASS wellness proxy works [{'id': 1, 'athlete_id': 'i12345'}]
+PASS account mismatch rejected with 409 409 {'error': 'intervals account mismatch'}
+PASS original connection untouched after mismatch 
+PASS reconnect with same athlete allowed 302
+PASS exchange sends only client_id/secret/code [{'client_id': 'tricoach-dev', 'client_secret': 's3cr3t-placeholder-0000', 'code': 'code-okafor-1'}, {'client_id': 'tricoach-dev', 'client_secret': 's3cr3t-placeholder-0000', 'code': 'code-okafor-2'}, {'client_id': 'tricoach-dev', 'client_secret': 's3cr3t-placeholder-0000', 'code': 'code-okafor-1'}]
+PASS 401 from intervals clears connection 409 {'error': 'intervals disconnected, reconnect your account'}
+PASS status shows disconnected after 401 {'connected': False, 'status': 'disconnected'}
+PASS second user connects via POST init 302
+
+19/19 passed
+
+--- server log tail ---
+2026-11-07 15:16:46 [intervals] u_okafor: connected as athlete i12345 (token is valid until revoked)
+2026-11-07 15:16:46 [http] "GET /api/intervals/callback?code=code-okafor-1&state=dV9va2Fmb3I6aW50ZXJ2YWxzX29hdXRoOjE3OTQwNzU0MDY6OGQwMTc1ZWJlYzdkNWE3NjAzYjA3YWE4NzdlYThlMGI%3D HTTP/1.1" 302 -
+2026-11-07 15:16:46 [intervals] u_okafor: connection cleared (intervals API returned 401)
+2026-11-07 15:16:46 [http] "GET /api/intervals/wellness HTTP/1.1" 409 -
+2026-11-07 15:16:46 [http] "GET /api/intervals/status HTTP/1.1" 200 -
+2026-11-07 15:16:46 [http] "POST /api/intervals/auth/init HTTP/1.1" 200 -
+2026-11-07 15:16:46 [intervals] u_rivera: connected as athlete i12345 (token is valid until revoked)
+2026-11-07 15:16:46 [http] "GET /api/intervals/callback?code=code-okafor-1&state=dV9yaXZlcmE6aW50ZXJ2YWxzX29hdXRoOjE3OTQwNzU0MDY6NzAzNDA5OGFlZmFkZjIxYmUxMjE3YTY4ZDgyMGRhZjE%3D HTTP/1.1" 302 -
+syntax ok
+ M config.py
+ M server.py
+ M static/app.js
+?? __pycache__/
+ M config.py
+ M server.py
+ M static/app.js

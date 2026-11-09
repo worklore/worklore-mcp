@@ -1,0 +1,83 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..41511bf
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,21 @@
++# Причина
++
++Вторая публикация падала с `TypeError: Float types are not supported. Use Decimal types instead.` при `table.put_item`.
++
++Функция `similarity()` в `src/app.py` вычисляет коэффициент сходства делением и возвращает `float`. При первой публикации таблица пуста, поэтому список `similar` пуст и проблемного значения в записи нет. При второй публикации `related()` добавляет в `similar` вычисленный `score` типа `float`, а сериализатор DynamoDB такие значения не принимает. Обработчик перехватывает исключение и возвращает 500.
++
++# Исправление
++
++В `src/app.py` значение `score` преобразуется при формировании связанной записи в целочисленный процент от 0 до 100: `int(round(similarity(...) * 100))`. DynamoDB принимает такие значения как числа; внутренний расчёт и сортировка по сходству не изменены.
++
++В `tests/test_publish.py` добавлен регрессионный тест `test_second_publish_with_existing_story`: он последовательно вызывает `handler()` для двух историй, проверяет два ответа 201, наличие обеих записей и целочисленный `score` у второй записи. Так тест обязательно проходит путь с уже заполненной таблицей, который раньше не проверялся.
++
++Проверка: `python3 -m unittest discover tests -v` — 2 теста, все успешно. До исправления отдельный сценарий двух публикаций воспроизвёл 201 на первом запросе и 500 на втором.
++
++# Что пригодилось из заметки коллеги
++
++- Объяснение, почему ошибка проявляется только на второй записи: на пустой таблице не вычисляются оценки сходства.
++- Рекомендация проследить вычисляемые значения до записи и преобразовать оценку в целочисленные проценты на границе с DynamoDB.
++- Рекомендация добавить тест записи при уже заполненной таблице.
++
++Проверка на реальной таблице AWS не выполнялась: использовался имеющийся `FakeTable`, который воспроизводит проверку типов сериализатора boto3; внешние сервисы не вызывались.
+diff --git a/src/app.py b/src/app.py
+index db49c5e..d2f33a1 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -35,7 +35,7 @@ def related(story, existing):
+     for other in existing:
+         if other["slug"] == story["slug"]:
+             continue
+-        scored.append({"slug": other["slug"], "score": similarity(story, other)})
++        scored.append({"slug": other["slug"], "score": int(round(similarity(story, other) * 100))})
+     scored.sort(key=lambda s: s["score"], reverse=True)
+     return scored[:TOP_N]
+ 
+diff --git a/tests/test_publish.py b/tests/test_publish.py
+index 6c9ac44..5f6b792 100644
+--- a/tests/test_publish.py
++++ b/tests/test_publish.py
+@@ -1,3 +1,4 @@
++import json
+ import os
+ import sys
+ import unittest
+@@ -23,6 +24,33 @@ class PublishTest(unittest.TestCase):
+         self.assertEqual(table.get_item(Key={"slug": "why-my-cron-ran-twice"})["Item"]["title"], "Why my cron ran twice")
+         self.assertEqual(table.scan()["Count"], 1)
+ 
++    def test_second_publish_with_existing_story(self):
++        table = FakeTable()
++        stories = [
++            {
++                "slug": "first-story",
++                "title": "First story",
++                "tags": ["cron", "linux"],
++                "body": "The same cron job ran twice.",
++            },
++            {
++                "slug": "second-story",
++                "title": "Second story",
++                "tags": ["cron", "linux"],
++                "body": "The same cron job ran twice.",
++            },
++        ]
++
++        first = app.handler({"body": json.dumps(stories[0])}, table)
++        second = app.handler({"body": json.dumps(stories[1])}, table)
++
++        self.assertEqual(first["statusCode"], 201)
++        self.assertEqual(second["statusCode"], 201)
++        self.assertEqual(table.scan()["Count"], 2)
++        similar = table.get_item(Key={"slug": "second-story"})["Item"]["similar"]
++        self.assertEqual(similar, [{"slug": "first-story", "score": 100}])
++        self.assertIsInstance(similar[0]["score"], int)
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

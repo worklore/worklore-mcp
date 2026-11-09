@@ -1,0 +1,274 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..e189395
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,100 @@
++# Why athletes couldn't connect Intervals.icu — causes and fixes
++
++Three independent defects, one per reported symptom. All fixed in `server.py` and
++`static/app.js`; verified end-to-end (16/16 checks) against a local mock of the
++Intervals.icu endpoints — no external service was contacted.
++
++---
++
++## Cause 1 — The Connect button sends no credentials → 401 for everyone
++
++**Symptom:** every athlete clicking "Connect Intervals.icu" lands on a white page
++showing `{"error": "unauthorized"}` (ticket #214, log §1).
++
++**Cause:** the sign-in token lives in `localStorage` and is only ever attached to
++requests by the SPA's fetch wrapper (`Authorization: Bearer …` in `api()`). The
++Connect control was a plain link — `<a href="/api/intervals/auth/init">` — i.e. a
++browser document navigation, which cannot carry a custom `Authorization` header.
++`/api/intervals/auth/init` requires that header, so the server answered 401. The
++browser dev-tools capture in the log shows exactly that: an `Accept: text/html…`
++navigation request with no `Authorization` header.
++
++**Fix:** `/api/intervals/auth/init` now returns `{"url": "<authorize url>"}` as JSON,
++and the SPA's Connect button calls it through the `api()` fetch wrapper (token
++attached) and then navigates the browser to the returned URL
++(`server.py` `auth_init`, `static/app.js` connect handler). A bare navigation
++without the header still 401s, as it should.
++
++## Cause 2 — The authorize URL was missing `response_type=code` → `invalid_request`
++
++**Symptom:** since 2026-10-02, even a hand-pasted authorize link dies at
++intervals.icu with HTTP 400 `{"error":"invalid_request"}` before any consent
++screen (log §2, ticket #219).
++
++**Cause:** the authorize URL built in `auth_init` contained `client_id`,
++`redirect_uri`, `scope` and `state` but **not the required `response_type=code`
++parameter** (RFC 6749 §4.1.1). Intervals.icu rejects the request as
++`invalid_request`. The log's own observation pins this down: dropping `state` or
++changing `redirect_uri` produced the same error, so neither of those was the
++parameter the provider minded. The new calendar scopes were a red herring —
++`CALENDAR:READ`/`CALENDAR:WRITE` are valid Intervals.icu scopes; the authorize
++URL just happened to be edited in the same 2026-10-02 "calendar sync" change that
++dropped `response_type`.
++
++**Fix:** `response_type=code` added to the authorize parameters (`server.py`
++`auth_init`). A mock provider enforcing RFC-required parameters 400s without it
++and consents with it (verified).
++
++## Cause 3 — The server invents a 1-hour expiry for tokens that never expire
++
++**Symptom:** the one athlete who connected (T. Rivera, 2026-09-19) was told
++"Status: expired, reconnect" about an hour later, and reconnecting was impossible
++because of causes 1–2 (log §3, ticket #219).
++
++**Cause:** Intervals.icu departs from typical OAuth providers — **its access
++tokens do not expire and it never issues refresh tokens**, so its token response
++contains no `expires_in` and no `refresh_token` (exactly what Rivera's logged
++token response shows). `store_connection` substituted a made-up
++`DEFAULT_TOKEN_TTL = 3600` when `expires_in` was absent, and the background
++refresher then marked the connection "expired, reconnect" after that hour — with
++no refresh token available to recover. The expiry was entirely our own fabrication.
++
++**Fix:** no `expires_in` in the token response is now stored as a non-expiring
++token (`expires_at = None`); the refresher skips non-expiring tokens instead of
++expiring them (logic extracted to `refresh_pass()`). If Intervals.icu ever
++rejects a stored token (401), the connection is marked "expired, reconnect" and
++the athlete is sent through the flow again — that recovery path now also works,
++since causes 1 and 2 are fixed. The refresh-token code path is retained for
++providers/tokens that do carry `expires_in`/`refresh_token` (verified against the
++mock: expiring token + refresh token → renewed; expiring token without refresh
++token → "expired, reconnect").
++
++---
++
++## Verification
++
++A local mock of `intervals.icu` (authorize / token / wellness) was run together
++with the app via the `INTERVALS_BASE` override; 16/16 checks passed, covering:
++401 without the Bearer header, 200 + valid authorize URL with it, the provider
++400 on missing `response_type`, the full authorize→callback→connected flow,
++wellness proxying, no expiry after a simulated 2 h, refresh of expiring tokens,
++honest expiry without refresh tokens, 401→reconnect marking, and reconnecting
++afterwards. The throwaway test script was removed after the run; `python3 -m
++py_compile server.py config.py` and `node --check static/app.js` are clean.
++
++## References
++
++- Intervals.icu API guide & rate limits — [forum.intervals.icu/t/609](https://forum.intervals.icu/t/api-access-to-intervals-icu/609)
++- Intervals.icu OAuth scopes are comma-joined; "Tokens do not expire, and there are no refresh tokens" — [ueberauth_intervals_icu](https://libraries.io/hex/ueberauth_intervals_icu)
++- Working OAuth2 flow example for Intervals.icu (`response_type=code`, comma/space scope variants) — [@kuranov/intervals-client](https://github.com/kuranov/intervals-icu-tools)
++- RFC 6749 §4.1.1 (`response_type` required on authorize) — [tools.ietf.org/rfc/rfc6749](https://datatracker.ietf.org/doc/html/rfc6749#section-4.1.1)
++
++## Notes / not the cause
++
++- The calendar scopes (`CALENDAR:READ,CALENDAR:WRITE`) are valid; keep them.
++- Redirect URIs must be registered in full at intervals.icu (no wildcards) — the
++  2026-09-19 flow proves `http://localhost:8766/api/intervals/callback` is
++  already registered for the dev client.
++- The default `Python-urllib` user agent may be challenged by Cloudflare; not
++  implicated in these failures (the September token exchange used it fine), so it
++  was left untouched.
+diff --git a/server.py b/server.py
+index 351cbb7..109ab70 100644
+--- a/server.py
++++ b/server.py
+@@ -12,7 +12,6 @@ import config
+ STATIC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
+ TOKEN_URL = config.INTERVALS_BASE + "/api/oauth/token"
+ AUTHORIZE_URL = config.INTERVALS_BASE + "/oauth/authorize"
+-DEFAULT_TOKEN_TTL = 3600   # seconds; used when the provider does not say how long a token lives
+ 
+ # --- in-memory store -------------------------------------------------------
+ USERS = {
+@@ -20,6 +19,8 @@ USERS = {
+     "tok-rivera": {"id": "u_rivera", "name": "T. Rivera"},
+ }
+ # user_id -> {athlete_id, athlete_name, access_token, refresh_token, scope, expires_at, status}
++# expires_at is None for tokens the provider marked as non-expiring (Intervals.icu
++# never sends expires_in and never issues refresh tokens).
+ CONNECTIONS = {}
+ LOCK = threading.Lock()
+ 
+@@ -63,45 +64,53 @@ def exchange_code(code):
+ 
+ 
+ def store_connection(user_id, tok):
+-    expires_in = int(tok.get("expires_in") or DEFAULT_TOKEN_TTL)
+-    refresh = tok.get("refresh_token")
+-    if not refresh:
+-        log(f"{user_id}: no refresh_token in response, scheduling expiry in {expires_in}s")
+     athlete = tok.get("athlete") or {}
++    # No expires_in means the token does not expire; do not invent an expiry.
++    expires_in = int(tok["expires_in"]) if tok.get("expires_in") else None
+     with LOCK:
+         CONNECTIONS[user_id] = {
+             "athlete_id": athlete.get("id"), "athlete_name": athlete.get("name"),
+-            "access_token": tok["access_token"], "refresh_token": refresh,
+-            "scope": tok.get("scope"), "expires_at": time.time() + expires_in, "status": "connected",
++            "access_token": tok["access_token"], "refresh_token": tok.get("refresh_token"),
++            "scope": tok.get("scope"),
++            "expires_at": time.time() + expires_in if expires_in else None,
++            "status": "connected",
+         }
+-    log(f"{user_id}: connected as athlete {athlete.get('id')} (expires in {expires_in}s)")
++    if expires_in:
++        log(f"{user_id}: connected as athlete {athlete.get('id')} (expires in {expires_in}s)")
++    else:
++        log(f"{user_id}: connected as athlete {athlete.get('id')} (token does not expire)")
++
++
++def refresh_pass(now):
++    """Renew access tokens shortly before they expire."""
++    with LOCK:
++        for uid, c in CONNECTIONS.items():
++            if c["status"] != "connected" or c["expires_at"] is None:
++                continue
++            if c["expires_at"] - now > 300:
++                continue
++            if not c["refresh_token"]:
++                log(f"{uid}: token expired and no refresh token on file -> expired, reconnect")
++                c.update(status="expired, reconnect", access_token=None)
++                continue
++            try:
++                tok = post_form(TOKEN_URL, {
++                    "grant_type": "refresh_token", "refresh_token": c["refresh_token"],
++                    "client_id": config.CLIENT_ID, "client_secret": config.CLIENT_SECRET,
++                })
++                c.update(access_token=tok["access_token"],
++                         refresh_token=tok.get("refresh_token", c["refresh_token"]),
++                         expires_at=time.time() + int(tok["expires_in"]))
++                log(f"{uid}: token refreshed")
++            except Exception as e:
++                log(f"{uid}: refresh failed ({e}) -> expired, reconnect")
++                c.update(status="expired, reconnect", access_token=None)
+ 
+ 
+ def refresh_tokens():
+-    """Background pass: renew access tokens shortly before they expire."""
+     while True:
+         time.sleep(config.REFRESH_INTERVAL)
+-        now = time.time()
+-        with LOCK:
+-            for uid, c in CONNECTIONS.items():
+-                if c["status"] != "connected" or c["expires_at"] - now > 300:
+-                    continue
+-                if not c["refresh_token"]:
+-                    log(f"{uid}: token expiry passed and no refresh token on file -> expired, reconnect")
+-                    c.update(status="expired, reconnect", access_token=None)
+-                    continue
+-                try:
+-                    tok = post_form(TOKEN_URL, {
+-                        "grant_type": "refresh_token", "refresh_token": c["refresh_token"],
+-                        "client_id": config.CLIENT_ID, "client_secret": config.CLIENT_SECRET,
+-                    })
+-                    c.update(access_token=tok["access_token"],
+-                             refresh_token=tok.get("refresh_token", c["refresh_token"]),
+-                             expires_at=now + int(tok["expires_in"]))
+-                    log(f"{uid}: token refreshed")
+-                except Exception as e:
+-                    log(f"{uid}: refresh failed ({e}) -> expired, reconnect")
+-                    c.update(status="expired, reconnect", access_token=None)
++        refresh_pass(time.time())
+ 
+ 
+ def intervals_get(conn, path):
+@@ -185,14 +194,15 @@ class Handler(BaseHTTPRequestHandler):
+             return
+         self.send_json(404, {"error": "not found"})
+ 
+-    # Step 1: build the authorize URL and send the browser to Intervals.
++    # Step 1: build the authorize URL; the SPA navigates the browser to it.
+     def auth_init(self):
+         user = self.require_user()
+         if not user:
+             return
+         params = {"client_id": config.CLIENT_ID, "redirect_uri": config.REDIRECT_URI,
+-                  "scope": config.SCOPES, "state": sign_state(user["id"])}
+-        self.redirect(AUTHORIZE_URL + "?" + urllib.parse.urlencode(params, safe=":,"))
++                  "response_type": "code", "scope": config.SCOPES, "state": sign_state(user["id"])}
++        url = AUTHORIZE_URL + "?" + urllib.parse.urlencode(params, safe=":,")
++        self.send_json(200, {"url": url})
+ 
+     # Step 2: Intervals redirects back here with ?code=&state=.
+     def callback(self, q):
+@@ -233,6 +243,12 @@ class Handler(BaseHTTPRequestHandler):
+             code, data = intervals_get(c, "/wellness")
+             self.send_json(code, data)
+         except urllib.error.HTTPError as e:
++            if e.code == 401:
++                # Token rejected (revoked etc.): the athlete must reconnect.
++                with LOCK:
++                    conn = CONNECTIONS.get(user["id"])
++                    if conn and conn["status"] == "connected":
++                        conn.update(status="expired, reconnect", access_token=None)
+             self.send_json(e.code, {"error": f"intervals returned {e.code}"})
+         except Exception as e:
+             self.send_json(502, {"error": str(e)})
+diff --git a/static/app.js b/static/app.js
+index 368922e..ed6b147 100644
+--- a/static/app.js
++++ b/static/app.js
+@@ -25,12 +25,26 @@ async function render() {
+     } else {
+       const why = st.status && st.status !== "disconnected" ? `<p class="muted">Status: ${esc(st.status)}</p>` : "";
+       card = `<div class="card">Intervals.icu is not connected.${why}
+-        <p><a class="btn" href="/api/intervals/auth/init">Connect Intervals.icu</a></p></div>`;
++        <p><button class="btn" id="connect" type="button">Connect Intervals.icu</button></p></div>`;
+     }
+     root.className = "";
+     root.innerHTML = `<p>Signed in as <b>${esc(me.name)}</b>.</p>${card}`;
+     const d = document.getElementById("disconnect");
+     if (d) d.onclick = async () => { await api("/api/intervals/disconnect", { method: "POST" }); render(); };
++    // The sign-in token only travels on fetch calls (localStorage -> Authorization
++    // header), so the connect flow must start here: fetch the authorize URL with
++    // the token attached, then navigate the browser to it.
++    const c = document.getElementById("connect");
++    if (c) c.onclick = async () => {
++      c.disabled = true;
++      try {
++        const { url } = await api("/api/intervals/auth/init");
++        window.location.assign(url);
++      } catch (e) {
++        c.disabled = false;
++        root.innerHTML = `<p class="card">Error: ${esc(e.message)}</p>`;
++      }
++    };
+   } catch (e) {
+     root.innerHTML = `<p class="card">Error: ${esc(e.message)}</p>`;
+   }

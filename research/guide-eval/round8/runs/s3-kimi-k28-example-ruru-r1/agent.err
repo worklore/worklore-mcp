@@ -1,0 +1,111 @@
+805449a base
+---
+zsh 5.9 (arm64-apple-darwin24.0)
+/opt/homebrew/bin/claude
+Not logged in · Please run /login
+bin/nightly-review.zsh:19: read-only variable: status
+Not logged in · Please run /login
+bin/nightly-review.zsh:19: read-only variable: status
+script exit code: 1
+--- notify.log:
+(notify.log does not exist — nothing was ever reported)
+  <key>EnvironmentVariables</key>$
+  <dict>$
+    <key>PATH</key>$
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>$
+  </dict>$
+</dict>$
+zsh syntax OK
+bash syntax OK
+Library/LaunchAgents/com.vk.nightly-review.plist: OK
+/bin/bash: -c: line 37: syntax error near unexpected token `('
+/bin/bash: -c: line 37: `  [ -s .test/home/Library/Logs/*.md(N) ] && echo "output md: $(cat .test/home/Library/Logs/*.md)"'
+== 1. claude fails (the real bug) ==  exit=1
+notify: -
+script stderr: bin/nightly-review.zsh:20: EPOCHSECONDS: parameter not set
+
+== 2. claude ok ==  exit=1
+notify: -
+script stderr: bin/nightly-review.zsh:20: EPOCHSECONDS: parameter not set
+
+== 3. claude ok but empty output ==  exit=1
+notify: -
+script stderr: bin/nightly-review.zsh:20: EPOCHSECONDS: parameter not set
+
+== 4. notify.sh itself fails ==  exit=1
+notify: -
+script stderr: bin/nightly-review.zsh:20: EPOCHSECONDS: parameter not set
+
+== 1. claude fails (the real bug) ==  exit=1
+notify: NOTIFY: nightly review FAILED (exit 1), see /private/tmp/h-lpCJyV/.test/home/Library/Logs/nightly-review-2026-11-07.md
+stdin received by claude:
+Review the commits in this repository since 2026-11-06.
+For each commit: one line on what it changes and whether anything looks risky
+(migrations, auth, payments, deleted tests).
+End with a three-line summary I can read on my phone.
+Do not modify any file.
+output md: 
+script stderr: Not logged in · Please run /login
+
+== 2. claude ok ==  exit=0
+notify: NOTIFY: nightly review done: Review: nothing risky.
+stdin received by claude:
+Review the commits in this repository since 2026-11-06.
+For each commit: one line on what it changes and whether anything looks risky
+(migrations, auth, payments, deleted tests).
+End with a three-line summary I can read on my phone.
+Do not modify any file.
+output md: Review: nothing risky.
+script stderr: nightly review finished in 0s
+
+== 3. claude ok but empty output ==  exit=1
+notify: NOTIFY: nightly review FAILED: claude exited 0 but wrote nothing to /private/tmp/h-lpCJyV/.test/home/Library/Logs/nightly-review-2026-11-07.md
+stdin received by claude:
+Review the commits in this repository since 2026-11-06.
+For each commit: one line on what it changes and whether anything looks risky
+(migrations, auth, payments, deleted tests).
+End with a three-line summary I can read on my phone.
+Do not modify any file.
+output md: 
+script stderr: 
+
+== 4. notify.sh itself fails ==  exit=0
+notify: NOTIFY: nightly review done: Review: nothing risky.
+stdin received by claude:
+Review the commits in this repository since 2026-11-06.
+For each commit: one line on what it changes and whether anything looks risky
+(migrations, auth, payments, deleted tests).
+End with a three-line summary I can read on my phone.
+Do not modify any file.
+output md: Review: nothing risky.
+script stderr: nightly review finished in 0s
+nightly-review: notify.sh failed to send: nightly review done: Review: nothing risky.
+
+== 5. repo missing ==  exit=0
+notify: NOTIFY: nightly review done: Review: nothing risky.
+stdin received by claude:
+Review the commits in this repository since 2026-11-06.
+For each commit: one line on what it changes and whether anything looks risky
+(migrations, auth, payments, deleted tests).
+End with a three-line summary I can read on my phone.
+Do not modify any file.
+output md: Review: nothing risky.
+script stderr: nightly review finished in 0s
+
+repo-missing: exit=1 notify: NOTIFY: nightly review: repo missing
+bin/notify.sh: line 2: NOTIFY_LOG: parameter null or not set
+notify.sh exit=0
+notify.sh: could not read tg-bot token from keychain
+real notify.sh exit=1 (expect 1 + keychain error message)
+ M Library/LaunchAgents/com.vk.nightly-review.plist
+ M bin/nightly-review.zsh
+ M bin/notify.sh
+---
+ Library/LaunchAgents/com.vk.nightly-review.plist |  4 ++++
+ bin/nightly-review.zsh                           | 26 +++++++++++++++++-------
+ bin/notify.sh                                    |  5 ++++-
+ 3 files changed, 27 insertions(+), 8 deletions(-)
+ M Library/LaunchAgents/com.vk.nightly-review.plist
+ M bin/nightly-review.zsh
+ M bin/notify.sh
+?? ANSWER.md

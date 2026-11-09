@@ -1,0 +1,63 @@
+084a9dd base
+PASS GET /auth/init -> 404 (no longer a navigation target)
+PASS POST /auth/init without token -> 401
+PASS POST /auth/init -> 200 authorize_url
+PASS authorize URL points at Intervals /oauth/authorize
+PASS scope has no duplicate area
+PASS state present
+PASS status: connected as i11111
+PASS wellness proxy 200
+PASS mismatch callback -> 409
+PASS still connected as i11111 after mismatch
+PASS tampered state -> 400
+Traceback (most recent call last):
+  File "/private/tmp/h-wZi32R/tmp_intervals_test.py", line 137, in <module>
+    req("GET", f"/api/intervals/callback?code=code-revoked&state={urllib.parse.quote(state_rivera)}")
+    ~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/h-wZi32R/tmp_intervals_test.py", line 66, in req
+    return resp.status, dict(resp.headers), json.loads(resp.read().decode() or "{}")
+                                            ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/__init__.py", line 352, in loads
+    return _default_decoder.decode(s)
+           ~~~~~~~~~~~~~~~~~~~~~~~^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/decoder.py", line 345, in decode
+    obj, end = self.raw_decode(s, idx=_w(s, 0).end())
+               ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/decoder.py", line 363, in raw_decode
+    raise JSONDecodeError("Expecting value", s, err.value) from None
+json.decoder.JSONDecodeError: Expecting value: line 1 column 1 (char 0)
+PASS GET /auth/init -> 404 (no longer a navigation target)
+PASS POST /auth/init without token -> 401
+PASS POST /auth/init -> 200 authorize_url
+PASS authorize URL points at Intervals /oauth/authorize
+PASS scope has no duplicate area
+PASS state present
+PASS callback -> 302 to /?connected=1
+PASS status: connected as i11111
+PASS wellness proxy 200
+PASS mismatch callback -> 409
+PASS still connected as i11111 after mismatch
+PASS tampered state -> 400
+PASS revoked-token callback still connects initially
+PASS wellness on revoked token -> 409 not-connected
+PASS status after 401 -> disconnected (reconnect offered)
+PASS reconnect after revoke -> 302
+PASS no artificial 1h expiry (still connected after grace)
+
+all checks passed
+compile OK
+ M config.py
+ M server.py
+ M static/app.js
+?? __pycache__/
+ M config.py
+ M server.py
+ M static/app.js
+ M config.py
+ M server.py
+ M static/app.js
+?? ANSWER.md
+ config.py     |  6 ++---
+ server.py     | 77 +++++++++++++++++++++++++----------------------------------
+ static/app.js | 13 +++++++++-
+ 3 files changed, 48 insertions(+), 48 deletions(-)

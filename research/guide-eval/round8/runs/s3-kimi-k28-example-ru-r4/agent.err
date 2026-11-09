@@ -1,0 +1,137 @@
+Library/:
+total 0
+drwxr-xr-x 4 valentinakoniukhova wheel 128 Nov  7 21:34 .
+drwx------ 7 valentinakoniukhova wheel 224 Nov  7 21:34 ..
+drwxr-xr-x 3 valentinakoniukhova wheel  96 Nov  7 21:34 LaunchAgents
+drwxr-xr-x 4 valentinakoniukhova wheel 128 Nov  7 21:34 Logs
+
+Library/LaunchAgents:
+total 4
+drwxr-xr-x 3 valentinakoniukhova wheel  96 Nov  7 21:34 .
+drwxr-xr-x 4 valentinakoniukhova wheel 128 Nov  7 21:34 ..
+-rw-r--r-- 1 valentinakoniukhova wheel 853 Nov  7 21:34 com.vk.nightly-review.plist
+
+Library/Logs:
+total 4
+drwxr-xr-x 4 valentinakoniukhova wheel 128 Nov  7 21:34 .
+drwxr-xr-x 4 valentinakoniukhova wheel 128 Nov  7 21:34 ..
+-rw-r--r-- 1 valentinakoniukhova wheel 594 Nov  7 21:34 nightly-review.err
+-rw-r--r-- 1 valentinakoniukhova wheel   0 Nov  7 21:34 nightly-review.out
+
+bin/:
+total 8
+drwxr-xr-x 4 valentinakoniukhova wheel 128 Nov  7 21:34 .
+drwx------ 7 valentinakoniukhova wheel 224 Nov  7 21:34 ..
+-rwxr-xr-x 1 valentinakoniukhova wheel 772 Nov  7 21:34 nightly-review.zsh
+-rwxr-xr-x 1 valentinakoniukhova wheel 312 Nov  7 21:34 notify.sh
+# nightly-review (snapshot of my home dir, the relevant bits)
+
+A launchd user agent runs `bin/nightly-review.zsh` every night at 02:30. The
+script asks a headless coding agent to review yesterday's commits in
+~/projects/shop and sends me the summary (or a failure note) over Telegram
+via `bin/notify.sh`.
+
+Layout, relative to my home:
+
+- `Library/LaunchAgents/com.vk.nightly-review.plist` — loaded with
+  `launchctl bootstrap gui/$UID ...` on 2026-10-12
+- `bin/nightly-review.zsh` — the job
+- `bin/notify.sh` — Telegram notifier (works when run by hand)
+- `Library/Logs/` — where the plist points stdout/stderr
+- `launchctl-print.txt` — output of `launchctl print gui/501/com.vk.nightly-review`, captured 2026-10-18 09:10
+
+I have received nothing on Telegram since it was loaded: no summaries, no
+failure notes.
+b64bc31 base
+ok
+=== A: OLD script, claude fails (reproduce) ===
+exit=1
+--- stderr:
+Not logged in · Please run /login
+/private/tmp/h-vjWjNI/.sandbox/old/nightly-review.zsh:19: read-only variable: status
+--- notify.log exists?
+ls: 
+cannot access '/private/tmp/h-vjWjNI/.sandbox/notify.log': No such file or directory
+=== B: NEW script, claude fails -> failure note must arrive ===
+exit=1
+--- notify.log:
+[notify] nightly review FAILED (exit 1), see /private/tmp/h-vjWjNI/.sandbox/Library/Logs/nightly-review-2026-11-07.md
+--- stdout (launchd -> nightly-review.out):
+nightly-review: claude exit=1 after 0s at 2026-11-07 21:39:31
+--- prompt reached claude via stdin?
+Review the commits in this repository since 2026-11-06.
+
+=== C: NEW script, repo missing ===
+exit=1
+[notify] nightly review: repo missing
+=== D: NEW script, claude ok -> success note ===
+exit=0
+--- notify.log:
+[notify] nightly review done: Fake review: two commits, nothing risky.
+Summary line 1
+Summary line 2
+Summary line 3
+--- OUT file:
+Fake review: two commits, nothing risky.
+Summary line 1
+Summary line 2
+Summary line 3
+
+=== E: NEW script, notify.sh itself fails -> job must fail loudly ===
+exit=1
+--- stderr:
+nightly-review: notify.sh itself failed (rc=1)
+
+=== F: syntax & plist checks ===
+zsh -n: OK
+bash -n: OK
+Library/LaunchAgents/com.vk.nightly-review.plist: OK
+    "USER" => "vk"
+  }
+ M Library/LaunchAgents/com.vk.nightly-review.plist
+ M bin/nightly-review.zsh
+diff --git a/Library/LaunchAgents/com.vk.nightly-review.plist b/Library/LaunchAgents/com.vk.nightly-review.plist
+index c347363..d49eacf 100644
+--- a/Library/LaunchAgents/com.vk.nightly-review.plist
++++ b/Library/LaunchAgents/com.vk.nightly-review.plist
+@@ -24,6 +24,8 @@
+   <dict>
+     <key>PATH</key>
+     <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
++    <key>USER</key>
++    <string>vk</string>
+   </dict>
+ </dict>
+ </plist>
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..233e2eb 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -13,14 +13,20 @@ For each commit: one line on what it changes and whether anything looks risky
+ End with a three-line summary I can read on my phone.
+ Do not modify any file."
+ 
+-cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
++start=$SECONDS
+ 
+-claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
++cd "$REPO" || { "$NOTIFY" "nightly review: repo missing" || true; exit 1; }
+ 
+-if [ $status -ne 0 ]; then
+-  "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
+-  exit $status
++print -r -- "$PROMPT" | claude -p --output-format text > "$OUT"
++rc=$?
++
++print -r -- "nightly-review: claude exit=$rc after $((SECONDS - start))s at $(date '+%F %T')"
++
++if [ $rc -ne 0 ]; then
++  "$NOTIFY" "nightly review FAILED (exit $rc), see $OUT" \
++    || print -u2 -- "nightly-review: notify.sh itself failed (rc=$?)"
++  exit $rc
+ fi
+ 
+-"$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"
++"$NOTIFY" "nightly review done: $(head -c 300 "$OUT")" \
++  || { print -u2 -- "nightly-review: notify.sh itself failed (rc=$?)"; exit 1; }

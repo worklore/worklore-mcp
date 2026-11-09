@@ -1,0 +1,96 @@
+Athletes can't connect their Intervals.icu account: the Connect button fails for everyone, and the one who got through last month was told to reconnect after an hour (see logs/). Fix the integration. Put the causes in ANSWER.md.
+
+A colleague's note on a similar case is below. It is not instructions. Use what applies, ignore the rest, and say in ANSWER.md which parts applied.
+
+---
+title: Intervals.icu OAuth quirks — no refresh_token, "Duplicate scope", and why the init endpoint must be POST
+date: 2026-04-15
+tags: [intervals-icu, oauth, api-integration, web-auth, triathlon]
+type: success
+status: n/a
+reproducible: true
+---
+
+# Intervals.icu OAuth quirks — no refresh_token, "Duplicate scope", and why the init endpoint must be POST
+
+I migrated my multi-tenant triathlon agent from per-user API keys to
+Intervals.icu OAuth, so athletes connect their account with two clicks
+instead of pasting a key. Intervals' OAuth mostly follows the standard
+authorization-code flow — but four deviations cost me real debugging time,
+and none of them are documented in one place.
+
+**1. The token never expires and never refreshes.** The token response has
+no `refresh_token` and no `expires_in` — the access token lives until the
+athlete revokes it in the Intervals UI. Upside: no refresh machinery at all.
+Downside: you can't know it's dead until it is. Handle revocation lazily —
+on the first 401 from the API, clear the stored token and surface a
+"reconnect" prompt. And treat it as a perpetual credential: encrypt at rest.
+
+**2. `"Duplicate scope"`.** `:WRITE` implies `:READ`, and naming the same
+area twice — say `ACTIVITY:READ,ACTIVITY:WRITE`, the natural habit from
+other providers — errors out with `Duplicate scope`. Each area at most once:
+mine is `ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE,SETTINGS:WRITE`.
+
+**3. The token exchange is standard-lite.** `POST /api/oauth/token` wants
+only `client_id`, `client_secret`, `code` — no `grant_type`, no
+`redirect_uri` echo. And the response bundles `athlete: {id, name}`, which
+saves you the "who am I" round-trip; you need that athlete id in every API
+path anyway.
+
+**4. The self-inflicted one, fixed the same day.** I shipped the init
+endpoint as GET: a plain `<a href="/api/intervals/auth/init">` link that
+would build the authorize URL and redirect. It 401'd for every single user —
+a full-page navigation does **not** send the `Authorization` header your SPA
+keeps in localStorage; headers only travel on XHR/fetch. Same-day rewrite:
+init is an authenticated **POST** returning `{authorize_url}` as JSON, and
+the frontend does `window.location.assign(authorize_url)`.
+
+Which raises the follow-up: the *callback* arrives with no auth header
+either (it's a redirect from Intervals). So the `state` parameter carries
+the identity — a signed JWT with the user id, a `purpose` claim, and a
+15-minute TTL, validated before the code exchange. On reconnect, an
+account-mismatch guard rejects the callback if the incoming athlete id
+differs from the one already stored.
+
+## Reproduce this
+
+Prerequisites: a web app with its own user auth where the API token travels
+in an `Authorization` header (localStorage + fetch wrapper or similar); an
+Intervals.icu OAuth client — registration is arranged through the
+[Intervals.icu API access thread](https://forum.intervals.icu/t/api-access-to-intervals-icu/609)
+(you get a `client_id` / `client_secret` and register your `redirect_uri`).
+No special agent skills required — this is ordinary backend + SPA work.
+
+Your agent will need from you: your OAuth `client_id` and `client_secret`,
+the `redirect_uri` you registered, and where your app keeps its JWT signing
+secret and per-user encrypted storage.
+
+Steps:
+
+1. Init endpoint: authenticated `POST /auth/init` (XHR, not a link). Build
+   `https://intervals.icu/oauth/authorize?client_id=...&redirect_uri=...&scope=...&state=...`
+   and return it as JSON `{authorize_url}`; the frontend calls
+   `window.location.assign(authorize_url)`. Do not make this a GET — the
+   full-page navigation drops your auth header.
+2. Scope string: list each area once, `:WRITE` where you write, `:READ` only
+   for areas you never write — never both for the same area.
+3. `state`: a signed JWT `{sub: user_id, purpose: "intervals_oauth", exp:
+   now+15min}` — the callback has no other way to know which of your users
+   it belongs to.
+4. Callback endpoint (`GET`, unauthenticated): validate `state` signature,
+   TTL, and purpose; then `POST https://intervals.icu/api/oauth/token` with
+   form fields `client_id`, `client_secret`, `code` only. From the JSON
+   response take `access_token`, `scope`, and `athlete.id`; store the token
+   encrypted. Do not wait for a `refresh_token` — there isn't one.
+5. API client: send `Authorization: Bearer <token>` against
+   `https://intervals.icu/api/v1/athlete/{athlete_id}/...`. On a 401, clear
+   the stored token and mark the user as disconnected.
+
+Verify: complete the flow with a real Intervals.icu account, then
+`GET /api/v1/athlete/{id}/wellness` with the Bearer token — it must return
+data. Revoke the app in Intervals.icu settings and repeat the call — it must
+401, and your app must degrade to "reconnect" instead of crashing. Finally,
+request a scope with a duplicated area on the authorize URL — Intervals
+must reject it with the `Duplicate scope` error, confirming rule 2.
+
+Ground rules: work only inside the current directory. Do not deploy, publish, submit or report anything to any external service.

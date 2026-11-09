@@ -1,0 +1,161 @@
+mock= app=85627
+--- 1. POST init without token (must be 401)
+401
+--- 2. POST init with token (must be 200 + authorize_url)
+{"authorize_url": "http://127.0.0.1:9876/oauth/authorize?client_id=tricoach-dev&redirect_uri=http:%2F%2Flocalhost:8766%2Fapi%2Fintervals%2Fcallback&scope=ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE&state=dV9va2Fmb3I6aW50ZXJ2YWxzX29hdXRoOjE3OTQxMzU5MzQ6ZDQ0ZjdiNjUwMTI0YjhkMzAzMTYyNTM4NWJmOWQ1MzQ%3D"}
+--- 3. scope string in authorize URL (each area once)
+scope=ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE
+--- 3b. duplicate scope check: ACTIVITY and CALENDAR mentioned once each
+OK, areas: ['ACTIVITY', 'WELLNESS', 'CALENDAR']
+--- 4. callback with bad state (must be 400)
+400
+--- 5. callback with valid state + code (must be 302)
+502 -> 
+--- 6. token exchange fields seen by provider (no grant_type/redirect_uri)
+{}
+--- 7. status (must be connected)
+{"connected": true, "status": "connected", "scope": "ACTIVITY:WRITE,WELLNESS:READ", "athlete": {"id": "i98765", "name": "T. Rivera"}}
+
+--- 8. wellness (must be 200 with data)
+{"error": "<urlopen error [Errno 61] Connection refused>"}
+2026-11-08 08:05:16 [intervals] serving on http://localhost:8766 (intervals: http://127.0.0.1:8899)
+Traceback (most recent call last):
+  File "/private/tmp/h-6TgUxP/server.py", line 230, in <module>
+    ThreadingHTTPServer(("127.0.0.1", config.PORT), Handler).serve_forever()
+    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+OSError: [Errno 48] Address already in use
+---
+COMMAND   PID                USER   FD   TYPE             DEVICE SIZE/OFF NODE NAME
+Python  84285 valentinakoniukhova    3u  IPv4 0x923c902982a3fd90      0t0  TCP 127.0.0.1:8766 (LISTEN)
+---
+COMMAND   PID                USER   FD   TYPE             DEVICE SIZE/OFF NODE NAME
+Python  85629 valentinakoniukhova    3u  IPv4 0x510cc4be1423cadb      0t0  TCP 127.0.0.1:8899 (LISTEN)
+---
+/bin/bash: /bin/ps: Operation not permitted
+COMMAND   PID                USER   FD   TYPE             DEVICE SIZE/OFF                NODE NAME
+Python  84285 valentinakoniukhova  cwd    DIR               1,15       64           446611891 /private/tmp/h-unWmrw
+Python  84285 valentinakoniukhova  txt    REG               1,15    33568           373723653 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/Resources/Python.app/Contents/MacOS/Python
+Python  84285 valentinakoniukhova  txt    REG               1,15    77808           373725091 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_struct.cpython-314-darwin.so
+Python  84285 valentinakoniukhova  txt    REG               1,15    54416           373725141 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/binascii.cpython-314-darwin.so
+Python  84285 valentinakoniukhova  txt    REG               1,15    80448           373725016 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_hashlib.cpython-314-darwin.so
+Python  84285 valentinakoniukhova  txt    REG               1,15    72112           373724965 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_blake2.cpython-314-darwin.so
+Python  84285 valentinakoniukhova  txt    REG               1,15    72912           373725034 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_json.cpython-314-darwin.so
+Python  84285 valentinakoniukhova  txt    REG               1,15   128960           373725023 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_hmac.cpython-314-darwin.so
+Python  84285 valentinakoniukhova  txt    REG               1,15    76176           373725192 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/zlib.cpython-314-darwin.so
+Python  84285 valentinakoniukhova  txt    REG               1,15  2289328 1152921500312524696 /usr/lib/dyld
+Python  84285 valentinakoniukhova  txt    REG               1,15    55056           373724968 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_bz2.cpython-314-darwin.so
+Python  84285 valentinakoniukhova  txt    REG               1,15    74704           373725039 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_lzma.cpython-314-darwin.so
+Python  84285 valentinakoniukhova  txt    REG               1,15    53040           373724963 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_bisect.cpython-314-darwin.so
+Python  84285 valentinakoniukhova  txt    REG               1,15    53952           373725061 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_random.cpython-314-darwin.so
+Python  84285 valentinakoniukhova  txt    REG               1,15   167520           409198589 /opt/homebrew/Cellar/xz/5.8.4/lib/liblzma.5.dylib
+Python  84285 valentinakoniukhova  txt    REG               1,15    96752           373725135 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_zstd.cpython-314-darwin.so
+Python  84285 valentinakoniukhova  txt    REG               1,15    93472           373725152 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/math.cpython-314-darwin.so
+Python  84285 valentinakoniukhova  txt    REG               1,15    53344           373725067 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_scproxy.cpython-314-darwin.so
+Python  84285 valentinakoniukhova  txt    REG               1,15   115824           373725078 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_socket.cpython-314-darwin.so
+2026-11-08 08:06:31 [intervals] test instance on 8767
+Traceback (most recent call last):
+2026-11-08 08:06:31 [intervals] test instance on 8767
+Traceback (most recent call last):
+  File "<string>", line 9, in <module>
+    ThreadingHTTPServer(('127.0.0.1', 8767), server.Handler).serve_forever()
+    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+OSError: [Errno 48] Address already in use
+Python  68767 valentinakoniukhova    3u  IPv4 0x7fccb4613ef0a81c      0t0  TCP 127.0.0.1:8767 (LISTEN)
+free: 18991
+free: 18992
+free: 18993
+2026-11-08 08:06:52 [intervals] test instance on 18991
+--- 1. POST init without token (expect 401)
+401
+--- 2. POST init with token (expect 200 + authorize_url)
+{"authorize_url": "http://127.0.0.1:8899/oauth/authorize?client_id=tricoach-dev&redirect_uri=http:%2F%2Flocalhost:18991%2Fapi%2Fintervals%2Fcallback&scope=ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE&state=dV9va2Fmb3I6MTc5NDEzNjAyOTo0MGIyNjhjNDBhOWRkNDcyNzJlMTliNmI0NjA0ZWVlOQ%3D%3D"}
+--- 3. scopes: each area exactly once
+OK: ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE
+--- 4. old-style GET init (expect 404 — no longer exists)
+404
+--- 5. callback, bad state (expect 400)
+400
+--- 6. callback, valid state + code (expect 302 to /?connected=1)
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+    import sys,urllib.parse as up; print(up.parse_qs(up.urlsplit(sys.argv[1]).query)["state"][0])
+                                                                 ~~~~~~~~^^^
+IndexError: list index out of range
+400 -> 
+--- 7. fields the provider saw at token exchange (expect only client_id/client_secret/code)
+{}
+
+--- 8. status (expect connected as C. Okafor / i98765)
+{"connected": false, "status": "disconnected"}
+
+--- 9. wellness (expect 200 + data)
+{"error": "intervals not connected"}
+
+409
+--- 10. other user still disconnected (expect connected:false)
+{"connected": false, "status": "disconnected"}
+
+ok  - init without token -> 401
+ok  - init with token -> 200
+ok  - each scope area exactly once
+ok  - no READ alongside WRITE
+ok  - GET init -> 404
+ok  - callback bad state -> 400
+Traceback (most recent call last):
+  File "/private/tmp/h-6TgUxP/test_e2e.py", line 52, in <module>
+    check("callback valid -> 302 to /?connected=1", s == 302 and hdr.get("Location") == "/?connected=1", f"{s} {hdr.get('Location')}")
+    ~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/h-6TgUxP/test_e2e.py", line 22, in check
+    assert cond, f"FAIL: {name} {detail}"
+           ^^^^
+AssertionError: FAIL: callback valid -> 302 to /?connected=1 200 None
+ok  - init without token -> 401
+ok  - init with token -> 200
+ok  - each scope area exactly once
+ok  - no READ alongside WRITE
+ok  - GET init -> 404
+ok  - callback bad state -> 400
+ok  - callback valid -> 302 to /?connected=1
+ok  - token exchange fields = client_id/client_secret/code only
+ok  - status connected as C. Okafor / i98765
+ok  - wellness -> 200 with data
+ok  - wellness with dead token -> 409
+ok  - status after 401 -> connected:false, reconnect
+ok  - reconnect callback -> 302
+ok  - wellness after reconnect -> 200
+ok  - disconnect -> disconnected
+
+ALL 15 CHECKS PASSED
+2026-11-08 08:08:31 [http] "POST /api/intervals/auth/init HTTP/1.1" 200 -
+2026-11-08 08:08:31 [intervals] u_okafor: connected as athlete i98765 (no expiry reported by provider; token lives until revoked)
+2026-11-08 08:08:31 [http] "GET /api/intervals/callback?code=good-code&state=dV9va2Fmb3I6MTc5NDEzNjExMTo4MTFiZDY4NDgzZWI3NzQ3ODJlMzI2NjNiZjc0NjgwMA%3D%3D HTTP/1.1" 302 -
+2026-11-08 08:08:31 [http] "GET /api/intervals/wellness HTTP/1.1" 200 -
+2026-11-08 08:08:31 [http] "POST /api/intervals/disconnect HTTP/1.1" 200 -
+2026-11-08 08:08:31 [http] "GET /api/intervals/status HTTP/1.1" 200 -
+---
+app.js syntax OK
+ M config.py
+ M server.py
+ M static/app.js
+?? __pycache__/
+ M config.py
+ M server.py
+ M static/app.js

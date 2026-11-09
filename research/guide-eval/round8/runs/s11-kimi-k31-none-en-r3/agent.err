@@ -1,0 +1,109 @@
+.
+
+----------------------------------------------------------------------
+Ran 1 test in 0.000s
+
+OK
+publish failed
+Traceback (most recent call last):
+  File "/private/tmp/h-z0NCiu/src/app.py", line 72, in handler
+    stored = publish(table, story)
+  File "/private/tmp/h-z0NCiu/src/app.py", line 63, in publish
+    table.put_item(Item=item)
+    ~~~~~~~~~~~~~~^^^^^^^^^^^
+  File "/private/tmp/h-z0NCiu/tests/fake_dynamo.py", line 31, in put_item
+    _check(Item)
+    ~~~~~~^^^^^^
+  File "/private/tmp/h-z0NCiu/tests/fake_dynamo.py", line 16, in _check
+    _check(v, f"{path}.{k}")
+    ~~~~~~^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/h-z0NCiu/tests/fake_dynamo.py", line 20, in _check
+    _check(v, f"{path}[{i}]")
+    ~~~~~~^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/h-z0NCiu/tests/fake_dynamo.py", line 16, in _check
+    _check(v, f"{path}.{k}")
+    ~~~~~~^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/h-z0NCiu/tests/fake_dynamo.py", line 13, in _check
+    raise TypeError("Float types are not supported. Use Decimal types instead.")
+TypeError: Float types are not supported. Use Decimal types instead.
+first-story 201 {"slug": "first-story"}
+second-story 500 {"error": "Internal Server Error"}
+.
+.
+
+----------------------------------------------------------------------
+Ran 2 tests in 0.001s
+
+OK
+ M src/app.py
+ M tests/test_publish.py
+?? ANSWER.md
+diff --git a/src/app.py b/src/app.py
+index db49c5e..c18364f 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -8,6 +8,7 @@ import json
+ import logging
+ import re
+ import time
++from decimal import Decimal
+ 
+ log = logging.getLogger("stories")
+ 
+@@ -35,7 +36,8 @@ def related(story, existing):
+     for other in existing:
+         if other["slug"] == story["slug"]:
+             continue
+-        scored.append({"slug": other["slug"], "score": similarity(story, other)})
++        score = Decimal(str(similarity(story, other)))
++        scored.append({"slug": other["slug"], "score": score})
+     scored.sort(key=lambda s: s["score"], reverse=True)
+     return scored[:TOP_N]
+ 
+diff --git a/tests/test_publish.py b/tests/test_publish.py
+index 6c9ac44..c3b02ae 100644
+--- a/tests/test_publish.py
++++ b/tests/test_publish.py
+@@ -1,6 +1,8 @@
++import json
+ import os
+ import sys
+ import unittest
++from decimal import Decimal
+ 
+ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+ sys.path.insert(0, os.path.dirname(__file__))
+@@ -23,6 +25,33 @@ class PublishTest(unittest.TestCase):
+         self.assertEqual(table.get_item(Key={"slug": "why-my-cron-ran-twice"})["Item"]["title"], "Why my cron ran twice")
+         self.assertEqual(table.scan()["Count"], 1)
+ 
++    def test_second_publish_stores_related_scores(self):
++        table = FakeTable()
++        stories = [
++            {
++                "slug": "first-story",
++                "title": "First story",
++                "tags": ["cron"],
++                "body": "A cron story.",
++            },
++            {
++                "slug": "second-story",
++                "title": "Second story",
++                "tags": ["cron"],
++                "body": "A cron story.",
++            },
++        ]
++
++        for story in stories:
++            response = app.handler({"body": json.dumps(story)}, table)
++            self.assertEqual(response["statusCode"], 201)
++
++        stored = table.get_item(Key={"slug": "second-story"})["Item"]
++        self.assertEqual(
++            stored["similar"],
++            [{"slug": "first-story", "score": Decimal("1.0")}],
++        )
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

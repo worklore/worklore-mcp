@@ -1,0 +1,84 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..a93bcd3
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,25 @@
++# Cause
++
++DynamoDB rejects Python `float` values. `similarity()` returns a float, and `related()` placed that value directly in each `similar[].score` field passed to `put_item()`.
++
++The first publish succeeded because the table was empty: `related()` returned an empty list, so no score was calculated or serialized. The second publish found the first story, calculated a float score, and failed in DynamoDB serialization with `TypeError: Float types are not supported. Use Decimal types instead.` The handler converted that exception into the observed 500 response.
++
++# Fix
++
++In `src/app.py`, `related()` now converts each similarity ratio to an integer percentage before adding it to the DynamoDB item:
++
++```python
++int(round(similarity(story, other) * 100))
++```
++
++DynamoDB accepts Python integers, so no float reaches the write.
++
++A regression test in `tests/test_publish.py` now publishes twice through `handler()`. It verifies that both responses are 201 and that the second story's related score is the integer `100`. This exercises the populated-table path that the original empty-table-only test missed and will fail if a float is written there again.
++
++Verification: `python3 -m unittest discover tests` passes both tests. The tests use the existing in-memory table with boto3-compatible type validation; no real AWS table was used.
++
++# Colleague's note
++
++Applied: the DynamoDB float diagnosis, the explanation of why an empty first write hides the bug, conversion to integer percentages at the item-building boundary, and a regression test that seeds existing data by publishing once before testing the second write.
++
++Not applied: the alternative of using `Decimal` was unnecessary because integer percentages fit this service. No real-table publish or deployment was performed; verification stayed within the repository's existing test setup.
+diff --git a/src/app.py b/src/app.py
+index db49c5e..d2f33a1 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -35,7 +35,7 @@ def related(story, existing):
+     for other in existing:
+         if other["slug"] == story["slug"]:
+             continue
+-        scored.append({"slug": other["slug"], "score": similarity(story, other)})
++        scored.append({"slug": other["slug"], "score": int(round(similarity(story, other) * 100))})
+     scored.sort(key=lambda s: s["score"], reverse=True)
+     return scored[:TOP_N]
+ 
+diff --git a/tests/test_publish.py b/tests/test_publish.py
+index 6c9ac44..4bce3f5 100644
+--- a/tests/test_publish.py
++++ b/tests/test_publish.py
+@@ -1,3 +1,4 @@
++import json
+ import os
+ import sys
+ import unittest
+@@ -23,6 +24,30 @@ class PublishTest(unittest.TestCase):
+         self.assertEqual(table.get_item(Key={"slug": "why-my-cron-ran-twice"})["Item"]["title"], "Why my cron ran twice")
+         self.assertEqual(table.scan()["Count"], 1)
+ 
++    def test_second_publish_with_existing_story(self):
++        table = FakeTable()
++        first_story = {
++            "slug": "first-story",
++            "title": "First story",
++            "tags": ["cron"],
++            "body": "One cron job.",
++        }
++        second_story = {
++            "slug": "second-story",
++            "title": "Second story",
++            "tags": ["cron"],
++            "body": "One cron job.",
++        }
++
++        first_response = app.handler({"body": json.dumps(first_story)}, table)
++        second_response = app.handler({"body": json.dumps(second_story)}, table)
++
++        self.assertEqual(first_response["statusCode"], 201)
++        self.assertEqual(second_response["statusCode"], 201)
++        stored = table.get_item(Key={"slug": "second-story"})["Item"]
++        self.assertEqual(stored["similar"], [{"slug": "first-story", "score": 100}])
++        self.assertIsInstance(stored["similar"][0]["score"], int)
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

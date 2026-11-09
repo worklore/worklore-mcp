@@ -1,0 +1,103 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..9c55001
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,37 @@
++# Почему вторая публикация возвращала 500
++
++## Причина
++
++`similarity()` в `src/app.py` возвращала результат `round(..., 4)` — число Python
++`float`. Этот score записывается в поле `similar: [{slug, score}]` элемента
++DynamoDB.
++
++- **Первая публикация** проходила, потому что таблица была пуста: `scan()`
++  возвращал пустой список, `related()` возвращал `[]` — ни одного float
++  в элементе не было.
++- **Вторая публикация** считала похожесть уже относительно существующего
++  элемента, поэтому в `similar` появлялись float-score'ы. Сериализатор boto3
++  (`boto3/dynamodb/types.py`) отклоняет float: `TypeError: Float types are
++  not supported. Use Decimal types instead.` — исключение перехватывалось в
++  `handler()` и превращалось в ответ 500. Именно это видно в
++  `logs/error.log` (строки 3–26).
++
++То есть ошибка не в «повторной» публикации как таковой, а в любом запросе,
++где у истории находится хотя бы одна похожая: любая непустая `similar`
++делала элемент незаписываемым.
++
++## Исправление
++
++В `src/app.py` `similarity()` теперь возвращает `Decimal` вместо `float`
++(округление через `str()`, чтобы избежать двоичного шума float:
++
++`return Decimal(str(round(0.7 * tag_score + 0.3 * word_score, 4)))`
++
++Это устраняет причину на источнике: незаписываемые значения просто не
++создаются, независимо от наполненности таблицы.
++
++Проверка: добавлен регрессионный тест `test_second_publish_stores_decimal_scores`
++в `tests/test_publish.py` — публикует две истории и проверяет, что score'ы во
++втором элементе имеют тип `Decimal` (раньше этот тест падал бы с тем же
++`TypeError`, что и в проде). `python3 -m unittest discover tests` — оба теста
++проходят.
+diff --git a/src/app.py b/src/app.py
+index db49c5e..af4bb08 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -8,6 +8,7 @@ import json
+ import logging
+ import re
+ import time
++from decimal import Decimal
+ 
+ log = logging.getLogger("stories")
+ 
+@@ -27,7 +28,7 @@ def similarity(a, b):
+     tag_score = len(ta & tb) / len(ta | tb) if (ta | tb) else 0
+     wa, wb = words(a.get("body")), words(b.get("body"))
+     word_score = len(wa & wb) / len(wa | wb) if (wa | wb) else 0
+-    return round(0.7 * tag_score + 0.3 * word_score, 4)
++    return Decimal(str(round(0.7 * tag_score + 0.3 * word_score, 4)))
+ 
+ 
+ def related(story, existing):
+diff --git a/tests/test_publish.py b/tests/test_publish.py
+index 6c9ac44..46fcda2 100644
+--- a/tests/test_publish.py
++++ b/tests/test_publish.py
+@@ -1,6 +1,7 @@
+ import os
+ import sys
+ import unittest
++from decimal import Decimal
+ 
+ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+ sys.path.insert(0, os.path.dirname(__file__))
+@@ -23,6 +24,26 @@ class PublishTest(unittest.TestCase):
+         self.assertEqual(table.get_item(Key={"slug": "why-my-cron-ran-twice"})["Item"]["title"], "Why my cron ran twice")
+         self.assertEqual(table.scan()["Count"], 1)
+ 
++    def test_second_publish_stores_decimal_scores(self):
++        table = FakeTable()
++        app.publish(table, {
++            "slug": "why-my-cron-ran-twice",
++            "title": "Why my cron ran twice",
++            "tags": ["cron", "linux"],
++            "body": "Two crontabs, one for root and one for me, both had the line.",
++        })
++        stored = app.publish(table, {
++            "slug": "cron-silent-failures",
++            "title": "Cron silent failures",
++            "tags": ["cron"],
++            "body": "My cron line ran twice because both crontabs had it.",
++        })
++        self.assertEqual(table.scan()["Count"], 2)
++        scores = [entry["score"] for entry in stored["similar"]]
++        self.assertTrue(scores)
++        for score in scores:
++            self.assertIsInstance(score, Decimal)
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

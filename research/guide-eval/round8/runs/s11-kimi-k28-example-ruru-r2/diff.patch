@@ -1,0 +1,115 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..ddbb35e
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,57 @@
++# Почему вторая публикация возвращала 500
++
++## Причина
++
++`src/app.py`, функция `similarity()` (src/app.py:30): оценка похожести считается
++через деление (`len(ta & tb) / len(ta | tb)` и `word_score`), `round(...)`
++возвращает Python-`float`. Этот float попадает в `item["similar"]` и дальше в
++`table.put_item(Item=item)`, а DynamoDB через boto3 не принимает `float`
++(`TypeError: Float types are not supported. Use Decimal types instead.` —
++ровно то, что в `logs/error.log`).
++
++Первая публикация выживала не случайно: при пустой таблице `publish()` вызывает
++`related(story, existing)` с пустым `existing`, получает `similar = []` — нечего
++сравнивать, оценки не считаются, float в элементе нет, запись проходит. Со
++второй публикацией в таблице уже есть запись, `similarity()` вычисляется, float
++уезжает в `put_item` → 500. Это же объясняет, почему баг не ловился тестом:
++единственный тест публиковал в пустую таблицу и всегда шёл по «первому» пути.
++
++## Исправление
++
++- `src/app.py:31` — `similarity()` теперь возвращает `Decimal(str(round(..., 4)))`.
++  Конвертация стоит в месте, где значение рождается, поэтому ни один будущий
++  путь, использующий `similarity()`/`related()`, не сможет пропустить float в
++  запись. Обёртка через `str()` даёт чистое значение (`Decimal('0.2965')`),
++  а не двоичный артефакт вида `0.29690000000000003`.
++  Выбран `Decimal`, а не `int`-проценты, чтобы сохранить точность 4 знака;
++  оба варианта DynamoDB принимает.
++- `tests/test_publish.py` — добавлен тест `test_publish_with_existing_story_stores_similar`:
++  сначала в таблицу кладётся одна история, затем публикуется вторая, и
++  проверяется, что `similar` посчитан и сохранён. `FakeTable` валидирует типы
++  так же, как boto3, поэтому регрессия поймается тем же `TypeError`.
++
++Проверка: `python3 -m unittest discover tests` — оба теста зелёные; сценарий
++«два вызова handler подряд» возвращает 201 и 201, в таблице лежит
++`{'slug': ..., 'score': Decimal('0.2965')}`.
++
++## Какие части заметки коллеги пригодились
++
++- **Диагноз «падает только на второй записи из-за float в оценках»** — совпал
++  один в один: float из `similarity()` и пустая таблица на первой публикации.
++- **Чек-лист «поищите `round(` и `/`, питающие словари элементов»** — сразу
++  привёл к `src/app.py:30`.
++- **Фикс «конвертируйте в int или Decimal на границе»** — применён (вариант
++  Decimal на границе `similarity()`).
++- **Урок про тестирование пути записи** — прямо лёг в новый тест: сначала
++  засеять таблицу одной записью, потом публиковать. Зависящий от состояния код
++  (похожесть) теперь реально выполняется под тестом.
++
++Что не пригодилось / пропущено:
++
++- **Публикация «дважды в реальную таблицу» как проверка** — правила задачи
++  запрещают публикацию во внешние сервисы; вместо этого проверка сделана на
++  `FakeTable`, который валидирует типы как boto3, плюс двойной вызов `handler`.
++- **Выбор int-процентов как конкретный фикс** — заменён на `Decimal`, чтобы не
++  терять точность; в заметке оба варианта названы допустимыми.
++- Мета-часть заметки («агенту понадобятся от вас…», контекст AWS Lambda) —
++  технической ценности не несла.
+diff --git a/src/app.py b/src/app.py
+index db49c5e..af4bb08 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -8,6 +8,7 @@ import json
+ import logging
+ import re
+ import time
++from decimal import Decimal
+ 
+ log = logging.getLogger("stories")
+ 
+@@ -27,7 +28,7 @@ def similarity(a, b):
+     tag_score = len(ta & tb) / len(ta | tb) if (ta | tb) else 0
+     wa, wb = words(a.get("body")), words(b.get("body"))
+     word_score = len(wa & wb) / len(wa | wb) if (wa | wb) else 0
+-    return round(0.7 * tag_score + 0.3 * word_score, 4)
++    return Decimal(str(round(0.7 * tag_score + 0.3 * word_score, 4)))
+ 
+ 
+ def related(story, existing):
+diff --git a/tests/test_publish.py b/tests/test_publish.py
+index 6c9ac44..6d2e00c 100644
+--- a/tests/test_publish.py
++++ b/tests/test_publish.py
+@@ -23,6 +23,26 @@ class PublishTest(unittest.TestCase):
+         self.assertEqual(table.get_item(Key={"slug": "why-my-cron-ran-twice"})["Item"]["title"], "Why my cron ran twice")
+         self.assertEqual(table.scan()["Count"], 1)
+ 
++    def test_publish_with_existing_story_stores_similar(self):
++        table = FakeTable()
++        first = {
++            "slug": "why-my-cron-ran-twice",
++            "title": "Why my cron ran twice",
++            "tags": ["cron", "linux"],
++            "body": "Two crontabs, one for root and one for me, both had the line.",
++        }
++        app.publish(table, first)
++        second = {
++            "slug": "systemd-timer-surprise",
++            "title": "The systemd timer surprise",
++            "tags": ["cron", "systemd"],
++            "body": "Cron and a systemd timer both ran the same line at midnight.",
++        }
++        stored = app.publish(table, second)
++        self.assertEqual(table.scan()["Count"], 2)
++        self.assertEqual(len(stored["similar"]), 1)
++        self.assertEqual(stored["similar"][0]["slug"], "why-my-cron-ran-twice")
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

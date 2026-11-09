@@ -1,0 +1,10 @@
+de7f64d (HEAD -> main) base
+zsh:1: read-only variable: status
+reproduction exit code: 1
+Library/LaunchAgents/com.vk.nightly-review.plist: OK
+success path: output, stdin prompt, and notification OK
+failure path: exit 42 preserved and notification OK
+empty-output path: exit 1 and notification OK
+ M Library/LaunchAgents/com.vk.nightly-review.plist
+ M bin/nightly-review.zsh
+?? ANSWER.md

@@ -1,0 +1,211 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..2ba8fbb
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,69 @@
++# Реализация событий аналитики (docs/EVENTS.md)
++
++## Что сделано
++
++События из `docs/EVENTS.md` реализованы на экранах регистрации (`lib/screens/registration_screen.dart`)
++и списка предложений (`lib/screens/offer_screen.dart`) через существующую обёртку
++`Analytics.capture` (`lib/analytics.dart`). Имена событий и свойства совпадают со
++спецификацией один в один, PII (email, телефон) не отправляется.
++
++| Событие | Где срабатывает | Частота |
++|---|---|---|
++| `registration_email_started` | `onChanged` email-поля под флагом `_emailStartedFired` | 1 раз за посещение экрана, при первом вводе |
++| `registration_phone_started` | `onChanged` phone-поля под флагом `_phoneStartedFired` | 1 раз за посещение экрана, при первом вводе |
++| `loan_amount_changed` | `onChangeEnd` слайдера, свойство `amount` (int, округлённое) | 1 раз за протягивание, при отпускании |
++| `terms_accepted` | `onChanged` чекбокса, только при переходе в `true` под флагом `_termsAcceptedFired` | 1 раз за посещение экрана |
++| `registration_continue_tapped` | `onPressed` кнопки Continue, свойства `amount` (int), `terms` (bool) | на каждый тап |
++| `offers_scrolled` | `NotificationListener<ScrollEndNotification>` над списком, свойство `offset` (double, `metrics.pixels`) | 1 раз за завершённый жест скролла |
++
++## Почему так, а не «в лоб»
++
++Прямая подписка `capture` на `onChanged` текстовых полей и слайдера дала бы событие
++на каждое нажатие клавиши / каждый шаг слайдера — именно так сгорает квота PostHog
++в заметке коллеги. Поэтому точки срабатывания выбраны так, чтобы один пользовательский
++жест давал одно событие, а имена событий и свойства не менялись (воронки и дашборды
++продолжают работать).
++
++## Что пригодилось из заметки коллеги
++
++- **Текстовые поля: флаг «один раз за посещение».** `bool`-флаги `_emailStartedFired`,
++  `_phoneStartedFired` в состоянии экрана — событие уходит при первом редактировании,
++  а не на каждый символ. Применено к email и phone.
++- **Слайдер: `onChangeEnd` вместо `onChanged`.** `loan_amount_changed` шлётся один раз
++  за протягивание, с итоговым значением; `onChanged` обновляет только UI.
++- **Скролл: `ScrollEndNotification`.** `offers_scrolled` слушает завершение скролла,
++  а не `ScrollUpdateNotification` / слушатель контроллера — не на каждый кадр.
++- **Не менять имена событий и свойства** — чтобы существующие дашборды и воронки
++  продолжили работать.
++- **Учёт «состояние переживает навигацию».** Флаги лежат в `State` экрана регистрации:
++  при возврате с `/offers` обратно события «started/accepted» не дублируются
++  (для воронки это корректно: начало ввода — однократный факт). Полный сброс —
++  только при новом заходе на экран.
++
++## Что из заметки не понадобилось
++
++- **События по потере фокуса (`FocusNode`, итоговое значение).** Ни одно событие не
++  требует финального значения текстового поля; значение суммы приходит через
++  `onChangeEnd`, `terms`/`amount` — в `registration_continue_tapped` в момент тапа.
++- **`PostHogConfig.debug = true` в коде.** Временный отладочный флаг в продакшн-конфиг
++  добавлять не стал (ключ и так заменяется в CI); проверка описана ниже как ручной шаг.
++
++## Проверка
++
++- `flutter analyze` / `dart format` в этой сессии запустить не удалось: песочница
++  блокирует исполнение тулчейна Flutter вне рабочей директории (`Operation not
++  permitted` на `/Users/.../flutter/bin`). Форматирование выровнено вручную под
++  стиль проекта; код прошёл ручное ревью (типы свойств соответствуют спецификации:
++  `amount` — int, `terms` — bool, `offset` — double).
++- Рекомендуемая ручная проверка: `flutter analyze`, затем debug-сборка с
++  `PostHogConfig.debug = true` — ввод 20 символов в email даёт один `registration_email_started`,
++  протягивание слайдера край до края — одно `loan_amount_changed`, скролл списка —
++  одно `offers_scrolled` на жест.
++
++## Допущения
++
++- `terms_accepted` шлётся один раз (при первой установке галочки), а не на каждый
++  тик/антик — это шаг воронки, повторные срабатывания не несут смысла и жгут квоту.
++- `offers_scrolled` шлётся на каждое завершение скролла (не дебаунсится в одно за
++  посещение), т.к. свойство `offset` предполагает актуальное значение на момент
++  остановки; расход ограничен одним событием на жест, а не на пиксель.
+diff --git a/lib/screens/offer_screen.dart b/lib/screens/offer_screen.dart
+index 921ee59..c9a10ae 100644
+--- a/lib/screens/offer_screen.dart
++++ b/lib/screens/offer_screen.dart
+@@ -1,5 +1,7 @@
+ import 'package:flutter/material.dart';
+ 
++import '../analytics.dart';
++
+ class Offer {
+   const Offer(this.bank, this.months, this.rate);
+   final String bank;
+@@ -27,18 +29,26 @@ class OfferScreen extends StatelessWidget {
+   Widget build(BuildContext context) {
+     return Scaffold(
+       appBar: AppBar(title: const Text('Offers')),
+-      body: ListView.builder(
+-        itemCount: _offers.length,
+-        itemBuilder: (context, i) {
+-          final o = _offers[i];
+-          return ListTile(
+-            leading: const Icon(Icons.account_balance),
+-            title: Text('${o.bank}, ${o.months} months'),
+-            subtitle: Text('${o.rate.toStringAsFixed(1)}% APR'),
+-            trailing: const Icon(Icons.chevron_right),
+-            onTap: () {},
+-          );
++      body: NotificationListener<ScrollEndNotification>(
++        onNotification: (notification) {
++          Analytics.capture('offers_scrolled', {
++            'offset': notification.metrics.pixels,
++          });
++          return false;
+         },
++        child: ListView.builder(
++          itemCount: _offers.length,
++          itemBuilder: (context, i) {
++            final o = _offers[i];
++            return ListTile(
++              leading: const Icon(Icons.account_balance),
++              title: Text('${o.bank}, ${o.months} months'),
++              subtitle: Text('${o.rate.toStringAsFixed(1)}% APR'),
++              trailing: const Icon(Icons.chevron_right),
++              onTap: () {},
++            );
++          },
++        ),
+       ),
+     );
+   }
+diff --git a/lib/screens/registration_screen.dart b/lib/screens/registration_screen.dart
+index 059a250..4d5c87c 100644
+--- a/lib/screens/registration_screen.dart
++++ b/lib/screens/registration_screen.dart
+@@ -1,5 +1,7 @@
+ import 'package:flutter/material.dart';
+ 
++import '../analytics.dart';
++
+ class RegistrationScreen extends StatefulWidget {
+   const RegistrationScreen({super.key});
+ 
+@@ -12,6 +14,9 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
+   final _phone = TextEditingController();
+   double _amount = 50000;
+   bool _terms = false;
++  bool _emailStartedFired = false;
++  bool _phoneStartedFired = false;
++  bool _termsAcceptedFired = false;
+ 
+   @override
+   void dispose() {
+@@ -36,14 +41,26 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
+               controller: _email,
+               keyboardType: TextInputType.emailAddress,
+               decoration: const InputDecoration(labelText: 'Email'),
+-              onChanged: (_) => setState(() {}),
++              onChanged: (_) {
++                if (!_emailStartedFired) {
++                  _emailStartedFired = true;
++                  Analytics.capture('registration_email_started');
++                }
++                setState(() {});
++              },
+             ),
+             const SizedBox(height: 12),
+             TextField(
+               controller: _phone,
+               keyboardType: TextInputType.phone,
+               decoration: const InputDecoration(labelText: 'Phone'),
+-              onChanged: (_) => setState(() {}),
++              onChanged: (_) {
++                if (!_phoneStartedFired) {
++                  _phoneStartedFired = true;
++                  Analytics.capture('registration_phone_started');
++                }
++                setState(() {});
++              },
+             ),
+             const SizedBox(height: 24),
+             Text('Loan amount: ${_amount.round()}'),
+@@ -54,17 +71,32 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
+               value: _amount,
+               label: _amount.round().toString(),
+               onChanged: (v) => setState(() => _amount = v),
++              onChangeEnd: (v) =>
++                  Analytics.capture('loan_amount_changed', {'amount': v.round()}),
+             ),
+             CheckboxListTile(
+               value: _terms,
+               title: const Text('I accept the terms and conditions'),
+               controlAffinity: ListTileControlAffinity.leading,
+-              onChanged: (v) => setState(() => _terms = v ?? false),
++              onChanged: (v) {
++                final accepted = v ?? false;
++                if (accepted && !_termsAcceptedFired) {
++                  _termsAcceptedFired = true;
++                  Analytics.capture('terms_accepted');
++                }
++                setState(() => _terms = accepted);
++              },
+             ),
+             const Spacer(),
+             FilledButton(
+               onPressed: _canContinue
+-                  ? () => Navigator.of(context).pushNamed('/offers')
++                  ? () {
++                      Analytics.capture('registration_continue_tapped', {
++                        'amount': _amount.round(),
++                        'terms': _terms,
++                      });
++                      Navigator.of(context).pushNamed('/offers');
++                    }
+                   : null,
+               child: const Text('Continue'),
+             ),

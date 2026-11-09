@@ -1,0 +1,20 @@
+7c7581a (HEAD -> main) base
+Warm-up easy: 68-75% LTHR, custom=true
+Tempo: 88-93% LTHR, custom=true
+Float: 75-82% LTHR, custom=true
+Cool-down: 65-72% LTHR, custom=true
+diff --git a/gen.py b/gen.py
+index be0b3bc..6f71f9c 100755
+--- a/gen.py
++++ b/gen.py
+@@ -10,7 +10,7 @@ import sys
+ def hr_target(step):
+     """HR corridor for a step, as a percentage of the athlete's LTHR."""
+     lo, hi = step["hr_pct"]
+-    return {"units": "%lthr", "value": lo, "end": hi}
++    return {"units": "%lthr", "value": lo, "end": hi, "custom": True}
+ 
+ 
+ def build_step(step):
+ M gen.py
+?? ANSWER.md

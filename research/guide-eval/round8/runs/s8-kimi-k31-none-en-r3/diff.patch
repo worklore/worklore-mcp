@@ -1,0 +1,52 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..437c78c
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,12 @@
++# Cache fix
++
++`build_system()` previously put the static coaching instructions and mutable athlete context (including long-term facts) in one cached text block. Every `save_fact` changed that block, so the next tool-loop round could not reuse its cache entry.
++
++The system prompt is now two blocks:
++
++1. `INSTRUCTIONS`, unchanged and marked with `cache_control: {"type": "ephemeral"}`.
++2. `athlete_context(a, today)`, containing the date, profile, and current facts, with no cache marker.
++
++A memory write now changes only the second, uncached block; the static instruction prefix remains identical and cacheable. `README.md` was updated to describe this behavior.
++
++Verification used a local fake LLM through the complete `reply()` tool loop. It confirmed that `save_fact` adds the fact to the second request's athlete context while the cached instruction block remains exactly equal across both calls. No external API calls were made and no athlete records or usage logs were changed.
+diff --git a/README.md b/README.md
+index ebd390e..f30e0d3 100644
+--- a/README.md
++++ b/README.md
+@@ -11,6 +11,8 @@ its system prompt. Every API call appends its `usage` object to `logs/usage.json
+ Run it locally with `COACH_ANTHROPIC_KEY=sk-ant-... python3 bot.py 42` and type
+ messages on stdin (the Telegram long-polling transport, which needs
+ `COACH_TELEGRAM_TOKEN`, lives in a separate deploy repo and just calls `reply()`).
+-Requires Python 3.11+ and `pip install anthropic`. Prompt caching is on: the system
+-prompt carries a `cache_control` marker so the tool-loop rounds and follow-up
+-messages inside the 5-minute window read it from cache.
++Requires Python 3.11+ and `pip install anthropic`. Prompt caching is on: the static
++coaching instructions form a separate system block with a `cache_control` marker,
++while the mutable athlete context is uncached. Tool-loop rounds and follow-up
++messages inside the 5-minute window can therefore reuse the instructions even
++after `save_fact` changes long-term memory.
+diff --git a/bot.py b/bot.py
+index e2ff241..25f74fb 100644
+--- a/bot.py
++++ b/bot.py
+@@ -128,9 +128,10 @@ def athlete_context(a, today):
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    return [
++        {"type": "text", "text": INSTRUCTIONS, "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": athlete_context(a, today)},
++    ]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [

@@ -1,0 +1,25 @@
+# Cause
+
+The first publish works because the table is empty, so `related()` returns an empty `similar` list and no similarity scores are written. On the second publish, `related()` calls `similarity()`, whose divisions and weighted calculation produce a Python `float`; `round(..., 4)` also returns a `float`. That value is placed in `similar[*].score` and passed to DynamoDB.
+
+boto3's DynamoDB serializer rejects Python floats, producing the logged `TypeError: Float types are not supported. Use Decimal types instead.` The handler catches that exception and returns HTTP 500. Thus the failure depends on existing data, not on the second request itself.
+
+# Fix
+
+`related()` now converts each similarity ratio to an integer percentage with `round(similarity(story, other) * 100)`. Scores remain ordered the same way, but values sent to DynamoDB are integers from 0 to 100 rather than floats. The other computed write value, `published_at`, was already converted to `int`.
+
+A regression test in `tests/test_publish.py` seeds the table with one story, publishes a second through `handler()`, and verifies a 201 response, two stored stories, and an integer similarity score of 100 for identical story content. This exercises the populated-table path that the original empty-table test missed.
+
+Verification: `python3 -m unittest discover tests` passes both tests. A separate two-request handler run returned 201 for both publishes and stored the second story's related score as integer `85`. No real AWS publish was performed.
+
+# Colleague's note
+
+Applied parts:
+
+- The logged float-serialization error and the explanation of why an empty first write hides the bug matched this case.
+- Tracing computed values into DynamoDB writes identified the similarity score as the only float crossing the write boundary.
+- Converting scores to integer percentages supplied the fix.
+- Seeding one record before testing another write supplied the regression-test pattern.
+- Auditing division and `round()` operations confirmed the calculation path; no other DynamoDB write calls exist in this service.
+
+The note's alternative of using `Decimal` was not needed. Its real-table verification step was not used because verification was kept local with the existing boto3-compatible fake table.

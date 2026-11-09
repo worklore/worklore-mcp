@@ -1,0 +1,26 @@
+ba47b6d base
+2026-11-08 08:23:19 [http] POST /api/intervals/auth/init 401 (no Authorization header)
+2026-11-08 08:23:19 [http] "POST /api/intervals/auth/init HTTP/1.1" 401 -
+2026-11-08 08:23:19 [http] "GET /api/intervals/auth/init HTTP/1.1" 404 -
+2026-11-08 08:23:19 [http] "POST /api/intervals/auth/init HTTP/1.1" 200 -
+2026-11-08 08:23:19 [intervals] u_okafor: connected as athlete i-test
+2026-11-08 08:23:19 [http] "GET /api/intervals/callback?code=local-code&state=dV9va2Fmb3I6MTc5NDEzNjk5OTo5ZTA3MWNkNWE5YTQzZTNjZjI5MWUzMDE0MThmMWZlOQ%3D%3D HTTP/1.1" 302 -
+2026-11-08 08:23:19 [http] "GET /api/intervals/status HTTP/1.1" 200 -
+2026-11-08 08:23:19 [http] "GET /api/intervals/wellness HTTP/1.1" 200 -
+2026-11-08 08:23:19 [intervals] u_okafor: Intervals returned 401 -> revoked, reconnect
+2026-11-08 08:23:19 [http] "GET /api/intervals/wellness HTTP/1.1" 401 -
+2026-11-08 08:23:19 [http] "GET /api/intervals/status HTTP/1.1" 200 -
+PASS: authenticated POST init, OAuth callback/token exchange, durable connection, wellness, and lazy 401 reconnect
+ config.py     |  4 +---
+ server.py     | 59 ++++++++++++++++++-----------------------------------------
+ static/app.js | 13 ++++++++++++-
+ 3 files changed, 31 insertions(+), 45 deletions(-)
+ M config.py
+ M server.py
+ M static/app.js
+?? ANSWER.md
+?? __pycache__/
+ M config.py
+ M server.py
+ M static/app.js
+?? ANSWER.md

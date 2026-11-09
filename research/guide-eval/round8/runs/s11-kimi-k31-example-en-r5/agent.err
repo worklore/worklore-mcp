@@ -1,0 +1,36 @@
+.
+
+----------------------------------------------------------------------
+Ran 1 test in 0.000s
+
+OK
+TypeError: Float types are not supported. Use Decimal types instead.
+Traceback (most recent call last):
+  File "<stdin>", line 11, in <module>
+  File "/private/tmp/h-ZnqohJ/src/app.py", line 63, in publish
+    table.put_item(Item=item)
+    ~~~~~~~~~~~~~~^^^^^^^^^^^
+  File "/private/tmp/h-ZnqohJ/tests/fake_dynamo.py", line 31, in put_item
+    _check(Item)
+    ~~~~~~^^^^^^
+  File "/private/tmp/h-ZnqohJ/tests/fake_dynamo.py", line 16, in _check
+    _check(v, f"{path}.{k}")
+    ~~~~~~^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/h-ZnqohJ/tests/fake_dynamo.py", line 20, in _check
+    _check(v, f"{path}[{i}]")
+    ~~~~~~^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/h-ZnqohJ/tests/fake_dynamo.py", line 16, in _check
+    _check(v, f"{path}.{k}")
+    ~~~~~~^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/h-ZnqohJ/tests/fake_dynamo.py", line 13, in _check
+    raise TypeError("Float types are not supported. Use Decimal types instead.")
+TypeError: Float types are not supported. Use Decimal types instead.
+.
+.
+----------------------------------------------------------------------
+Ran 2 tests in 0.000s
+
+OK
+ M src/app.py
+ M tests/test_publish.py
+?? ANSWER.md

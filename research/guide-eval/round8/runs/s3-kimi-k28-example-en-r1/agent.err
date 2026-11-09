@@ -1,0 +1,58 @@
+total 4
+drwxr-xr-x 4 valentinakoniukhova wheel 128 Nov  7 05:18 .
+drwxr-xr-x 4 valentinakoniukhova wheel 128 Nov  7 05:18 ..
+-rw-r--r-- 1 valentinakoniukhova wheel 594 Nov  7 05:18 nightly-review.err
+-rw-r--r-- 1 valentinakoniukhova wheel   0 Nov  7 05:18 nightly-review.out
+total 4
+drwxr-xr-x 3 valentinakoniukhova wheel  96 Nov  7 05:18 .
+drwxr-xr-x 4 valentinakoniukhova wheel 128 Nov  7 05:18 ..
+-rw-r--r-- 1 valentinakoniukhova wheel 853 Nov  7 05:18 com.vk.nightly-review.plist
+zsh:1: read-only variable: status
+exit=1
+harness ready
+=== 1. Reproduce original bug (stub claude fails like the real one) ===
+date: invalid option -- 'v'
+Try 'date --help' for more information.
+Not logged in · Please run /login
+.test/nightly-review-buggy.zsh:14: read-only variable: status
+buggy script exit=1
+--- notifications after buggy run:
+
+=== 2. Fixed script, claude still failing -> failure notify expected ===
+date: invalid option -- 'v'
+Try 'date --help' for more information.
+Not logged in · Please run /login
+nightly-review: exit=1 duration=0s
+fixed script exit=1
+--- notifications:
+NOTIFY: nightly review FAILED (exit 1), see /private/tmp/h-XNzZI2/.test/home/Library/Logs/nightly-review-2026-11-07.md
+=== 3. Fixed script, claude succeeds -> success notify + fresh output file ===
+date: invalid option -- 'v'
+Try 'date --help' for more information.
+nightly-review: exit=0 duration=0s
+exit=0
+--- notifications:
+NOTIFY: nightly review done: STUB REVIEW for prompt bytes: 246
+- abc123: fixes checkout totals; touches payments, check auth regression risk
+Summary line 1
+Summary line 2
+Summary line 3
+--- output file:
+STUB REVIEW for prompt bytes: 246
+- abc123: fixes checkout totals; touches payments, check auth regression risk
+Summary line 1
+Summary line 2
+Summary line 3
+
+=== 4. Plist validity ===
+Library/LaunchAgents/com.vk.nightly-review.plist: OK
+ M Library/LaunchAgents/com.vk.nightly-review.plist
+ M bin/nightly-review.zsh
+ M Library/LaunchAgents/com.vk.nightly-review.plist
+ M bin/nightly-review.zsh
+?? ANSWER.md
+ANSWER.md
+Library
+README.md
+bin
+launchctl-print.txt

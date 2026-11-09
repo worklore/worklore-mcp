@@ -1,0 +1,48 @@
+.selftest/ro-status.zsh:4: read-only variable: status
+exit=1
+SYNTAX OK
+--- test 1: claude fails (not logged in) ---
+date: invalid option -- 'v'
+Try 'date --help' for more information.
+exit=1
+nightly review FAILED (exit 1): Not logged in · Please run /login
+--- test 2: claude succeeds ---
+date: invalid option -- 'v'
+Try 'date --help' for more information.
+exit=0
+nightly review done: Fake summary: everything looks fine.
+--- test 3: repo missing ---
+date: invalid option -- 'v'
+Try 'date --help' for more information.
+bin/nightly-review.zsh:cd:18: no such file or directory: /private/tmp/h-bhvzeT/.selftest/emptyhome/projects/shop
+bin/nightly-review.zsh:18: no such file or directory: /private/tmp/h-bhvzeT/.selftest/emptyhome/bin/notify.sh
+exit=1
+cat: .selftest/notify3.log: No such file or directory
+--- test 3 redo: repo missing (fake home WITH notify stub) ---
+date: invalid option -- 'v'
+Try 'date --help' for more information.
+bin/nightly-review.zsh:cd:18: no such file or directory: /private/tmp/h-bhvzeT/.selftest/emptyhome/projects/shop
+exit=1
+nightly review: repo missing
+--- claude stderr log from test 1 ---
+--- test 4: notify.sh paths (fully stubbed) ---
+[keychain fail]
+notify.sh: cannot read tg-bot token from keychain
+exit=1
+[curl fail]
+curl: (7) Failed to connect
+notify.sh: curl failed to reach Telegram
+exit=1
+[api fail]
+notify.sh: Telegram API error: {"ok":false,"error_code":401,"description":"Unauthorized"}
+exit=1
+ok-path exit=0
+total 8
+-rwxr-xr-x 1 valentinakoniukhova wheel 993 Nov  8 03:34 nightly-review.zsh
+-rwxr-xr-x 1 valentinakoniukhova wheel 642 Nov  8 03:34 notify.sh
+ M bin/nightly-review.zsh
+ M bin/notify.sh
+?? .selftest/
+ M bin/nightly-review.zsh
+ M bin/notify.sh
+?? ANSWER.md

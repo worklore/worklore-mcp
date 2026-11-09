@@ -1,0 +1,124 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..7750973
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,56 @@
++# Почему вторая публикация возвращала 500
++
++## Причина
++
++`similarity()` в `src/app.py` считает оценку похожести через деление и `round()` —
++это Python `float`. DynamoDB (boto3 `TypeSerializer`) не принимает `float`:
++`put_item` падает с `TypeError: Float types are not supported. Use Decimal types
++instead.` — ровно то, что в `logs/error.log`.
++
++Почему падение только на второй записи: `publish()` сохраняет историю вместе с
++тремя самыми похожими существующими историями (`similar: [{slug, score}]`).
++При первой публикации таблица пуста → `related()` возвращает пустой список →
++ни одного float в item → запись проходит. Со второй публикации в таблице уже
++есть записи → в `similar` попадают float-оценки → `put_item` падает. Баг был
++в коде с первого деплоя, но не существовал, пока в таблице не появились данные.
++
++## Исправление
++
++Конвертация в `Decimal` на границе записи — в `related()` (`src/app.py`),
++там, где оценка попадает в DynamoDB-item:
++
++```python
++scored.append({"slug": other["slug"], "score": Decimal(str(similarity(story, other)))})
++```
++
++`str()` внутри `Decimal(...)` убирает артефакты двоичного float и сохраняет
++округление до 4 знаков, которое уже делает `similarity()`. Сама функция
++`similarity()` осталась неизменной и по-прежнему возвращает float — теперь
++тип контролируется в одной точке, граничащей с DynamoDB.
++
++Тесты: добавлен `test_second_publish_stores_similar_stories`
++(`tests/test_publish.py`) — сначала сажает одну запись, затем публикует вторую
++и проверяет, что она сохранилась со `similar[0].score` типа `Decimal`. До
++исправления этот тест падает с тем же `TypeError`, что и прод. Прогон
++`python3 -m unittest discover tests` — 2/2 OK; ручной двойной вызов `handler()`
++через `FakeTable` даёт 201/201.
++
++## Что пригодилось из заметки коллеги
++
++- **Диагноз «float vs Decimal»** — попал в точку: падение именно на
++  сериализации, причём интересная часть — почему первая запись выжила
++  (пустая таблица = пустой `similar` = нет float).
++- **Правило «проследите каждое вычисляемое значение (деления, средние,
++  округлённые оценки) и конвертируйте на границе»** — именно так и сделано:
++  конвертация в `Decimal` там, где значение уходит в `put_item`.
++- **Тест с засеянной таблицей** — взято напрямую: каждый путь записи должен
++  сначала сажать одну запись и только потом проверять запись. Старый тест
++  покрывал только путь с пустой таблицей, который в продакшене случается
++  ровно один раз за жизнь сервиса; новый тест закрывает настоящий путь.
++- **«Вторая запись та, что говорит правду»** — верифицировано: новый тест
++  падал до фикса и проходит после.
++
++Не пригодилось: пример с «целыми процентами» (int вместо Decimal) — оценки
++уже округляются до 4 знаков и по смыслу дробные, поэтому выбран `Decimal`;
++замечание про поиск `round(`/делений по кодовой базе подтвердило, что
++единственный источник float — `similarity()`, больше менять нечего.
+diff --git a/src/app.py b/src/app.py
+index db49c5e..d3d8129 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -8,6 +8,7 @@ import json
+ import logging
+ import re
+ import time
++from decimal import Decimal
+ 
+ log = logging.getLogger("stories")
+ 
+@@ -35,7 +36,7 @@ def related(story, existing):
+     for other in existing:
+         if other["slug"] == story["slug"]:
+             continue
+-        scored.append({"slug": other["slug"], "score": similarity(story, other)})
++        scored.append({"slug": other["slug"], "score": Decimal(str(similarity(story, other)))})
+     scored.sort(key=lambda s: s["score"], reverse=True)
+     return scored[:TOP_N]
+ 
+diff --git a/tests/test_publish.py b/tests/test_publish.py
+index 6c9ac44..ee130fa 100644
+--- a/tests/test_publish.py
++++ b/tests/test_publish.py
+@@ -1,6 +1,7 @@
+ import os
+ import sys
+ import unittest
++from decimal import Decimal
+ 
+ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+ sys.path.insert(0, os.path.dirname(__file__))
+@@ -23,6 +24,28 @@ class PublishTest(unittest.TestCase):
+         self.assertEqual(table.get_item(Key={"slug": "why-my-cron-ran-twice"})["Item"]["title"], "Why my cron ran twice")
+         self.assertEqual(table.scan()["Count"], 1)
+ 
++    def test_second_publish_stores_similar_stories(self):
++        table = FakeTable()
++        first = {
++            "slug": "debugging-cron-jobs",
++            "title": "Debugging cron jobs",
++            "tags": ["cron", "linux"],
++            "body": "Two crontabs, one for root and one for me, both had the line.",
++        }
++        app.publish(table, first)
++        second = {
++            "slug": "why-my-cron-ran-twice",
++            "title": "Why my cron ran twice",
++            "tags": ["cron", "linux"],
++            "body": "My cron job ran twice because root and my user both had the line.",
++        }
++        stored = app.publish(table, second)
++        self.assertEqual(table.scan()["Count"], 2)
++        self.assertEqual(len(stored["similar"]), 1)
++        score = stored["similar"][0]["score"]
++        self.assertIsInstance(score, Decimal)
++        self.assertEqual(stored["similar"][0]["slug"], "debugging-cron-jobs")
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

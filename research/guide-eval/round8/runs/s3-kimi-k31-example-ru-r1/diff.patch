@@ -1,0 +1,85 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..98b1876
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,44 @@
++# Почему ночная задача молчала
++
++## Что показали снимок и логи
++
++Задача запускалась: `launchctl-print.txt` содержит `runs = 6` и `last exit code = 1`. Значит, причина не в расписании launchd.
++
++`Library/Logs/nightly-review.err` содержит шесть одинаковых пар ошибок:
++
++1. `Not logged in · Please run /login` — `claude` не смог получить сохранённый вход в keychain. В `EnvironmentVariables` plist был задан `PATH`, но не было `USER`.
++2. `read-only variable: status` — после завершения `claude` скрипт выполнял `status=$?`. В zsh `status` является специальной переменной только для чтения. Присваивание аварийно завершало скрипт до ветки уведомления об ошибке.
++
++Таким образом, ошибки накладывались друг на друга: агент не выполнял обзор, а затем умирал сам отправщик сообщения об этой ошибке. Поэтому не приходили ни успешные сводки, ни сообщения о сбое.
++
++## Исправления
++
++- `Library/LaunchAgents/com.vk.nightly-review.plist`: добавлено `USER=vk` в `EnvironmentVariables`, чтобы headless CLI мог найти вход в keychain в контексте launchd.
++- `bin/nightly-review.zsh`: `status=$?` заменено на `rc=$?`; проверка, сообщение и выход используют `rc`.
++- `bin/nightly-review.zsh`: вызову `claude -p "$PROMPT" ...` добавлено `< /dev/null`. Поскольку prompt передаётся аргументом, закрытый stdin не даёт CLI ждать дополнительного ввода.
++
++`bin/notify.sh` не менялся: в логах нет ошибки notifier, а по README он работает при ручном запуске.
++
++## Что пригодилось из заметки коллеги
++
++Использованы следующие части:
++
++- сначала проверить `launchctl print` (число запусков и последний код выхода), а не предполагать, что launchd не запускает задачу;
++- читать лог из `StandardErrorPath`;
++- не присваивать `status` в zsh, использовать `rc`;
++- задать `USER` в plist при ошибке `Not logged in`;
++- при передаче prompt аргументом подключить `< /dev/null`;
++- проверить и успешный путь, и принудительный сбой, включая фактический результат, а не только код выхода.
++
++Передача prompt через stdin не применялась: здесь использован другой описанный вариант — prompt остаётся аргументом, а stdin закрывается. Отдельное логирование длительности и перестройка порядка уведомлений не потребовались для устранения подтверждённых причин. `launchctl kickstart` и повторная загрузка агента не выполнялись: разрешено было менять только файлы снимка, без деплоя.
++
++## Проверка
++
++- `zsh -n bin/nightly-review.zsh` и `bash -n bin/notify.sh` — успешно.
++- `plutil -lint Library/LaunchAgents/com.vk.nightly-review.plist` — успешно.
++- Скрипт прогнан локально с временными заглушками `claude` и `notify.sh`, без сети и Telegram:
++  - при успехе создан отчёт с ожидаемым текстом и вызвано success-уведомление;
++  - при принудительной ошибке 42 создан вывод агента, вызвано failure-уведомление с кодом 42 и сам скрипт завершился с кодом 42;
++  - prompt и `--output-format text` дошли до агента аргументами, stdin был закрыт.
++
++Временные проверочные файлы удалены. Реальный запуск в launchd и доставка в Telegram не проверялись, поскольку это снимок домашней директории, а внешние отправки и деплой были запрещены. После переноса файлов в домашнюю директорию агент нужно перезагрузить и один раз проверить через `launchctl kickstart -k gui/$UID/com.vk.nightly-review`.
+diff --git a/Library/LaunchAgents/com.vk.nightly-review.plist b/Library/LaunchAgents/com.vk.nightly-review.plist
+index c347363..d49eacf 100644
+--- a/Library/LaunchAgents/com.vk.nightly-review.plist
++++ b/Library/LaunchAgents/com.vk.nightly-review.plist
+@@ -24,6 +24,8 @@
+   <dict>
+     <key>PATH</key>
+     <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
++    <key>USER</key>
++    <string>vk</string>
+   </dict>
+ </dict>
+ </plist>
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..2cb3c69 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -15,12 +15,12 @@ Do not modify any file."
+ 
+ cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
+ 
+-claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
++claude -p "$PROMPT" --output-format text < /dev/null > "$OUT"
++rc=$?
+ 
+-if [ $status -ne 0 ]; then
+-  "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
+-  exit $status
++if [ "$rc" -ne 0 ]; then
++  "$NOTIFY" "nightly review FAILED (exit $rc), see $OUT"
++  exit "$rc"
+ fi
+ 
+ "$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"

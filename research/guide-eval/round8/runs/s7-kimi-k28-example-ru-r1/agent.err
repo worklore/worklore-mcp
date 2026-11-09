@@ -1,0 +1,52 @@
+--- me:
+{"id": "u_okafor", "name": "C. Okafor"}
+
+--- status before:
+{"connected": false, "status": "disconnected"}
+
+--- old GET init must be 404:
+404
+
+--- POST init without token must be 401:
+401
+
+--- POST init:
+{"authorize_url": "http://127.0.0.1:8877/oauth/authorize?client_id=tricoach-dev&redirect_uri=http:%2F%2Flocalhost:8766%2Fapi%2Fintervals%2Fcallback&scope=ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE&state=dV9va2Fmb3I6MTc5NDA5MzU4NTo1NDE5ZDAzYWE4ZjhiYWViZjliZGQ5NDlkODAxMjNmYQ%3D%3D"}
+scope OK: ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE
+--- authorize against mock:
+302 -> http://localhost:8766/api/intervals/callback?code=code-good&state=dV9va2Fmb3I6MTc5NDA5MzU4NTo1NDE5ZDAzYWE4ZjhiYWViZjliZGQ5NDlkODAxMjNmYQ%3D%3D
+--- callback:
+302 -> http://localhost:8766/?connected=1
+--- status after:
+{"connected": true, "status": "connected", "scope": "ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE", "athlete": {"id": "i98765", "name": "T. Rivera"}}
+
+--- wellness:
+{"wellness": [{"date": "2026-11-07", "resting_hr": 48}]}
+
+--- negative control: duplicated scope must be rejected by provider:
+{"error": "Duplicate scope"}
+--- disconnect okafor, reconnect with revoked token:
+{"ok": true}
+callback: 302 -> http://localhost:8766/?connected=1
+--- wellness with revoked token:
+{"error": "intervals token rejected, please reconnect"}
+ [409]
+--- status after 401:
+{"connected": false, "status": "disconnected"}
+callback: 302 -> http://localhost:8766/?connected=1
+--- rivera connected:
+{"connected": true, "status": "connected", "scope": "ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE", "athlete": {"id": "i98765", "name": "T. Rivera"}}
+
+--- reconnect attempt with a DIFFERENT athlete:
+callback: 302 -> http://localhost:8766/?connect_error=that%20Intervals%20account%20belongs%20to%20a%20different%20athlete%3B%20disconnect%20first
+--- status unchanged:
+{"connected": true, "status": "connected", "scope": "ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE", "athlete": {"id": "i98765", "name": "T. Rivera"}}
+py syntax OK
+js syntax OK
+ M config.py
+ M server.py
+ M static/app.js
+?? __pycache__/
+ M config.py
+ M server.py
+ M static/app.js

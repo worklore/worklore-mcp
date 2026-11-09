@@ -1,0 +1,80 @@
+-rw-r--r-- 1 valentinakoniukhova wheel 1007 Nov  7 05:20 launchctl-print.txt
+
+Library:
+total 0
+drwxr-xr-x 4 valentinakoniukhova wheel 128 Nov  7 05:20 .
+drwx------ 7 valentinakoniukhova wheel 224 Nov  7 05:20 ..
+drwxr-xr-x 3 valentinakoniukhova wheel  96 Nov  7 05:20 LaunchAgents
+drwxr-xr-x 4 valentinakoniukhova wheel 128 Nov  7 05:20 Logs
+
+Library/LaunchAgents:
+total 4
+drwxr-xr-x 3 valentinakoniukhova wheel  96 Nov  7 05:20 .
+drwxr-xr-x 4 valentinakoniukhova wheel 128 Nov  7 05:20 ..
+-rw-r--r-- 1 valentinakoniukhova wheel 853 Nov  7 05:20 com.vk.nightly-review.plist
+
+Library/Logs:
+total 4
+drwxr-xr-x 4 valentinakoniukhova wheel 128 Nov  7 05:20 .
+drwxr-xr-x 4 valentinakoniukhova wheel 128 Nov  7 05:20 ..
+-rw-r--r-- 1 valentinakoniukhova wheel 594 Nov  7 05:20 nightly-review.err
+-rw-r--r-- 1 valentinakoniukhova wheel   0 Nov  7 05:20 nightly-review.out
+
+bin:
+total 8
+drwxr-xr-x 4 valentinakoniukhova wheel 128 Nov  7 05:20 .
+drwx------ 7 valentinakoniukhova wheel 224 Nov  7 05:20 ..
+-rwxr-xr-x 1 valentinakoniukhova wheel 772 Nov  7 05:20 nightly-review.zsh
+-rwxr-xr-x 1 valentinakoniukhova wheel 312 Nov  7 05:20 notify.sh
+before
+zsh:1: read-only variable: status
+zsh exit=1
+zsh:1: read-only variable: status
+exit=1
+.scratch/orig.zsh:18: no such file or directory: /private/tmp/h-oBuT9D/.scratch/Library/Logs/nightly-review-2026-11-07.md
+.scratch/orig.zsh:19: read-only variable: status
+--- script exit=1
+--- calls.log:
+ПУСТО: notify/curl НИ РАЗУ не вызывались
+=== Тест 1: claude падает (как ночью) — теперь должно уйти FAILED-уведомление, exit 1
+Not logged in · Please run /login
+bin/nightly-review.zsh:22: no such file or directory: /private/tmp/h-oBuT9D/.scratch/bin/notify.sh
+exit=1
+
+=== Тест 2: claude успешен — должно уйти done-уведомление, exit 0
+bin/nightly-review.zsh:26: no such file or directory: /private/tmp/h-oBuT9D/.scratch/bin/notify.sh
+exit=127
+=== Тест 1: claude падает
+Not logged in · Please run /login
+/private/tmp/h-oBuT9D/.scratch/bin/curl: line 2: /private/tmp/h-oBuT9D/.scratch/.scratch/calls.log: No such file or directory
+notify.sh: telegram API rejected the message: 
+exit=1
+
+=== Тест 2: claude успешен
+/private/tmp/h-oBuT9D/.scratch/bin/curl: line 2: /private/tmp/h-oBuT9D/.scratch/.scratch/calls.log: No such file or directory
+notify.sh: telegram API rejected the message: 
+exit=1
+
+=== OUT-файл:
+Great commits, nothing risky.
+=== Тест 1: claude падает
+Not logged in · Please run /login
+exit=1
+text=nightly
+
+=== Тест 2: claude успешен
+exit=0
+text=nightly review done: Great commits, nothing risky.
+
+=== Тест 3: notify.sh — нет токена в связке ключей (security падает)
+security: SecKeychainSearchCopyNext: The specified item could not be found in the keychain.
+notify.sh: cannot read tg-bot token from keychain
+notify exit=1
+
+=== Тест 4: notify.sh — Telegram вернул ошибку
+notify.sh: telegram API rejected the message: {"ok":false,"error_code":401,"description":"Unauthorized"}
+notify exit=1
+syntax OK
+Library/LaunchAgents/com.vk.nightly-review.plist: OK
+ M bin/nightly-review.zsh
+ M bin/notify.sh

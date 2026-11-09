@@ -1,0 +1,134 @@
+8aad1a8 base
+--- 1. Клик по кнопке Connect: обычная навигация БЕЗ Authorization-заголовка (как в тикете #214)
+GET  /api/intervals/auth/init без заголовка -> 404
+--- 2. С заголовком редирект строится, но scope содержит дубли областей (READ+WRITE для ACTIVITY и CALENDAR)
+--- 3. POST-вариант (только так fetch-обёртка SPA может донести заголовок):
+POST /api/intervals/auth/init -> 200
+COMMAND   PID                USER   FD   TYPE             DEVICE SIZE/OFF NODE NAME
+Python  62480 valentinakoniukhova    3u  IPv4 0x4756418ef38dc70a      0t0  TCP 127.0.0.1:8766 (LISTEN)
+/bin/bash: /bin/ps: Operation not permitted
+--- корень:
+{"error": "not found"}
+--- GET init с заголовком:
+404 
+--- GET status:
+{"connected": false, "status": "disconnected"}
+
+--- GET app.js, ищем connect:
+Python  62480 valentinakoniukhova  cwd    DIR               1,15       64           444989124 /private/tmp/h-hszrJe
+Python  62480 valentinakoniukhova  txt    REG               1,15    33568           373723653 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/Resources/Python.app/Contents/MacOS/Python
+Python  62480 valentinakoniukhova  txt    REG               1,15    77808           373725091 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_struct.cpython-314-darwin.so
+Python  62480 valentinakoniukhova  txt    REG               1,15    54416           373725141 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/binascii.cpython-314-darwin.so
+Python  62480 valentinakoniukhova  txt    REG               1,15    80448           373725016 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_hashlib.cpython-314-darwin.so
+Python  62480 valentinakoniukhova  txt    REG               1,15    72112           373724965 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_blake2.cpython-314-darwin.so
+Python  62480 valentinakoniukhova  txt    REG               1,15    72912           373725034 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_json.cpython-314-darwin.so
+Python  62480 valentinakoniukhova  txt    REG               1,15   128960           373725023 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_hmac.cpython-314-darwin.so
+Python  62480 valentinakoniukhova  txt    REG               1,15    76176           373725192 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/zlib.cpython-314-darwin.so
+Python  62480 valentinakoniukhova  txt    REG               1,15    55056           373724968 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_bz2.cpython-314-darwin.so
+---
+COMMAND   PID                USER   FD   TYPE             DEVICE SIZE/OFF                NODE NAME
+Python  62480 valentinakoniukhova  cwd    DIR               1,15       64           444989124 /private/tmp/h-hszrJe
+Python  62480 valentinakoniukhova  txt    REG               1,15    33568           373723653 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/Resources/Python.app/Contents/MacOS/Python
+Python  62480 valentinakoniukhova  txt    REG               1,15    77808           373725091 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_struct.cpython-314-darwin.so
+Python  62480 valentinakoniukhova  txt    REG               1,15    54416           373725141 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/binascii.cpython-314-darwin.so
+Python  62480 valentinakoniukhova  txt    REG               1,15    80448           373725016 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_hashlib.cpython-314-darwin.so
+Python  62480 valentinakoniukhova  txt    REG               1,15    72112           373724965 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_blake2.cpython-314-darwin.so
+Python  62480 valentinakoniukhova  txt    REG               1,15    72912           373725034 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_json.cpython-314-darwin.so
+Python  62480 valentinakoniukhova  txt    REG               1,15   128960           373725023 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_hmac.cpython-314-darwin.so
+Python  62480 valentinakoniukhova  txt    REG               1,15    76176           373725192 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/zlib.cpython-314-darwin.so
+Python  62480 valentinakoniukhova  txt    REG               1,15    55056           373724968 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_bz2.cpython-314-darwin.so
+Python  62480 valentinakoniukhova  txt    REG               1,15    74704           373725039 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_lzma.cpython-314-darwin.so
+Python  62480 valentinakoniukhova  txt    REG               1,15    53040           373724963 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_bisect.cpython-314-darwin.so
+Python  62480 valentinakoniukhova  txt    REG               1,15    96752           373725135 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_zstd.cpython-314-darwin.so
+Python  62480 valentinakoniukhova  txt    REG               1,15    93472           373725152 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/math.cpython-314-darwin.so
+Python  62480 valentinakoniukhova  txt    REG               1,15  2289328 1152921500312524696 /usr/lib/dyld
+Python  62480 valentinakoniukhova  txt    REG               1,15   167520           409198589 /opt/homebrew/Cellar/xz/5.8.4/lib/liblzma.5.dylib
+Python  62480 valentinakoniukhova  txt    REG               1,15    53952           373725061 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_random.cpython-314-darwin.so
+Python  62480 valentinakoniukhova  txt    REG               1,15    53344           373725067 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_scproxy.cpython-314-darwin.so
+Python  62480 valentinakoniukhova  txt    REG               1,15   115824           373725078 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_socket.cpython-314-darwin.so
+Python  62480 valentinakoniukhova  txt    REG               1,15    74992           373725166 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/select.cpython-314-darwin.so
+Python  62480 valentinakoniukhova  txt    REG               1,15   653328           296355327 /opt/homebrew/Cellar/zstd/1.5.7_1/lib/libzstd.1.5.7.dylib
+Python  62480 valentinakoniukhova  txt    REG               1,15   205312           373725083 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_ssl.cpython-314-darwin.so
+Python  62480 valentinakoniukhova  txt    REG               1,15  5467872           373723646 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/Python
+Python  62480 valentinakoniukhova  txt    REG               1,15  4870816           409198864 /opt/homebrew/Cellar/openssl@3/3.6.4/lib/libcrypto.3.dylib
+Python  62480 valentinakoniukhova  txt    REG               1,15   888320           409198867 /opt/homebrew/Cellar/openssl@3/3.6.4/lib/libssl.3.dylib
+Python  62480 valentinakoniukhova  txt    REG               1,15   783632           373725174 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/unicodedata.cpython-314-darwin.so
+=== БАГ 1 (тикет #214): клик по Connect — навигация без Authorization-заголовка
+{"error": "unauthorized"}
+-> 401
+=== БАГ 1b: SPA не может сделать init через fetch (POST нет маршрута)
+POST /api/intervals/auth/init -> 404
+=== БАГ 2 (тикет #219, лог №2): authorize URL содержит продублированные области scope
+8766: 
+Python 62480
+8767: 
+Python 68767
+8768: 
+8769: 
+8770: 
+/private/tmp/h-VKO6o8
+=== БАГ 1 (тикет #214): клик Connect = навигация без Authorization ->
+{"error": "unauthorized"}
+ [401]
+=== а SPA не может обойти это через fetch: POST-инициации нет ->
+[404]
+=== БАГ 2 (тикет #219): scope в authorize URL дублирует области ->
+scope=ACTIVITY:READ,ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:READ,CALENDAR:WRITE
+=== БАГ 3 (Ривера): сразу после подключения ->
+{"connected": false, "status": "expired, reconnect"}
+
+=== ...через 4 секунды (модель часа при TTL=3с) ->
+{"connected": false, "status": "expired, reconnect"}
+
+Traceback (most recent call last):
+  File "<stdin>", line 22, in <module>
+  File "<stdin>", line 16, in call
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/__init__.py", line 352, in loads
+    return _default_decoder.decode(s)
+           ~~~~~~~~~~~~~~~~~~~~~~~^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/decoder.py", line 345, in decode
+    obj, end = self.raw_decode(s, idx=_w(s, 0).end())
+               ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/json/decoder.py", line 363, in raw_decode
+    raise JSONDecodeError("Expecting value", s, err.value) from None
+json.decoder.JSONDecodeError: Expecting value: line 1 column 1 (char 0)
+PASS  GET / -> index.html 
+PASS  app.js: Connect через POST + window.location.assign 
+PASS  init без токена -> 401 (SPA теперь ходит с заголовком) 
+PASS  init POST с токеном -> 200 {authorize_url} 
+PASS  каждая область scope упомянута один раз 
+PASS  права сохранены (ACTIVITY/CALENDAR пишем, WELLNESS читаем) 
+PASS  state подписан и присутствует 
+PASS  старый GET-init удалён -> 404 
+PASS  callback с поддельным state -> 400 
+PASS  обмен с плохим кодом -> 502 
+FAIL  callback -> 302 на /?connected=1 -> (200, None, '<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n<title>tricoach</title>\n<style>\n  body { font: 15px/1.5 system-ui, sans-serif; margin: 2rem auto; max-width: 42rem; padding: 0 1rem; }\n  .btn { display: inline-block; padding: .5rem 1rem; border-radius: 6px; background: #1d4ed8; color: #fff; text-decoration: none; border: 0; cursor: pointer; }\n  .card { border: 1px solid #ddd; border-radius: 8px; padding: 1rem; margin: 1rem 0; }\n  .muted { color: #666; }\n</style>\n</head>\n<body>\n<h1>tricoach</h1>\n<div id="app" class="muted">Loading…</div>\n<script src="/static/app.js"></script>\n</body>\n</html>\n')
+PASS  статус: connected, атлет из ответа токена 
+PASS  wellness проксируется (200 + данные) 
+PASS  обмен кода шлёт ровно client_id/client_secret/code 
+PASS  спустя 4с статус всё ещё connected (ложного expiry нет) 
+PASS  wellness после отзыва -> 401 с подсказкой reconnect 
+PASS  статус после 401 -> 'revoked, reconnect' 
+FAIL  повторный connect: callback -> 302 -> (200, None, '<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n<title>tricoach</title>\n<style>\n  body { font: 15px/1.5 system-ui, sans-serif; margin: 2rem auto; max-width: 42rem; padding: 0 1rem; }\n  .btn { display: inline-block; padding: .5rem 1rem; border-radius: 6px; background: #1d4ed8; color: #fff; text-decoration: none; border: 0; cursor: pointer; }\n  .card { border: 1px solid #ddd; border-radius: 8px; padding: 1rem; margin: 1rem 0; }\n  .muted { color: #666; }\n</style>\n</head>\n<body>\n<h1>tricoach</h1>\n<div id="app" class="muted">Loading…</div>\n<script src="/static/app.js"></script>\n</body>\n</html>\n')
+PASS  после reconnect wellness снова 200 
+FAIL  второй атлет подключается независимо -> (200, {'connected': True, 'status': 'connected', 'scope': 'ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE', 'athlete': {'id': 'i11111', 'name': 'C. Okafor'}})
+
+ИТОГ: ЕСТЬ ПРОВАЛЫ
+PASS  Ривера: connected (из прошлого прогона, независимость) 
+PASS  callback -> именно 302 на /?connected=1 
+PASS  Окафор: connected 
+PASS  Ривера при этом не тронут 
+
+ИТОГ: ОК
+compile OK
+ M config.py
+ M server.py
+ M static/app.js
+?? __pycache__/
+ config.py     |  3 ++-
+ server.py     | 65 ++++++++++++++++++++++-------------------------------------
+ static/app.js |  7 ++++++-
+ 3 files changed, 32 insertions(+), 43 deletions(-)
+ M config.py
+ M server.py
+ M static/app.js

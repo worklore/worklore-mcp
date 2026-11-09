@@ -1,0 +1,46 @@
+/Users/valentinakoniukhova/development/flutter/bin/flutter
+bash: /Users/valentinakoniukhova/development/flutter/bin/flutter: Operation not permitted
+/Users/valentinakoniukhova/development/flutter/bin/dart
+ls: cannot open directory '/Users/valentinakoniukhova/development/flutter/bin/': Operation not permitted
+bash: /Users/valentinakoniukhova/development/flutter/bin/dart: Operation not permitted
+ls: cannot access '/usr/local/bin/dart'
+: No such file or directory
+ls: cannot access '/usr/local/bin/flutter': No such file or directory
+ls: cannot access '/opt/homebrew/bin/flutter': No such file or directory
+/opt/homebrew/bin/dart
+---
+Dart SDK version: 3.11.5 (stable) (Wed Apr 15 00:36:32 2026 -0700) on "macos_arm64"
+total 12
+drwx------   8 valentinakoniukhova wheel   256 Nov  9 00:20 .
+drwxrwxrwt 575 root                wheel 18400 Nov  9 00:20 ..
+drwxr-xr-x  12 valentinakoniukhova wheel   384 Nov  9 00:20 .git
+-rw-r--r--   1 valentinakoniukhova wheel   656 Nov  9 00:20 README.md
+-rw-r--r--   1 valentinakoniukhova wheel    44 Nov  9 00:20 analysis_options.yaml
+drwxr-xr-x   3 valentinakoniukhova wheel    96 Nov  9 00:20 docs
+drwxr-xr-x   5 valentinakoniukhova wheel   160 Nov  9 00:20 lib
+-rw-r--r--   1 valentinakoniukhova wheel   316 Nov  9 00:20 pubspec.yaml
+android-platform-tools
+claude-code@latest
+gcloud-cli
+openvpn-connect
+tolaria
+Analyzing ....
+
+  error - lib/screens/registration_screen.dart:87:19 - The name 'Spacer' isn't a class. Try correcting the name to match an existing class. - creation_with_non_type
+warning - lib/screens/offer_screen.dart:29:22 - The method doesn't override an inherited method. Try updating this class to match the superclass, or removing the override annotation. - override_on_non_overriding_member
+warning - lib/screens/registration_screen.dart:9:29 - The method doesn't override an inherited method. Try updating this class to match the superclass, or removing the override annotation. - override_on_non_overriding_member
+
+3 issues found.
+Analyzing ....
+No issues found!
+ M lib/screens/offer_screen.dart
+ M lib/screens/registration_screen.dart
+ M lib/screens/offer_screen.dart
+ M lib/screens/registration_screen.dart
+?? ANSWER.md
+ANSWER.md
+README.md
+analysis_options.yaml
+docs
+lib
+pubspec.yaml

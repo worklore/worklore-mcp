@@ -1,0 +1,72 @@
+.
+
+----------------------------------------------------------------------
+Ran 1 test in 0.000s
+
+OK
+first publish: stored
+second publish: TypeError: Float types are not supported. Use Decimal types instead.
+.
+.
+----------------------------------------------------------------------
+Ran 2 tests in 0.000s
+
+OK
+first-story: HTTP 201
+second-story: HTTP 201
+stored similar: [{'slug': 'first-story', 'score': 80}]
+ M src/app.py
+ M tests/test_publish.py
+?? ANSWER.md
+diff --git a/src/app.py b/src/app.py
+index db49c5e..3614fff 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -22,12 +22,12 @@ def words(text):
+ 
+ 
+ def similarity(a, b):
+-    """Shared-tag ratio (Jaccard), blended with shared words of the two bodies."""
++    """Shared-tag percentage (Jaccard), blended with shared words of the two bodies."""
+     ta, tb = set(a.get("tags", [])), set(b.get("tags", []))
+     tag_score = len(ta & tb) / len(ta | tb) if (ta | tb) else 0
+     wa, wb = words(a.get("body")), words(b.get("body"))
+     word_score = len(wa & wb) / len(wa | wb) if (wa | wb) else 0
+-    return round(0.7 * tag_score + 0.3 * word_score, 4)
++    return int(round(100 * (0.7 * tag_score + 0.3 * word_score)))
+ 
+ 
+ def related(story, existing):
+diff --git a/tests/test_publish.py b/tests/test_publish.py
+index 6c9ac44..0a3028f 100644
+--- a/tests/test_publish.py
++++ b/tests/test_publish.py
+@@ -23,6 +23,28 @@ class PublishTest(unittest.TestCase):
+         self.assertEqual(table.get_item(Key={"slug": "why-my-cron-ran-twice"})["Item"]["title"], "Why my cron ran twice")
+         self.assertEqual(table.scan()["Count"], 1)
+ 
++    def test_publish_with_existing_story_stores_integer_similarity_scores(self):
++        table = FakeTable()
++        first = {
++            "slug": "first-story",
++            "title": "First story",
++            "tags": ["cron", "linux"],
++            "body": "Two crontabs had the same line.",
++        }
++        second = {
++            "slug": "second-story",
++            "title": "Second story",
++            "tags": ["cron", "linux"],
++            "body": "Two crontabs had the same line.",
++        }
++        app.publish(table, first)
++
++        stored = app.publish(table, second)
++
++        self.assertEqual(stored["similar"], [{"slug": "first-story", "score": 100}])
++        self.assertIsInstance(stored["similar"][0]["score"], int)
++        self.assertEqual(table.scan()["Count"], 2)
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

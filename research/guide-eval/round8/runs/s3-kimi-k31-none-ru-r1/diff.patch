@@ -1,0 +1,40 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..9351059
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,14 @@
++# Причины
++
++1. **Claude CLI не был аутентифицирован.** Все шесть запусков заканчивались сообщением `Not logged in · Please run /login` в `Library/Logs/nightly-review.err`. Поэтому обзор не создавался.
++2. **Обработчик ошибки сам завершался с ошибкой.** В `bin/nightly-review.zsh` код возврата сохранялся через `status=$?`, но `status` — специальная переменная zsh, доступная только для чтения. Zsh прерывал сценарий на этой строке, до вызова `notify.sh`, поэтому не приходили даже уведомления об ошибках.
++
++Само расписание launchd исправно: `launchctl-print.txt` показывает запуск по `StartCalendarInterval` в 02:30, шесть выполненных запусков (`runs = 6`) и последний код возврата 1. Путь к `claude` также не был причиной: команда запускалась и возвращала ошибку аутентификации.
++
++# Исправление
++
++В `bin/nightly-review.zsh` переменная `status` заменена на `exit_code`. Теперь при ненулевом коде возврата Claude сценарий вызывает `notify.sh` с сообщением об ошибке и завершается с исходным кодом. Конфигурация launchd не требовала изменений.
++
++Для появления успешных обзоров дополнительно требуется повторная аутентификация Claude CLI от имени пользователя `vk`: запустить `claude` в интерактивном терминале и выполнить `/login`. Это нельзя исправить изменением снимка файлов; аутентификация и обращения к внешним сервисам здесь не выполнялись.
++
++Проверено локально без обращения к Claude или Telegram: синтаксис обоих сценариев и plist, ветка ошибки с вызовом уведомления и сохранением кода 1, а также успешная ветка с уведомлением и созданным файлом обзора.
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..f9f7692 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -16,11 +16,11 @@ Do not modify any file."
+ cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
+ 
+ claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
++exit_code=$?
+ 
+-if [ $status -ne 0 ]; then
+-  "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
+-  exit $status
++if [ $exit_code -ne 0 ]; then
++  "$NOTIFY" "nightly review FAILED (exit $exit_code), see $OUT"
++  exit $exit_code
+ fi
+ 
+ "$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"

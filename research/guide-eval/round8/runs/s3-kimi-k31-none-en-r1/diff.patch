@@ -1,0 +1,41 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..457ecdf
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,15 @@
++# Causes
++
++1. **The coding agent was not logged in.** Every recorded run in `Library/Logs/nightly-review.err` begins with `Not logged in · Please run /login`, so `claude -p` exited with an error instead of producing a review. The six copies match the six runs reported by launchd.
++
++2. **A zsh-specific variable name aborted the script before it could notify.** In zsh, `status` is a read-only special parameter containing the last command's exit status. Consequently, the assignment `status=$?` failed with `read-only variable: status`. This happened after both successful and failing agent runs, so execution never reached either call to `notify.sh`. This—not Telegram or the notifier—explains why there were no failure messages.
++
++The launchd calendar trigger and configured `PATH` were working: launchd ran the job six times and was able to execute `claude`.
++
++# Fix
++
++In `bin/nightly-review.zsh`, replaced the reserved variable `status` with `exit_code`. Agent failures now reach the existing failure-notification branch, and successful runs can reach the success notification.
++
++The agent still needs to be authenticated on the actual Mac as the user running the launch agent: run `claude` as `vk` and complete `/login`. No credentials are present in this snapshot, and no external service was contacted. Until that one-time setup is done, the fixed script should send a failure note rather than remain silent.
++
++The script's failure and success paths were exercised locally with mock `claude` and notifier commands; both produced the expected notifications. Shell syntax and the launchd plist also passed validation.
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..f9f7692 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -16,11 +16,11 @@ Do not modify any file."
+ cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
+ 
+ claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
++exit_code=$?
+ 
+-if [ $status -ne 0 ]; then
+-  "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
+-  exit $status
++if [ $exit_code -ne 0 ]; then
++  "$NOTIFY" "nightly review FAILED (exit $exit_code), see $OUT"
++  exit $exit_code
+ fi
+ 
+ "$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"

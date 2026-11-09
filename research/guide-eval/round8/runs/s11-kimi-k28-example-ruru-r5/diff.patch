@@ -1,0 +1,103 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..3f6ced6
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,45 @@
++# Почему вторая публикация возвращала 500
++
++## Причина
++
++`similarity()` (src/app.py:24-30) возвращает float: деления в Jaccard-оценках и
++взвешивание `0.7 * tag_score + 0.3 * word_score` дают float, который
++`put_item` в DynamoDB не принимает — boto3 разрешает только `int` и
++`Decimal` (ошибка из лога: `TypeError: Float types are not supported. Use
++Decimal types instead.`).
++
++Первая публикация выживала не потому, что код был правильным, а потому, что
++таблица была пуста: `related()` не нашёл ни одной существующей записи, в
++поле `similar` лёг пустой список, и сериализовать было нечего — 201. Со
++второй публикации в `similar` попадает `{slug, score}`, где `score` — float,
++и запись падает. Дальше падает уже каждая публикация: зависящий от состояния
++код выполняется при каждом непустом `scan`, а таблица непуста всегда.
++
++## Исправление
++
++- src/app.py:30 — оценка конвертируется в `Decimal` в точке вычисления:
++  `Decimal(str(round(..., 4)))`. `str(...)` нужен, чтобы Decimal был точным
++  десятичным значением (например, `Decimal("0.0667")`), а не двоичным
++  приближением float вроде `0.06670000000000001`. Сортировка в `related()`
++  с Decimal работает как раньше. Тип выбран вместо целых процентов, чтобы не
++  менять семантику хранимых данных: оценка остаётся долей от 1 с точностью
++  до 4 знаков.
++- tests/test_publish.py — добавлен тест `test_publish_second_story_scores_similarity`:
++  публикует первую историю, затем вторую в уже заполненную таблицу, так что
++  путь вычисления похожести реально выполняется под тестом. Тест воспроизвёл
++  прод-ошибку до исправления и зелёный после. Проверка:
++  `python3 -m unittest discover tests` — 2 теста OK.
++
++## Что пригодилось из заметки коллеги
++
++- **Диагноз «первая запись выживает из-за пустой таблицы»** — ключевая идея:
++  баг существует только на пути с данными, и пустая таблица маскирует его
++  ровно один раз. Подтвердилось один в один.
++- **Правило «конвертируй на границе в тип, который принимает DynamoDB»** —
++  применено (в заметке предлагались int-проценты; здесь взяли `Decimal`,
++  чтобы сохранить формат оценки 0..1 с 4 знаками).
++- **Тест с засеянной таблицей**: сначала посадить одну запись, потом писать
++  вторую — перенесено как есть, это главная защита от повторения.
++- **Проверка «поищите `round(` и `/`, питающие словари элементов»** — по ней
++  и найден единственный источник float (src/app.py:30); других путей попадания
++  float в item нет (`published_at` уже `int`, остальное — строки и списки строк).
+diff --git a/src/app.py b/src/app.py
+index db49c5e..af4bb08 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -8,6 +8,7 @@ import json
+ import logging
+ import re
+ import time
++from decimal import Decimal
+ 
+ log = logging.getLogger("stories")
+ 
+@@ -27,7 +28,7 @@ def similarity(a, b):
+     tag_score = len(ta & tb) / len(ta | tb) if (ta | tb) else 0
+     wa, wb = words(a.get("body")), words(b.get("body"))
+     word_score = len(wa & wb) / len(wa | wb) if (wa | wb) else 0
+-    return round(0.7 * tag_score + 0.3 * word_score, 4)
++    return Decimal(str(round(0.7 * tag_score + 0.3 * word_score, 4)))
+ 
+ 
+ def related(story, existing):
+diff --git a/tests/test_publish.py b/tests/test_publish.py
+index 6c9ac44..391ae61 100644
+--- a/tests/test_publish.py
++++ b/tests/test_publish.py
+@@ -23,6 +23,26 @@ class PublishTest(unittest.TestCase):
+         self.assertEqual(table.get_item(Key={"slug": "why-my-cron-ran-twice"})["Item"]["title"], "Why my cron ran twice")
+         self.assertEqual(table.scan()["Count"], 1)
+ 
++    def test_publish_second_story_scores_similarity(self):
++        table = FakeTable()
++        first = {
++            "slug": "why-my-cron-ran-twice",
++            "title": "Why my cron ran twice",
++            "tags": ["cron", "linux"],
++            "body": "Two crontabs, one for root and one for me, both had the line.",
++        }
++        app.publish(table, first)
++        second = {
++            "slug": "pinning-python-dependencies",
++            "title": "Pinning Python dependencies",
++            "tags": ["python", "packaging"],
++            "body": "A cron job that pip-installs unpinned packages broke my build.",
++        }
++        stored = app.publish(table, second)
++        self.assertEqual(table.scan()["Count"], 2)
++        self.assertEqual(len(stored["similar"]), 1)
++        self.assertEqual(stored["similar"][0]["slug"], "why-my-cron-ran-twice")
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

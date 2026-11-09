@@ -1,0 +1,57 @@
+--- 1. старый GET init (раньше 401 для всех):
+{"error": "not found"}
+ [404]
+--- 2. POST init без токена:
+{"error": "unauthorized"}
+ [401]
+--- 3. POST init с токеном:
+{"authorize_url": "http://127.0.0.1:9377/oauth/authorize?client_id=tricoach-dev&redirect_uri=http:%2F%2Flocalhost:8766%2Fapi%2Fintervals%2Fcallback&scope=ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE&state=dV9va2Fmb3I6aW50ZXJ2YWxzX29hdXRoOjE3OTQwNTczODk6ODZiOGY2MjcxMjgzYTNlZjhhODk0YzhiYjE0NDEzNTQ%3D"}
+
+--- 4. authorize у стаба (симулирует redirect Intervals):
+http://localhost:8766/api/intervals/callback?code=code-1&state=dV9va2Fmb3I6aW50ZXJ2YWxzX29hdXRoOjE3OTQwNTczODk6ODZiOGY2MjcxMjgzYTNlZjhhODk0YzhiYjE0NDEzNTQ%3D
+--- 5. callback у tricoach:
+302 -> http://localhost:8766/?connected=1
+--- 6. статус:
+{"connected": true, "status": "connected", "scope": null, "athlete": {"id": "i98765", "name": "T. Rivera"}}
+
+--- 7. wellness через прокси:
+[{"date": "2026-11-07", "resting_hr": 52}]
+ [200]
+--- 8. reproduce старого бага: дублирующий scope должен отклоняться (проверка стаба):
+{"error": "invalid_request", "error_description": "Duplicate scope"}
+ [400]
+--- 9. connect для u_rivera (нормальный flow):
+callback: 302
+{"connected": true, "status": "connected", "scope": null, "athlete": {"id": "i98765", "name": "T. Rivera"}}
+
+--- 10. guard: тот же юзер приходит с ДРУГИМ athlete id -> 409, связь не меняется:
+{"error": "intervals account differs from the linked one"}
+ [409]
+{"connected": true, "status": "connected", "scope": null, "athlete": {"id": "i98765", "name": "T. Rivera"}}
+
+--- 11. подделанный state -> 400:
+{"error": "bad state or code"}
+ [400]
+--- 12. отзыв токена на стороне Intervals (стаб 401) -> статус revoked, reconnect:
+{"error": "intervals returned 401"}
+ [401]
+{"connected": false, "status": "revoked, reconnect"}
+
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>tricoach</title>
+---
+28:        <p><button class="btn" id="connect">Connect Intervals.icu</button></p></div>`;
+37:      const r = await api("/api/intervals/auth/init", { method: "POST" });
+38:      window.location.assign(r.authorize_url);
+ M config.py
+ M server.py
+ M static/app.js
+?? __pycache__/
+ M config.py
+ M server.py
+ M static/app.js
+?? ANSWER.md
+syntax OK

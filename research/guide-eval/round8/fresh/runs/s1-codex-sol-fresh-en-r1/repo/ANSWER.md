@@ -1,0 +1,7 @@
+# HR range export fix
+
+The generator sent only `workout_doc`. Intervals.icu accepted and returned those steps, but that readback did not prove the Garmin export used them. Its [upload guide](https://forum.intervals.icu/t/uploading-planned-workouts-to-intervals-icu/63624) specifies native workout text in `description` for API uploads. A [reported API export comparison](https://forum.intervals.icu/t/events-created-via-api-with-workout-doc-the-web-download-produces-an-empty-fit-while-the-api-download-does-not-which-representation-feeds-device-sync/132326) shows why a populated `workout_doc` alone is insufficient evidence of the workout sent to a device.
+
+`gen.py` now writes each planned corridor as a native range such as `- 8m 88-93% LTHR Tempo`, writes repeats as `3x` blocks, and sets the event target to `HR`. It leaves `workout_doc` for Intervals.icu to compile from `description`. The [workout syntax guide](https://forum.intervals.icu/t/workout-builder-syntax-quick-guide/123701) documents the `% LTHR` range and repeat syntax. This preserves the planned percentage bounds for conversion against the athlete's LTHR of 172, rather than asking the watch to choose one of its zones. Absolute `bpm` fields are not used; the readback notes show those produced implausible watch targets.
+
+Added a regression test for the complete tempo workout text, all four HR ranges, repeat structure, and HR target. `python3 -m unittest -v` passes. The generated JSON was inspected locally. No event was pushed, so the final Garmin display has not been verified on a watch.

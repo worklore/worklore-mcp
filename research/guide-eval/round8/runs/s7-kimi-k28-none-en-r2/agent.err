@@ -1,0 +1,241 @@
+8452919 base
+ README.md                |  14 +++
+ config.py                |  13 +++
+ logs/connect-attempt.log |  41 ++++++++
+ logs/support-tickets.md  |  30 ++++++
+ server.py                | 244 +++++++++++++++++++++++++++++++++++++++++++++++
+ static/app.js            |  39 ++++++++
+ static/index.html        |  18 ++++
+ 7 files changed, 399 insertions(+)
+---
+On branch main
+nothing to commit, working tree clean
+started
+index: 404
+2026-11-08 07:48:19 [intervals] serving on http://localhost:8766 (intervals: http://127.0.0.1:8977)
+Traceback (most recent call last):
+  File "/private/tmp/h-ng09jQ/server.py", line 256, in <module>
+    ThreadingHTTPServer(("127.0.0.1", config.PORT), Handler).serve_forever()
+    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+OSError: [Errno 48] Address already in use
+cleaned
+COMMAND   PID                USER   FD   TYPE             DEVICE SIZE/OFF NODE NAME
+Python  62480 valentinakoniukhova    3u  IPv4 0x4756418ef38dc70a      0t0  TCP 127.0.0.1:8766 (LISTEN)
+---
+/bin/bash: /bin/ps: Operation not permitted
+Python  62480 valentinakoniukhova  cwd       DIR               1,15       64           444989124 /private/tmp/h-hszrJe
+Python  62480 valentinakoniukhova  txt       REG               1,15    33568           373723653 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/Resources/Python.app/Contents/MacOS/Python
+Python  62480 valentinakoniukhova  txt       REG               1,15    77808           373725091 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_struct.cpython-314-darwin.so
+Python  62480 valentinakoniukhova  txt       REG               1,15    54416           373725141 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/binascii.cpython-314-darwin.so
+Python  62480 valentinakoniukhova  txt       REG               1,15    80448           373725016 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_hashlib.cpython-314-darwin.so
+Python  62480 valentinakoniukhova  txt       REG               1,15    72112           373724965 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_blake2.cpython-314-darwin.so
+Python  62480 valentinakoniukhova  txt       REG               1,15    72912           373725034 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_json.cpython-314-darwin.so
+Python  62480 valentinakoniukhova  txt       REG               1,15   128960           373725023 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_hmac.cpython-314-darwin.so
+Python  62480 valentinakoniukhova  txt       REG               1,15    76176           373725192 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/zlib.cpython-314-darwin.so
+Python  62480 valentinakoniukhova  txt       REG               1,15    55056           373724968 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_bz2.cpython-314-darwin.so
+Python  62480 valentinakoniukhova  txt       REG               1,15    74704           373725039 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_lzma.cpython-314-darwin.so
+Python  62480 valentinakoniukhova  txt       REG               1,15    53040           373724963 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_bisect.cpython-314-darwin.so
+Python  62480 valentinakoniukhova  txt       REG               1,15    96752           373725135 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_zstd.cpython-314-darwin.so
+Python  62480 valentinakoniukhova  txt       REG               1,15    93472           373725152 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/math.cpython-314-darwin.so
+Python  62480 valentinakoniukhova  txt       REG               1,15  2289328 1152921500312524696 /usr/lib/dyld
+Python  62480 valentinakoniukhova  txt       REG               1,15   167520           409198589 /opt/homebrew/Cellar/xz/5.8.4/lib/liblzma.5.dylib
+Python  62480 valentinakoniukhova  txt       REG               1,15    53952           373725061 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_random.cpython-314-darwin.so
+Python  62480 valentinakoniukhova  txt       REG               1,15    53344           373725067 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_scproxy.cpython-314-darwin.so
+Python  62480 valentinakoniukhova  txt       REG               1,15   115824           373725078 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_socket.cpython-314-darwin.so
+Python  62480 valentinakoniukhova  txt       REG               1,15    74992           373725166 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/select.cpython-314-darwin.so
+Python  62480 valentinakoniukhova  txt       REG               1,15    67496           420764876 /Library/Preferences/Logging/.plist-cache.UiDks5Jd
+Python  62480 valentinakoniukhova  txt       REG               1,15   653328           296355327 /opt/homebrew/Cellar/zstd/1.5.7_1/lib/libzstd.1.5.7.dylib
+Python  62480 valentinakoniukhova  txt       REG               1,15   205312           373725083 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_ssl.cpython-314-darwin.so
+Python  62480 valentinakoniukhova  txt       REG               1,15  5467872           373723646 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/Python
+Python  62480 valentinakoniukhova  txt       REG               1,15  4870816           409198864 /opt/homebrew/Cellar/openssl@3/3.6.4/lib/libcrypto.3.dylib
+Python  62480 valentinakoniukhova  txt       REG               1,15   888320           409198867 /opt/homebrew/Cellar/openssl@3/3.6.4/lib/libssl.3.dylib
+Python  62480 valentinakoniukhova  txt       REG               1,15   783632           373725174 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/unicodedata.cpython-314-darwin.so
+---
+port-free
+--- 1. SPA fetch auth/init (Bearer header, like the api() wrapper) ---
+{"url": "http://127.0.0.1:8977/oauth/authorize?response_type=code&client_id=tricoach-dev&redirect_uri=http:%2F%2Flocalhost:8766%2Fapi%2Fintervals%2Fcallback&scope=ACTIVITY:READ,ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:READ,CALENDAR:WRITE&state=dV9va2Fmb3I6MTc5NDEzNDk2NjpkNDU3M2FmZjI2ODBjN2Q0Zjk3YzM2OGQ4NjFhZTRmZQ%3D%3D"}
+
+--- 2. The OLD url shape (no response_type=code) -> provider must reject ---
+old url (missing response_type): 400
+--- 3. The NEW url -> provider must redirect to our callback with code+state ---
+new url: 302 -> http://localhost:8766/api/intervals/callback?code=mock-auth-code-1&state=dV9va2Fmb3I6MTc5NDEzNDk2NjpkNDU3M2FmZjI2ODBjN2Q0Zjk3YzM2OGQ4NjFhZTRmZQ%3D%3D
+--- 4. OAuth callback: exchange code for token ---
+callback: 302 -> http://localhost:8766/?connected=1
+--- 5. status ---
+{"connected": true, "status": "connected", "scope": "ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE", "athlete": {"id": "i98765", "name": "T. Rivera"}}
+
+--- 6. wellness proxy ---
+{"error": "intervals returned 404"}
+
+--- 7. plain link navigation without header (old button behavior) ---
+no-header nav: 401
+--- status after connect ---
+{"connected": true, "status": "connected", "scope": "ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE", "athlete": {"id": "i98765", "name": "T. Rivera"}}
+
+--- wellness ---
+[{"id": 1, "weight": 68.2, "resting_hr": 52}]
+
+2026-11-08 07:51:13 [intervals] u_rivera: connected as athlete i98765
+PASS: no expires_in -> non-expiring; still connected after simulated 2h
+2026-11-08 07:51:13 [intervals] u_short: token expires in 3600s
+2026-11-08 07:51:13 [intervals] u_short: connected as athlete i98765
+2026-11-08 07:51:13 [intervals] u_short: token expiry passed and no refresh token on file -> expired, reconnect
+PASS: expires_in present, no refresh token -> marked expired when due
+2026-11-08 07:51:13 [intervals] u_refresh: token expires in 3600s
+2026-11-08 07:51:13 [intervals] u_refresh: connected as athlete i98765
+2026-11-08 07:51:13 [intervals] u_refresh: token refreshed
+PASS: refresh_token grant still renews short-lived tokens
+app.js syntax OK
+diff --git a/server.py b/server.py
+index 351cbb7..6ab3edc 100644
+--- a/server.py
++++ b/server.py
+@@ -12,7 +12,6 @@ import config
+ STATIC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
+ TOKEN_URL = config.INTERVALS_BASE + "/api/oauth/token"
+ AUTHORIZE_URL = config.INTERVALS_BASE + "/oauth/authorize"
+-DEFAULT_TOKEN_TTL = 3600   # seconds; used when the provider does not say how long a token lives
+ 
+ # --- in-memory store -------------------------------------------------------
+ USERS = {
+@@ -63,45 +62,54 @@ def exchange_code(code):
+ 
+ 
+ def store_connection(user_id, tok):
+-    expires_in = int(tok.get("expires_in") or DEFAULT_TOKEN_TTL)
+-    refresh = tok.get("refresh_token")
+-    if not refresh:
+-        log(f"{user_id}: no refresh_token in response, scheduling expiry in {expires_in}s")
+     athlete = tok.get("athlete") or {}
++    # Intervals.icu tokens do not expire: its token response carries no
++    # expires_in and no refresh_token, so only set an expiry when the
++    # provider actually says the token is short-lived.
++    expires_in = tok.get("expires_in")
++    expires_at = time.time() + int(expires_in) if expires_in else None
++    if expires_at:
++        log(f"{user_id}: token expires in {int(expires_in)}s")
+     with LOCK:
+         CONNECTIONS[user_id] = {
+             "athlete_id": athlete.get("id"), "athlete_name": athlete.get("name"),
+-            "access_token": tok["access_token"], "refresh_token": refresh,
+-            "scope": tok.get("scope"), "expires_at": time.time() + expires_in, "status": "connected",
++            "access_token": tok["access_token"], "refresh_token": tok.get("refresh_token"),
++            "scope": tok.get("scope"), "expires_at": expires_at, "status": "connected",
+         }
+-    log(f"{user_id}: connected as athlete {athlete.get('id')} (expires in {expires_in}s)")
++    log(f"{user_id}: connected as athlete {athlete.get('id')}")
++
++
++def refresh_due(now):
++    """Renew tokens that are nearing expiry, or expire the unrenewable."""
++    with LOCK:
++        for uid, c in CONNECTIONS.items():
++            if c["status"] != "connected" or c["expires_at"] is None:
++                continue
++            if c["expires_at"] - now > 300:
++                continue
++            if not c["refresh_token"]:
++                log(f"{uid}: token expiry passed and no refresh token on file -> expired, reconnect")
++                c.update(status="expired, reconnect", access_token=None)
++                continue
++            try:
++                tok = post_form(TOKEN_URL, {
++                    "grant_type": "refresh_token", "refresh_token": c["refresh_token"],
++                    "client_id": config.CLIENT_ID, "client_secret": config.CLIENT_SECRET,
++                })
++                c.update(access_token=tok["access_token"],
++                         refresh_token=tok.get("refresh_token", c["refresh_token"]),
++                         expires_at=now + int(tok["expires_in"]))
++                log(f"{uid}: token refreshed")
++            except Exception as e:
++                log(f"{uid}: refresh failed ({e}) -> expired, reconnect")
++                c.update(status="expired, reconnect", access_token=None)
+ 
+ 
+ def refresh_tokens():
+     """Background pass: renew access tokens shortly before they expire."""
+     while True:
+         time.sleep(config.REFRESH_INTERVAL)
+-        now = time.time()
+-        with LOCK:
+-            for uid, c in CONNECTIONS.items():
+-                if c["status"] != "connected" or c["expires_at"] - now > 300:
+-                    continue
+-                if not c["refresh_token"]:
+-                    log(f"{uid}: token expiry passed and no refresh token on file -> expired, reconnect")
+-                    c.update(status="expired, reconnect", access_token=None)
+-                    continue
+-                try:
+-                    tok = post_form(TOKEN_URL, {
+-                        "grant_type": "refresh_token", "refresh_token": c["refresh_token"],
+-                        "client_id": config.CLIENT_ID, "client_secret": config.CLIENT_SECRET,
+-                    })
+-                    c.update(access_token=tok["access_token"],
+-                             refresh_token=tok.get("refresh_token", c["refresh_token"]),
+-                             expires_at=now + int(tok["expires_in"]))
+-                    log(f"{uid}: token refreshed")
+-                except Exception as e:
+-                    log(f"{uid}: refresh failed ({e}) -> expired, reconnect")
+-                    c.update(status="expired, reconnect", access_token=None)
++        refresh_due(time.time())
+ 
+ 
+ def intervals_get(conn, path):
+@@ -185,14 +193,18 @@ class Handler(BaseHTTPRequestHandler):
+             return
+         self.send_json(404, {"error": "not found"})
+ 
+-    # Step 1: build the authorize URL and send the browser to Intervals.
++    # Step 1: build the authorize URL for the SPA to navigate to. Returns JSON
++    # because the caller must authenticate with the Bearer header, which a
++    # plain link navigation would not send.
+     def auth_init(self):
+         user = self.require_user()
+         if not user:
+             return
+-        params = {"client_id": config.CLIENT_ID, "redirect_uri": config.REDIRECT_URI,
+-                  "scope": config.SCOPES, "state": sign_state(user["id"])}
+-        self.redirect(AUTHORIZE_URL + "?" + urllib.parse.urlencode(params, safe=":,"))
++        params = {"response_type": "code", "client_id": config.CLIENT_ID,
++                  "redirect_uri": config.REDIRECT_URI, "scope": config.SCOPES,
++                  "state": sign_state(user["id"])}
++        url = AUTHORIZE_URL + "?" + urllib.parse.urlencode(params, safe=":,")
++        self.send_json(200, {"url": url})
+ 
+     # Step 2: Intervals redirects back here with ?code=&state=.
+     def callback(self, q):
+diff --git a/static/app.js b/static/app.js
+index 368922e..13e34ba 100644
+--- a/static/app.js
++++ b/static/app.js
+@@ -25,10 +25,15 @@ async function render() {
+     } else {
+       const why = st.status && st.status !== "disconnected" ? `<p class="muted">Status: ${esc(st.status)}</p>` : "";
+       card = `<div class="card">Intervals.icu is not connected.${why}
+-        <p><a class="btn" href="/api/intervals/auth/init">Connect Intervals.icu</a></p></div>`;
++        <p><button class="btn" id="connect">Connect Intervals.icu</button></p></div>`;
+     }
+     root.className = "";
+     root.innerHTML = `<p>Signed in as <b>${esc(me.name)}</b>.</p>${card}`;
++    const c = document.getElementById("connect");
++    if (c) c.onclick = async () => {
++      const { url } = await api("/api/intervals/auth/init");
++      window.location.href = url;
++    };
+     const d = document.getElementById("disconnect");
+     if (d) d.onclick = async () => { await api("/api/intervals/disconnect", { method: "POST" }); render(); };
+   } catch (e) {
+ M server.py
+ M static/app.js
+?? __pycache__/
+ M server.py
+ M static/app.js

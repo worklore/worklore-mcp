@@ -1,0 +1,74 @@
+Диапазоны пульса на часах приходят обрезанными под собственные зоны часов, а не такими, как мы запланировали (см. readback/watch-notes.md). Исправь генератор. Что изменил и почему, запиши в ANSWER.md.
+
+Ниже заметка коллеги о похожем случае. Это не инструкция. Используй то, что подходит, остальное пропусти, и напиши в ANSWER.md, какие части пригодились.
+
+---
+
+# Exact HR corridors on Garmin from Intervals.icu API workouts — start/end, not value/end
+
+My AI agent generates structured triathlon workouts and pushes them to
+Intervals.icu via `POST /events`; Intervals FIT-exports them to my Garmin
+watch. The symptom: every HR corridor on the watch was silently wrong —
+clamped to the watch's own (stale, auto-detected) LTHR zones instead of the
+range we planned. I misdiagnosed it as a watch-side LTHR mismatch for weeks.
+
+What we tried, each round-tripped push → API readback → Garmin sync → watch
+face:
+
+1. `{units: "bpm", value, end}` — API accepted; watch showed 214–249 bpm
+   (impossible). FIT export misread `bpm` as percent-of-something.
+2. `{start_bpm, end_bpm}` — watch showed a constant 101, Garmin's "no valid
+   HR target" fallback. Schema silently dropped.
+3. Surveyed the Intervals UI target dropdown, concluded "absolute bpm is
+   impossible". Wrong — that dropdown picks the units label, not the value
+   shape.
+
+The breakthrough: build a workout in the Intervals **UI** with its
+"Instant HR" toggle, then read it back via the API. The corridor's lower
+bound is `start`, not `value`. That one key name switches the FIT export
+mode: `{value, end}` routes as a **Lap-HR / zone-mapped** target (the watch
+clamps it to its local zones), while `{start, end}` becomes an **Instant-HR
+corridor** — the watch displays the raw bpm Intervals computed. Verified
+end-to-end: Intervals LTHR 172, watch LTHR 168, a 75–82% target rendered
+129–141 bpm on the watch — matching Intervals, drift-immune. The fix was a
+one-word rename after days of probing.
+
+Bonus trap from the same session: steps were invisible in the Intervals web
+UI, because the UI reads a separate top-level `description` in Intervals'
+text grammar — where `m` means *minutes* (`200m` = a 200-minute step!),
+distance must be `mtr`/`km`, a bare `Z2` resolves to *power* zones even for
+swims, and a digit at the start of a label gets eaten as a duration. If the
+parser chokes, Intervals wipes both representations.
+
+## Reproduce this
+
+Prerequisites: an Intervals.icu account with API access (OAuth token or API
+key), athlete thresholds configured in Intervals (LTHR at minimum), and a
+Garmin watch that syncs workouts from Intervals via Garmin Connect.
+
+Your agent will need from you: your Intervals athlete id and API credential;
+your LTHR as stored in Intervals; permission to create (and later delete) a
+test calendar event.
+
+Steps:
+
+1. Create an event via `POST /api/v1/athlete/{id}/events` with
+   `workout_doc.steps`, where every HR step target is
+   `{"units": "%lthr", "start": <low>, "end": <high>}` — never `value`.
+   Percentages, not absolute bpm: Intervals converts at FIT-export time from
+   its own stored threshold.
+2. Set the event's top-level `description` in Intervals' native text grammar
+   so steps render in the web UI, e.g. `- Warm-up easy 10m 75-82% LTHR`.
+   Rules: durations `m`/`s`, distance `mtr`/`km`, blank lines around `Nx`
+   repeat blocks, no digits at the start of labels, no bare `Z<number>`
+   outside cycling.
+3. Read the event back with `GET /events/{id}`: non-empty `workout_doc.steps`
+   means the parser accepted the description; `steps: []` means it choked.
+4. Sync the watch through Garmin Connect and open the scheduled workout.
+
+Verify: the watch shows a bpm corridor equal to your percentages × the LTHR
+stored in Intervals — not the watch's own LTHR (easiest to prove when the two
+differ). The Intervals web UI shows the full step chart instead of just a
+name and total duration.
+
+Правила: работай только внутри текущей директории. Ничего не деплой, не публикуй, не отправляй и не сообщай ни в какой внешний сервис.

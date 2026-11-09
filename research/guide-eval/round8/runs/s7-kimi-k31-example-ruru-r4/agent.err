@@ -1,0 +1,28 @@
+2026-11-08 17:38:40 [http] POST /api/intervals/auth/init 401 (no Authorization header)
+2026-11-08 17:38:40 [http] "POST /api/intervals/auth/init HTTP/1.1" 401 -
+2026-11-08 17:38:40 [http] "GET /api/intervals/auth/init HTTP/1.1" 404 -
+2026-11-08 17:38:40 [http] "POST /api/intervals/auth/init HTTP/1.1" 200 -
+2026-11-08 17:38:40 [intervals] u_okafor: connected as athlete i12345
+2026-11-08 17:38:40 [http] "GET /api/intervals/callback?code=valid&state=aW50ZXJ2YWxzX29hdXRoOnVfb2thZm9yOjE3OTQxNzAzMjA6ZTI1MmVkMjY5N2JmZWE5ZjY5ZGVlYmMxZWRjYWM4Njk%3D HTTP/1.1" 302 -
+2026-11-08 17:38:40 [http] "GET /api/intervals/status HTTP/1.1" 200 -
+2026-11-08 17:38:40 [http] "GET /api/intervals/wellness HTTP/1.1" 200 -
+2026-11-08 17:38:40 [http] "POST /api/intervals/auth/init HTTP/1.1" 200 -
+2026-11-08 17:38:40 [intervals] u_okafor: athlete account mismatch; connection unchanged
+2026-11-08 17:38:40 [http] "GET /api/intervals/callback?code=different&state=aW50ZXJ2YWxzX29hdXRoOnVfb2thZm9yOjE3OTQxNzAzMjA6ZTI1MmVkMjY5N2JmZWE5ZjY5ZGVlYmMxZWRjYWM4Njk%3D HTTP/1.1" 409 -
+2026-11-08 17:38:40 [intervals] u_okafor: Intervals.icu returned 401 -> revoked, reconnect
+2026-11-08 17:38:40 [http] "GET /api/intervals/wellness HTTP/1.1" 409 -
+2026-11-08 17:38:40 [http] "GET /api/intervals/status HTTP/1.1" 200 -
+2026-11-08 17:38:40 [http] "POST /api/intervals/auth/init HTTP/1.1" 200 -
+2026-11-08 17:38:40 [intervals] u_okafor: connected as athlete i12345
+2026-11-08 17:38:40 [http] "GET /api/intervals/callback?code=valid&state=aW50ZXJ2YWxzX29hdXRoOnVfb2thZm9yOjE3OTQxNzAzMjA6ZTI1MmVkMjY5N2JmZWE5ZjY5ZGVlYmMxZWRjYWM4Njk%3D HTTP/1.1" 302 -
+2026-11-08 17:38:40 [http] "GET /api/intervals/wellness HTTP/1.1" 200 -
+PASS: POST init, unique scopes, state validation, token exchange, connection, wellness, athlete mismatch, lazy 401, reconnect
+PASS: Connect sends authenticated POST and assigns the returned authorize_url
+ M config.py
+ M server.py
+ M static/app.js
+?? ANSWER.md
+ config.py     |  4 +--
+ server.py     | 87 +++++++++++++++++++++++++----------------------------------
+ static/app.js | 14 +++++++++-
+ 3 files changed, 51 insertions(+), 54 deletions(-)

@@ -1,0 +1,146 @@
+FAIL app is up
+FAIL GET init is rejected (405) — got 200 {"authorize_url": "http://127.0.0.1:9876/oauth/authorize?client_id=tricoach-dev&redirect_uri=http:%2F%2Flocalhost:8766%2Fapi%2Fintervals%2Fcallback&scope=ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE&state=dV9va2Fmb3I6aW50ZXJ2YWxzX29hdXRoOjE3OTQxNzE5MzA6OWE4MWM5NmFhMTAxNGE5MjQ4NjNmZGFiYjYzYzQ1ZGE%3D"}
+PASS POST init without auth is 401
+PASS POST init returns authorize_url JSON
+FAIL scope names each area once — ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE
+PASS authorize URL has state+client_id+redirect_uri
+PASS redirect_uri points at our callback
+Traceback (most recent call last):
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/urllib/request.py", line 1321, in do_open
+    h.request(req.get_method(), req.selector, req.data, headers,
+    ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+              encode_chunked=req.has_header('Transfer-encoding'))
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/client.py", line 1367, in request
+    self._send_request(method, url, body, headers, encode_chunked)
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/client.py", line 1413, in _send_request
+    self.endheaders(body, encode_chunked=encode_chunked)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/client.py", line 1362, in endheaders
+    self._send_output(message_body, encode_chunked=encode_chunked)
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/client.py", line 1122, in _send_output
+    self.send(msg)
+    ~~~~~~~~~^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/client.py", line 1066, in send
+    self.connect()
+    ~~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/client.py", line 1032, in connect
+    self.sock = self._create_connection(
+                ~~~~~~~~~~~~~~~~~~~~~~~^
+        (self.host,self.port), self.timeout, self.source_address)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socket.py", line 874, in create_connection
+    raise exceptions[0]
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socket.py", line 859, in create_connection
+    sock.connect(sa)
+    ~~~~~~~~~~~~^^^^
+ConnectionRefusedError: [Errno 61] Connection refused
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/private/tmp/h-UByhBH/verify_fix.py", line 182, in <module>
+    main()
+    ~~~~^^
+  File "/private/tmp/h-UByhBH/verify_fix.py", line 133, in main
+    s, hdrs, _ = follow_auth(json.loads(b)["authorize_url"])
+                 ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/h-UByhBH/verify_fix.py", line 84, in follow_auth
+    code, hdrs, _ = req("GET", authorize_url)
+                    ~~~^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/h-UByhBH/verify_fix.py", line 76, in req
+    with urllib.request.urlopen(r, timeout=10) as resp:
+         ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/urllib/request.py", line 187, in urlopen
+    return opener.open(url, data, timeout)
+           ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/urllib/request.py", line 487, in open
+    response = self._open(req, data)
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/urllib/request.py", line 504, in _open
+    result = self._call_chain(self.handle_open, protocol, protocol +
+                              '_open', req)
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/urllib/request.py", line 464, in _call_chain
+    result = func(*args)
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/urllib/request.py", line 1350, in http_open
+    return self.do_open(http.client.HTTPConnection, req)
+           ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/urllib/request.py", line 1324, in do_open
+    raise URLError(err)
+urllib.error.URLError: <urlopen error [Errno 61] Connection refused>
+COMMAND   PID                USER   FD   TYPE             DEVICE SIZE/OFF NODE NAME
+Python  84285 valentinakoniukhova    3u  IPv4 0x923c902982a3fd90      0t0  TCP 127.0.0.1:8766 (LISTEN)
+---
+/bin/bash: /bin/ps: Operation not permitted
+COMMAND   PID                USER   FD   TYPE             DEVICE SIZE/OFF                NODE NAME
+Python  84285 valentinakoniukhova  cwd    DIR               1,15       64           446611891 /private/tmp/h-unWmrw
+Python  84285 valentinakoniukhova  txt    REG               1,15    33568           373723653 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/Resources/Python.app/Contents/MacOS/Python
+Python  84285 valentinakoniukhova  txt    REG               1,15    77808           373725091 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_struct.cpython-314-darwin.so
+Python  84285 valentinakoniukhova  txt    REG               1,15    54416           373725141 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/binascii.cpython-314-darwin.so
+Python  84285 valentinakoniukhova  txt    REG               1,15    80448           373725016 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_hashlib.cpython-314-darwin.so
+Python  84285 valentinakoniukhova  txt    REG               1,15    72112           373724965 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_blake2.cpython-314-darwin.so
+Python  84285 valentinakoniukhova  txt    REG               1,15    72912           373725034 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_json.cpython-314-darwin.so
+Python  84285 valentinakoniukhova  txt    REG               1,15   128960           373725023 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_hmac.cpython-314-darwin.so
+Python  84285 valentinakoniukhova  txt    REG               1,15    76176           373725192 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/zlib.cpython-314-darwin.so
+Python  84285 valentinakoniukhova  txt    REG               1,15  2289328 1152921500312524696 /usr/lib/dyld
+Python  84285 valentinakoniukhova  txt    REG               1,15    55056           373724968 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_bz2.cpython-314-darwin.so
+Python  84285 valentinakoniukhova  txt    REG               1,15    74704           373725039 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_lzma.cpython-314-darwin.so
+Python  84285 valentinakoniukhova  txt    REG               1,15    53040           373724963 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_bisect.cpython-314-darwin.so
+Python  84285 valentinakoniukhova  txt    REG               1,15    53952           373725061 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_random.cpython-314-darwin.so
+Python  84285 valentinakoniukhova  txt    REG               1,15   167520           409198589 /opt/homebrew/Cellar/xz/5.8.4/lib/liblzma.5.dylib
+Python  84285 valentinakoniukhova  txt    REG               1,15    96752           373725135 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_zstd.cpython-314-darwin.so
+Python  84285 valentinakoniukhova  txt    REG               1,15    93472           373725152 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/math.cpython-314-darwin.so
+Python  84285 valentinakoniukhova  txt    REG               1,15    53344           373725067 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_scproxy.cpython-314-darwin.so
+Python  84285 valentinakoniukhova  txt    REG               1,15   115824           373725078 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_socket.cpython-314-darwin.so
+exit: 0
+port clear
+FAIL app is up
+PASS GET init is rejected (405)
+PASS POST init without auth is 401
+PASS POST init returns authorize_url JSON
+PASS scope names each area once
+PASS authorize URL has state+client_id+redirect_uri
+PASS redirect_uri points at our callback
+Traceback (most recent call last):
+  File "/private/tmp/h-UByhBH/verify_fix.py", line 182, in <module>
+    main()
+    ~~~~^^
+  File "/private/tmp/h-UByhBH/verify_fix.py", line 133, in main
+    s, hdrs, _ = follow_auth(json.loads(b)["authorize_url"])
+                 ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/h-UByhBH/verify_fix.py", line 85, in follow_auth
+    assert code == 302, f"authorize returned {code}"
+           ^^^^^^^^^^^
+AssertionError: authorize returned 200
+PASS app is up
+PASS GET init is rejected (405)
+PASS POST init without auth is 401
+PASS POST init returns authorize_url JSON
+PASS scope names each area once
+PASS authorize URL has state+client_id+redirect_uri
+PASS redirect_uri points at our callback
+PASS callback redirects to /?connected=1
+PASS token exchange sends only client_id/client_secret/code
+PASS status: connected as athlete i11111
+PASS wellness proxies data
+PASS callback with mismatched athlete is 409
+PASS mismatch leaves original connection intact
+PASS same-athlete reconnect succeeds
+PASS disconnect works
+PASS connect with soon-to-die token succeeds
+PASS wellness 401 becomes 409 reconnect
+PASS dead connection cleared after 401
+PASS tampered state rejected (400)
+PASS log records non-expiring token
+PASS log does not fabricate a 3600s expiry
+
+all checks passed
+ M config.py
+ M server.py
+ M static/app.js
+?? __pycache__/
+done
+ M config.py
+ M server.py
+ M static/app.js

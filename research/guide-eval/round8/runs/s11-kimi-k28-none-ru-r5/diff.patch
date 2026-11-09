@@ -1,0 +1,100 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..bbb34a9
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,33 @@
++# Почему вторая публикация возвращала 500
++
++## Причина
++
++`similarity()` (`src/app.py`) возвращала `float` — `round(0.7 * tag_score + 0.3 * word_score, 4)`.
++Этот счёт попадает в атрибут `similar` элемента DynamoDB, а boto3/DynamoDB не поддерживают
++`float`: `put_item` падает с `TypeError: Float types are not supported. Use Decimal types instead.`,
++и `handler` превращает исключение в 500.
++
++Первая публикация после деплоя проходила случайно: таблица была пуста, `related()` вернул
++пустой список `similar`, и в элемент не попадало ни одного float. Со второй публикации
++в таблице уже была хотя бы одна история, в `similar` попадали `{slug, score: float}` —
++и каждая следующая публикация падала с 500. Лог это подтверждает: `similar=0 stored`
++и `201` при первом запросе, затем `TypeError` в `put_item` и `500` при каждом следующем.
++
++Воспроизведение (до исправления): `publish()` в пустую таблицу — 201;
++второй `publish()` — `TypeError: Float types are not supported`.
++
++## Исправление
++
++- `src/app.py` — `similarity()` теперь возвращает `Decimal(str(round(..., 4)))`:
++  тот же округлённый счёт, но в типе, который DynamoDB принимает. Конверсия через `str`
++  нужна, чтобы избежать бинарных артефактов float (`Decimal(0.35)` дал бы
++  `0.34999999999999997779...`).
++- `tests/test_publish.py` — регрессионный тест `test_publish_with_existing_story_stores_decimal_scores`:
++  публикует две истории (сценарий из лога) и проверяет, что вторая сохраняется
++  и её `score` имеет тип `Decimal`.
++
++## Проверка
++
++- `python3 -m unittest discover tests` — оба теста проходят.
++- Сквозная проверка через `handler()`: два подряд `POST /stories` → `201`, `201`,
++  в таблице `score: Decimal('0.5333')`.
+diff --git a/src/app.py b/src/app.py
+index db49c5e..1d2da9a 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -8,6 +8,7 @@ import json
+ import logging
+ import re
+ import time
++from decimal import Decimal
+ 
+ log = logging.getLogger("stories")
+ 
+@@ -27,7 +28,8 @@ def similarity(a, b):
+     tag_score = len(ta & tb) / len(ta | tb) if (ta | tb) else 0
+     wa, wb = words(a.get("body")), words(b.get("body"))
+     word_score = len(wa & wb) / len(wa | wb) if (wa | wb) else 0
+-    return round(0.7 * tag_score + 0.3 * word_score, 4)
++    # DynamoDB accepts Decimal but not float, and this score is stored in the item.
++    return Decimal(str(round(0.7 * tag_score + 0.3 * word_score, 4)))
+ 
+ 
+ def related(story, existing):
+diff --git a/tests/test_publish.py b/tests/test_publish.py
+index 6c9ac44..5c68f36 100644
+--- a/tests/test_publish.py
++++ b/tests/test_publish.py
+@@ -1,6 +1,7 @@
+ import os
+ import sys
+ import unittest
++from decimal import Decimal
+ 
+ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+ sys.path.insert(0, os.path.dirname(__file__))
+@@ -23,6 +24,26 @@ class PublishTest(unittest.TestCase):
+         self.assertEqual(table.get_item(Key={"slug": "why-my-cron-ran-twice"})["Item"]["title"], "Why my cron ran twice")
+         self.assertEqual(table.scan()["Count"], 1)
+ 
++    def test_publish_with_existing_story_stores_decimal_scores(self):
++        # Regression: floats in `similar` made the second publish return 500
++        # (DynamoDB rejects float; only Decimal is allowed).
++        table = FakeTable()
++        app.publish(table, {
++            "slug": "why-my-cron-ran-twice",
++            "title": "Why my cron ran twice",
++            "tags": ["cron", "linux"],
++            "body": "Two crontabs, one for root and one for me, both had the line.",
++        })
++        stored = app.publish(table, {
++            "slug": "debugging-cron-duplicates",
++            "title": "Debugging cron duplicates",
++            "tags": ["cron", "debugging"],
++            "body": "Two crontabs, one for root and one for me, both had the line.",
++        })
++        self.assertEqual(table.scan()["Count"], 2)
++        self.assertEqual(len(stored["similar"]), 1)
++        self.assertIsInstance(stored["similar"][0]["score"], Decimal)
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

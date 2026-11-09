@@ -1,0 +1,122 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..82af44c
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,49 @@
++# Почему вторая публикация падала с 500
++
++## Причина
++
++`similarity()` в `src/app.py` возвращала Python-float: `round(0.7 * tag_score + 0.3 * word_score, 4)`.
++Эти значения попадают в поле `similar` (`[{slug, score}]`) и записываются через `put_item`.
++boto3 не сериализует float → `TypeError: Float types are not supported. Use Decimal types instead.`
++
++Первая публикация проходит, потому что таблица пуста: `related()` получает пустой список
++и возвращает `[]` — ни одного значения `score`, ни одного float. Ошибка проявляется только
++со второй публикации, когда в `similar` появляется хотя бы один score. Баг существовал всегда,
++но «пустая таблица» — это единственный случай, который маскировал его. Подтверждение —
++`logs/error.log`: первая запись `similar=0 stored`, далее TypeError в `put_item`.
++
++## Исправление
++
++- `src/app.py` — `similarity()` теперь возвращает `Decimal(str(round(..., 4)))`.
++  Конвертация на границе (в значении, которое уходит в DynamoDB); `str(...)` нужен,
++  чтобы не пронести двоичные артефакты float (`Decimal(0.35)` дал бы `0.3499…97779`).
++  Выбран `Decimal`, а не целые проценты — чтобы сохранить текущую точность 4 знака.
++- `tests/test_publish.py` — добавлен регрессионный тест `test_publish_into_populated_table`:
++  сначала публикуется одна история, затем вторая через `handler`. Теперь путь
++  «непустая таблица» (score → запись) выполняется в тесте. До исправления этот тест
++  падает с тем же TypeError, что и в проде; после — оба теста зелёные
++  (`python3 -m unittest discover tests`). Проверено вручную: три публикации подряд → 201,
++  score хранится как `Decimal('0.4333')`.
++
++Весь код, пишущий в DynamoDB, прошерстил на другие источники float (grep по `round(` и `/`) —
++других вычисляемых значений в записываемых атрибутах нет (`published_at` — уже `int`).
++
++## Что пригодилось из заметки коллеги
++
++- **Диагноз по симптому** «работает один раз, второй раз 500» и тексту ошибки — совпал точно,
++  это сразу навело на `similarity()`.
++- **Объяснение, почему первый write проходит**: пустая таблица → пустой `similar` → нет float.
++  Это ключ к пониманию, почему тест «одна публикация» ничего не ловил.
++- **Шаг «trace every value that feeds a DynamoDB write» + grep по `round(` и `/`** — использован
++  как чек-лист, подтвердил, что float-источник один.
++- **Идея «конвертировать на границе, в int или Decimal»** — использована; выбран Decimal
++  вместо целых процентов, чтобы не терять точность.
++- **Главный урок: «the populated path is the real path»** — взят на вооружение: тест на запись
++  теперь сидирует таблицу одной записью, и только вторая публикация проверяется.
++- **Проверка «publish twice against a real table»** — использована по сути (две-три публикации
++  подряд через `handler`), но без реальной AWS-таблицы: `tests/fake_dynamo.py` валидирует
++  элементы точно так же, как `boto3.types.TypeSerializer`, поэтому воспроизводит отказ один в один.
++
++Не пригодилось / пропущено: миграция scores на целые проценты (у коллеги — их осознанный
++выбор продукта; здесь Decimal точнее и минимально инвазивен) и привязка к AWS Lambda
++(сервис здесь не лямбда-специфичен — трейс лога совпал просто по структуре).
+diff --git a/src/app.py b/src/app.py
+index db49c5e..af4bb08 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -8,6 +8,7 @@ import json
+ import logging
+ import re
+ import time
++from decimal import Decimal
+ 
+ log = logging.getLogger("stories")
+ 
+@@ -27,7 +28,7 @@ def similarity(a, b):
+     tag_score = len(ta & tb) / len(ta | tb) if (ta | tb) else 0
+     wa, wb = words(a.get("body")), words(b.get("body"))
+     word_score = len(wa & wb) / len(wa | wb) if (wa | wb) else 0
+-    return round(0.7 * tag_score + 0.3 * word_score, 4)
++    return Decimal(str(round(0.7 * tag_score + 0.3 * word_score, 4)))
+ 
+ 
+ def related(story, existing):
+diff --git a/tests/test_publish.py b/tests/test_publish.py
+index 6c9ac44..dca20de 100644
+--- a/tests/test_publish.py
++++ b/tests/test_publish.py
+@@ -1,6 +1,8 @@
++import json
+ import os
+ import sys
+ import unittest
++from decimal import Decimal
+ 
+ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+ sys.path.insert(0, os.path.dirname(__file__))
+@@ -23,6 +25,32 @@ class PublishTest(unittest.TestCase):
+         self.assertEqual(table.get_item(Key={"slug": "why-my-cron-ran-twice"})["Item"]["title"], "Why my cron ran twice")
+         self.assertEqual(table.scan()["Count"], 1)
+ 
++    def test_publish_into_populated_table(self):
++        """The first publish finds an empty table, so only the second publish
++        exercises the similarity-score write path that failed in production."""
++        table = FakeTable()
++        first = {
++            "slug": "why-my-cron-ran-twice",
++            "title": "Why my cron ran twice",
++            "tags": ["cron", "linux"],
++            "body": "Two crontabs, one for root and one for me, both had the line.",
++        }
++        resp = app.handler({"body": json.dumps(first)}, table)
++        self.assertEqual(resp["statusCode"], 201)
++
++        second = {
++            "slug": "my-backup-routine",
++            "title": "My backup routine",
++            "tags": ["cron", "backups"],
++            "body": "A cron line and a backup line, close cousins.",
++        }
++        resp = app.handler({"body": json.dumps(second)}, table)
++        self.assertEqual(resp["statusCode"], 201)
++
++        stored = table.get_item(Key={"slug": "my-backup-routine"})["Item"]
++        self.assertEqual(len(stored["similar"]), 1)
++        self.assertIsInstance(stored["similar"][0]["score"], Decimal)
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

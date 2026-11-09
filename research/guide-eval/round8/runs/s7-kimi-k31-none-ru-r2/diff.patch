@@ -1,0 +1,89 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..bc9dcff
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,7 @@
++# Причины сбоя интеграции Intervals.icu
++
++1. **Кнопка Connect теряла авторизацию tricoach.** В `static/app.js` использовалась обычная ссылка на `/api/intervals/auth/init`. При переходе браузер не добавлял заголовок `Authorization: Bearer ...`, который добавляется только в `fetch`, а сервер требует этот заголовок. Поэтому все получали `401 Unauthorized`. Теперь кнопка запрашивает authorize URL через авторизованный `fetch`, после чего открывает возвращённый URL.
++
++2. **Запрашивались неподдерживаемые права `CALENDAR:READ` и `CALENDAR:WRITE`.** После их добавления Intervals.icu отклонял authorize-запрос с `invalid_request` ещё до экрана согласия. Эти права удалены из `config.py`; для чтения активностей и записи плановых тренировок используются поддерживаемые `ACTIVITY:READ` и `ACTIVITY:WRITE`, для wellness — `WELLNESS:READ`.
++
++3. **Не запрашивался offline-доступ.** Без `access_type=offline` Intervals.icu возвращал только access token, без refresh token. Через `expires_in` (в captured-случае примерно через час) фоновой обновитель не мог продлить доступ и переводил подключение в `expired, reconnect`. Параметр `access_type=offline` добавлен в authorize-запрос. Также обновление токена теперь использует стандартный TTL, если ответ на refresh не содержит `expires_in`, и сохраняет прежний refresh token, если новый не возвращён.
+diff --git a/config.py b/config.py
+index 54a8144..41eb31a 100644
+--- a/config.py
++++ b/config.py
+@@ -8,6 +8,6 @@ INTERVALS_BASE = os.environ.get("INTERVALS_BASE", "https://intervals.icu")
+ CLIENT_ID = "tricoach-dev"
+ CLIENT_SECRET = "s3cr3t-placeholder-0000"
+ REDIRECT_URI = f"http://localhost:{PORT}/api/intervals/callback"
+-SCOPES = "ACTIVITY:READ,ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:READ,CALENDAR:WRITE"
++SCOPES = "ACTIVITY:READ,ACTIVITY:WRITE,WELLNESS:READ"
+ 
+ REFRESH_INTERVAL = 60      # seconds between passes of the token refresher
+diff --git a/server.py b/server.py
+index 351cbb7..2beeb56 100644
+--- a/server.py
++++ b/server.py
+@@ -97,7 +97,7 @@ def refresh_tokens():
+                     })
+                     c.update(access_token=tok["access_token"],
+                              refresh_token=tok.get("refresh_token", c["refresh_token"]),
+-                             expires_at=now + int(tok["expires_in"]))
++                             expires_at=now + int(tok.get("expires_in") or DEFAULT_TOKEN_TTL))
+                     log(f"{uid}: token refreshed")
+                 except Exception as e:
+                     log(f"{uid}: refresh failed ({e}) -> expired, reconnect")
+@@ -185,14 +185,15 @@ class Handler(BaseHTTPRequestHandler):
+             return
+         self.send_json(404, {"error": "not found"})
+ 
+-    # Step 1: build the authorize URL and send the browser to Intervals.
++    # Step 1: build the authorize URL for the SPA to open in the browser.
+     def auth_init(self):
+         user = self.require_user()
+         if not user:
+             return
+         params = {"client_id": config.CLIENT_ID, "redirect_uri": config.REDIRECT_URI,
+-                  "scope": config.SCOPES, "state": sign_state(user["id"])}
+-        self.redirect(AUTHORIZE_URL + "?" + urllib.parse.urlencode(params, safe=":,"))
++                  "scope": config.SCOPES, "access_type": "offline", "state": sign_state(user["id"])}
++        url = AUTHORIZE_URL + "?" + urllib.parse.urlencode(params, safe=":,")
++        self.send_json(200, {"url": url})
+ 
+     # Step 2: Intervals redirects back here with ?code=&state=.
+     def callback(self, q):
+diff --git a/static/app.js b/static/app.js
+index 368922e..510a26d 100644
+--- a/static/app.js
++++ b/static/app.js
+@@ -25,12 +25,26 @@ async function render() {
+     } else {
+       const why = st.status && st.status !== "disconnected" ? `<p class="muted">Status: ${esc(st.status)}</p>` : "";
+       card = `<div class="card">Intervals.icu is not connected.${why}
+-        <p><a class="btn" href="/api/intervals/auth/init">Connect Intervals.icu</a></p></div>`;
++        <p><button class="btn" id="connect">Connect Intervals.icu</button></p>
++        <p class="muted" id="connect-error" role="alert"></p></div>`;
+     }
+     root.className = "";
+     root.innerHTML = `<p>Signed in as <b>${esc(me.name)}</b>.</p>${card}`;
+     const d = document.getElementById("disconnect");
+     if (d) d.onclick = async () => { await api("/api/intervals/disconnect", { method: "POST" }); render(); };
++    const c = document.getElementById("connect");
++    if (c) c.onclick = async () => {
++      c.disabled = true;
++      const error = document.getElementById("connect-error");
++      error.textContent = "";
++      try {
++        const auth = await api("/api/intervals/auth/init");
++        window.location.assign(auth.url);
++      } catch (e) {
++        c.disabled = false;
++        error.textContent = e.message;
++      }
++    };
+   } catch (e) {
+     root.innerHTML = `<p class="card">Error: ${esc(e.message)}</p>`;
+   }

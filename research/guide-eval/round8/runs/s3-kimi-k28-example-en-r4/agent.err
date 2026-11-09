@@ -1,0 +1,40 @@
+total 4
+drwxr-xr-x 4 valentinakoniukhova wheel 128 Nov  9 01:27 .
+drwxr-xr-x 4 valentinakoniukhova wheel 128 Nov  9 01:27 ..
+-rw-r--r-- 1 valentinakoniukhova wheel 594 Nov  9 01:27 nightly-review.err
+-rw-r--r-- 1 valentinakoniukhova wheel   0 Nov  9 01:27 nightly-review.out
+total 8
+drwxr-xr-x 4 valentinakoniukhova wheel 128 Nov  9 01:27 .
+drwx------ 7 valentinakoniukhova wheel 224 Nov  9 01:27 ..
+-rwxr-xr-x 1 valentinakoniukhova wheel 772 Nov  9 01:27 nightly-review.zsh
+-rwxr-xr-x 1 valentinakoniukhova wheel 312 Nov  9 01:27 notify.sh
+zsh syntax OK
+/private/tmp/h-q8zN1M/Library/LaunchAgents/com.vk.nightly-review.plist: OK
+--- success run ---
+script exit: 0
+--- forced-failure run ---
+Not logged in · Please run /login
+script exit: 1
+--- assertions ---
+PASS: success notification sent
+PASS: failure notification sent
+FAIL: no output file
+PASS: prompt delivered via stdin
+total 0
+drwxr-xr-x 3 valentinakoniukhova wheel 96 Nov  9 01:30 .
+drwxr-xr-x 3 valentinakoniukhova wheel 96 Nov  9 01:30 ..
+-rw-r--r-- 1 valentinakoniukhova wheel  0 Nov  9 01:30 nightly-review-2026-11-09.md
+---
+== /private/tmp/h-q8zN1M/.harness/home/Library/Logs/nightly-review-2026-11-09.md ==
+exit: 0
+--- manual-out.txt:
+FAKE SUMMARY: everything looks fine, 3 lines as requested
+--- manual-stdin.txt:
+hello prompt
+NOTIFY: nightly review done in 0s: FAKE SUMMARY: everything looks fine, 3 lines as requested
+NOTIFY: nightly review FAILED (exit 1) after 0s, see /private/tmp/h-q8zN1M/.harness/home/Library/Logs/nightly-review-2026-11-09.md
+script exit: 0
+PASS: output file written with summary
+NOTIFY: nightly review done in 0s: FAKE SUMMARY: everything looks fine, 3 lines as requested
+ M Library/LaunchAgents/com.vk.nightly-review.plist
+ M bin/nightly-review.zsh

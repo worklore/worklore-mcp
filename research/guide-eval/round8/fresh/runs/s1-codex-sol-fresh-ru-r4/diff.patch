@@ -1,0 +1,69 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..f24fc6c
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,7 @@
++# Исправление диапазонов пульса
++
++В `gen.py` изменил представление цели `hr` в `workout_doc`: `value` теперь содержит середину диапазона, `start` — нижнюю границу, `end` — верхнюю. Например, запланированные 88–93% LTHR записываются как `value: 90.5, start: 88, end: 93`. Добавил проверку, что нижняя граница меньше верхней.
++
++Раньше генератор записывал нижнюю границу в `value` и только верхнюю в `end`, без `start`. Это не задавало полный коридор в структуре цели. По `readback/watch-notes.md` часы показывали вместо запланированных чисел границы собственных зон. Новая запись сохраняет обе границы в полях цели и оставляет проценты LTHR, чтобы Intervals.icu мог пересчитать их по порогу спортсмена при экспорте.
++
++Добавил `test_gen.py`: он проверяет форму цели и диапазоны всех шагов, включая повторения. `python3 -m unittest -v test_gen` и `git diff --check` прошли. Вывод генератора проверен локально. Фактическое отображение на часах не проверялось: для этого потребовалась бы отправка тренировки во внешний сервис, запрещённая условиями задачи.
+diff --git a/gen.py b/gen.py
+index be0b3bc..d3ef271 100755
+--- a/gen.py
++++ b/gen.py
+@@ -10,7 +10,14 @@ import sys
+ def hr_target(step):
+     """HR corridor for a step, as a percentage of the athlete's LTHR."""
+     lo, hi = step["hr_pct"]
+-    return {"units": "%lthr", "value": lo, "end": hi}
++    if not 0 < lo < hi:
++        raise ValueError(f"invalid HR corridor: {lo}–{hi}")
++    return {
++        "units": "%lthr",
++        "value": (lo + hi) / 2,
++        "start": lo,
++        "end": hi,
++    }
+ 
+ 
+ def build_step(step):
+diff --git a/test_gen.py b/test_gen.py
+new file mode 100644
+index 0000000..193dcfb
+--- /dev/null
++++ b/test_gen.py
+@@ -0,0 +1,30 @@
++import json
++import unittest
++from pathlib import Path
++
++from gen import build_event, hr_target
++
++
++class GeneratorTests(unittest.TestCase):
++    def test_hr_target_keeps_both_corridor_bounds(self):
++        self.assertEqual(
++            hr_target({"hr_pct": [88, 93]}),
++            {"units": "%lthr", "value": 90.5, "start": 88, "end": 93},
++        )
++
++    def test_plan_targets_survive_repeats(self):
++        plan = json.loads(Path("plans/tempo-run.json").read_text())
++        steps = build_event(plan)["workout_doc"]["steps"]
++        self.assertEqual(steps[0]["hr"]["start"], 68)
++        self.assertEqual(steps[0]["hr"]["end"], 75)
++        self.assertEqual(steps[1]["reps"], 3)
++        self.assertEqual(steps[1]["steps"][0]["hr"]["start"], 88)
++        self.assertEqual(steps[1]["steps"][0]["hr"]["end"], 93)
++        self.assertEqual(steps[1]["steps"][1]["hr"]["start"], 75)
++        self.assertEqual(steps[1]["steps"][1]["hr"]["end"], 82)
++        self.assertEqual(steps[2]["hr"]["start"], 65)
++        self.assertEqual(steps[2]["hr"]["end"], 72)
++
++
++if __name__ == "__main__":
++    unittest.main()

@@ -4,6 +4,8 @@ Five repetitions per cell: a cell shows passes/runs; story and agent totals pool
 import glob, json, os, re, collections
 H = os.path.dirname(os.path.abspath(__file__))
 AG = ["claude-opus", "claude-sonnet", "claude-haiku", "codex-sol", "codex-sol-low", "agy-flash-low", "agy-oss"]
+if os.environ.get("WITH_KIMI"):   # python3 make_table.py with WITH_KIMI=1 > table-kimi.md: the seven agents plus the two Kimi lanes (2026-11-07/09)
+    AG += ["kimi-k28", "kimi-k31"]
 ARMS = ["none-en", "example-en", "none-ru", "example-ru", "example-ruru"]
 STORIES = ["s1", "s3", "s7", "s10", "s8", "s11"]
 STORY = {"s1": "HR corridors (fact not in the docs)", "s3": "silent launchd job (two bugs, one silent)",
@@ -29,7 +31,7 @@ def passes(rs):
 def frac(k, n): return f"{k}/{n}" if n else "·"
 
 print("# Round 8 tables\n")
-print("## Passes per story and arm (five repetitions × seven agents = 35 runs per cell when complete)\n")
+print(f"## Passes per story and arm (five repetitions × {({7: 'seven', 9: 'nine'}).get(len(AG), len(AG))} agents = {5*len(AG)} runs per cell when complete)\n")
 print("| story | " + " | ".join(ARMS) + " | gain en | gain ru | gain ru (ru story) |")
 print("|---|" + "---|" * (len(ARMS) + 3))
 tot = {arm: [0, 0] for arm in ARMS}
@@ -112,14 +114,15 @@ for a in AG:
           + " | ".join(f"{sum(P[x])}/{len(P[x])}" for x in ("example-en", "example-ru", "example-ruru")) + " |")
 print()
 
-WEB = {"claude": r'"name":"(?:WebSearch|WebFetch)"', "codex": r'(?m)^.*"item\.completed".*"type":"web_search".*$', "agy": r'"tool_name":"(?:search_web|read_url_content|browser_[a-z_]+)"'}
+WEB = {"claude": r'"name":"(?:WebSearch|WebFetch)"', "codex": r'(?m)^.*"item\.completed".*"type":"web_search".*$', "agy": r'"step_index":(\d+),"state":"[A-Z_]+","step_type":"tool","tool_name":"(?:search_web|read_url_content|browser_[a-z_]+)"', "kimi": r'"name":"(?:WebSearch|FetchURL)"'}
 def web_calls(m):
-    h = "claude" if m["agent"].startswith("claude") else "codex" if m["agent"].startswith("codex") else "agy"
+    h = "claude" if m["agent"].startswith("claude") else "codex" if m["agent"].startswith("codex") else "kimi" if m["agent"].startswith("kimi") else "agy"
     try: txt = open(os.path.join(H, "runs", m["id"], "agent.log"), errors="ignore").read()
     except OSError: return 0
+    if h == "agy": return len(set(re.findall(WEB[h], txt)))   # one step is logged once per state change
     return len(re.findall(WEB[h], txt))
 print("## Web use: runs with at least one web search or fetch (and the number of calls), per agent and arm\n")
-print("Counted from the harness logs: Claude Code `WebSearch`/`WebFetch` tool calls, Codex `web_search` events, Antigravity `search_web`/`read_url_content` calls.\n")
+print("Counted from the harness logs: Claude Code `WebSearch`/`WebFetch` tool calls, Codex `web_search` events, Antigravity `search_web`/`read_url_content` calls (each step once; before 2026-11-09 a step was counted once per logged state, which doubled the number of calls).\n")
 print("| agent | " + " | ".join(ARMS) + " |"); print("|---|" + "---|" * len(ARMS))
 for a in AG:
     row = []
@@ -149,7 +152,7 @@ for a in AG + ["all"]:
 print()
 
 print("## Runs that are not results\n")
-bad = [(k, m) for k, rs in runs.items() for m, g, _ in rs if m["exit_code"] != 0]
+bad = [(k, m) for k, rs in runs.items() if k[1] in AG for m, g, _ in rs if m["exit_code"] != 0]
 if not bad: print("none\n")
 for (s, a, arm), m in bad:
     print(f"- {m['id']}: exit {m['exit_code']} ({'timeout' if m['exit_code'] == 124 else 'error'}), {m['wall_s']} s")

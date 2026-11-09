@@ -1,0 +1,108 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..7f416bf
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,37 @@
++# Why the second publish returned 500
++
++## Cause
++
++`similarity()` in `src/app.py` computes its score with float arithmetic
++(`/` division, `0.7 * ... + 0.3 * ...`, `round(..., 4)`), so every score it
++returns is a Python `float`. boto3's DynamoDB serializer rejects floats
++(`TypeError: Float types are not supported. Use Decimal types instead.`) —
++DynamoDB numbers must be `Decimal`.
++
++The `float` only reaches DynamoDB inside the `similar` list, so whether a
++publish fails depends on how many stories are already in the table:
++
++- **First publish:** the table is empty, `related()` returns `[]`, the item
++  contains only strings/ints, and `put_item` succeeds (201). This matches the
++  log line `similar=0 stored`.
++- **Second publish:** the table now has one story, so `similar` contains
++  `{"slug": ..., "score": <float>}` and `put_item` raises the `TypeError`.
++  The handler's catch-all turns it into a 500 — and every publish after that
++  fails the same way, exactly as `logs/error.log` shows.
++
++The bug shipped because the test suite only ever exercised a single publish;
++nothing put a float into an item until production traffic did.
++
++## Fix
++
++- `src/app.py` — `similarity()` now returns `Decimal(str(round(score, 4)))`
++  instead of a float, so the scores stored in `similar` are DynamoDB-safe.
++  (`str()` round-trips through the rounded decimal string, avoiding binary
++  float artifacts.) This fixes the root cause for every publish, not just one.
++- `tests/test_publish.py` — added `test_second_publish_does_not_500`, which
++  publishes two stories through `handler()` and asserts the second returns
++  201 and that stored `similar` scores are `Decimal`. It fails against the
++  old code with the same `TypeError` from production, so the regression
++  can't come back unnoticed.
++
++Verified with `python3 -m unittest discover tests` (2 tests, OK).
+diff --git a/src/app.py b/src/app.py
+index db49c5e..17f0522 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -8,6 +8,7 @@ import json
+ import logging
+ import re
+ import time
++from decimal import Decimal
+ 
+ log = logging.getLogger("stories")
+ 
+@@ -27,7 +28,8 @@ def similarity(a, b):
+     tag_score = len(ta & tb) / len(ta | tb) if (ta | tb) else 0
+     wa, wb = words(a.get("body")), words(b.get("body"))
+     word_score = len(wa & wb) / len(wa | wb) if (wa | wb) else 0
+-    return round(0.7 * tag_score + 0.3 * word_score, 4)
++    # DynamoDB rejects floats; scores must be stored as Decimal.
++    return Decimal(str(round(0.7 * tag_score + 0.3 * word_score, 4)))
+ 
+ 
+ def related(story, existing):
+diff --git a/tests/test_publish.py b/tests/test_publish.py
+index 6c9ac44..67a46a7 100644
+--- a/tests/test_publish.py
++++ b/tests/test_publish.py
+@@ -1,6 +1,8 @@
+ import os
+ import sys
++import json
+ import unittest
++from decimal import Decimal
+ 
+ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+ sys.path.insert(0, os.path.dirname(__file__))
+@@ -23,6 +25,29 @@ class PublishTest(unittest.TestCase):
+         self.assertEqual(table.get_item(Key={"slug": "why-my-cron-ran-twice"})["Item"]["title"], "Why my cron ran twice")
+         self.assertEqual(table.scan()["Count"], 1)
+ 
++    def test_second_publish_does_not_500(self):
++        table = FakeTable()
++        first = {
++            "slug": "why-my-cron-ran-twice",
++            "title": "Why my cron ran twice",
++            "tags": ["cron", "linux"],
++            "body": "Two crontabs, one for root and one for me, both had the line.",
++        }
++        second = {
++            "slug": "fixing-my-cron",
++            "title": "Fixing my cron",
++            "tags": ["cron"],
++            "body": "Two crontabs, one for root and one for me, both had the line.",
++        }
++        r1 = app.handler({"body": json.dumps(first)}, table)
++        r2 = app.handler({"body": json.dumps(second)}, table)
++        self.assertEqual(r1["statusCode"], 201)
++        self.assertEqual(r2["statusCode"], 201)
++        stored = table.get_item(Key={"slug": "fixing-my-cron"})["Item"]
++        self.assertEqual([s["slug"] for s in stored["similar"]], ["why-my-cron-ran-twice"])
++        for entry in stored["similar"]:
++            self.assertIsInstance(entry["score"], Decimal)
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

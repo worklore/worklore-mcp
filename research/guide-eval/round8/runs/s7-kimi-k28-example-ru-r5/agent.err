@@ -1,0 +1,42 @@
+PASS GET /auth/init no longer exists (404)
+PASS POST /auth/init without token -> 401 JSON
+PASS POST /auth/init -> 200 {authorize_url}
+PASS authorize scope has no duplicate areas
+PASS callback with tampered state -> 400
+FAIL callback -> 302 to /?connected=1
+PASS token exchange sent only client_id/client_secret/code
+PASS status -> connected as T. Rivera
+FAIL wellness proxy -> 200 with data
+FAIL connection survives past the old 1h fake TTL
+FAIL wellness on revoked token -> 409 reconnect prompt
+PASS status after 401 -> 'expired, reconnect'
+FAIL reconnect callback -> 302
+PASS wellness works again after reconnect
+
+5 FAILURES: ['callback -> 302 to /?connected=1', 'wellness proxy -> 200 with data', 'connection survives past the old 1h fake TTL', 'wellness on revoked token -> 409 reconnect prompt', 'reconnect callback -> 302']
+PASS GET /auth/init no longer exists (404)
+PASS POST /auth/init without token -> 401 JSON
+PASS POST /auth/init -> 200 {authorize_url}
+PASS authorize scope has no duplicate areas
+PASS callback with tampered state -> 400
+PASS callback -> 302 to /?connected=1
+PASS token exchange sent only client_id/client_secret/code
+PASS status -> connected as T. Rivera
+PASS wellness proxy -> 200 with data
+PASS connection survives past the old 1h fake TTL
+PASS wellness on revoked token -> 409 reconnect prompt
+PASS status after 401 -> 'expired, reconnect'
+PASS reconnect callback -> 302
+PASS wellness works again after reconnect
+
+ALL CHECKS PASSED
+server.py:59:    # refresh_token and echoes no expires_in.
+grep exit: 0
+ M config.py
+ M server.py
+ M static/app.js
+?? __pycache__/
+syntax ok
+ M config.py
+ M server.py
+ M static/app.js

@@ -1,0 +1,42 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..a3b2d94
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,16 @@
++# Causes
++
++The LaunchAgent is scheduled correctly and has run six times. Two failures combined to make it silent:
++
++1. `claude` exited with status 1 and printed `Not logged in · Please run /login`, so no review was produced.
++2. The script then tried to save that exit code in `status`. In zsh, `status` is a special read-only variable. The assignment `status=$?` aborted the script with `read-only variable: status` before it reached the failure-notification branch, so `notify.sh` was never called.
++
++The repeated pairs of these two errors in `Library/Logs/nightly-review.err` account for all six runs.
++
++# Fix
++
++In `bin/nightly-review.zsh`, renamed the ordinary exit-code variable from `status` to `exit_code`. A failed review now reaches `notify.sh`, sends the failure message, and exits with the review command's original status. The success path is unchanged.
++
++Verified offline with local command stand-ins: the failure path exits 1 and sends the expected failure notification, and the success path writes the review and sends the expected completion notification. Shell syntax validation also passes. No real Claude or Telegram request was made.
++
++The review command itself still needs to be authenticated for the user running the LaunchAgent; that login was not attempted here. Until then, the fixed job should report the authentication failure instead of remaining silent.
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..f9f7692 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -16,11 +16,11 @@ Do not modify any file."
+ cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
+ 
+ claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
++exit_code=$?
+ 
+-if [ $status -ne 0 ]; then
+-  "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
+-  exit $status
++if [ $exit_code -ne 0 ]; then
++  "$NOTIFY" "nightly review FAILED (exit $exit_code), see $OUT"
++  exit $exit_code
+ fi
+ 
+ "$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"

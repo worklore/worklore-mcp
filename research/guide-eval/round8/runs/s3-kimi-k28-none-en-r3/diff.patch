@@ -1,0 +1,178 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..4474a32
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,105 @@
++# Why the nightly job never reported anything
++
++The job fired on schedule all six nights (loaded 2026-10-12, `launchctl print`
++on 2026-10-18 shows `runs = 6`). Every run failed the same way, and two
++separate bugs — one in the script, one in how `claude` authenticates under
++launchd — combined so that no failure note ever reached you.
++
++## Cause 1 — the script died before it could ever notify (why you heard nothing)
++
++`bin/nightly-review.zsh:19` does:
++
++```zsh
++status=$?
++```
++
++`status` is a **read-only special variable in zsh** (its alias for `$?`). The
++assignment fails with `read-only variable: status` — and in a non-interactive
++zsh that error **aborts the script on the spot**. Verified by reproducing it:
++the script exits with code 1 immediately, never reaching the `notify.sh` call
++on the next line.
++
++This matches the evidence exactly: `Library/Logs/nightly-review.err` contains,
++six times, the pair
++
++```
++Not logged in · Please run /login
++/Users/vk/bin/nightly-review.zsh:19: read-only variable: status
++```
++
++and `launchctl print` shows `last exit code = 1` — the exit status of the
++killed script, not of `claude`. So even though the script was *designed* to
++ping you on failure, the failure-handling code was unreachable.
++
++**Fix:** renamed the variable to `rc` in `bin/nightly-review.zsh`. (Also added
++a `notify()` wrapper: if `notify.sh` itself fails, the unsent message is
++echoed to stderr, which launchd captures into `nightly-review.err`.)
++
++## Cause 2 — `claude` can't authenticate when launched by launchd (why every run failed)
++
++The first line of each error-log pair, `Not logged in · Please run /login`, is
++printed by `claude` itself. On macOS, Claude Code stores its OAuth credential
++in the login **Keychain**, and a process whose process tree starts at launchd
++cannot use it — `claude -p` reports "not logged in" from a LaunchAgent even
++when the very same credentials are present, valid, and readable via
++`security find-generic-password` from that same context. This is a known,
++long-standing issue: [anthropics/claude-code#77213](https://github.com/anthropics/claude-code/issues/77213),
++also described in [Claude Code works in your terminal but fails in cron](https://openclawdc.com/blog/claude-code-works-in-terminal-fails-in-cron/).
++Re-running `/login` interactively does **not** fix it — an interactive login is
++not a durable credential for a background job.
++
++**Fix (partial, from this snapshot):** the script now sources
++`~/.config/nightly-review.env` if present, with all variables exported to the
++job. On the real machine, generate a long-lived token once and store it there:
++
++```sh
++claude setup-token                      # prints a one-year OAuth token
++mkdir -p ~/.config
++echo 'CLAUDE_CODE_OAUTH_TOKEN=<token>' > ~/.config/nightly-review.env
++chmod 600 ~/.config/nightly-review.env
++```
++
++(`setup-token` is Anthropic's documented mechanism for CI/headless use. The
++token can only make model requests — fine for a commit review. It is kept out
++of the plist on purpose: plist contents are world-readable and show up in
++`launchctl print` output.) This step requires your claude.ai account, so it
++can't be done from this snapshot.
++
++## Cause 3 — `notify.sh` was built to fail silently (would have muted the failure note even after Cause 1 was fixed)
++
++Two latent defects in `bin/notify.sh`:
++
++- `set -e` + `TG_BOT_TOKEN:=$(security find-generic-password -s tg-bot -w)`:
++  if the keychain read fails (locked keychain at 02:30, ACL prompt not
++  answerable from a background job), the script exits without a word.
++- `curl` without `--fail` exits 0 even when Telegram replies HTTP 401/400, so
++  a rejected message looked like success.
++
++**Fix:** explicit check that reports `cannot read tg-bot token from keychain`
++to stderr (→ `nightly-review.err`) and `curl --fail` so HTTP-level failures
++are non-zero and visible.
++
++## What was NOT broken
++
++The plist is valid (`plutil` OK), the schedule fired (`runs = 6`), the custom
++PATH reached `claude`, and stdout/stderr were captured — the evidence above
++comes from those very logs.
++
++## Verification done here
++
++End-to-end runs of old and new scripts with stubbed `claude`/`security`/`curl`
++(no network, no external calls): the old script reproduces the silent death;
++the new script delivers `nightly review FAILED (exit 1), see …` on claude
++failure, delivers the summary on success, sources the env file into claude's
++environment, and leaves a clear trace in stderr when the keychain or Telegram
++is unreachable.
++
++## Remaining steps on the real machine
++
++1. `claude setup-token`, then write `~/.config/nightly-review.env` as above.
++2. Scripts are read at run time — no reload needed for them. To test
++   immediately instead of waiting for 02:30:
++   `launchctl kickstart -p gui/$UID/com.vk.nightly-review`
++3. Expect either a review summary or a `FAILED` note on Telegram from then on;
++   anything still wrong will also be visible in
++   `~/Library/Logs/nightly-review.err`.
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..c2ea9f7 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -6,6 +6,14 @@ REPO="$HOME/projects/shop"
+ OUT="$HOME/Library/Logs/nightly-review-$(date +%F).md"
+ NOTIFY="$HOME/bin/notify.sh"
+ 
++# Optional job env, e.g. CLAUDE_CODE_OAUTH_TOKEN from `claude setup-token` (see ANSWER.md).
++ENV_FILE="$HOME/.config/nightly-review.env"
++if [ -f "$ENV_FILE" ]; then
++  set -a
++  source "$ENV_FILE"
++  set +a
++fi
++
+ SINCE=$(date -v-1d +%F)
+ PROMPT="Review the commits in this repository since $SINCE.
+ For each commit: one line on what it changes and whether anything looks risky
+@@ -13,14 +21,20 @@ For each commit: one line on what it changes and whether anything looks risky
+ End with a three-line summary I can read on my phone.
+ Do not modify any file."
+ 
+-cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
++notify() {
++  "$NOTIFY" "$1" && return 0
++  echo "notify.sh failed — unsent message: $1" >&2
++  return 1
++}
++
++cd "$REPO" || { notify "nightly review: repo missing"; exit 1; }
+ 
+ claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
++rc=$?
+ 
+-if [ $status -ne 0 ]; then
+-  "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
+-  exit $status
++if [ "$rc" -ne 0 ]; then
++  notify "nightly review FAILED (exit $rc), see $OUT"
++  exit "$rc"
+ fi
+ 
+-"$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"
++notify "nightly review done: $(head -c 300 "$OUT")"
+diff --git a/bin/notify.sh b/bin/notify.sh
+index 818e531..e685dc5 100755
+--- a/bin/notify.sh
++++ b/bin/notify.sh
+@@ -1,7 +1,13 @@
+ #!/bin/bash
+ # usage: notify.sh "message"  — sends a Telegram message to me.
+-set -eu
+-: "${TG_BOT_TOKEN:=$(security find-generic-password -s tg-bot -w)}"
++set -u
++
++TG_BOT_TOKEN="${TG_BOT_TOKEN:-$(security find-generic-password -s tg-bot -w 2>/dev/null)}"
++if [ -z "$TG_BOT_TOKEN" ]; then
++  echo "notify.sh: cannot read tg-bot token from keychain (security find-generic-password failed)" >&2
++  exit 1
++fi
++
+ CHAT_ID=123456789
+-curl -sS -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
++curl -sS --fail -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
+   -d chat_id="$CHAT_ID" --data-urlencode text="$1" > /dev/null

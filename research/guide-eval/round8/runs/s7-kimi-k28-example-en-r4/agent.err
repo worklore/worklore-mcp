@@ -1,0 +1,170 @@
+d525a75 base
+Traceback (most recent call last):
+  File "/private/tmp/h-hszrJe/.e2e_check.py", line 193, in <module>
+    main()
+    ~~~~^^
+  File "/private/tmp/h-hszrJe/.e2e_check.py", line 95, in main
+    stub = ThreadingHTTPServer(("127.0.0.1", STUB_PORT), Stub)
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+OSError: [Errno 48] Address already in use
+COMMAND   PID                USER   FD   TYPE             DEVICE SIZE/OFF NODE NAME
+Python  56794 valentinakoniukhova    3u  IPv4 0xa6a093738c9b933b      0t0  TCP 127.0.0.1:8899 (LISTEN)
+56836
+FAIL GET init route removed {"error": "unauthorized"}
+FAIL POST init without token -> 401 
+FAIL POST init -> authorize_url {"error": "not found"}
+PASS scope has no duplicate areas None
+Traceback (most recent call last):
+  File "/private/tmp/h-hszrJe/.e2e_check.py", line 193, in <module>
+    main()
+    ~~~~^^
+  File "/private/tmp/h-hszrJe/.e2e_check.py", line 125, in main
+    code, hdrs, body = http("GET", au)
+                       ~~~~^^^^^^^^^^^
+  File "/private/tmp/h-hszrJe/.e2e_check.py", line 35, in http
+    req = urllib.request.Request(url, data=body, method=method, headers=headers)
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/urllib/request.py", line 290, in __init__
+    self.full_url = url
+    ^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/urllib/request.py", line 316, in full_url
+    self._parse()
+    ~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/urllib/request.py", line 345, in _parse
+    raise ValueError("unknown url type: %r" % self.full_url)
+ValueError: unknown url type: ''
+COMMAND   PID                USER   FD   TYPE             DEVICE SIZE/OFF NODE NAME
+Python  56792 valentinakoniukhova    3u  IPv4 0xceff3b68d90de164      0t0  TCP 127.0.0.1:8766 (LISTEN)
+port 8766 free
+PASS GET init route removed {"error": "not found"}
+PASS POST init without token -> 401 
+PASS POST init -> authorize_url {"authorize_url": "http://127.0.0.1:57072/oauth/authorize?client_id=tricoach-dev&redirect_uri=http:%2F%2Flocalhost:8766%
+PASS scope has no duplicate areas ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE
+FAIL authorize accepted (302) <!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>tricoach</title>
+<style>
+  body { font: 15px/1.5 s
+Traceback (most recent call last):
+  File "/private/tmp/h-hszrJe/.e2e_check.py", line 195, in <module>
+    main()
+    ~~~~^^
+  File "/private/tmp/h-hszrJe/.e2e_check.py", line 131, in main
+    cb = hdrs["Location"]
+         ~~~~^^^^^^^^^^^^
+KeyError: 'Location'
+136:        code, hdrs, body = http("GET", au, follow=False)
+141:        code, hdrs, _ = http("GET", cb, follow=False)
+165:        code, _, _ = http("GET", APP + "/api/intervals/callback?" + urllib.parse.urlencode(q2), follow=False)
+PASS GET init route removed {"error": "not found"}
+PASS POST init without token -> 401 
+PASS POST init -> authorize_url {"authorize_url": "http://127.0.0.1:57309/oauth/authorize?client_id=tricoach-dev&redirect_uri=http:%2F%2Flocalhost:8766%
+PASS scope has no duplicate areas ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE
+Traceback (most recent call last):
+  File "/private/tmp/h-hszrJe/.e2e_check.py", line 204, in <module>
+    main()
+    ~~~~^^
+  File "/private/tmp/h-hszrJe/.e2e_check.py", line 136, in main
+    code, hdrs, body = http("GET", au, follow=False)
+                       ~~~~^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/h-hszrJe/.e2e_check.py", line 46, in http
+    with opener.urlopen(req, timeout=10) as r:
+         ^^^^^^^^^^^^^^
+AttributeError: 'OpenerDirector' object has no attribute 'urlopen'
+PASS GET init route removed {"error": "not found"}
+PASS POST init without token -> 401 
+PASS POST init -> authorize_url {"authorize_url": "http://127.0.0.1:57343/oauth/authorize?client_id=tricoach-dev&redirect_uri=http:%2F%2Flocalhost:8766%
+PASS scope has no duplicate areas ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE
+PASS authorize accepted (302) 
+PASS callback -> 302 /?connected=1 
+PASS status connected as athlete {"connected": true, "status": "connected", "scope": "ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE", "athlete": {"id": "i12345", "name": "C. Okafor"}}
+PASS wellness proxied [{"day": "2026-11-07", "weight": 70.1}]
+PASS tampered state -> 400 
+Traceback (most recent call last):
+  File "/private/tmp/h-hszrJe/.e2e_check.py", line 204, in <module>
+    main()
+    ~~~~^^
+  File "/private/tmp/h-hszrJe/.e2e_check.py", line 162, in main
+    cb2 = urllib.parse.urlsplit(hdrs["Location"])
+                                ~~~~^^^^^^^^^^^^
+KeyError: 'Location'
+PASS GET init route removed {"error": "not found"}
+PASS POST init without token -> 401 
+PASS POST init -> authorize_url {"authorize_url": "http://127.0.0.1:57415/oauth/authorize?client_id=tricoach-dev&redirect_uri=http:%2F%2Flocalhost:8766%
+PASS scope has no duplicate areas ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE
+PASS authorize accepted (302) 
+PASS callback -> 302 /?connected=1 
+PASS status connected as athlete {"connected": true, "status": "connected", "scope": "ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE", "athlete": {"id": "i12345", "name": "C. Okafor"}}
+PASS wellness proxied [{"day": "2026-11-07", "weight": 70.1}]
+PASS tampered state -> 400 
+PASS rivera connected 
+PASS revoked token -> 409 reconnect {"error": "intervals access revoked, please reconnect"}
+PASS binding cleared after 401 {"connected": false, "status": "disconnected"}
+PASS reconnect works {"connected": true, "status": "connected", "scope": "ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE", "athlete": {"id": "i98765", "name": "T. Rivera"}}
+Traceback (most recent call last):
+  File "/private/tmp/h-hszrJe/.e2e_check.py", line 204, in <module>
+    main()
+    ~~~~^^
+  File "/private/tmp/h-hszrJe/.e2e_check.py", line 188, in main
+    conn = dict(server.CONNECTIONS["u_okafor"])
+                ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^
+KeyError: 'u_okafor'
+PASS GET init route removed {"error": "not found"}
+PASS POST init without token -> 401 
+PASS POST init -> authorize_url {"authorize_url": "http://127.0.0.1:57571/oauth/authorize?client_id=tricoach-dev&redirect_uri=http:%2F%2Flocalhost:8766%
+PASS scope has no duplicate areas ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE
+PASS authorize accepted (302) 
+PASS callback -> 302 /?connected=1 
+PASS status connected as athlete {"connected": true, "status": "connected", "scope": "ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE", "athlete": {"id": "i12345", "name": "C. Okafor"}}
+PASS wellness proxied [{"day": "2026-11-07", "weight": 70.1}]
+PASS tampered state -> 400 
+PASS rivera connected 
+PASS revoked token -> 409 reconnect {"error": "intervals access revoked, please reconnect"}
+PASS binding cleared after 401 {"connected": false, "status": "disconnected"}
+PASS reconnect works {"connected": true, "status": "connected", "scope": "ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE", "athlete": {"id": "i98765", "name": "T. Rivera"}}
+PASS no expiry/refresh machinery 
+
+server log tail:
+2026-11-07 22:01:32 [http] "GET /api/intervals/wellness HTTP/1.1" 409 -
+2026-11-07 22:01:32 [http] "GET /api/intervals/status HTTP/1.1" 200 -
+2026-11-07 22:01:32 [http] "POST /api/intervals/auth/init HTTP/1.1" 200 -
+2026-11-07 22:01:32 [intervals] u_rivera: connected as athlete i98765
+2026-11-07 22:01:32 [http] "GET /api/intervals/callback?code=code-rivera2&state=dV9yaXZlcmE6MTc5NDA5OTY5Mjo4ZDlhZjNhZWExOTE1OGJkNGFlNDY0OTYzYzE1OGNjMg%3D%3D HTTP/1.1" 302 -
+2026-11-07 22:01:32 [http] "GET /api/intervals/status HTTP/1.1" 200 -
+ALL CHECKS PASSED
+<!doctype html>
+<html lang="en">
+<head>
+---
+7:  const headers = Object.assign({ "Authorization": "Bearer " + TOKEN }, opts.headers || {});
+8:  const res = await fetch(path, Object.assign({}, opts, { headers }));
+21:    if (st.connected) {
+24:        <p><button class="btn" id="disconnect">Disconnect</button></p></div>`;
+26:      const why = st.status && st.status !== "disconnected" ? `<p class="muted">Status: ${esc(st.status)}</p>` : "";
+27:      card = `<div class="card">Intervals.icu is not connected.${why}
+28:        <p><button class="btn" id="connect">Connect Intervals.icu</button></p></div>`;
+34:    const c = document.getElementById("connect");
+/opt/homebrew/bin/node
+/bin/bash: line 4: 62478 Terminated: 15          cd '/private/tmp/h-hszrJe' && python3 server.py > /tmp/tricoach-check.log 2>&1
+app.js syntax OK
+ M config.py
+ M server.py
+ M static/app.js
+?? __pycache__/
+ M config.py
+ M server.py
+ M static/app.js
+ M config.py
+ M server.py
+ M static/app.js
+?? ANSWER.md
+no stale references

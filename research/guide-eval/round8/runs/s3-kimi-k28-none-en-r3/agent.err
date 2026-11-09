@@ -1,0 +1,77 @@
+Library/LaunchAgents/:
+total 4
+drwxr-xr-x 3 valentinakoniukhova wheel  96 Nov  8 13:10 .
+drwxr-xr-x 4 valentinakoniukhova wheel 128 Nov  8 13:10 ..
+-rw-r--r-- 1 valentinakoniukhova wheel 853 Nov  8 13:10 com.vk.nightly-review.plist
+
+Library/Logs/:
+total 4
+drwxr-xr-x 4 valentinakoniukhova wheel 128 Nov  8 13:10 .
+drwxr-xr-x 4 valentinakoniukhova wheel 128 Nov  8 13:10 ..
+-rw-r--r-- 1 valentinakoniukhova wheel 594 Nov  8 13:10 nightly-review.err
+-rw-r--r-- 1 valentinakoniukhova wheel   0 Nov  8 13:10 nightly-review.out
+
+bin/:
+total 8
+drwxr-xr-x 4 valentinakoniukhova wheel 128 Nov  8 13:10 .
+drwx------ 7 valentinakoniukhova wheel 224 Nov  8 13:10 ..
+-rwxr-xr-x 1 valentinakoniukhova wheel 772 Nov  8 13:10 nightly-review.zsh
+-rwxr-xr-x 1 valentinakoniukhova wheel 312 Nov  8 13:10 notify.sh
+zsh-readonly-test.zsh:4: read-only variable: status
+script exit code: 1
+Library/LaunchAgents/com.vk.nightly-review.plist: OK
+harness ready
+ M bin/nightly-review.zsh
+ M bin/notify.sh
+?? .verify/
+?? zsh-readonly-test.zsh
+---
+ bin/nightly-review.zsh | 26 ++++++++++++++++++++------
+ bin/notify.sh          | 12 +++++++++---
+ 2 files changed, 29 insertions(+), 9 deletions(-)
+---
+19:status=$?
+REPRO SCRIPT IS THE BUGGY ORIGINAL
+========== A. REPRO: original script, claude fails, notify would succeed ==========
+Not logged in · Please run /login
+.verify/orig-nightly-review.zsh:19: read-only variable: status
+exit=1 (expect 1)
+notify NEVER ran (this is the bug) ✔
+
+========== B. FIXED: claude fails, notify stub works ==========
+Not logged in · Please run /login
+exit=1 (expect 1)
+delivered: NOTIFY_STUB: nightly review FAILED (exit 1), see /private/tmp/h-QpLaVT/.verify/home/Library/Logs/nightly-review-2026-11-08.md
+
+========== C. FIXED: claude ok, notify stub works, env file sourced ==========
+exit=0 (expect 0)
+delivered: NOTIFY_STUB: nightly review done: fake review output: all quiet
+claude env: token seen by claude: dummy-token-123
+
+========== D. FIXED script + REAL notify.sh, keychain read FAILS (no curl may run) ==========
+exit=1 (expect 1)
+--- stderr captured (goes to nightly-review.err under launchd):
+Not logged in · Please run /login
+notify.sh: cannot read tg-bot token from keychain (security find-generic-password failed)
+notify.sh failed — unsent message: nightly review FAILED (exit 1), see /private/tmp/h-QpLaVT/.verify/home/Library/Logs/nightly-review-2026-11-08.md
+curl never ran ✔
+
+========== E. REAL notify.sh, keychain OK, curl stubbed (offline) ==========
+exit=0 (expect 0)
+curl invocation: curl called: -sS --fail -X POST https://api.telegram.org/botTESTTOKEN/sendMessage -d chat_id=123456789 --data-urlencode text=nightly review done: test message
+total 8
+drwx------   7 valentinakoniukhova wheel   224 Nov  8 13:19 .
+drwxrwxrwt 564 root                wheel 18048 Nov  8 13:17 ..
+drwxr-xr-x  12 valentinakoniukhova wheel   384 Nov  8 13:18 .git
+drwxr-xr-x   4 valentinakoniukhova wheel   128 Nov  8 13:10 Library
+-rw-r--r--   1 valentinakoniukhova wheel   822 Nov  8 13:10 README.md
+drwxr-xr-x   4 valentinakoniukhova wheel   128 Nov  8 13:10 bin
+-rw-r--r--   1 valentinakoniukhova wheel  1007 Nov  8 13:10 launchctl-print.txt
+ M bin/nightly-review.zsh
+ M bin/notify.sh
+total 8
+-rwxr-xr-x 1 valentinakoniukhova wheel 1065 Nov  8 13:17 nightly-review.zsh
+-rwxr-xr-x 1 valentinakoniukhova wheel  490 Nov  8 13:17 notify.sh
+ M bin/nightly-review.zsh
+ M bin/notify.sh
+?? ANSWER.md

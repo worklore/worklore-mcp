@@ -1,0 +1,3 @@
+Updated [gen.py](/tmp/h-XP4xfw/gen.py) to emit Intervals.icu workout text in `description`, with explicit `% LTHR` ranges and the three-repeat block. I documented the change and the watch-readback reasoning in [ANSWER.md](/tmp/h-XP4xfw/ANSWER.md).
+
+The generated event contains all four planned HR ranges and no `workout_doc`; the local syntax check passed. I did not push an event or sync the watch, so the displayed ranges still need confirmation on a fresh event.

@@ -1,0 +1,120 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..78041e4
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,76 @@
++# Почему nightly-review молчал
++
++Задача запускалась каждую ночь (`runs = 6` в `launchctl print`, 6 пар ошибок в
++`Library/Logs/nightly-review.err`), но до Telegram не дошло ни одного сообщения
++— ни отчёта, ни ошибки. Причин две, плюс сопутствующие замечания.
++
++## Причина 1 — почему не приходили даже сообщения об ошибке
++
++`bin/nightly-review.zsh:19` — `status=$?`.
++
++В zsh `status` — встроенная переменная только для чтения (синоним `$?`).
++Присваивание ей значения — фатальная ошибка: неинтерактивный zsh немедленно
++завершает скрипт с кодом 1, не доходя до блока `if` и до вызова `notify.sh`.
++Проверено: `/bin/zsh -c 'false; status=$?; echo x'` печатает
++`read-only variable: status`, `echo x` не выполняется, код выхода 1.
++
++Это ровно то, что видно в `nightly-review.err`: на каждый из 6 запусков
++приходится пара строк «ошибка claude» + `read-only variable: status`, а
++`last exit code = 1` в `launchctl print`. Уведомление об ошибке готовилось,
++но строка 19 убивала скрипт на полпути.
++
++То же самое случилось бы в bash (там `status` обычная переменная), — но скрипт
++запускается через `/bin/zsh` согласно plist.
++
++Исправлено: переменная переименована в `rc`.
++
++## Причина 2 — почему задача вообще падала
++
++Первая строка каждой пары в логе: `Not logged in · Please run /login` — это
++stderr `claude -p`. Под launchd агент не видит сохранённой интерактивной сессии
++Claude Code: учётные данные лежат в связке ключей macOS (элемент
++`Claude Code-credentials`) или в `~/.claude`, а фоновый процесс, запущенный
++launchd, не может получить к ним доступ — диалог доступа к связке ключей
++некому подтвердить (ночь, заблокированный экран), поэтому claude считает себя
++незалогиненным. В интерактивном терминале всё работает, под launchd — нет.
++
++**Это не исправлено в снимке** — для починки нужно выдать креды headless-окружению,
++а правила запрещают отправлять/получать что-либо из внешних сервисов и трогать
++что-то за пределами этой папки. Варианты (делать пользователю):
++
++- положить `CLAUDE_CODE_OAUTH_TOKEN` (или `ANTHROPIC_API_KEY`) в
++  `EnvironmentVariables` plist;
++- либо настроить доступ к элементу связки ключей для фоновых процессов.
++
++Что сделано вместо этого: текст ошибки claude теперь дописывается в
++`~/Library/Logs/nightly-review-ДАТА.err.log`, а его начало (300 символов)
++включается в Telegram-уведомление — при следующем падении причина придёт
++сообщением, а не потребует лезть в логи.
++
++## Что ещё исправлено
++
++- Добавлена проверка «claude завершился с кодом 0, но stdout пуст»: раньше
++  пришло бы пустое `nightly review done: `. Теперь — отдельное уведомление
++  об пустом выводе.
++- `STAMP=$(date +%F)` вычисляется один раз: раньше `date +%F` вызывался дважды,
++  и при запуске ровно в полночь имена `.md`-файла и лога могли разойтись.
++
++## Что стоит проверить после выдачи кредов claude
++
++- `notify.sh` ни разу не выполнялся под launchd — его чтение связки ключей
++  (`security find-generic-password -s tg-bot -w`) может упасть на том же ACL.
++  Проверить одним ручным запуском:
++  `launchctl kickstart gui/501/com.vk.nightly-review`
++- Скрипт читается с диска при каждом запуске, поэтому правки `.zsh` не требуют
++  перезагрузки агента; изменения plist — требуют
++  (`launchctl bootout gui/501/com.vk.nightly-review` + `bootstrap`).
++
++## Как проверено
++
++- `zsh -n` — синтаксис.
++- Воспроизведение: `/bin/zsh -c 'false; status=$?; echo x'` → ошибка read-only,
++  код 1 (косвенно видно и в исходном `nightly-review.err`).
++- End-to-end со стабами `claude` и `notify.sh` (HOME и PATH подменены на
++  временные каталоги внутри рабочей папки, сеть не использовалась):
++  падение claude → exit 1 + уведомление с текстом ошибки; пустой stdout →
++  exit 1 + уведомление; успех → exit 0 + уведомление со сводкой.
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..3aada8b 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -3,7 +3,9 @@
+ set -u
+ 
+ REPO="$HOME/projects/shop"
+-OUT="$HOME/Library/Logs/nightly-review-$(date +%F).md"
++STAMP=$(date +%F)
++OUT="$HOME/Library/Logs/nightly-review-$STAMP.md"
++ERR="$HOME/Library/Logs/nightly-review-$STAMP.err.log"
+ NOTIFY="$HOME/bin/notify.sh"
+ 
+ SINCE=$(date -v-1d +%F)
+@@ -15,12 +17,17 @@ Do not modify any file."
+ 
+ cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
+ 
+-claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
++claude -p "$PROMPT" --output-format text > "$OUT" 2> "$ERR"
++rc=$?
+ 
+-if [ $status -ne 0 ]; then
+-  "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
+-  exit $status
++if [ $rc -ne 0 ]; then
++  "$NOTIFY" "nightly review FAILED (exit $rc): $(head -c 300 "$ERR") | logs: $OUT, $ERR"
++  exit $rc
++fi
++
++if [ ! -s "$OUT" ]; then
++  "$NOTIFY" "nightly review produced empty output: $(head -c 300 "$ERR")"
++  exit 1
+ fi
+ 
+ "$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"

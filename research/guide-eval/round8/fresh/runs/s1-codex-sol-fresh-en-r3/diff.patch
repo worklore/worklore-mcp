@@ -1,0 +1,77 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..6073652
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,7 @@
++# HR range export fix
++
++Changed `gen.py` so each planned HR corridor is emitted as `hr: {"units": "%lthr", "start": lower, "end": upper}`. The previous `value`/`end` pair did not encode the lower bound as a range. The October 2026 watch readback showed zone-sized targets even though the API returned that payload unchanged; API acceptance alone did not prove the Garmin export preserved the corridor.
++
++The event now also includes an Intervals workout `description` matching the structured steps, including repeats, percentage-of-LTHR ranges, and `hr=1s` for instant HR targets. This gives Intervals' workout parser and device export an explicit text representation. Its [workout schema](https://forum.intervals.icu/t/downloading-planned-workouts-from-the-api/93737) defines `start` and `end` for ranges; its [Garmin guidance](https://forum.intervals.icu/t/power-and-hr-targets-for-garmin-workouts/2926) specifies `hr=1s` for watches. An [API-created workout investigation](https://forum.intervals.icu/t/events-created-via-api-with-workout-doc-the-web-download-produces-an-empty-fit-while-the-api-download-does-not-which-representation-feeds-device-sync/132326) found that `workout_doc` could read back intact while the web/device export lost the steps, and that including `description` resolved that export path.
++
++Verified locally with `plans/tempo-run.json`: every structured HR target has `start`/`end` and the description contains all four planned corridors plus the 3x repeat. No event was posted or synced, so the final bpm display on the watch remains unverified. With Intervals LTHR 172, the planned corridors correspond approximately to warm-up 117–129, tempo 151–160, float 129–141, and cool-down 112–124 bpm.
+diff --git a/README.md b/README.md
+index 31b0941..03103ff 100644
+--- a/README.md
++++ b/README.md
+@@ -4,13 +4,15 @@ Generates structured triathlon workouts and pushes them to Intervals.icu, which
+ exports them to the athlete's Garmin watch through Garmin Connect.
+ 
+ - `gen.py` turns a plan (`plans/*.json`) into the body for
+-  `POST /api/v1/athlete/{id}/events` (an event with `workout_doc`).
++  `POST /api/v1/athlete/{id}/events` (an event with matching `description`
++  and `workout_doc` workout steps).
+ - `push.sh` posts it (needs `INTERVALS_API_KEY` and `ATHLETE_ID`).
+ - `readback/` holds what the API returned for the last pushed event and
+   notes on what the watch displayed.
+ 
+ Athlete thresholds live in Intervals (LTHR 172 for this athlete). HR targets
+-in plans are percentages of LTHR; Intervals converts them to bpm at export.
++in plans are percentage ranges of LTHR; Intervals converts them to bpm at
++export. The generated description requests instant HR targets for the watch.
+ 
+ ```
+ python3 gen.py plans/tempo-run.json > event.json
+diff --git a/gen.py b/gen.py
+index be0b3bc..0fa83ae 100755
+--- a/gen.py
++++ b/gen.py
+@@ -10,7 +10,28 @@ import sys
+ def hr_target(step):
+     """HR corridor for a step, as a percentage of the athlete's LTHR."""
+     lo, hi = step["hr_pct"]
+-    return {"units": "%lthr", "value": lo, "end": hi}
++    return {"units": "%lthr", "start": lo, "end": hi}
++
++
++def description_step(step):
++    """Emit Intervals' workout text so its exporter parses the same HR range."""
++    parts = ["-", step.get("label", ""), f'{step["minutes"]}m']
++    if "hr_pct" in step:
++        lo, hi = step["hr_pct"]
++        parts.extend((f"{lo}-{hi}% LTHR", "hr=1s"))
++    return " ".join(part for part in parts if part)
++
++
++def build_description(plan):
++    blocks = []
++    for block in plan["steps"]:
++        if "repeat" in block:
++            blocks.append("\n".join([f'{block["repeat"]}x'] + [
++                description_step(step) for step in block["steps"]
++            ]))
++        else:
++            blocks.append(description_step(block))
++    return "\n\n".join(blocks)
+ 
+ 
+ def build_step(step):
+@@ -41,6 +62,7 @@ def build_event(plan):
+         "type": plan["sport"],
+         "name": plan["name"],
+         "start_date_local": plan["date"] + "T00:00:00",
++        "description": build_description(plan),
+         "workout_doc": build_doc(plan),
+     }
+ 

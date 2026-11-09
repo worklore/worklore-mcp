@@ -1,0 +1,59 @@
+cb6fb7d base
+ README.md                          | 18 +++++++++++++
+ gen.py                             | 52 ++++++++++++++++++++++++++++++++++++++
+ plans/tempo-run.json               | 13 ++++++++++
+ push.sh                            |  6 +++++
+ readback/event-184233-as-sent.json | 51 +++++++++++++++++++++++++++++++++++++
+ readback/watch-notes.md            | 21 +++++++++++++++
+ 6 files changed, 161 insertions(+)
+{
+  "category": "WORKOUT",
+  "type": "Run",
+  "name": "Tempo run 45",
+  "start_date_local": "2026-10-20T00:00:00",
+  "workout_doc": {
+    "steps": [
+      {
+        "duration": 600,
+        "hr": {
+          "units": "%lthr",
+          "start": 68,
+          "end": 75
+        },
+        "text": "Warm-up easy"
+      },
+      {
+        "reps": 3,
+        "steps": [
+          {
+            "duration": 480,
+            "hr": {
+              "units": "%lthr",
+              "start": 88,
+              "end": 93
+            },
+            "text": "Tempo"
+          },
+          {
+            "duration": 120,
+            "hr": {
+              "units": "%lthr",
+              "start": 75,
+              "end": 82
+            },
+            "text": "Float"
+          }
+        ]
+      },
+      {
+        "duration": 300,
+        "hr": {
+          "units": "%lthr",
+          "start": 65,
+          "end": 72
+        },
+        "text": "Cool-down"
+      }
+    ]
+  }
+}

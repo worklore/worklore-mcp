@@ -1,0 +1,38 @@
+t.zsh:4: read-only variable: status
+exit=1
+0f18264 base
+=== A) ORIGINAL script + failing claude (expect: notify NEVER called) ===
+date: invalid option -- 'v'
+Try 'date --help' for more information.
+Not logged in · Please run /login
+.test/orig.zsh:18: read-only variable: status
+original exit=1 ; notify log:
+(notify never ran)
+=== B) FIXED script + failing claude, no token (expect FAILED note) ===
+Not logged in · Please run /login
+exit=1
+NOTIFY: nightly review FAILED (exit 1), see /private/tmp/h-GC8A9z/.test/home/Library/Logs/nightly-review-2026-11-07.md
+
+=== C) FIXED script + token env file + claude succeeds (expect done note) ===
+still not logged in
+exit=1
+NOTIFY: nightly review FAILED (exit 1), see /private/tmp/h-GC8A9z/.test/home/Library/Logs/nightly-review-2026-11-07.md
+
+=== D) output files produced ===
+nightly-review-2026-11-07.md
+=== C2) FIXED script + exported token env file + claude succeeds ===
+exit=0
+NOTIFY: nightly review done: - abc123: tweak checkout flow, touches payments — check idempotency
+- def456: remove stale test — safe
+Summary: two commits, one payment-adjacent change worth a look.
+--- report content:
+- abc123: tweak checkout flow, touches payments — check idempotency
+- def456: remove stale test — safe
+Summary: two commits, one payment-adjacent change worth a look.
+
+=== E) notify.sh hardening: unreadable keychain item says why ===
+security: SecKeychainSearchCopyNext: The specified item could not be found in the keychain.
+notify.sh: could not read the tg-bot item from the keychain
+exit=1
+ M bin/nightly-review.zsh
+ M bin/notify.sh

@@ -1,0 +1,78 @@
+COMPILE-OK
+2026-11-08 18:26:01 [http] POST /api/intervals/auth/init 401 (no Authorization header)
+2026-11-08 18:26:01 [http] "POST /api/intervals/auth/init HTTP/1.1" 401 -
+PASS POST init w/o token -> 401
+2026-11-08 18:26:01 [http] "GET /api/intervals/auth/init HTTP/1.1" 404 -
+PASS GET init no longer routed -> 404
+2026-11-08 18:26:01 [http] "POST /api/intervals/auth/init HTTP/1.1" 200 -
+PASS POST init w/ token -> 200 JSON
+PASS scope has each area at most once
+PASS state ties to user
+2026-11-08 18:26:01 [http] "GET /oauth/authorize?client_id=tricoach-dev&redirect_uri=http:%2F%2Flocalhost:8766%2Fapi%2Fintervals%2Fcallback&scope=ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE&state=dV9va2Fmb3I6MTc5NDE3MzE2MTppbnRlcnZhbHNfb2F1dGg6YzlmMjZhNDE3YzQ0NWViMjk4MmNjN2QzN2I5N2E3YmM%3D HTTP/1.1" 404 -
+Traceback (most recent call last):
+  File "<stdin>", line 78, in <module>
+  File "<stdin>", line 60, in check
+AssertionError: FAIL: mock authorize accepts URL -> 302
+2026-11-08 18:26:39 [http] POST /api/intervals/auth/init 401 (no Authorization header)
+2026-11-08 18:26:39 [http] "POST /api/intervals/auth/init HTTP/1.1" 401 -
+PASS POST init w/o token -> 401
+2026-11-08 18:26:39 [http] "GET /api/intervals/auth/init HTTP/1.1" 404 -
+PASS GET init no longer routed -> 404
+2026-11-08 18:26:39 [http] "POST /api/intervals/auth/init HTTP/1.1" 200 -
+PASS POST init w/ token -> 200 JSON
+PASS scope has each area at most once
+PASS state ties to user
+2026-11-08 18:26:39 [intervals] u_okafor: connected as athlete i98765
+2026-11-08 18:26:39 [http] "GET /api/intervals/callback?code=code-live&state=dV9va2Fmb3I6MTc5NDE3MzE5OTppbnRlcnZhbHNfb2F1dGg6N2QwOTZmNDljNzNhY2RmZmJjYzA5OWM4MGQ0YTMwYjY%3D HTTP/1.1" 302 -
+2026-11-08 18:26:39 [http] "GET /?connected=1 HTTP/1.1" 200 -
+Traceback (most recent call last):
+  File "<stdin>", line 79, in <module>
+  File "<stdin>", line 61, in check
+AssertionError: FAIL: mock authorize accepts URL -> 302
+2026-11-08 18:27:25 [http] POST /api/intervals/auth/init 401 (no Authorization header)
+2026-11-08 18:27:25 [http] "POST /api/intervals/auth/init HTTP/1.1" 401 -
+PASS POST init w/o token -> 401
+2026-11-08 18:27:25 [http] "GET /api/intervals/auth/init HTTP/1.1" 404 -
+PASS GET init no longer routed -> 404
+2026-11-08 18:27:25 [http] "POST /api/intervals/auth/init HTTP/1.1" 200 -
+PASS POST init w/ token -> 200 JSON
+PASS scope has each area at most once
+PASS state ties to user
+PASS mock authorize accepts URL -> 302
+PASS mock issued code+state
+2026-11-08 18:27:25 [intervals] u_okafor: connected as athlete i98765
+2026-11-08 18:27:25 [http] "GET /api/intervals/callback?code=code-live&state=dV9va2Fmb3I6MTc5NDE3MzI0NTppbnRlcnZhbHNfb2F1dGg6YWVmYjFmMDk3Mzg2OTdmNzBhNjcxM2NlNzc4MjAzNzQ%3D HTTP/1.1" 302 -
+PASS callback -> 302 to /?connected=1
+2026-11-08 18:27:25 [http] "GET /api/intervals/status HTTP/1.1" 200 -
+PASS status connected as i98765
+2026-11-08 18:27:25 [http] "GET /api/intervals/wellness HTTP/1.1" 200 -
+PASS wellness proxy 200
+PASS no expires_at / refresh_token stored
+PASS still connected after wait (no refresher pass)
+2026-11-08 18:27:26 [http] "POST /api/intervals/auth/init HTTP/1.1" 200 -
+2026-11-08 18:27:26 [intervals] u_rivera: connected as athlete i-dead
+2026-11-08 18:27:26 [http] "GET /api/intervals/callback?code=code-dead&state=dV9yaXZlcmE6MTc5NDE3MzI0NjppbnRlcnZhbHNfb2F1dGg6NWQ4NjM4Mzc3YWIxNDkyNDQwZjlhZTQzNGE4MDcwNDg%3D HTTP/1.1" 302 -
+PASS rivera callback -> 302
+2026-11-08 18:27:26 [intervals] u_rivera: intervals token rejected (401) -> marked for reconnect
+2026-11-08 18:27:26 [http] "GET /api/intervals/wellness HTTP/1.1" 409 -
+PASS wellness on revoked token -> 409
+2026-11-08 18:27:26 [http] "GET /api/intervals/status HTTP/1.1" 200 -
+PASS rivera status 'reconnect', token cleared
+2026-11-08 18:27:26 [intervals] u_okafor: account mismatch (callback athlete i-dead, stored i98765)
+2026-11-08 18:27:26 [http] "GET /api/intervals/callback?code=code-dead&state=dV9va2Fmb3I6MTc5NDE3MzI0NjppbnRlcnZhbHNfb2F1dGg6ZGQ3ZjE3YTQwMzExMGY4ODAzMDI1NjU2ZDcxNzJhOTU%3D HTTP/1.1" 409 -
+PASS reconnect with different athlete -> 409, old connection intact
+2026-11-08 18:27:26 [http] "GET /api/intervals/callback?code=x&state=garbage HTTP/1.1" 400 -
+PASS bad state -> 400
+PASS old-format state (no purpose) rejected
+2026-11-08 18:27:26 [http] "POST /api/intervals/disconnect HTTP/1.1" 200 -
+PASS disconnect works
+ALL 19 CHECKS PASSED
+{"id": "u_okafor", "name": "C. Okafor"}
+
+GET / -> 200
+2026-11-08 18:27:34 [intervals] serving on http://localhost:8766 (intervals: https://intervals.icu)
+2026-11-08 18:27:35 [http] "GET /api/me HTTP/1.1" 200 -
+2026-11-08 18:27:35 [http] "GET / HTTP/1.1" 200 -
+ M config.py
+ M server.py
+ M static/app.js

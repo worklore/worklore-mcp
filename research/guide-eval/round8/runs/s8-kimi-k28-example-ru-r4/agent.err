@@ -1,0 +1,26 @@
+2d7db1c base
+OK  static block: 2486 chars, volatile tail: 305 chars, hash stable across save_fact: True
+ M bot.py
+diff --git a/bot.py b/bot.py
+index e2ff241..a0c612a 100644
+--- a/bot.py
++++ b/bot.py
+@@ -128,9 +128,13 @@ def athlete_context(a, today):
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    # Two cached segments: the static instructions first, the volatile
++    # per-athlete tail second. A save_fact rewrites only the tail, so the
++    # static prefix stays in the prompt cache instead of being re-created.
++    return [
++        {"type": "text", "text": INSTRUCTIONS + "\n\n", "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": athlete_context(a, today), "cache_control": {"type": "ephemeral"}},
++    ]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [
+ M bot.py
+?? ANSWER.md

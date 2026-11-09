@@ -1,0 +1,151 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..dac6020
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,87 @@
++# Why the nightly job never reported anything
++
++## Cause 1 — the failure path crashed before it could notify (the direct cause of the silence)
++
++`bin/nightly-review.zsh:19` was:
++
++```zsh
++status=$?
++```
++
++`status` is a **reserved read-only special variable in zsh** (it mirrors `$?`).
++Assigning to it is a fatal error in a non-interactive zsh script, so every run
++aborted at line 19 — *before* reaching the `if [ $status -ne 0 ]` block that
++calls `notify.sh`. The job ran, claude failed, the script died, no Telegram
++message was ever sent: no summaries, no failure notes.
++
++Evidence:
++
++- `Library/Logs/nightly-review.err` pairs claude's error with
++  `/Users/vk/bin/nightly-review.zsh:19: read-only variable: status` on every
++  one of the 6 runs — and nothing from the script appears after that line.
++- `launchctl print` shows `runs = 6`, `last exit code = 1` — six nights, all
++  failed the same way.
++- Reproduced locally with stubbed `claude`/`notify.sh`: the unmodified script
++  exits 1 and `notify.sh` is never invoked.
++
++## Cause 2 — claude itself never worked under launchd
++
++Every run's stderr begins with `Not logged in · Please run /login`: the CLI
++found no usable credentials in the launchd context (the login from the
++interactive shell doesn't carry over). So even with Cause 1 fixed, the job
++would only ever have sent failure notes, not summaries. Cause 1 is exactly why
++you never saw those notes and couldn't tell.
++
++This can't be remediated from the snapshot (no credential material here, and
++authenticating involves external calls). The fixed script now puts the reason
++in the failure message, e.g. `nightly review FAILED (exit 1): Not logged in ·
++Please run /login`, so the remaining step is self-announcing each night until
++you do it (see "Remaining action" below).
++
++## Cause 3 — latent silencers in the notifier (hardened)
++
++`bin/notify.sh` could also fail without a trace:
++
++- `set -eu` meant a failed `security find-generic-password` or `curl` killed it
++  silently. Under launchd the keychain item may also be gated by an ACL that
++  covers your terminal but not the launchd job — the same class of problem as
++  Cause 2, and the reason "works when run by hand" doesn't transfer.
++- `curl` had no `--fail`, so an HTTP error from Telegram looked like success.
++
++## Fixes applied
++
++`bin/nightly-review.zsh`
++- Capture claude's exit code in `rc` instead of the read-only `status` — the
++  failure branch now runs and notifies.
++- Merge claude's stderr into the per-day run log (`> "$OUT" 2>&1`) so the log
++  is self-contained and the failure message contains the actual error instead
++  of pointing at a file on the Mac.
++- If `notify.sh` itself fails, log a trace to stderr (launchd writes it to
++  `nightly-review.err`) and exit non-zero so `launchctl print` shows it.
++
++`bin/notify.sh`
++- Explicit, loud error if the `tg-bot` keychain item can't be read.
++- `curl --fail` and a loud error if the Telegram API request fails.
++
++Not causes: the schedule fired fine (6 runs for 6 nights), PATH was fine
++(claude did execute), and the plist's log paths work — the evidence is in them.
++
++## Verification
++
++Harness with stubbed `claude` and notifier, no external calls:
++- claude fails → exit 1, notifier receives `nightly review FAILED (exit 1):
++  Not logged in · Please run /login` (the message production never sent).
++- claude succeeds → exit 0, notifier receives `nightly review done: …`.
++- notifier fails → script exits 1 and leaves `nightly-review: notify.sh
++  failed` on stderr.
++- `notify.sh` with unreadable keychain item → exit 1 with a clear stderr
++  message.
++- `zsh -n` / `bash -n` pass on both scripts. End-to-end with the real claude
++  and Telegram was not run, as the ground rules exclude external calls.
++
++## Remaining action (on the real machine, outside this snapshot)
++
++Make claude's credentials usable by the launchd job — how depends on where the
++installed claude stores them (keychain item ACL must allow the launchd context,
++or supply a token to the job). Until then you'll at least get a nightly
++failure note stating the reason.
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..5f0e1f7 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -13,14 +13,21 @@ For each commit: one line on what it changes and whether anything looks risky
+ End with a three-line summary I can read on my phone.
+ Do not modify any file."
+ 
+-cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
++notify() {
++  # Never let a Telegram outage turn into silent failure: if notify.sh exits
++  # non-zero, leave a trace on stderr (which launchd writes to the err log)
++  # and propagate the failure as the job's exit code.
++  "$NOTIFY" "$1" || { echo "nightly-review: notify.sh failed (exit $?)" >&2; return 1; }
++}
+ 
+-claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
++cd "$REPO" || { notify "nightly review: repo missing"; exit 1; }
+ 
+-if [ $status -ne 0 ]; then
+-  "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
+-  exit $status
++claude -p "$PROMPT" --output-format text > "$OUT" 2>&1
++rc=$?
++
++if [ $rc -ne 0 ]; then
++  notify "nightly review FAILED (exit $rc): $(head -c 300 "$OUT")"
++  exit $rc
+ fi
+ 
+-"$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"
++notify "nightly review done: $(head -c 300 "$OUT")"
+diff --git a/bin/notify.sh b/bin/notify.sh
+index 818e531..197f893 100755
+--- a/bin/notify.sh
++++ b/bin/notify.sh
+@@ -1,7 +1,16 @@
+ #!/bin/bash
+ # usage: notify.sh "message"  — sends a Telegram message to me.
+-set -eu
+-: "${TG_BOT_TOKEN:=$(security find-generic-password -s tg-bot -w)}"
++set -u
++
++if [ -z "${TG_BOT_TOKEN:-}" ]; then
++  if ! TG_BOT_TOKEN=$(security find-generic-password -s tg-bot -w 2>/dev/null); then
++    echo "notify.sh: cannot read keychain item 'tg-bot'" >&2
++    exit 1
++  fi
++fi
+ CHAT_ID=123456789
+-curl -sS -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
+-  -d chat_id="$CHAT_ID" --data-urlencode text="$1" > /dev/null
++curl -sS --fail -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
++  -d chat_id="$CHAT_ID" --data-urlencode text="$1" > /dev/null || {
++  echo "notify.sh: telegram API request failed (exit $?)" >&2
++  exit 1
++}

@@ -1,0 +1,93 @@
+Library/LaunchAgents/:
+total 4
+drwxr-xr-x 3 valentinakoniukhova wheel  96 Nov  8 22:36 .
+drwxr-xr-x 4 valentinakoniukhova wheel 128 Nov  8 22:36 ..
+-rw-r--r-- 1 valentinakoniukhova wheel 853 Nov  8 22:36 com.vk.nightly-review.plist
+
+Library/Logs/:
+total 4
+drwxr-xr-x 4 valentinakoniukhova wheel 128 Nov  8 22:36 .
+drwxr-xr-x 4 valentinakoniukhova wheel 128 Nov  8 22:36 ..
+-rw-r--r-- 1 valentinakoniukhova wheel 594 Nov  8 22:36 nightly-review.err
+-rw-r--r-- 1 valentinakoniukhova wheel   0 Nov  8 22:36 nightly-review.out
+
+bin/:
+total 8
+drwxr-xr-x 4 valentinakoniukhova wheel 128 Nov  8 22:36 .
+drwx------ 7 valentinakoniukhova wheel 224 Nov  8 22:36 ..
+-rwxr-xr-x 1 valentinakoniukhova wheel 772 Nov  8 22:36 nightly-review.zsh
+-rwxr-xr-x 1 valentinakoniukhova wheel 312 Nov  8 22:36 notify.sh
+b15c74f base
+---
+./Library/LaunchAgents/com.vk.nightly-review.plist
+./Library/Logs/nightly-review.err
+./Library/Logs/nightly-review.out
+./README.md
+./bin/nightly-review.zsh
+./bin/notify.sh
+./launchctl-print.txt
+zsh:1: read-only variable: status
+exit=1
+date: invalid option -- 'v'
+Try 'date --help' for more information.
+Not logged in · Please run /login
+tmp-test/home/bin/nightly-review.zsh:19: read-only variable: status
+script exit=1
+--- notify.log:
+(empty — notify.sh was never called)
+zsh syntax OK
+bash syntax OK
+total 8
+-rwxr-xr-x 1 valentinakoniukhova wheel 1007 Nov  8 22:42 nightly-review.zsh
+-rwxr-xr-x 1 valentinakoniukhova wheel  530 Nov  8 22:42 notify.sh
+ bin/nightly-review.zsh | 20 +++++++++++++-------
+ bin/notify.sh          | 17 +++++++++++++----
+ 2 files changed, 26 insertions(+), 11 deletions(-)
+=== Scenario 1: claude fails (production case) ===
+script exit=1
+--- notify.log:
+nightly review FAILED (exit 1): Not logged in · Please run /login
+--- stderr (should have no 'read-only'):
+date: invalid option -- 'v'
+Try 'date --help' for more information.
+--- run log OUT:
+Not logged in · Please run /login
+
+=== Scenario 2: claude succeeds ===
+date: invalid option -- 'v'
+Try 'date --help' for more information.
+script exit=0
+--- notify.log:
+nightly review done: Summary: 3 commits, nothing risky.
+
+=== Scenario 3: Telegram/notifier itself fails ===
+script exit=0
+--- stderr trace:
+date: invalid option -- 'v'
+Try 'date --help' for more information.
+nightly-review: notify.sh failed (exit 1)
+
+=== Scenario 4: notify.sh keychain read fails (local, no network) ===
+notify exit=1
+notify.sh: cannot read keychain item 'tg-bot'
+syntax OK
+=== Scenario 1: claude fails ===
+exit=1 (want 1)
+nightly review FAILED (exit 1): Not logged in · Please run /login
+=== Scenario 2: claude succeeds ===
+exit=0 (want 0)
+nightly review done: Summary: all quiet.
+=== Scenario 3: notifier fails on success path ===
+exit=1 (want 1)
+Try 'date --help' for more information.
+nightly-review: notify.sh failed (exit 1)
+ M bin/nightly-review.zsh
+ M bin/notify.sh
+ M bin/nightly-review.zsh
+ M bin/notify.sh
+?? ANSWER.md
+ANSWER.md
+Library
+README.md
+bin
+launchctl-print.txt

@@ -1,0 +1,61 @@
+./bin/nightly-review.zsh
+./bin/notify.sh
+./Library/Logs/nightly-review.out
+./Library/Logs/nightly-review.err
+./Library/LaunchAgents/com.vk.nightly-review.plist
+./README.md
+./launchctl-print.txt
+---
+total 8
+drwx------   7 valentinakoniukhova wheel   224 Nov  8 03:27 .
+drwxrwxrwt 550 root                wheel 17600 Nov  8 03:27 ..
+drwxr-xr-x  12 valentinakoniukhova wheel   384 Nov  8 03:27 .git
+drwxr-xr-x   4 valentinakoniukhova wheel   128 Nov  8 03:27 Library
+-rw-r--r--   1 valentinakoniukhova wheel   822 Nov  8 03:27 README.md
+drwxr-xr-x   4 valentinakoniukhova wheel   128 Nov  8 03:27 bin
+-rw-r--r--   1 valentinakoniukhova wheel  1007 Nov  8 03:27 launchctl-print.txt
+07b6434 base
+---
+Library/Logs/:
+total 4
+drwxr-xr-x 4 valentinakoniukhova wheel 128 Nov  8 03:27 .
+drwxr-xr-x 4 valentinakoniukhova wheel 128 Nov  8 03:27 ..
+-rw-r--r-- 1 valentinakoniukhova wheel 594 Nov  8 03:27 nightly-review.err
+-rw-r--r-- 1 valentinakoniukhova wheel   0 Nov  8 03:27 nightly-review.out
+
+bin/:
+total 8
+drwxr-xr-x 4 valentinakoniukhova wheel 128 Nov  8 03:27 .
+drwx------ 7 valentinakoniukhova wheel 224 Nov  8 03:27 ..
+-rwxr-xr-x 1 valentinakoniukhova wheel 772 Nov  8 03:27 nightly-review.zsh
+-rwxr-xr-x 1 valentinakoniukhova wheel 312 Nov  8 03:27 notify.sh
+zsh syntax OK
+Library/LaunchAgents/com.vk.nightly-review.plist: OK
+== A-orig-failing: exit=1 ==
+-- stderr:
+Not logged in · Please run /login
+/private/tmp/h-0Nja92/.verify/orig.zsh:19: read-only variable: status
+/bin/bash: line 42: /private/tmp/h-0Nja92/.verify/home/sent.log: No such file or directory
+-- notifications sent: 0
+== B-fixed-failing: exit=1 ==
+-- stderr:
+Not logged in · Please run /login
+-- notifications sent:
+nightly review FAILED (exit 1, 0s), see /private/tmp/h-0Nja92/.verify/home/Library/Logs/nightly-review-2026-11-08.md and /private/tmp/h-0Nja92/.verify/home/Library/Logs/nightly-review.err
+== C-fixed-ok: exit=0 ==
+-- stderr:
+-- notifications sent:
+nightly review done in 0s: Fake review: 1 commit, nothing risky.
+Summary one
+Summary two
+Summary three
+-- prompt delivered via stdin, first line: Review the commits in this repository since 2026-11-07.
+-- OUT file exists: /private/tmp/h-0Nja92/.verify/home/Library/Logs/nightly-review-2026-11-08.md
+ M Library/LaunchAgents/com.vk.nightly-review.plist
+ M bin/nightly-review.zsh
+ Library/LaunchAgents/com.vk.nightly-review.plist |  2 ++
+ bin/nightly-review.zsh                           | 13 +++++++------
+ 2 files changed, 9 insertions(+), 6 deletions(-)
+ M Library/LaunchAgents/com.vk.nightly-review.plist
+ M bin/nightly-review.zsh
+?? ANSWER.md

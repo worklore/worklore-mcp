@@ -1,0 +1,110 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..454a405
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,70 @@
++# Ответ
++
++## Что изменил
++
++**bot.py, `build_system()`** — системный промпт разбит на два текстовых блока, у
++каждого свой маркер `cache_control: {"type": "ephemeral"}`:
++
++1. Статический блок — `INSTRUCTIONS` (байт в байт одинаковый для всех
++   пользователей и дней, никаких подстановок).
++2. Изменчивый хвост — `athlete_context()` (дата, имя, зоны, цель, факты, язык).
++
++Раньше маркер был один на весь промпт, а кеш Anthropic — хеш префикса: каждый
++`save_fact` дописывал факт в `data/athletes.json`, следующий раунд цикла
++пересобирал промпт с новым списком фактов, и промах падал на весь блок.
++В `logs/usage.jsonl` это видно напрямую: после каждой записи в память
++`cache_read_input_tokens: 0`, а `cache_creation_input_tokens` ~1000+ (строки
++4–5, 9–10, 13–16). Теперь запись в память инвалидирует только хвост
++(~240 токенов), а инструкции остаются в кеше. Используем 2 маркера из 4
++разрешённых.
++
++Заодно: комментарий у `build_system()` переписан под новое поведение, в
++README уточнено, что маркеров два.
++
++Что **не** менял и почему:
++
++- Фильтрацию инструментов по ключевым словам (`select_tools`) — она с марта
++  и по NOTES.md даёт ~75% экономии на коротких сообщениях; внутри цикла одного
++  сообщения список инструментов постоянен, так что на кеш раундов она не влияет.
++- Все факты грузятся целиком, без выборки «под сообщение» — отбор делал бы хвост
++  разным для каждого сообщения и ломал бы кеш хвоста.
++
++## Проверка
++
++Реальный API не дёргал (ключа нет и правила запрещают). Локально, с фейковым
++LLM и замоканными `save_athlete`/`log_usage` (чтобы не трогать `data/` и
++`logs/`):
++
++1. `build_system` возвращает 2 блока, у каждого `cache_control: ephemeral`,
++   первый блок == `INSTRUCTIONS`.
++2. Симуляция `save_fact` между раундами цикла: блок 1 байт-в-байт идентичен,
++   блок 2 отличается ровно одной строкой — новым фактом.
++3. Конкатенация двух блоков == прежняя отрисовка одним блоком (лишних токенов
++   разбиение не добавляет).
++4. `python3 -m py_compile bot.py` — чисто.
++
++Как контролировать в бою (по заметке коллеги, шаг 4): после `save_fact`
++`cache_read_input_tokens` должен по-прежнему покрывать статический блок, а
++`cache_creation_input_tokens` — быть размером с хвост. Если `cache_creation`
++снова размером со весь промпт — в статическом блоке есть подставленное
++значение. Нюанс: минимальный кешируемый префикс у Anthropic — 1024 токена, а
++блок инструкций сам по себе меньше, так что первый маркер может оказаться ниже
++порога; проверяется теми же полями `usage`.
++
++## Что пригодилось из заметки коллеги
++
++- **Ядро исправления** — два сегмента `cache_control` вместо одного: статика
++  первым сегментом, всё изменчивое вторым. Это ровно наш случай.
++- **Шаг 4 (читать `usage`)** — как верификация и в коде, и в бою.
++- **Запрет персонализации внутри кешируемых блоков** (top-N фактов под
++  сообщение) — подтвердило текущее поведение «грузить все факты»; менять не стал.
++- **Требование байт-в-байт стабильности статического блока** — проверил, что
++  дата и имя атлета живут только в хвосте, инструкции чисты.
++- **Шаг 2 (стабильность инструментов)** — в нашей архитектуре уже соблюдено.
++
++## Что не пригодилось
++
++- **Фильтрация инструментов по ключевым словам** («первая победа» заметки) — у
++  нас уже реализована, из заметки взять нечего.
++- **Сортировка хвоста «от самого редко меняющегося»** — внутри одного сегмента
++  порядок на хеш не влияет, оставил естественный порядок полей.
+diff --git a/README.md b/README.md
+index ebd390e..2f52a9a 100644
+--- a/README.md
++++ b/README.md
+@@ -12,5 +12,6 @@ Run it locally with `COACH_ANTHROPIC_KEY=sk-ant-... python3 bot.py 42` and type
+ messages on stdin (the Telegram long-polling transport, which needs
+ `COACH_TELEGRAM_TOKEN`, lives in a separate deploy repo and just calls `reply()`).
+ Requires Python 3.11+ and `pip install anthropic`. Prompt caching is on: the system
+-prompt carries a `cache_control` marker so the tool-loop rounds and follow-up
+-messages inside the 5-minute window read it from cache.
++prompt carries `cache_control` markers (one on the static instructions, one on the
++per-athlete tail) so the tool-loop rounds and follow-up messages inside the 5-minute
++window read it from cache, and a `save_fact` only re-caches the tail.
+diff --git a/bot.py b/bot.py
+index e2ff241..88aab2f 100644
+--- a/bot.py
++++ b/bot.py
+@@ -128,9 +128,13 @@ def athlete_context(a, today):
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    # Two cached segments, each with its own cache_control marker: the static
++    # instructions first, the per-athlete tail second. A save_fact rewrites
++    # only the tail, so the instruction prefix stays in cache.
++    return [
++        {"type": "text", "text": INSTRUCTIONS, "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": "\n\n" + athlete_context(a, today), "cache_control": {"type": "ephemeral"}},
++    ]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [

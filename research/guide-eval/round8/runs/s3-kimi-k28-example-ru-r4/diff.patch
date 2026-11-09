@@ -1,0 +1,201 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..f5e31a4
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,150 @@
++# Почему nightly-review молчал
++
++## TL;DR
++
++Задача отрабатывала все 6 ночей по расписанию. Тишина была следствием двух
++наложившихся багов:
++
++1. **Агент падал с `Not logged in`** — headless-CLI под launchd не находил
++   логин, потому что в окружении задачи не было переменной `USER`
++   (в plist задан только `PATH`).
++2. **Скрипт убивал собственного «почтальона»** — присвоение `status=$?` в zsh:
++   `status` это read-only специальная переменная, и интерпретатор обрывал
++   скрипт за строку до отправки уведомления об ошибке.
++
++## Диагностика
++
++`launchctl print gui/501/com.vk.nightly-review` (снимок от 2026-10-18):
++
++- `runs = 6`, `last exit code = 1`, `state = waiting` — задача стреляла каждую
++  ночь с момента загрузки (12.10 → 6 запусков) и сейчас просто ждёт следующих
++  02:30. Проблема не в расписании.
++- В блоке `environment` только `PATH` и `XPC_SERVICE_NAME` — ни `USER`, ни
++  других пользовательских переменных.
++
++`Library/Logs/nightly-review.err` — 12 строк, ровно 2 на каждый из 6 запусков:
++
++```
++Not logged in · Please run /login
++/Users/vk/bin/nightly-review.zsh:19: read-only variable: status
++```
++
++Хронология одного запуска: `cd` в репозиторий проходил → `claude -p ...`
++(строка 18) падал с «Not logged in» → `status=$?` (строка 19) убивала скрипт
++на месте → уведомление «nightly review FAILED» (строка 22) не выполнялось
++никогда. Поэтому в Telegram не приходило ни сводок, ни сообщений об ошибке.
++
++## Причины и исправления
++
++### 1. `Not logged in` под launchd — виноват отсутствующий `USER`
++
++**Причина.** В окружении LaunchAgent не было `USER` (в `EnvironmentVariables`
++plist задан только `PATH`; `launchctl print` подтверждает). Headless-CLI не
++мог определить пользователя и найти свою учётку — умирал с «Not logged in»
++до всякой работы.
++
++**Исправление:** `Library/LaunchAgents/com.vk.nightly-review.plist` — добавлено
++в `EnvironmentVariables`:
++
++```xml
++<key>USER</key>
++<string>vk</string>
++```
++
++(значение пришлось задать литералом — plist не раскрывает `$USER`.)
++
++### 2. `status=$?` в zsh — read-only переменная
++
++**Причина.** В zsh `status` — специальная переменная (аналог `$?`), она
++только для чтения. Присвоение на строке 19 — фатальная ошибка: скрипт
++обрывался с exit code 1 мгновенно, до ветки с уведомлением об ошибке.
++
++**Исправление:** `bin/nightly-review.zsh` — переменная переименована в `rc`
++(`status` больше не используется нигде). Поведение воспроизведено в песочнице:
++старый скрипт даёт ту же пару ошибок и молчит, новый отправляет
++«nightly review FAILED (exit 1)» и завершается с кодом 1.
++
++### 3. Укрепления, чтобы молчание стало невозможным
++
++По мотивам заметки коллеги и её раздела «Verify»:
++
++- **Промпт агенту теперь передаётся через stdin:**
++  `print -r -- "$PROMPT" | claude -p ...` — не полагаемся на парсинг
++  многострочного аргумента в запланированной оболочке.
++- **Каждый запуск логирует длительность и код возврата** в stdout (launchd
++  кладёт это в `nightly-review.out`): `claude exit=N after Xs at ...`.
++  «Пробежало за 2 секунды» — теперь видно в логе как симптом раннего падения;
++  честная проверка результата — свежий файл `nightly-review-*.md`.
++- **Падение самого notify.sh больше не делает запуск «зелёным»:** если
++  уведомление не отправилось, скрипт пишет об этом в stderr (попадает в
++  `nightly-review.err`) и завершается с кодом 1 — по `launchctl print`
++  будет видно, что что-то не так.
++
++## Что пригодилось из заметки коллеги
++
++- **«Сначала докажи, что задача вообще запускалась»** — `launchctl print`
++  (`runs = 6`, `last exit code = 1`) сразу перевёл поиск с «launchd не стреляет»
++  на «скрипт падает и не может сообщить». Главный методический приём, сэкономил
++  часы гаданий.
++- **«В zsh никогда не присваивай `status` — используй `rc=$?`»** — точное
++  совпадение со вторым багом в нашем логе, прямое применение.
++- **«Задай `USER` в `EnvironmentVariables`, иначе CLI умрёт с "Not logged in"»** —
++  точное совпадение с первым багом (тот же текст ошибки), исправлено в plist.
++- **«Промпт передавай через stdin, а не многострочным аргументом»** — применено;
++  в нашем логе этот баг ещё не проявился (падение происходило раньше), но тот
++  же риск в коде был.
++- **«Логируй длительность запуска» и «проверяй реальный результат, а не exit
++  code»** — учтено вместе с поправкой коллеги от 2026-09-30: exit code 1 тут,
++  случайно, был честным, но вообще код возврата говорит лишь «запускался», а
++  не «сработал».
++- **«Проверь failure-репортёра принудительным падением»** — сделано в
++  песочнице (сценарии B и E ниже).
++
++**Пропущено и почему:**
++
++- **`< /dev/null` при передаче промпта аргументом** — не нужен: промпт ушёл
++  через stdin, ожидания ввода не осталось.
++- **Проблемы keychain у notify.sh** — в логах нет ни одной ошибки от
++  `security`/curl, а по README уведомлялка «вручную работает»; оснований
++  лезть в неё нет.
++- **Ссылка на Mihai Perdum** — не проверял: обе наши причины уже были
++  подтверждены локальными логами, внешние источники не потребовались
++  (и по правилам задачи ничего наружу не отправлялось).
++
++## Как проверял (внутри песочницы в этой директории, `HOME` перенаправлен
++на макет домашней директории, `claude` и `notify.sh` заменены стабами)
++
++- **A. Старый скрипт + падающий claude** → stderr: «Not logged in» +
++  «read-only variable: status», exit 1, **ни одного уведомления** — точная
++  копия боевого поведения.
++- **B. Новый скрипт + падающий claude** → уведомление «nightly review FAILED
++  (exit 1)» доставлено, exit 1, в stdout-логе строка длительности, промпт
++  подтверждённо дошёл до агента через stdin.
++- **C. Репозиторий отсутствует** → уведомление «nightly review: repo missing»,
++  exit 1.
++- **D. Успешный прогон** → «nightly review done: …» со сводкой, exit 0, файл
++  `nightly-review-<дата>.md` создан и непуст.
++- **E. notify.sh сам падает** → строка «notify.sh itself failed» в stderr,
++  exit 1 (раньше такой запуск выглядел бы как успех).
++- **F.** `zsh -n` и `bash -n` — чисто; `plutil -lint` plist — OK, ключ `USER`
++  на месте.
++
++Песочница после проверок удалена; изменены только
++`bin/nightly-review.zsh` и `Library/LaunchAgents/com.vk.nightly-review.plist`.
++
++## Что осталось сделать вам (я это не делал — работа только внутри снимка)
++
++1. Скопировать исправленные `bin/nightly-review.zsh` и
++   `~/Library/LaunchAgents/com.vk.nightly-review.plist` в реальную домашнюю
++   директорию.
++2. Перезагрузить агент:
++   `launchctl bootout gui/$UID ~/Library/LaunchAgents/com.vk.nightly-review.plist`
++   затем `launchctl bootstrap gui/$UID ~/Library/LaunchAgents/com.vk.nightly-review.plist`
++3. Проверить без ожидания 02:30:
++   `launchctl kickstart -k gui/$UID/com.vk.nightly-review`, затем
++   `launchctl print gui/$UID/com.vk.nightly-review` — ожидаются
++   `last exit code = 0`, строка с длительностью в `nightly-review.out`,
++   свежий `nightly-review-<дата>.md` и оба уведомления (успех сейчас, падение —
++   при следующем принудительном бое). Если снова «Not logged in», следующий
++   подозреваемый — заблокированная login-keychain в 02:30, но оснований ждать
++   этого нет: после добавления `USER` причина из лога устранена.
+diff --git a/Library/LaunchAgents/com.vk.nightly-review.plist b/Library/LaunchAgents/com.vk.nightly-review.plist
+index c347363..d49eacf 100644
+--- a/Library/LaunchAgents/com.vk.nightly-review.plist
++++ b/Library/LaunchAgents/com.vk.nightly-review.plist
+@@ -24,6 +24,8 @@
+   <dict>
+     <key>PATH</key>
+     <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
++    <key>USER</key>
++    <string>vk</string>
+   </dict>
+ </dict>
+ </plist>
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..233e2eb 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -13,14 +13,20 @@ For each commit: one line on what it changes and whether anything looks risky
+ End with a three-line summary I can read on my phone.
+ Do not modify any file."
+ 
+-cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
++start=$SECONDS
+ 
+-claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
++cd "$REPO" || { "$NOTIFY" "nightly review: repo missing" || true; exit 1; }
+ 
+-if [ $status -ne 0 ]; then
+-  "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
+-  exit $status
++print -r -- "$PROMPT" | claude -p --output-format text > "$OUT"
++rc=$?
++
++print -r -- "nightly-review: claude exit=$rc after $((SECONDS - start))s at $(date '+%F %T')"
++
++if [ $rc -ne 0 ]; then
++  "$NOTIFY" "nightly review FAILED (exit $rc), see $OUT" \
++    || print -u2 -- "nightly-review: notify.sh itself failed (rc=$?)"
++  exit $rc
+ fi
+ 
+-"$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"
++"$NOTIFY" "nightly review done: $(head -c 300 "$OUT")" \
++  || { print -u2 -- "nightly-review: notify.sh itself failed (rc=$?)"; exit 1; }

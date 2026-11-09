@@ -1,0 +1,128 @@
+.
+publish failed
+Traceback (most recent call last):
+  File "/private/tmp/h-H4vuuj/tests/../src/app.py", line 72, in handler
+    stored = publish(table, story)
+  File "/private/tmp/h-H4vuuj/tests/../src/app.py", line 63, in publish
+    table.put_item(Item=item)
+    ~~~~~~~~~~~~~~^^^^^^^^^^^
+  File "/private/tmp/h-H4vuuj/tests/fake_dynamo.py", line 31, in put_item
+    _check(Item)
+    ~~~~~~^^^^^^
+  File "/private/tmp/h-H4vuuj/tests/fake_dynamo.py", line 16, in _check
+    _check(v, f"{path}.{k}")
+    ~~~~~~^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/h-H4vuuj/tests/fake_dynamo.py", line 20, in _check
+    _check(v, f"{path}[{i}]")
+    ~~~~~~^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/h-H4vuuj/tests/fake_dynamo.py", line 16, in _check
+    _check(v, f"{path}.{k}")
+    ~~~~~~^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/h-H4vuuj/tests/fake_dynamo.py", line 13, in _check
+    raise TypeError("Float types are not supported. Use Decimal types instead.")
+TypeError: Float types are not supported. Use Decimal types instead.
+F
+
+======================================================================
+FAIL: test_second_publish_stores_integer_similarity_scores (test_publish.PublishTest.test_second_publish_stores_integer_similarity_scores)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private/tmp/h-H4vuuj/tests/test_publish.py", line 46, in test_second_publish_stores_integer_similarity_scores
+    self.assertEqual(second_response["statusCode"], 201)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 500 != 201
+
+----------------------------------------------------------------------
+Ran 2 tests in 0.001s
+
+FAILED (failures=1)
+.
+.
+----------------------------------------------------------------------
+Ran 2 tests in 0.000s
+
+OK
+.
+.
+----------------------------------------------------------------------
+Ran 2 tests in 0.000s
+
+OK
+ M README.md
+ M src/app.py
+ M tests/test_publish.py
+?? ANSWER.md
+diff --git a/README.md b/README.md
+index daa860b..c3d7d8f 100644
+--- a/README.md
++++ b/README.md
+@@ -3,8 +3,9 @@
+ A small story library behind `POST /stories` (Lambda + DynamoDB table `stories`,
+ partition key `slug`). `src/app.py` is the whole service: `handler()` parses
+ the request and `publish()` stores the story together with its three most
+-similar existing stories (`similar: [{slug, score}]`), so the reader page can
+-show "related" without any query at read time. `logs/error.log` is the
++similar existing stories (`similar: [{slug, score}]`, with `score` as an integer
++percentage from 0 to 100), so the reader page can show "related" without a query
++at read time. `logs/error.log` is the
+ production log from the first two publishes after the deploy.
+ 
+ Tests use an in-memory table (`tests/fake_dynamo.py`) that validates items the
+diff --git a/src/app.py b/src/app.py
+index db49c5e..f99b34e 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -22,12 +22,12 @@ def words(text):
+ 
+ 
+ def similarity(a, b):
+-    """Shared-tag ratio (Jaccard), blended with shared words of the two bodies."""
++    """Return blended tag and body similarity as an integer percentage."""
+     ta, tb = set(a.get("tags", [])), set(b.get("tags", []))
+     tag_score = len(ta & tb) / len(ta | tb) if (ta | tb) else 0
+     wa, wb = words(a.get("body")), words(b.get("body"))
+     word_score = len(wa & wb) / len(wa | wb) if (wa | wb) else 0
+-    return round(0.7 * tag_score + 0.3 * word_score, 4)
++    return round(100 * (0.7 * tag_score + 0.3 * word_score))
+ 
+ 
+ def related(story, existing):
+diff --git a/tests/test_publish.py b/tests/test_publish.py
+index 6c9ac44..ae7464a 100644
+--- a/tests/test_publish.py
++++ b/tests/test_publish.py
+@@ -1,3 +1,4 @@
++import json
+ import os
+ import sys
+ import unittest
+@@ -23,6 +24,29 @@ class PublishTest(unittest.TestCase):
+         self.assertEqual(table.get_item(Key={"slug": "why-my-cron-ran-twice"})["Item"]["title"], "Why my cron ran twice")
+         self.assertEqual(table.scan()["Count"], 1)
+ 
++    def test_second_publish_stores_integer_similarity_scores(self):
++        table = FakeTable()
++        first = {
++            "slug": "first-story",
++            "title": "First story",
++            "tags": ["cron", "linux"],
++            "body": "A story about cron.",
++        }
++        second = {
++            "slug": "second-story",
++            "title": "Second story",
++            "tags": ["cron", "linux"],
++            "body": "A story about cron.",
++        }
++
++        first_response = app.handler({"body": json.dumps(first)}, table)
++        second_response = app.handler({"body": json.dumps(second)}, table)
++
++        self.assertEqual(first_response["statusCode"], 201)
++        self.assertEqual(second_response["statusCode"], 201)
++        stored = table.get_item(Key={"slug": "second-story"})["Item"]
++        self.assertEqual(stored["similar"], [{"slug": "first-story", "score": 100}])
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

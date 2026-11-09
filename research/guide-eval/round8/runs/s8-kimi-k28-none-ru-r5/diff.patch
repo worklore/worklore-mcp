@@ -1,0 +1,92 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..ddcb7cb
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,48 @@
++# Что изменил
++
++## Причина
++
++`build_system()` в `bot.py` склеивал статические `INSTRUCTIONS` и динамический
++`athlete_context()` (куда входит список long-term facts) в один текстовый блок
++с единственным маркером `cache_control`. Префиксный кеш Anthropic ключируется
++байтами всего блока, поэтому каждый `save_fact`, дописывая одну строку в факты,
++менял весь системный промпт — и следующий вызов в tool-цикле пересоздавал кеш
++на весь объём. В `logs/usage.jsonl` это видно напрямую: каждый раунд сразу
++после `save_fact` имеет `cache_read_input_tokens: 0` и
++`cache_creation_input_tokens` ~1060–1104 (полная цена промпта), тогда как
++обычные раунды читают ~1046–1104 из кеша.
++
++## Фикс (bot.py, `build_system`)
++
++Системный промпт теперь два блока:
++
++1. `INSTRUCTIONS` — первым, с `cache_control: {"type": "ephemeral"}`. Байт-в-байт
++   идентичен во всех запросах и не зависит от памяти атлета.
++2. `athlete_context()` — вторым, без маркера. Это «вольный» хвост: он и так
++   пересчитывается как свежий ввод на каждом вызове, а его изменение (новый
++   факт) инвалидирует только его самого (~100–150 токенов), не затрагивая
++   закешированный префикс с инструкциями.
++
++Также уточнён абзац о кеше в `README.md`.
++
++## Проверка
++
++Без SDK/ключа, с фейковым LLM (проверка не пишет в `logs/usage.jsonl` и
++`data/athletes.json` — обе функции замоканы):
++
++- структура: 2 блока, маркер только на статическом;
++- после имитации `save_fact` статический блок побайтово совпадает с
++  прежним, динамический — изменился;
++- эмуляция префиксного кеширования по сценарию «сообщение → save_fact →
++  второй раунд»: вызов сразу после записи факта даёт `cache_read` = статический
++  блок, `cache_creation` = 0 (раньше — создание ~1061 токена и ноль чтения).
++
++## Замечания
++
++- Блок `tools` и сообщения идут после точки кеширования и, как и раньше,
++  считаются свежим вводом; смена набора инструментов (`plan_week`,
++  `predict_race`) по-прежнему порождает cache creation для хвоста — это
++  ожидаемо и к памяти отношения не имеет, keyword-фильтрацию инструментов
++  не трогал (по NOTES.md — осознанный выигрыш).
++- Инструкция №16 («не сохранять уже имеющийся факт») и логика `save_fact`
++  не менялись.
+diff --git a/README.md b/README.md
+index ebd390e..57e995f 100644
+--- a/README.md
++++ b/README.md
+@@ -11,6 +11,8 @@ its system prompt. Every API call appends its `usage` object to `logs/usage.json
+ Run it locally with `COACH_ANTHROPIC_KEY=sk-ant-... python3 bot.py 42` and type
+ messages on stdin (the Telegram long-polling transport, which needs
+ `COACH_TELEGRAM_TOKEN`, lives in a separate deploy repo and just calls `reply()`).
+-Requires Python 3.11+ and `pip install anthropic`. Prompt caching is on: the system
+-prompt carries a `cache_control` marker so the tool-loop rounds and follow-up
+-messages inside the 5-minute window read it from cache.
++Requires Python 3.11+ and `pip install anthropic`. Prompt caching is on: the
++static instructions block is sent first with a `cache_control` marker, so
++tool-loop rounds and follow-up messages inside the 5-minute window read it from
++cache, and a `save_fact` that grows the athlete context invalidates only the
++small dynamic block, never the instructions.
+diff --git a/bot.py b/bot.py
+index e2ff241..8d32722 100644
+--- a/bot.py
++++ b/bot.py
+@@ -128,9 +128,14 @@ def athlete_context(a, today):
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    # Two blocks. The static instructions carry the cache marker and go first;
++    # the per-athlete context (which save_fact mutates) follows unmarked, so a
++    # new fact invalidates only the small dynamic block, never the cached
++    # instructions.
++    return [
++        {"type": "text", "text": INSTRUCTIONS, "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": athlete_context(a, today)},
++    ]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [

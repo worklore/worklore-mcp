@@ -1,0 +1,107 @@
+Exception in thread Thread-1 (serve):
+Traceback (most recent call last):
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1082, in _bootstrap_inner
+    self._context.run(self.run)
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py", line 1024, in run
+    self._target(*self._args, **self._kwargs)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/h-6AtNs7/_test/fake_intervals.py", line 70, in serve
+    ThreadingHTTPServer(("127.0.0.1", 8767), Handler).serve_forever()
+    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+OSError: [Errno 48] Address already in use
+2026-11-08 23:36:18 [http] GET /api/intervals/auth/init 401 (no Authorization header)
+2026-11-08 23:36:18 [http] "GET /api/intervals/auth/init HTTP/1.1" 401 -
+PASS auth/init without header -> 401 (server contract unchanged)
+2026-11-08 23:36:18 [http] "GET /api/me HTTP/1.1" 200 -
+PASS signed-in athlete identified
+2026-11-08 23:36:18 [http] "GET /api/intervals/auth/init HTTP/1.1" 200 -
+PASS authorize URL points at /oauth/authorize
+PASS one scope per area (no duplicates)
+PASS scope matches app needs (read wellness, write activity+calendar)
+PASS redirect_uri is the callback
+PASS state signed and present
+FAIL fake intervals accepts the fixed scope list (302, not 400)  [404 {"error": "not found"}]
+FAIL provider redirects back with code+state
+Traceback (most recent call last):
+  File "/private/tmp/h-6AtNs7/_test/test_flow.py", line 100, in <module>
+    s, hdr, _ = get(cb, redirects=False)
+                ~~~^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/h-6AtNs7/_test/test_flow.py", line 44, in get
+    req = urllib.request.Request(url, headers=headers or {})
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/urllib/request.py", line 290, in __init__
+    self.full_url = url
+    ^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/urllib/request.py", line 316, in full_url
+    self._parse()
+    ~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/urllib/request.py", line 345, in _parse
+    raise ValueError("unknown url type: %r" % self.full_url)
+ValueError: unknown url type: ''
+COMMAND   PID                USER   FD   TYPE             DEVICE SIZE/OFF NODE NAME
+Python  68767 valentinakoniukhova    3u  IPv4 0x7fccb4613ef0a81c      0t0  TCP 127.0.0.1:8767 (LISTEN)
+---
+ok
+2026-11-08 23:37:36 [http] GET /api/intervals/auth/init 401 (no Authorization header)
+2026-11-08 23:37:36 [http] "GET /api/intervals/auth/init HTTP/1.1" 401 -
+PASS auth/init without header -> 401 (server contract unchanged)
+2026-11-08 23:37:36 [http] "GET /api/me HTTP/1.1" 200 -
+PASS signed-in athlete identified
+2026-11-08 23:37:36 [http] "GET /api/intervals/auth/init HTTP/1.1" 200 -
+PASS authorize URL points at /oauth/authorize
+PASS one scope per area (no duplicates)
+PASS scope matches app needs (read wellness, write activity+calendar)
+PASS redirect_uri is the callback
+PASS state signed and present
+PASS fake intervals accepts the fixed scope list (302, not 400)
+PASS provider redirects back with code+state
+2026-11-08 23:37:36 [intervals] u_rivera: no expiry stated by provider; token valid until athlete revokes
+2026-11-08 23:37:36 [intervals] u_rivera: connected as athlete i98765
+2026-11-08 23:37:36 [http] "GET /api/intervals/callback?code=fake-auth-code&state=dV9yaXZlcmE6MTc5NDE5MTg1NjpmOGJhMjc4ZmQ4MzhiZWNjYTkzN2MzYmU4OWNlNTVkMg== HTTP/1.1" 302 -
+PASS callback stores connection and redirects to /?connected=1
+2026-11-08 23:37:36 [http] "GET /api/intervals/status HTTP/1.1" 200 -
+PASS status: connected as Rivera
+PASS no fabricated expiry (expires_at is None, provider stated none)
+PASS still connected after refresher passes
+2026-11-08 23:37:38 [http] "GET /api/intervals/wellness HTTP/1.1" 200 -
+PASS wellness proxy returns data
+2026-11-08 23:37:38 [intervals] u_rivera: intervals API returned 401 (token rejected) -> expired, reconnect
+2026-11-08 23:37:38 [http] "GET /api/intervals/wellness HTTP/1.1" 409 -
+PASS revoked token -> 409 with reconnect status
+2026-11-08 23:37:38 [http] "GET /api/intervals/status HTTP/1.1" 200 -
+PASS status card offers reconnect after revocation
+2026-11-08 23:37:38 [http] "GET /api/intervals/auth/init HTTP/1.1" 200 -
+2026-11-08 23:37:38 [intervals] u_rivera: no expiry stated by provider; token valid until athlete revokes
+2026-11-08 23:37:38 [intervals] u_rivera: connected as athlete i98765
+2026-11-08 23:37:38 [http] "GET /api/intervals/callback?code=fake-auth-code&state=dV9yaXZlcmE6MTc5NDE5MTg1ODpmNTI4NDU5MDc1N2EyN2U3YWRkNTdhZDJjYjM3NjFjZQ== HTTP/1.1" 302 -
+2026-11-08 23:37:38 [http] "GET /api/intervals/status HTTP/1.1" 200 -
+PASS reconnect flow works end to end
+
+ALL PASS
+{"url": "https://intervals.icu/oauth/authorize?client_id=tricoach-dev&redirect_uri=http:%2F%2Flocalhost:8766%2Fapi%2Fintervals%2Fcallback&scope=ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE&state=dV9va2Fmb3I6MTc5NDE5MTg3Njo4MTA1OGE2MmJmOGUyMzhmYmFlMTEyNTgwNzc1ZDRlZA%3D%3D"}
+
+200
+ M config.py
+ M server.py
+ M static/app.js
+?? __pycache__/
+ config.py     |  5 ++++-
+ server.py     | 40 ++++++++++++++++++++++++++++++----------
+ static/app.js | 14 +++++++++++++-
+ 3 files changed, 47 insertions(+), 12 deletions(-)
+ M config.py
+ M server.py
+ M static/app.js
+ M config.py
+ M server.py
+ M static/app.js
+?? ANSWER.md

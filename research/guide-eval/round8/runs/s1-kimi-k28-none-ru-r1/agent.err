@@ -1,0 +1,53 @@
+4065800 base
+---
+{
+  "category": "WORKOUT",
+  "type": "Run",
+  "name": "Tempo run 45",
+  "start_date_local": "2026-10-20T00:00:00",
+  "workout_doc": {
+    "steps": [
+      {
+        "duration": 600,
+        "target": {
+          "type": "HR",
+          "value": "117-129bpm"
+        },
+        "text": "Warm-up easy"
+      },
+      {
+        "reps": 3,
+        "steps": [
+          {
+            "duration": 480,
+            "target": {
+              "type": "HR",
+              "value": "151-160bpm"
+            },
+            "text": "Tempo"
+          },
+          {
+            "duration": 120,
+            "target": {
+              "type": "HR",
+              "value": "129-141bpm"
+            },
+            "text": "Float"
+          }
+        ]
+      },
+      {
+        "duration": 300,
+        "target": {
+          "type": "HR",
+          "value": "112-124bpm"
+        },
+        "text": "Cool-down"
+      }
+    ]
+  }
+}
+ M README.md
+ M gen.py
+?? ANSWER.md
+valid JSON, steps: 3

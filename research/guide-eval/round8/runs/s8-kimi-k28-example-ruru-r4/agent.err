@@ -1,0 +1,20 @@
+Traceback (most recent call last):
+  File "<stdin>", line 27, in <module>
+  File "/private/tmp/h-SSruDc/bot.py", line 206, in reply
+    used_tools = [b.name for b in resp.content if b.type == "tool_use"]
+                                                  ^^^^^^
+AttributeError: 'Block' object has no attribute 'type'
+context tail before: 'hy in 2024, fully recovered\n- Owns a Garmin 255\nLanguage: en'
+context tail after : 'red\n- Owns a Garmin 255\n- Prefers morning swims\nLanguage: en'
+instructions byte-identical across users/dates: OK
+ALL CHECKS PASSED
+ M README.md
+ M bot.py
+?? ANSWER.md
+?? __pycache__/
+ README.md |  8 +++++---
+ bot.py    | 10 +++++++---
+ 2 files changed, 12 insertions(+), 6 deletions(-)
+ M README.md
+ M bot.py
+?? ANSWER.md

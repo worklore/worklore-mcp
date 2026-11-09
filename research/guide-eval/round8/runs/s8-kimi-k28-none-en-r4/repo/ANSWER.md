@@ -1,0 +1,50 @@
+# Fix: memory writes no longer evict the cached system prompt
+
+## Root cause
+
+`build_system()` in `bot.py` concatenated the static `INSTRUCTIONS` (~990 tokens,
+never changes) and the dynamic per-athlete context (profile, zones, goal,
+long-term facts) into **one** system-prompt text block carrying a single
+`cache_control` marker.
+
+Anthropic prompt caching is prefix-based with breakpoints at the
+`cache_control` markers: everything up to and including the marked block is one
+cache segment. Because the facts live inside that single block, every
+`save_fact` changed the block's text, the segment stopped matching, and the
+next call (the tool-loop round 2, or the athlete's next message) re-created the
+whole block at cache-write prices. That is the `cache_read_input_tokens: 0` /
+`cache_creation_input_tokens ~1000+` pattern in `logs/usage.jsonl` (lines 5,
+10, 14, 16, 23, 29) that NOTES.md describes.
+
+## Change (`bot.py`, `build_system`)
+
+The system prompt is now returned as two text blocks with a cache breakpoint
+between them:
+
+1. Block 1: the static `INSTRUCTIONS`, marked `cache_control: ephemeral` — this
+   segment never changes, so it is written once and read from cache afterwards.
+2. Block 2: `athlete_context(...)` (today's date, profile, zones, goal, facts),
+   also marked so an unchanged context is served from cache too.
+
+A `save_fact` still changes block 2 on the next call, but only that small block
+(a few dozen to a few hundred tokens) is re-created; the ~990-token
+instructions segment stays a cache hit. Cost of a memory write drops from
+~1.25x full system prompt to ~1.25x the context delta.
+
+Tool definitions and conversation messages were left untouched (keyword tool
+filtering stays, per NOTES.md); with the breakpoint between the two system
+blocks they remain fresh input as before.
+
+## Verification (no external calls made)
+
+- `build_system` returns exactly two blocks; block 1 is byte-identical to
+  `INSTRUCTIONS` with an ephemeral marker, block 2 contains the athlete context.
+- Asserted `build_system(a)[0] == build_system(a')[0]` for athletes whose fact
+  lists differ — the cached prefix no longer depends on memory contents.
+- Ran `reply()` end-to-end with a stub LLM that emulates Anthropic prefix
+  caching and usage accounting: a message whose round 1 calls `save_fact`
+  completes, and round 2 plus the follow-up message both keep the instructions
+  segment as a cache hit while only the changed context segment is re-created.
+- `python3 -c "import bot"` passes with the anthropic SDK absent (import-time
+  fallback unchanged); no real API calls were made and no data/log files were
+  modified by the checks.

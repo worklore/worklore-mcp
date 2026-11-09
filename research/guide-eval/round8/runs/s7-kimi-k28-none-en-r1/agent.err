@@ -1,0 +1,44 @@
+fadca59 base
+---
+fatal: --follow requires exactly one pathspec
+2026-11-07 15:07:56 [http] GET /api/intervals/auth/init 401 (no Authorization header)
+2026-11-07 15:07:56 [http] "GET /api/intervals/auth/init HTTP/1.1" 401 -
+PASS auth/init without Bearer header -> 401
+2026-11-07 15:07:56 [http] "GET /api/intervals/auth/init HTTP/1.1" 200 -
+PASS auth/init with Bearer -> 200 JSON url
+PASS authorize url has response_type=code
+PASS authorize url keeps client/redirect/scope/state
+PASS mock provider 400s without response_type
+PASS mock authorize redirects to our callback
+2026-11-07 15:07:56 [intervals] u_okafor: connected as athlete i98765 (token does not expire)
+2026-11-07 15:07:56 [http] "GET /api/intervals/callback?code=mock-code-1&state=dV9va2Fmb3I6MTc5NDA3NDg3Njo1NzFmMjM1ZTNlZjc5OWIyMmQ2YTM2YmQzNWVjMWZhYQ%3D%3D HTTP/1.1" 302 -
+PASS callback -> 302 to /?connected=1
+2026-11-07 15:07:56 [http] "GET /api/intervals/status HTTP/1.1" 200 -
+PASS status: connected as i98765
+PASS stored token has no fabricated expiry
+2026-11-07 15:07:56 [http] "GET /api/intervals/wellness HTTP/1.1" 200 -
+PASS wellness proxy 200 with data
+PASS after 2h: still connected (no synthetic TTL)
+2026-11-07 15:07:56 [intervals] u_rivera: token refreshed
+PASS expiring token with refresh_token gets renewed
+2026-11-07 15:07:56 [intervals] u_rivera: token expired and no refresh token on file -> expired, reconnect
+PASS expiring token without refresh_token -> expired, reconnect
+2026-11-07 15:07:56 [http] "GET /api/intervals/wellness HTTP/1.1" 401 -
+PASS wellness 401 from provider -> 401 + status 'expired, reconnect'
+2026-11-07 15:07:56 [http] "GET /api/intervals/auth/init HTTP/1.1" 200 -
+2026-11-07 15:07:56 [intervals] u_okafor: connected as athlete i98765 (token does not expire)
+2026-11-07 15:07:56 [http] "GET /api/intervals/callback?code=mock-code-1&state=dV9va2Fmb3I6MTc5NDA3NDg3Njo1NzFmMjM1ZTNlZjc5OWIyMmQ2YTM2YmQzNWVjMWZhYQ%3D%3D HTTP/1.1" 302 -
+2026-11-07 15:07:56 [http] "GET /api/intervals/status HTTP/1.1" 200 -
+PASS reconnect works after expiry
+2026-11-07 15:07:56 [http] "GET /api/intervals/wellness HTTP/1.1" 200 -
+PASS wellness works again after reconnect
+
+16/16 checks passed
+py OK
+js OK
+ M server.py
+ M static/app.js
+?? __pycache__/
+ M server.py
+ M static/app.js
+?? ANSWER.md

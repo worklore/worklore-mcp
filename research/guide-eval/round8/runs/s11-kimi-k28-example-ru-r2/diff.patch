@@ -1,0 +1,143 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..877d59e
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,71 @@
++# Почему вторая публикация падала с 500
++
++## Причина
++
++`src/app.py`, функция `similarity()` (строка 30 до правки) возвращала
++`round(0.7 * tag_score + 0.3 * word_score, 4)` — всегда Python-`float`.
++Эти значения попадали в поле `similar` (top-3 похожих историй) и уезжали в
++`table.put_item(Item=...)`.
++
++DynamoDB через boto3 не принимает `float`: `TypeSerializer` бросает
++`TypeError: Float types are not supported. Use Decimal types instead.` —
++ровно та ошибка и тот стектрейс (`put_item` → `inject_attribute_value_input` →
++`_get_dynamodb_type`), что в `logs/error.log`.
++
++Первая публикация выживала лишь потому, что таблица была пуста: `related()`
++находил ноль кандидатов и возвращал пустой список — нечему было упасть, и
++`float` в item просто не было. Начиная со второй публикации в таблице уже есть
++записи, в `similar` появляются оценки-поплавки, и `put_item` падает. Баг не
++«появляется» на второй записи — он всегда был в коде; он существует ровно с
++того момента, как в данных появился первый кандидат на сравнение. Проверено
++воспроизведением: publish #1 → ok, publish #2 → TypeError, до правки.
++
++Заодно выяснилось, что существующий тест покрывал только пустую таблицу — он
++никогда не исполнял код сравнения, поэтому баг прошёл в прод.
++
++## Исправление
++
++`src/app.py`, `similarity()` теперь возвращает `Decimal` вместо `float`:
++
++```python
++return Decimal(str(round(0.7 * tag_score + 0.3 * word_score, 4)))
++```
++
++- `Decimal` — родной тип для boto3/DynamoDB, формат хранимых значений
++  (доля 0–1, 4 знака) не меняется.
++- Через `str()`, а не `Decimal(float)`: иначе в десятичное значение
++  протекла бы двоичная погрешность float (`Decimal(0.7)` →
++  `0.700000000000000011102230246251565404236316680908203125`), а так в
++  таблице остаётся чистое `Decimal('0.7')` и т.п.
++
++В `tests/test_publish.py` добавлен регрессионный тест
++`test_publish_with_existing_record_stores_similar_scores`: сначала сидирует
++таблицу одной записью, затем публикует вторую и проверяет, что item лёг, а все
++оценки в `similar` — `Decimal`, а не `float`. Путь с непустой таблицей теперь
++исполняется в тестах.
++
++Проверка: `python3 -m unittest discover -s tests -v` — 2/2 ok; сквозной прогон
++через `handler` — три публикации подряд, все 201, оценки сохраняются как
++чистые `Decimal('0.0375')` и т.п.
++
++## Что пригодилось из заметки коллеги
++
++- **Диагноз «float в DynamoDB» и стектрейс** — совпал один в один, сразу
++  навёл на `similarity()` / `put_item`.
++- **Объяснение, почему первый write проходит** (пустая таблица → нет кандидатов
++  → нет float) — ключ к пониманию; подтвердил воспроизведением.
++- **Идея сидировать таблицу перед тестом записи** — взята как есть; теперь
++  путь «непустая таблица» покрыт регрессионным тестом.
++- **Рекомендация конвертировать на границе с DynamoDB в Decimal** — применена.
++
++Не пригодилось / отличается:
++
++- **Переход на целые проценты** (int вместо Decimal) — не понадобился: `Decimal`
++  нативно поддерживается boto3 и сохраняет текущий формат значений (доля 0–1),
++  поэтому не менял контракт данных. Их мотив («int/Decimal, DynamoDB доволен»)
++  сохранён — просто через Decimal.
++- **Проверка `grep round( и /`, ведущих в item-dict'ы** — баг был найден по
++  стектрейсу и чтению `publish()`/`similarity()`; grep не потребовался.
++- **Публикация дважды против реальной таблицы** — по правилам задачи ничего во
++  внешние сервисы не отправлял; эквивалентная проверка сделана через
++  `FakeTable`, который валидирует типы так же, как `TypeSerializer` boto3.
+diff --git a/src/app.py b/src/app.py
+index db49c5e..8ad2da4 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -8,6 +8,7 @@ import json
+ import logging
+ import re
+ import time
++from decimal import Decimal
+ 
+ log = logging.getLogger("stories")
+ 
+@@ -27,7 +28,9 @@ def similarity(a, b):
+     tag_score = len(ta & tb) / len(ta | tb) if (ta | tb) else 0
+     wa, wb = words(a.get("body")), words(b.get("body"))
+     word_score = len(wa & wb) / len(wa | wb) if (wa | wb) else 0
+-    return round(0.7 * tag_score + 0.3 * word_score, 4)
++    # DynamoDB rejects Python floats; Decimal via str keeps the stored
++    # value at the 4-decimal precision the score is rounded to.
++    return Decimal(str(round(0.7 * tag_score + 0.3 * word_score, 4)))
+ 
+ 
+ def related(story, existing):
+diff --git a/tests/test_publish.py b/tests/test_publish.py
+index 6c9ac44..2d0f410 100644
+--- a/tests/test_publish.py
++++ b/tests/test_publish.py
+@@ -1,6 +1,7 @@
+ import os
+ import sys
+ import unittest
++from decimal import Decimal
+ 
+ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+ sys.path.insert(0, os.path.dirname(__file__))
+@@ -23,6 +24,30 @@ class PublishTest(unittest.TestCase):
+         self.assertEqual(table.get_item(Key={"slug": "why-my-cron-ran-twice"})["Item"]["title"], "Why my cron ran twice")
+         self.assertEqual(table.scan()["Count"], 1)
+ 
++    def test_publish_with_existing_record_stores_similar_scores(self):
++        table = FakeTable()
++        first = {
++            "slug": "why-my-cron-ran-twice",
++            "title": "Why my cron ran twice",
++            "tags": ["cron", "linux"],
++            "body": "Two crontabs, one for root and one for me, both had the line.",
++        }
++        second = {
++            "slug": "my-second-story",
++            "title": "My second story",
++            "tags": ["cron"],
++            "body": "A second cron story with overlapping tags.",
++        }
++        app.publish(table, first)
++        stored = app.publish(table, second)
++
++        self.assertEqual(table.scan()["Count"], 2)
++        self.assertTrue(stored["similar"])
++        self.assertTrue(
++            all(isinstance(entry["score"], Decimal) for entry in stored["similar"]),
++            msg="similarity scores must be DynamoDB-safe (Decimal, not float)",
++        )
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

@@ -1,0 +1,59 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..d4bc72a
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,19 @@
++# Исправление кеширования
++
++В `bot.py` функция `build_system()` теперь возвращает два системных блока вместо одного:
++
++1. Статический `INSTRUCTIONS` с собственным `cache_control: {"type": "ephemeral"}`.
++2. Изменчивый контекст атлета (дата, профиль, зоны, цель, факты и язык) с отдельным таким же маркером.
++
++После `save_fact` меняется только второй блок. Текст инструкций остаётся байт в байт прежним, поэтому запись в память больше не должна вытеснять его из кеша. В `README.md` обновлено описание этой схемы кеширования.
++
++Проверка выполнена локально с имитированным LLM через полный цикл `reply()`: после `save_fact` второй запрос сохранил идентичный первый блок, изменил только контекст атлета и оставил список инструментов неизменным. Обе итерации по-прежнему записываются в usage-лог. Реальные запросы к Anthropic не отправлялись.
++
++# Что пригодилось из заметки
++
++- Основное решение: два сегмента `cache_control` — отдельно для стабильных инструкций и изменчивых данных пользователя.
++- Требование держать статический блок стабильным байт в байт и не помещать в него даты, имена или память.
++- Проверка по `cache_creation_input_tokens` и `cache_read_input_tokens`: после записи факта чтение из кеша должно покрывать статический блок, а пересоздание — только изменчивый хвост.
++- Рекомендация не менять список инструментов внутри одного цикла вызовов; существующая фильтрация инструментов сохранена.
++
++Отбор top-N фактов и изменение агрессивности фильтрации инструментов не применялись: они не нужны для этого исправления и могут ухудшить попадания в кеш.
+diff --git a/README.md b/README.md
+index ebd390e..66dbb7d 100644
+--- a/README.md
++++ b/README.md
+@@ -11,6 +11,8 @@ its system prompt. Every API call appends its `usage` object to `logs/usage.json
+ Run it locally with `COACH_ANTHROPIC_KEY=sk-ant-... python3 bot.py 42` and type
+ messages on stdin (the Telegram long-polling transport, which needs
+ `COACH_TELEGRAM_TOKEN`, lives in a separate deploy repo and just calls `reply()`).
+-Requires Python 3.11+ and `pip install anthropic`. Prompt caching is on: the system
+-prompt carries a `cache_control` marker so the tool-loop rounds and follow-up
+-messages inside the 5-minute window read it from cache.
++Requires Python 3.11+ and `pip install anthropic`. Prompt caching is on: static
++instructions and per-athlete context are separate system blocks, each with a
++`cache_control` marker. Writing a fact invalidates only the athlete context, while
++the instructions remain cached for tool-loop rounds and follow-up messages inside
++the 5-minute window.
+diff --git a/bot.py b/bot.py
+index e2ff241..5c8e18e 100644
+--- a/bot.py
++++ b/bot.py
+@@ -128,9 +128,10 @@ def athlete_context(a, today):
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    return [
++        {"type": "text", "text": INSTRUCTIONS, "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": athlete_context(a, today), "cache_control": {"type": "ephemeral"}},
++    ]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [

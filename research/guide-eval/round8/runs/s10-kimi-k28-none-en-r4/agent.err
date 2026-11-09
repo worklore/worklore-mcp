@@ -1,0 +1,261 @@
+/Users/valentinakoniukhova/development/flutter/bin/dart
+/Users/valentinakoniukhova/development/flutter/bin/flutter
+---
+bash: /Users/valentinakoniukhova/development/flutter/bin/dart: Operation not permitted
+-rwxr-xr-x 1 valentinakoniukhova staff 2160 Aug 18 11:36 /Users/valentinakoniukhova/development/flutter/bin/dart
+/Users/valentinakoniukhova/development/flutter/bin/dart: cannot open: Operation not permitted
+ls: cannot access '/usr/local/bin/dart': No such file or directory
+
+ls: cannot access '/opt/homebrew/bin/flutter': No such file or directory
+/opt/homebrew/bin/dart
+ls: cannot access '/tmp/khome-CojMFT/development': No such file or directory
+Analyzing h-OxMQt1...
+
+  error - lib/analytics.dart:1:8 - Target of URI doesn't exist: 'package:posthog_flutter/posthog_flutter.dart'. Try creating the file referenced by the URI, or try using a URI for a file that does exist. - uri_does_not_exist
+  error - lib/analytics.dart:6:20 - The method 'PostHogConfig' isn't defined for the type 'Analytics'. Try correcting the name to the name of an existing method, or defining a method named 'PostHogConfig'. - undefined_method
+  error - lib/analytics.dart:9:11 - The method 'Posthog' isn't defined for the type 'Analytics'. Try correcting the name to the name of an existing method, or defining a method named 'Posthog'. - undefined_method
+  error - lib/analytics.dart:14:7 - The method 'Posthog' isn't defined for the type 'Analytics'. Try correcting the name to the name of an existing method, or defining a method named 'Posthog'. - undefined_method
+  error - lib/main.dart:1:8 - Target of URI doesn't exist: 'package:flutter/material.dart'. Try creating the file referenced by the URI, or try using a URI for a file that does exist. - uri_does_not_exist
+  error - lib/main.dart:2:8 - Target of URI doesn't exist: 'package:posthog_flutter/posthog_flutter.dart'. Try creating the file referenced by the URI, or try using a URI for a file that does exist. - uri_does_not_exist
+  error - lib/main.dart:9:3 - Undefined name 'WidgetsFlutterBinding'. Try correcting the name to one that is defined, or defining the name. - undefined_identifier
+  error - lib/main.dart:11:3 - The function 'runApp' isn't defined. Try importing the library that defines 'runApp', correcting the name to the name of an existing function, or defining a function named 'runApp'. - undefined_function
+  error - lib/main.dart:14:26 - Classes can only extend other classes. Try specifying a different superclass, or removing the extends clause. - extends_non_class
+  error - lib/main.dart:15:27 - No associated named super constructor parameter. Try changing the name to the name of an existing named super constructor parameter, or creating such named parameter. - super_formal_parameter_without_associated_named
+  error - lib/main.dart:18:3 - Undefined class 'Widget'. Try changing the name to the name of an existing class, or creating a class with the name 'Widget'. - undefined_class
+  error - lib/main.dart:18:16 - Undefined class 'BuildContext'. Try changing the name to the name of an existing class, or creating a class with the name 'BuildContext'. - undefined_class
+  error - lib/main.dart:19:12 - The method 'PostHogWidget' isn't defined for the type 'KreditoApp'. Try correcting the name to the name of an existing method, or defining a method named 'PostHogWidget'. - undefined_method
+  error - lib/main.dart:20:14 - The method 'MaterialApp' isn't defined for the type 'KreditoApp'. Try correcting the name to the name of an existing method, or defining a method named 'MaterialApp'. - undefined_method
+  error - lib/main.dart:22:16 - The method 'ThemeData' isn't defined for the type 'KreditoApp'. Try correcting the name to the name of an existing method, or defining a method named 'ThemeData'. - undefined_method
+  error - lib/main.dart:22:43 - Undefined name 'Colors'. Try correcting the name to one that is defined, or defining the name. - undefined_identifier
+  error - lib/main.dart:23:30 - The method 'PosthogObserver' isn't defined for the type 'KreditoApp'. Try correcting the name to the name of an existing method, or defining a method named 'PosthogObserver'. - undefined_method
+  error - lib/screens/offer_screen.dart:1:8 - Target of URI doesn't exist: 'package:flutter/material.dart'. Try creating the file referenced by the URI, or try using a URI for a file that does exist. - uri_does_not_exist
+  error - lib/screens/offer_screen.dart:25:27 - Classes can only extend other classes. Try specifying a different superclass, or removing the extends clause. - extends_non_class
+  error - lib/screens/offer_screen.dart:26:28 - No associated named super constructor parameter. Try changing the name to the name of an existing named super constructor parameter, or creating such named parameter. - super_formal_parameter_without_associated_named
+  error - lib/screens/offer_screen.dart:29:3 - Undefined class 'State'. Try changing the name to the name of an existing class, or creating a class with the name 'State'. - undefined_class
+  error - lib/screens/offer_screen.dart:32:33 - Classes can only extend other classes. Try specifying a different superclass, or removing the extends clause. - extends_non_class
+  error - lib/screens/offer_screen.dart:33:29 - The method 'ScrollController' isn't defined for the type '_OfferScreenState'. Try correcting the name to the name of an existing method, or defining a method named 'ScrollController'. - undefined_method
+  error - lib/screens/offer_screen.dart:38:11 - The method 'initState' isn't defined in a superclass of '_OfferScreenState'. Try correcting the name to the name of an existing method, or defining a method named 'initState' in a superclass. - undefined_super_member
+  error - lib/screens/offer_screen.dart:53:11 - The method 'dispose' isn't defined in a superclass of '_OfferScreenState'. Try correcting the name to the name of an existing method, or defining a method named 'dispose' in a superclass. - undefined_super_member
+  error - lib/screens/offer_screen.dart:57:3 - Undefined class 'Widget'. Try changing the name to the name of an existing class, or creating a class with the name 'Widget'. - undefined_class
+  error - lib/screens/offer_screen.dart:57:16 - Undefined class 'BuildContext'. Try changing the name to the name of an existing class, or creating a class with the name 'BuildContext'. - undefined_class
+  error - lib/screens/offer_screen.dart:58:12 - The method 'Scaffold' isn't defined for the type '_OfferScreenState'. Try correcting the name to the name of an existing method, or defining a method named 'Scaffold'. - undefined_method
+Warning: Package resolution error when reading "analysis_options.yaml" file:
+Failed to resolve package URI "package:flutter_lints/flutter.yaml" in include.
+Changed lib/screens/registration_screen.dart
+Formatted 2 files (1 changed) in 0.01 seconds.
+ lib/screens/offer_screen.dart        | 33 +++++++++++++++++++++++++++++-
+ lib/screens/registration_screen.dart | 39 ++++++++++++++++++++++++++++++++----
+ 2 files changed, 67 insertions(+), 5 deletions(-)
+diff --git a/lib/screens/offer_screen.dart b/lib/screens/offer_screen.dart
+index 921ee59..8817f62 100644
+--- a/lib/screens/offer_screen.dart
++++ b/lib/screens/offer_screen.dart
+@@ -1,5 +1,7 @@
+ import 'package:flutter/material.dart';
+ 
++import '../analytics.dart';
++
+ class Offer {
+   const Offer(this.bank, this.months, this.rate);
+   final String bank;
+@@ -20,14 +22,43 @@ const _offers = [
+   Offer('Nordlån', 60, 12.3),
+ ];
+ 
+-class OfferScreen extends StatelessWidget {
++class OfferScreen extends StatefulWidget {
+   const OfferScreen({super.key});
+ 
++  @override
++  State<OfferScreen> createState() => _OfferScreenState();
++}
++
++class _OfferScreenState extends State<OfferScreen> {
++  final _scrollController = ScrollController();
++  double _lastReportedOffset = 0;
++
++  @override
++  void initState() {
++    super.initState();
++    _scrollController.addListener(_trackScroll);
++  }
++
++  void _trackScroll() {
++    final offset = _scrollController.offset;
++    if ((offset - _lastReportedOffset).abs() >= 100) {
++      _lastReportedOffset = offset;
++      Analytics.capture('offers_scrolled', {'offset': offset});
++    }
++  }
++
++  @override
++  void dispose() {
++    _scrollController.dispose();
++    super.dispose();
++  }
++
+   @override
+   Widget build(BuildContext context) {
+     return Scaffold(
+       appBar: AppBar(title: const Text('Offers')),
+       body: ListView.builder(
++        controller: _scrollController,
+         itemCount: _offers.length,
+         itemBuilder: (context, i) {
+           final o = _offers[i];
+diff --git a/lib/screens/registration_screen.dart b/lib/screens/registration_screen.dart
+index 059a250..e1420ac 100644
+--- a/lib/screens/registration_screen.dart
++++ b/lib/screens/registration_screen.dart
+@@ -1,5 +1,7 @@
+ import 'package:flutter/material.dart';
+ 
++import '../analytics.dart';
++
+ class RegistrationScreen extends StatefulWidget {
+   const RegistrationScreen({super.key});
+ 
+@@ -12,6 +14,8 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
+   final _phone = TextEditingController();
+   double _amount = 50000;
+   bool _terms = false;
++  bool _emailStartedSent = false;
++  bool _phoneStartedSent = false;
+ 
+   @override
+   void dispose() {
+@@ -36,14 +40,26 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
+               controller: _email,
+               keyboardType: TextInputType.emailAddress,
+               decoration: const InputDecoration(labelText: 'Email'),
+-              onChanged: (_) => setState(() {}),
++              onChanged: (_) {
++                if (!_emailStartedSent && _email.text.isNotEmpty) {
++                  _emailStartedSent = true;
++                  Analytics.capture('registration_email_started');
++                }
++                setState(() {});
++              },
+             ),
+             const SizedBox(height: 12),
+             TextField(
+               controller: _phone,
+               keyboardType: TextInputType.phone,
+               decoration: const InputDecoration(labelText: 'Phone'),
+-              onChanged: (_) => setState(() {}),
++              onChanged: (_) {
++                if (!_phoneStartedSent && _phone.text.isNotEmpty) {
++                  _phoneStartedSent = true;
++                  Analytics.capture('registration_phone_started');
++                }
++                setState(() {});
++              },
+             ),
+             const SizedBox(height: 24),
+             Text('Loan amount: ${_amount.round()}'),
+@@ -54,17 +70,32 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
+               value: _amount,
+               label: _amount.round().toString(),
+               onChanged: (v) => setState(() => _amount = v),
++              onChangeEnd: (v) => Analytics.capture(
++                'loan_amount_changed',
++                {'amount': v.round()},
++              ),
+             ),
+             CheckboxListTile(
+               value: _terms,
+               title: const Text('I accept the terms and conditions'),
+               controlAffinity: ListTileControlAffinity.leading,
+-              onChanged: (v) => setState(() => _terms = v ?? false),
++              onChanged: (v) {
++                setState(() => _terms = v ?? false);
++                if (v ?? false) {
++                  Analytics.capture('terms_accepted');
++                }
++              },
+             ),
+             const Spacer(),
+             FilledButton(
+               onPressed: _canContinue
+-                  ? () => Navigator.of(context).pushNamed('/offers')
++                  ? () {
++                      Analytics.capture('registration_continue_tapped', {
++                        'amount': _amount.round(),
++                        'terms': _terms,
++                      });
++                      Navigator.of(context).pushNamed('/offers');
++                    }
+                   : null,
+               child: const Text('Continue'),
+             ),
+Changed lib/screens/registration_screen.dart
+Formatted 4 files (1 changed) in 0.01 seconds.
+ M lib/screens/offer_screen.dart
+ M lib/screens/registration_screen.dart
++import '../analytics.dart';
++
++  bool _emailStartedSent = false;
++  bool _phoneStartedSent = false;
+-              onChanged: (_) => setState(() {}),
++              onChanged: (_) {
++                if (!_emailStartedSent && _email.text.isNotEmpty) {
++                  _emailStartedSent = true;
++                  Analytics.capture('registration_email_started');
++                }
++                setState(() {});
++              },
+-              onChanged: (_) => setState(() {}),
++              onChanged: (_) {
++                if (!_phoneStartedSent && _phone.text.isNotEmpty) {
++                  _phoneStartedSent = true;
++                  Analytics.capture('registration_phone_started');
++                }
++                setState(() {});
++              },
++              onChangeEnd: (v) => Analytics.capture(
++                'loan_amount_changed',
++                {'amount': v.round()},
++              ),
+-              onChanged: (v) => setState(() => _terms = v ?? false),
++              onChanged: (v) {
++                setState(() => _terms = v ?? false);
++                if (v ?? false) {
++                  Analytics.capture('terms_accepted');
++                }
++              },
+-                  ? () => Navigator.of(context).pushNamed('/offers')
++                  ? () {
++                      Analytics.capture('registration_continue_tapped', {
++                        'amount': _amount.round(),
++                        'terms': _terms,
++                      });
++                      Navigator.of(context).pushNamed('/offers');
++                    }
+===
+Changed lib/screens/registration_screen.dart
+Formatted 4 files (1 changed) in 0.01 seconds.
+CHANGED_AGAIN
+73,76c73,75
+<               onChangeEnd: (v) => Analytics.capture(
+<                 'loan_amount_changed',
+<                 {'amount': v.round()},
+<               ),
+---
+>               onChangeEnd: (v) => Analytics.capture('loan_amount_changed', {
+>                 'amount': v.round(),
+>               }),
+107a107
+> Formatted 1 file (1 changed) in 0.01 seconds.
+exit=0
+lib/screens/registration_screen.dart: Java source, ASCII text
+lib/screens/offer_screen.dart:        C++ source text, Unicode text, UTF-8 text
+Formatted lib/screens/registration_screen.dart
+Formatted 4 files (1 changed) in 0.01 seconds.
+Formatted 4 files (0 changed) in 0.01 seconds.
+STABLE
+ lib/screens/offer_screen.dart        | 33 ++++++++++++++++++++++++++++++-
+ lib/screens/registration_screen.dart | 38 ++++++++++++++++++++++++++++++++----
+ 2 files changed, 66 insertions(+), 5 deletions(-)
+ M README.md
+ M lib/screens/offer_screen.dart
+ M lib/screens/registration_screen.dart

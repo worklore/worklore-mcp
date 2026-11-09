@@ -1,0 +1,7 @@
+# HR workout export fix
+
+`gen.py` now emits Intervals.icu structured workout text in `description`, with explicit `% LTHR` ranges and repeat blocks, instead of posting a hand-built `workout_doc`. Intervals parses that text into its own workout document for export. The prior `workout_doc` was accepted on readback, but that did not establish that the Garmin export used its range targets; the watch showed its zone boundaries instead.
+
+The generated tempo step is `- 8m 88-93% LTHR Tempo`, so Intervals can resolve the intended range against the athlete's LTHR of 172. We keep percentages in the plan and avoid absolute `bpm`, which the readback notes show was interpreted incorrectly. The text syntax follows the [Intervals.icu workout builder guide](https://forum.intervals.icu/t/workout-builder-syntax-quick-guide/123701); an [Intervals.icu API report](https://forum.intervals.icu/t/events-created-via-api-with-workout-doc-the-web-download-produces-an-empty-fit-while-the-api-download-does-not-which-representation-feeds-device-sync/132326) documents the export difference between a `description` and `workout_doc` alone.
+
+Verified locally by generating the sample plan and checking that all four distinct HR ranges and the `3x` repeat appear in the description. A device readback still requires the owner to sync a newly created workout; this directory has no authenticated export fixture, and no external service was changed.

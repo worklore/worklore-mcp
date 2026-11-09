@@ -1,0 +1,62 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..601c283
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,22 @@
++# Что изменено
++
++В `bot.py` функция `build_system()` теперь возвращает два системных блока вместо одного:
++
++1. `INSTRUCTIONS` — неизменные инструкции, без даты, имени, профиля и других подставляемых значений.
++2. `athlete_context(a, today)` — изменяемый контекст: дата, профиль, зоны, цель, долговременные факты и язык.
++
++Оба блока имеют `cache_control: {"type": "ephemeral"}`. Поэтому `save_fact` меняет только второй блок и его кеш, а байт-стабильный префикс со статическими инструкциями остаётся пригодным для чтения из кеша. Состав инструментов, их фильтрация и загрузка всех фактов не менялись.
++
++В `README.md` обновлено описание кеширования в соответствии с новой структурой промпта.
++
++# Что пригодилось из заметки
++
++- Объяснение префиксного кеширования: изменение одного общего блока раньше делало промахом весь системный промпт после `save_fact`.
++- Основное решение: две точки `cache_control` — после статических инструкций и после изменяемого контекста.
++- Требование байт-стабильности статической части и инструментов; существующую фильтрацию инструментов оставил без изменений.
++- Предупреждение против выбора top-N фактов для каждого сообщения: такую персонализацию не добавлял, чтобы не менять кешируемый хвост на каждый запрос.
++- Поля `cache_creation_input_tokens` и `cache_read_input_tokens` использовал для подтверждения исходной проблемы по `logs/usage.jsonl`.
++
++# Проверка
++
++Локально прогнал полный цикл `reply()` с имитатором Claude: `save_fact`, второй раунд того же ответа и следующее сообщение. Во всех трёх запросах первый блок остался байт-стабильным, а новый факт изменил только второй. Также проверено, что статический блок одинаков для разных атлетов и что список инструментов не меняется между раундами. Запросы к внешнему API не выполнялись, файлы данных и журнал usage при проверке не изменялись.
+diff --git a/README.md b/README.md
+index ebd390e..cd717c6 100644
+--- a/README.md
++++ b/README.md
+@@ -11,6 +11,8 @@ its system prompt. Every API call appends its `usage` object to `logs/usage.json
+ Run it locally with `COACH_ANTHROPIC_KEY=sk-ant-... python3 bot.py 42` and type
+ messages on stdin (the Telegram long-polling transport, which needs
+ `COACH_TELEGRAM_TOKEN`, lives in a separate deploy repo and just calls `reply()`).
+-Requires Python 3.11+ and `pip install anthropic`. Prompt caching is on: the system
+-prompt carries a `cache_control` marker so the tool-loop rounds and follow-up
+-messages inside the 5-minute window read it from cache.
++Requires Python 3.11+ and `pip install anthropic`. Prompt caching is on: static
++instructions and per-athlete context are separate system blocks, each with a
++`cache_control` marker. A memory write therefore invalidates only the athlete
++context, while tool-loop rounds and follow-up messages inside the 5-minute
++window can still read the static instructions from cache.
+diff --git a/bot.py b/bot.py
+index e2ff241..5c8e18e 100644
+--- a/bot.py
++++ b/bot.py
+@@ -128,9 +128,10 @@ def athlete_context(a, today):
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    return [
++        {"type": "text", "text": INSTRUCTIONS, "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": athlete_context(a, today), "cache_control": {"type": "ephemeral"}},
++    ]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [

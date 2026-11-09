@@ -1,0 +1,28 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..0764446
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,9 @@
++# Fix
++
++Changed `hr_target()` in `gen.py` to emit HR targets as `{"units": "%lthr", "start": lo, "end": hi}` instead of using `value` for the lower bound.
++
++`value`/`end` selects Intervals' lap-HR, zone-mapped target path, so Garmin clamps the result to its own HR zones. `start`/`end` selects an instant-HR corridor, preserving the planned range. Keeping `%lthr` lets Intervals convert the percentages using its stored LTHR at FIT-export time.
++
++## Colleague's note
++
++The applicable part was the `value` → `start` key rename for exact HR corridors, together with retaining `%lthr` percentage targets. The alternative `bpm` and `start_bpm`/`end_bpm` encodings were not used. The bonus guidance about the top-level `description` text grammar did not apply to this HR-target fix.
+diff --git a/gen.py b/gen.py
+index be0b3bc..4aeba5a 100755
+--- a/gen.py
++++ b/gen.py
+@@ -10,7 +10,7 @@ import sys
+ def hr_target(step):
+     """HR corridor for a step, as a percentage of the athlete's LTHR."""
+     lo, hi = step["hr_pct"]
+-    return {"units": "%lthr", "value": lo, "end": hi}
++    return {"units": "%lthr", "start": lo, "end": hi}
+ 
+ 
+ def build_step(step):

@@ -1,0 +1,56 @@
+dd47bd0 base
+ README.md                |  14 +++
+ config.py                |  13 +++
+ logs/connect-attempt.log |  41 ++++++++
+ logs/support-tickets.md  |  30 ++++++
+ server.py                | 244 +++++++++++++++++++++++++++++++++++++++++++++++
+ static/app.js            |  39 ++++++++
+ static/index.html        |  18 ++++
+ 7 files changed, 399 insertions(+)
+mock pid 56791
+server pid 56792
+== 1. old-style plain navigation (no Authorization header) -> 401
+OK (401; the SPA must send the bearer token, which the fixed button does)
+== 2. SPA-style call with bearer token -> JSON with authorize url
+{"url": "http://127.0.0.1:8899/oauth/authorize?response_type=code&client_id=tricoach-dev&redirect_uri=http:%2F%2Flocalhost:8766%2Fapi%2Fintervals%2Fcallback&scope=ACTIVITY:READ,ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:READ,CALENDAR:WRITE&state=dV9va2Fmb3I6MTc5NDA5OTA5MzpmYTczZGMyYTNiNDNmNDJhMWQ5N2RjMGExZDU1MzMyOQ%3D%3D"}
+OK: response_type=code present
+OK: calendar scopes requested
+== 3. authorize url WITHOUT response_type -> 400 invalid_request (the prod regression)
+OK: 400 without response_type (server now always sends it)
+== 4. full OAuth flow: authorize -> callback -> connected
+mock redirect: http://localhost:8766/api/intervals/callback?code=mockcode-123&state=dV9va2Fmb3I6MTc5NDA5OTA5MzpmYTczZGMyYTNiNDNmNDJhMWQ5N2RjMGExZDU1MzMyOQ%3D%3D
+final redirect: http://localhost:8766/?connected=1
+== 5. status + wellness proxy
+{"connected": true, "status": "connected", "scope": "ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:READ,CALENDAR:WRITE", "athlete": {"id": "i111", "name": "Mock Athlete"}}
+OK: connected as mock athlete
+{"resting_hr": 52, "weight_kg": 70.1}
+OK: wellness proxied
+ALL FLOW CHECKS PASSED
+exit: 0
+{"connected": true, "status": "connected", "scope": "ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:READ,CALENDAR:WRITE", "athlete": {"id": "i111", "name": "Mock Athlete"}}
+
+--- server log ---
+2026-11-07 21:51:32 [intervals] serving on http://localhost:8766 (intervals: http://127.0.0.1:8899)
+2026-11-07 21:51:33 [http] GET /api/intervals/auth/init 401 (no Authorization header)
+2026-11-07 21:51:33 [http] "GET /api/intervals/auth/init HTTP/1.1" 401 -
+2026-11-07 21:51:33 [http] "GET /api/intervals/auth/init HTTP/1.1" 200 -
+2026-11-07 21:51:33 [intervals] u_okafor: no expires_in in token response; token does not expire
+2026-11-07 21:51:33 [intervals] u_okafor: connected as athlete i111
+2026-11-07 21:51:33 [http] "GET /api/intervals/callback?code=mockcode-123&state=dV9va2Fmb3I6MTc5NDA5OTA5MzpmYTczZGMyYTNiNDNmNDJhMWQ5N2RjMGExZDU1MzMyOQ%3D%3D HTTP/1.1" 302 -
+2026-11-07 21:51:33 [http] "GET /api/intervals/status HTTP/1.1" 200 -
+2026-11-07 21:51:33 [http] "GET /api/intervals/wellness HTTP/1.1" 200 -
+2026-11-07 21:52:57 [http] "GET /api/intervals/status HTTP/1.1" 200 -
+--- expired check ---
+0
+no 'expired, reconnect' lines — connection survived the refresher pass
+app.js syntax OK
+2026-11-07 21:53:13 [intervals] u_test_exp: no refresh_token in response, scheduling expiry in 10s
+2026-11-07 21:53:13 [intervals] u_test_exp: connected as athlete a1
+2026-11-07 21:53:13 [intervals] u_test_never: no expires_in in token response; token does not expire
+2026-11-07 21:53:13 [intervals] u_test_never: connected as athlete a2
+store_connection expiry handling OK (reported expiry honored; missing expiry = non-expiring)
+ M server.py
+ M static/app.js
+?? __pycache__/
+ M server.py
+ M static/app.js

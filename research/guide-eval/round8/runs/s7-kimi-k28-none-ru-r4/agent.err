@@ -1,0 +1,84 @@
+11:SCOPES = "ACTIVITY:READ,ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:READ,CALENDAR:WRITE"$
+---
+00000000: 5343 4f50 4553 203d 2022 4143 5449 5649  SCOPES = "ACTIVI
+00000010: 5459 3a52 4541 442c 4143 5449 5649 5459  TY:READ,ACTIVITY
+00000020: 3a57 5249 5445 2c57 454c 4c4e 4553 533a  :WRITE,WELLNESS:
+00000030: 5245 4144 2c43 414c 454e 4441 523a 5245  READ,CALENDAR:RE
+00000040: 4144 2c43 414c 454e 4441 523a 5752 4954  AD,CALENDAR:WRIT
+00000050: 4522 0a                                  E".
+Traceback (most recent call last):
+  File "/private/tmp/h-Gs7Fy2/.e2e/driver.py", line 43, in <module>
+    threading.Thread(target=ThreadingHTTPServer(("127.0.0.1", 8899), StubHandler).serve_forever,
+                            ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+OSError: [Errno 48] Address already in use
+Traceback (most recent call last):
+  File "/private/tmp/h-Gs7Fy2/.e2e/driver.py", line 49, in <module>
+    import config
+ModuleNotFoundError: No module named 'config'
+Traceback (most recent call last):
+  File "/private/tmp/h-Gs7Fy2/.e2e/driver.py", line 54, in <module>
+    APP = ThreadingHTTPServer(("127.0.0.1", config.PORT), server.Handler)
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+OSError: [Errno 48] Address already in use
+2026-11-07 22:14:24 [http] "GET /api/intervals/status HTTP/1.1" 200 -
+PASS status: not connected yet
+2026-11-07 22:14:24 [http] GET /api/intervals/auth/init 401 (no Authorization header)
+2026-11-07 22:14:24 [http] "GET /api/intervals/auth/init HTTP/1.1" 401 -
+PASS auth/init without header -> 401  [401]
+2026-11-07 22:14:24 [http] "GET /api/intervals/auth/init HTTP/1.1" 200 -
+PASS auth/init with Bearer -> 200 JSON  [200]
+PASS authorize url: scopes without CALENDAR  [ACTIVITY:READ,ACTIVITY:WRITE,WELLNESS:READ]
+PASS authorize url: client_id/redirect_uri/state present
+2026-11-07 22:14:24 [intervals] u_okafor: connected as athlete i98765 (non-expiring token)
+2026-11-07 22:14:24 [http] "GET /api/intervals/callback?code=code-1&state=dV9va2Fmb3I6MTc5NDEwMDQ2NDozNmIzY2Q3ODNiMWJmZjExZTkxMmYzMzBjODVmMjYyYw%3D%3D HTTP/1.1" 302 -
+PASS callback -> 302 to /?connected=1  [302 /?connected=1]
+PASS stored token is non-expiring (expires_at None)  [None]
+PASS stored athlete + status
+2026-11-07 22:14:24 [http] "GET /api/intervals/status HTTP/1.1" 200 -
+PASS status: connected
+2026-11-07 22:14:24 [http] "GET /api/intervals/wellness HTTP/1.1" 200 -
+PASS wellness proxied from stub
+PASS after refresher passes: still connected
+2026-11-07 22:14:27 [intervals] u_okafor: token refreshed
+2026-11-07 22:14:28 [intervals] u_okafor: token refreshed
+2026-11-07 22:14:29 [intervals] u_okafor: token refreshed
+PASS expiring token got refreshed  [tok-rotated connected]
+PASS refresh sets new expiry
+2026-11-07 22:14:30 [intervals] u_okafor: token expired and no refresh token on file -> expired, reconnect
+PASS no refresh token -> expired, reconnect
+2026-11-07 22:14:32 [http] "GET /api/intervals/status HTTP/1.1" 200 -
+PASS second user untouched
+2026-11-07 22:14:32 [http] "POST /api/intervals/disconnect HTTP/1.1" 200 -
+PASS disconnect clears connection
+
+ALL PASS
+/opt/homebrew/bin/node
+app.js OK
+py OK
+ M config.py
+ M server.py
+ M static/app.js
+server.py:66:def store_connection(user_id, tok):
+server.py:71:    expires_at = time.time() + int(expires_in) if expires_in is not None else None
+server.py:83:def refresh_tokens():
+server.py:200:    def auth_init(self):
+config.py:17:SCOPES = os.environ.get(
+static/app.js:31:        <p><button class="btn" id="connect">Connect Intervals.icu</button></p></div>`;
+static/app.js:41:        window.location.assign(url);

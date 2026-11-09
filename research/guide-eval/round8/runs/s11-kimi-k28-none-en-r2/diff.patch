@@ -1,0 +1,96 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..5b1e968
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,33 @@
++# Why the second publish returned 500
++
++## Cause
++
++`similarity()` in `src/app.py` returned a Python `float` (e.g. `0.85`), and that
++float ended up in the item's `similar: [{slug, score}]` list.
++
++DynamoDB has no float type: boto3's serializer only accepts `Decimal` for
++numbers and raises `TypeError: Float types are not supported. Use Decimal
++types instead.` (exactly the traceback in `logs/error.log`).
++
++Why it only broke on the *second* publish: `similar` is computed from the
++stories already in the table. The first publish landed in an empty table, so
++`related()` returned `[]` — no float ever reached `put_item`, and it succeeded.
++From the second publish on, there was at least one existing story, so the item
++contained a float `score` and `put_item` blew up on every publish, surfacing
++as a 500 from `handler()`.
++
++## Fix
++
++In `src/app.py`, `similarity()` now computes the score with `Decimal`
++arithmetic end-to-end (ratios as `Decimal` division, weights `Decimal("0.7")` /
++`Decimal("0.3")`, still rounded to 4 places). `Decimal` is a native DynamoDB
++number type, so the stored item is valid on every publish, not just the first.
++This covers all paths that put a score into the item — there's no special-case
++for "second publish".
++
++A regression test (`test_second_publish_stores_similar_scores` in
++`tests/test_publish.py`) publishes twice against the boto3-validating fake
++table, so a float score can never come back.
++
++Verified: `python3 -m unittest discover tests` passes (2 tests), and the
++handler returns 201 for both the first and second `POST /stories`.
+diff --git a/src/app.py b/src/app.py
+index db49c5e..b5a1e2b 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -8,6 +8,7 @@ import json
+ import logging
+ import re
+ import time
++from decimal import Decimal
+ 
+ log = logging.getLogger("stories")
+ 
+@@ -24,10 +25,10 @@ def words(text):
+ def similarity(a, b):
+     """Shared-tag ratio (Jaccard), blended with shared words of the two bodies."""
+     ta, tb = set(a.get("tags", [])), set(b.get("tags", []))
+-    tag_score = len(ta & tb) / len(ta | tb) if (ta | tb) else 0
++    tag_score = Decimal(len(ta & tb)) / Decimal(len(ta | tb)) if (ta | tb) else Decimal(0)
+     wa, wb = words(a.get("body")), words(b.get("body"))
+-    word_score = len(wa & wb) / len(wa | wb) if (wa | wb) else 0
+-    return round(0.7 * tag_score + 0.3 * word_score, 4)
++    word_score = Decimal(len(wa & wb)) / Decimal(len(wa | wb)) if (wa | wb) else Decimal(0)
++    return round(Decimal("0.7") * tag_score + Decimal("0.3") * word_score, 4)
+ 
+ 
+ def related(story, existing):
+diff --git a/tests/test_publish.py b/tests/test_publish.py
+index 6c9ac44..01fae63 100644
+--- a/tests/test_publish.py
++++ b/tests/test_publish.py
+@@ -23,6 +23,26 @@ class PublishTest(unittest.TestCase):
+         self.assertEqual(table.get_item(Key={"slug": "why-my-cron-ran-twice"})["Item"]["title"], "Why my cron ran twice")
+         self.assertEqual(table.scan()["Count"], 1)
+ 
++    def test_second_publish_stores_similar_scores(self):
++        table = FakeTable()
++        first = {
++            "slug": "why-my-cron-ran-twice",
++            "title": "Why my cron ran twice",
++            "tags": ["cron", "linux"],
++            "body": "Two crontabs, one for root and one for me, both had the line.",
++        }
++        second = {
++            "slug": "fixing-duplicate-cron-jobs",
++            "title": "Fixing duplicate cron jobs",
++            "tags": ["cron"],
++            "body": "Two crontabs both had the same line, so the job ran twice.",
++        }
++        app.publish(table, first)
++        stored = app.publish(table, second)
++        self.assertEqual(table.scan()["Count"], 2)
++        self.assertEqual(len(stored["similar"]), 1)
++        self.assertEqual(stored["similar"][0]["slug"], "why-my-cron-ran-twice")
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

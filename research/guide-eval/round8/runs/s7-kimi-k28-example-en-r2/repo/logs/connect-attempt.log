@@ -1,0 +1,41 @@
+### 1. An athlete clicks "Connect Intervals.icu" (server log, 2026-10-14)
+
+2026-10-14 18:02:11 [http] "GET /api/me HTTP/1.1" 200 -
+2026-10-14 18:02:11 [http] "GET /api/intervals/status HTTP/1.1" 200 -
+2026-10-14 18:02:19 [http] GET /api/intervals/auth/init 401 (no Authorization header)
+2026-10-14 18:02:19 [http] "GET /api/intervals/auth/init HTTP/1.1" 401 -
+
+    Browser dev tools, same request (document navigation):
+    Request URL:     http://localhost:8766/api/intervals/auth/init
+    Request Method:  GET
+    Status Code:     401 Unauthorized
+    Request headers: Accept: text/html,application/xhtml+xml,... / Referer: http://localhost:8766/
+    Response body:   {"error": "unauthorized"}
+
+### 2. Building the authorize link by hand and opening it (2026-10-17)
+
+$ curl -s -o /dev/null -w '%{redirect_url}\n' -H 'Authorization: Bearer tok-okafor' \
+    http://localhost:8766/api/intervals/auth/init
+https://intervals.icu/oauth/authorize?client_id=tricoach-dev&redirect_uri=http:%2F%2Flocalhost:8766%2Fapi%2Fintervals%2Fcallback&scope=ACTIVITY:READ,ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:READ,CALENDAR:WRITE&state=dV9va2Fmb3I6MTc5MjY4MTAwMDpiNjM1ZjBiZjU1M2ZjZWQ0YmM4ODNjMTExZmI4MDJhMw==
+
+$ curl -s -i "<that url>"
+HTTP/2 400
+content-type: application/json
+cache-control: no-store
+
+{"error":"invalid_request"}
+
+    Same 400 in a browser (as the signed-in athlete on intervals.icu), no
+    consent screen. Removing the state param or changing the redirect_uri
+    gives the same body, so the body does not say which parameter it minds.
+
+### 3. The one connection that worked: T. Rivera, onboarding call (2026-09-19)
+
+2026-09-19 17:41:03 [http] "GET /api/intervals/callback?code=a7Jk2...&state=dV9yaXZlcmE6... HTTP/1.1" 302 -
+2026-09-19 17:41:04 [intervals] token response from https://intervals.icu/api/oauth/token:
+{"token_type":"bearer","access_token":"9f3c1e0b4d7a...redacted...","scope":"ACTIVITY:WRITE,WELLNESS:READ","athlete":{"id":"i98765","name":"T. Rivera"}}
+2026-09-19 17:41:04 [intervals] u_rivera: no refresh_token in response, scheduling expiry in 3600s
+2026-09-19 17:41:04 [intervals] u_rivera: connected as athlete i98765 (expires in 3600s)
+2026-09-19 17:44:30 [http] "GET /api/intervals/wellness HTTP/1.1" 200 -
+2026-09-19 18:37:12 [intervals] u_rivera: token expiry passed and no refresh token on file -> expired, reconnect
+2026-09-20 07:12:48 [http] "GET /api/intervals/status HTTP/1.1" 200 -

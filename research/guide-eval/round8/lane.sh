@@ -8,9 +8,9 @@ D="$(cd "$(dirname "$0")" && pwd)"
 A=$1; REPS=${2:-5}
 ALL=(s1 s3 s7 s8 s10 s11)
 ARMS=(none-en example-en none-ru example-ru example-ruru)
-case $A in claude-opus) k=0;; claude-sonnet) k=2;; claude-haiku) k=4;; codex-sol) k=1;; codex-sol-low) k=3;; agy-flash-low) k=0;; agy-oss) k=3;; agy-argon-high) k=5;; agy-argon-low) k=2;; *) k=0;; esac
+case $A in claude-opus) k=0;; claude-sonnet) k=2;; claude-haiku) k=4;; codex-sol) k=1;; codex-sol-low) k=3;; agy-flash-low) k=0;; agy-oss) k=3;; agy-argon-high) k=5;; agy-argon-low) k=2;; kimi-k28) k=0;; kimi-k31) k=3;; *) k=0;; esac
 ORDER=("${ALL[@]:$k}" "${ALL[@]:0:$k}")
-LIMIT_PASSES=10
+LIMIT_PASSES=${LIMIT_PASSES:-10}
 bad() { [ -f "$1/meta.json" ] && grep -qE '"limit":true|"exit_code":3[,}]' "$1/meta.json"; }
 one() { # one <story> <arm> <rep>
   local R="$D/runs/$1-$A-$2-r$3"

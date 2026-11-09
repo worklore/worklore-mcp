@@ -1,0 +1,86 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..7ed116f
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,28 @@
++# Причина
++
++Вторая публикация падала из-за оценки похожести в поле `similar`. В `src/app.py` функция `similarity()` вычисляла оценку делением и возвращала результат `round(..., 4)` типа `float`. Сериализатор DynamoDB не принимает Python `float`, поэтому `table.put_item()` выбрасывал:
++
++```text
++TypeError: Float types are not supported. Use Decimal types instead.
++```
++
++Первая публикация проходила только потому, что таблица была пуста: `related()` возвращал пустой список, функция `similarity()` не вызывалась и в запись не попадал `float`. При второй публикации появлялась существующая история, вычислялась оценка похожести, и запрос завершался ошибкой 500.
++
++До исправления сценарий был воспроизведён через `handler()` с `FakeTable`: первая публикация вернула 201, вторая — 500 с тем же `TypeError`, что и в `logs/error.log`.
++
++# Исправление
++
++- В `src/app.py` оценка похожести теперь преобразуется на границе записи в целый процент от 0 до 100: `round(100 * (...))` без аргумента точности возвращает `int`, который поддерживает DynamoDB. Промежуточные вычисления остаются дробными, но в элемент таблицы попадает только целое число.
++- В `tests/test_publish.py` добавлен регрессионный тест с уже заполненной таблицей. Он публикует вторую похожую историю, проверяет содержимое `similar`, тип оценки `int` и наличие обеих записей. `FakeTable` отклоняет `float` так же, как сериализатор boto3, поэтому возврат прежнего кода сломает этот тест.
++
++# Проверка
++
++- `python3 -m unittest discover tests` — 2 теста, все прошли.
++- Два последовательных вызова `handler()` через `FakeTable` — оба вернули 201; оценка второй записи сохранена как `int`.
++- Проверка в реальную таблицу AWS не выполнялась: работа ограничена локальными файлами и тестовым двойником.
++
++# Что пригодилось из заметки коллеги
++
++Пригодились объяснение зависимости ошибки от непустой таблицы, рекомендация преобразовать вычисляемую оценку в `int` и идея регрессионного теста с предварительно добавленной записью. Поиск вычисляемых значений, попадающих в элемент DynamoDB, также подтвердил, что проблемный путь здесь — `similarity()` → `related()` → `put_item()`.
++
++Совет опубликовать дважды в реальную таблицу не применялся: для локальной проверки достаточно `FakeTable`, воспроизводящего проверку типов boto3, а обращения к внешним сервисам не требовались.
+diff --git a/src/app.py b/src/app.py
+index db49c5e..2faa527 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -22,12 +22,12 @@ def words(text):
+ 
+ 
+ def similarity(a, b):
+-    """Shared-tag ratio (Jaccard), blended with shared words of the two bodies."""
++    """Blended tag/body similarity as an integer percentage."""
+     ta, tb = set(a.get("tags", [])), set(b.get("tags", []))
+     tag_score = len(ta & tb) / len(ta | tb) if (ta | tb) else 0
+     wa, wb = words(a.get("body")), words(b.get("body"))
+     word_score = len(wa & wb) / len(wa | wb) if (wa | wb) else 0
+-    return round(0.7 * tag_score + 0.3 * word_score, 4)
++    return round(100 * (0.7 * tag_score + 0.3 * word_score))
+ 
+ 
+ def related(story, existing):
+diff --git a/tests/test_publish.py b/tests/test_publish.py
+index 6c9ac44..99516ef 100644
+--- a/tests/test_publish.py
++++ b/tests/test_publish.py
+@@ -23,6 +23,28 @@ class PublishTest(unittest.TestCase):
+         self.assertEqual(table.get_item(Key={"slug": "why-my-cron-ran-twice"})["Item"]["title"], "Why my cron ran twice")
+         self.assertEqual(table.scan()["Count"], 1)
+ 
++    def test_second_publish_stores_integer_similarity_score(self):
++        table = FakeTable()
++        first = {
++            "slug": "first-story",
++            "title": "First story",
++            "tags": ["cron", "linux"],
++            "body": "A cron job ran twice.",
++        }
++        second = {
++            "slug": "second-story",
++            "title": "Second story",
++            "tags": ["cron", "linux"],
++            "body": "A cron job ran twice.",
++        }
++
++        app.publish(table, first)
++        stored = app.publish(table, second)
++
++        self.assertEqual(stored["similar"], [{"slug": "first-story", "score": 100}])
++        self.assertIsInstance(stored["similar"][0]["score"], int)
++        self.assertEqual(table.scan()["Count"], 2)
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

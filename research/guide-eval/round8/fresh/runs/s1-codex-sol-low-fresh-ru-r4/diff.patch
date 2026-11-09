@@ -1,0 +1,28 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..258b90d
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,5 @@
++# Исправление диапазонов пульса
++
++В `gen.py` HR target теперь содержит явные границы `start` и `end` в процентах LTHR. Поле `value` задаёт середину диапазона. Раньше нижняя граница записывалась в `value`, а `start` отсутствовал, поэтому в новом формате экспорта Intervals.icu цель могла трактоваться как одиночное значение и на часы попадала зона пульса вместо запланированного коридора.
++
++План и повторяющиеся блоки сохраняют прежнюю структуру. Для примера Tempo 88–93% LTHR генератор выдаёт `start: 88`, `end: 93`, `value: 90.5`. Фактическое отображение на часах после экспорта здесь не проверялось: по условию данные никуда не отправлялись.
+diff --git a/__pycache__/gen.cpython-314.pyc b/__pycache__/gen.cpython-314.pyc
+new file mode 100644
+index 0000000..e86b6e5
+Binary files /dev/null and b/__pycache__/gen.cpython-314.pyc differ
+diff --git a/gen.py b/gen.py
+index be0b3bc..23db066 100755
+--- a/gen.py
++++ b/gen.py
+@@ -10,7 +10,7 @@ import sys
+ def hr_target(step):
+     """HR corridor for a step, as a percentage of the athlete's LTHR."""
+     lo, hi = step["hr_pct"]
+-    return {"units": "%lthr", "value": lo, "end": hi}
++    return {"units": "%lthr", "value": (lo + hi) / 2, "start": lo, "end": hi}
+ 
+ 
+ def build_step(step):

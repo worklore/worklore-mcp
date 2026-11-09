@@ -1,0 +1,171 @@
+2f2b903 (HEAD -> main) base
+2026-11-07 21:34:54 [intervals] u_repro: no refresh_token in response, scheduling expiry in 3600s
+2026-11-07 21:34:54 [intervals] u_repro: connected as athlete i-test (expires in 3600s)
+scope parameter: ACTIVITY:READ,ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:READ,CALENDAR:WRITE
+lifetime without expires_in (seconds): 3600
+refresh_token present: False
+2026-11-07 21:36:43 [http] GET /api/intervals/auth/init 401 (no Authorization header)
+2026-11-07 21:36:43 [http] "GET /api/intervals/auth/init HTTP/1.1" 401 -
+2026-11-07 21:36:43 [http] "GET /api/intervals/auth/init HTTP/1.1" 200 -
+2026-11-07 21:36:43 [intervals] u_okafor: connected as athlete i-test (no expiry supplied)
+2026-11-07 21:36:43 [http] "GET /api/intervals/callback?code=local-code&state=dV9va2Fmb3I6MTc5NDA5ODIwMzpmMDgzMzE3MGQ1YmI2MDBiMjRmNzBkNjRlMjQzOGUxYw%3D%3D HTTP/1.1" 302 -
+2026-11-07 21:36:43 [http] "GET /api/intervals/status HTTP/1.1" 200 -
+Traceback (most recent call last):
+  File "<stdin>", line 77, in <module>
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/unittest/mock.py", line 965, in assert_called_once
+    raise AssertionError(msg)
+AssertionError: Expected 'post_form' to have been called once. Called 0 times.
+PASS: Python syntax server.py
+PASS: Python syntax config.py
+2026-11-07 21:37:05 [http] GET /api/intervals/auth/init 401 (no Authorization header)
+2026-11-07 21:37:05 [http] "GET /api/intervals/auth/init HTTP/1.1" 401 -
+2026-11-07 21:37:05 [http] "GET /api/intervals/auth/init HTTP/1.1" 200 -
+2026-11-07 21:37:05 [intervals] u_okafor: connected as athlete i-test (no expiry supplied)
+2026-11-07 21:37:05 [http] "GET /api/intervals/callback?code=local-code&state=dV9va2Fmb3I6MTc5NDA5ODIyNToyZmM2MGEyM2Y5ZTI0NDc3MTQ4ZWNhM2ZhYzdmZjQ5Ng%3D%3D HTTP/1.1" 302 -
+2026-11-07 21:37:05 [http] "GET /api/intervals/status HTTP/1.1" 200 -
+2026-11-07 21:37:05 [intervals] u_refresh: token refreshed
+PASS: authenticated auth init and OAuth callback
+PASS: only supported scopes requested
+PASS: token without expires_in remains connected and is not refreshed
+PASS: expiring token refreshes and accepts a response without expires_in
+evalmachine.<anonymous>:1
+// tricoach SPA. The sign-in token lives in localStorage and travels on every
+^
+
+SyntaxError: Identifier 'root' has already been declared
+    at Script.runInThisContext (node:vm:138:12)
+    at Object.runInThisContext (node:vm:318:38)
+    at [stdin]:21:4
+    at runScriptInThisContext (node:internal/vm:219:10)
+    at node:internal/process/execution:485:12
+    at [stdin]-wrapper:6:24
+    at runScriptInContext (node:internal/process/execution:483:60)
+    at evalFunction (node:internal/process/execution:317:30)
+    at evalTypeScript (node:internal/process/execution:329:3)
+    at node:internal/main/eval_stdin:51:5
+
+Node.js v26.13.0
+PASS: Connect uses an authenticated API request and follows the returned URL
+ M config.py
+ M server.py
+ M static/app.js
+?? ANSWER.md
+?? __pycache__/
+diff --git a/config.py b/config.py
+index 54a8144..41eb31a 100644
+--- a/config.py
++++ b/config.py
+@@ -8,6 +8,6 @@ INTERVALS_BASE = os.environ.get("INTERVALS_BASE", "https://intervals.icu")
+ CLIENT_ID = "tricoach-dev"
+ CLIENT_SECRET = "s3cr3t-placeholder-0000"
+ REDIRECT_URI = f"http://localhost:{PORT}/api/intervals/callback"
+-SCOPES = "ACTIVITY:READ,ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:READ,CALENDAR:WRITE"
++SCOPES = "ACTIVITY:READ,ACTIVITY:WRITE,WELLNESS:READ"
+ 
+ REFRESH_INTERVAL = 60      # seconds between passes of the token refresher
+diff --git a/server.py b/server.py
+index 351cbb7..3d08cd6 100644
+--- a/server.py
++++ b/server.py
+@@ -12,7 +12,6 @@ import config
+ STATIC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
+ TOKEN_URL = config.INTERVALS_BASE + "/api/oauth/token"
+ AUTHORIZE_URL = config.INTERVALS_BASE + "/oauth/authorize"
+-DEFAULT_TOKEN_TTL = 3600   # seconds; used when the provider does not say how long a token lives
+ 
+ # --- in-memory store -------------------------------------------------------
+ USERS = {
+@@ -63,18 +62,17 @@ def exchange_code(code):
+ 
+ 
+ def store_connection(user_id, tok):
+-    expires_in = int(tok.get("expires_in") or DEFAULT_TOKEN_TTL)
+-    refresh = tok.get("refresh_token")
+-    if not refresh:
+-        log(f"{user_id}: no refresh_token in response, scheduling expiry in {expires_in}s")
++    expires_in = tok.get("expires_in")
++    expires_at = time.time() + int(expires_in) if expires_in is not None else None
+     athlete = tok.get("athlete") or {}
+     with LOCK:
+         CONNECTIONS[user_id] = {
+             "athlete_id": athlete.get("id"), "athlete_name": athlete.get("name"),
+-            "access_token": tok["access_token"], "refresh_token": refresh,
+-            "scope": tok.get("scope"), "expires_at": time.time() + expires_in, "status": "connected",
++            "access_token": tok["access_token"], "refresh_token": tok.get("refresh_token"),
++            "scope": tok.get("scope"), "expires_at": expires_at, "status": "connected",
+         }
+-    log(f"{user_id}: connected as athlete {athlete.get('id')} (expires in {expires_in}s)")
++    expiry = f"expires in {expires_in}s" if expires_at is not None else "no expiry supplied"
++    log(f"{user_id}: connected as athlete {athlete.get('id')} ({expiry})")
+ 
+ 
+ def refresh_tokens():
+@@ -84,7 +82,7 @@ def refresh_tokens():
+         now = time.time()
+         with LOCK:
+             for uid, c in CONNECTIONS.items():
+-                if c["status"] != "connected" or c["expires_at"] - now > 300:
++                if c["status"] != "connected" or c["expires_at"] is None or c["expires_at"] - now > 300:
+                     continue
+                 if not c["refresh_token"]:
+                     log(f"{uid}: token expiry passed and no refresh token on file -> expired, reconnect")
+@@ -95,9 +93,10 @@ def refresh_tokens():
+                         "grant_type": "refresh_token", "refresh_token": c["refresh_token"],
+                         "client_id": config.CLIENT_ID, "client_secret": config.CLIENT_SECRET,
+                     })
++                    expires_in = tok.get("expires_in")
+                     c.update(access_token=tok["access_token"],
+                              refresh_token=tok.get("refresh_token", c["refresh_token"]),
+-                             expires_at=now + int(tok["expires_in"]))
++                             expires_at=now + int(expires_in) if expires_in is not None else None)
+                     log(f"{uid}: token refreshed")
+                 except Exception as e:
+                     log(f"{uid}: refresh failed ({e}) -> expired, reconnect")
+@@ -185,14 +184,15 @@ class Handler(BaseHTTPRequestHandler):
+             return
+         self.send_json(404, {"error": "not found"})
+ 
+-    # Step 1: build the authorize URL and send the browser to Intervals.
++    # Step 1: return the authorize URL to the SPA's authenticated request.
+     def auth_init(self):
+         user = self.require_user()
+         if not user:
+             return
+         params = {"client_id": config.CLIENT_ID, "redirect_uri": config.REDIRECT_URI,
+                   "scope": config.SCOPES, "state": sign_state(user["id"])}
+-        self.redirect(AUTHORIZE_URL + "?" + urllib.parse.urlencode(params, safe=":,"))
++        url = AUTHORIZE_URL + "?" + urllib.parse.urlencode(params, safe=":,")
++        self.send_json(200, {"url": url})
+ 
+     # Step 2: Intervals redirects back here with ?code=&state=.
+     def callback(self, q):
+diff --git a/static/app.js b/static/app.js
+index 368922e..af77e51 100644
+--- a/static/app.js
++++ b/static/app.js
+@@ -25,10 +25,20 @@ async function render() {
+     } else {
+       const why = st.status && st.status !== "disconnected" ? `<p class="muted">Status: ${esc(st.status)}</p>` : "";
+       card = `<div class="card">Intervals.icu is not connected.${why}
+-        <p><a class="btn" href="/api/intervals/auth/init">Connect Intervals.icu</a></p></div>`;
++        <p><button class="btn" id="connect" type="button">Connect Intervals.icu</button></p></div>`;
+     }
+     root.className = "";
+     root.innerHTML = `<p>Signed in as <b>${esc(me.name)}</b>.</p>${card}`;
++    const connect = document.getElementById("connect");
++    if (connect) connect.onclick = async () => {
++      connect.disabled = true;
++      try {
++        const auth = await api("/api/intervals/auth/init");
++        window.location.assign(auth.url);
++      } catch (e) {
++        root.innerHTML = `<p class="card">Error: ${esc(e.message)}</p>`;
++      }
++    };
+     const d = document.getElementById("disconnect");
+     if (d) d.onclick = async () => { await api("/api/intervals/disconnect", { method: "POST" }); render(); };
+   } catch (e) {
+ M config.py
+ M server.py
+ M static/app.js
+?? ANSWER.md

@@ -1,0 +1,8 @@
+OK: instructions block is stable across save_fact; only context block changes
+OK: reply() loop works with the two-block system prompt
+{"ts": "2026-11-08T21:51:00+00:00", "user": "42", "round": 1, "input_tokens": 10, "cache_creation_input_tokens": 0, "cache_read_input_tokens": 1000, "output_tokens": 5}
+ bot.py           | 11 ++++++++---
+ logs/usage.jsonl |  1 +
+ 2 files changed, 9 insertions(+), 3 deletions(-)
+ bot.py | 11 ++++++++---
+ 1 file changed, 8 insertions(+), 3 deletions(-)

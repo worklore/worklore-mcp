@@ -1,0 +1,14 @@
+1st: []
+2nd: TypeError: Float types are not supported. Use Decimal types instead.
+test_publish_stores_story (test_publish.PublishTest.test_publish_stores_story) ... 
+ok
+test_publish_with_existing_row (test_publish.PublishTest.test_publish_with_existing_row) ... ok
+
+----------------------------------------------------------------------
+Ran 2 tests in 0.000s
+
+OK
+1st similar: []
+2nd similar: [{'slug': 'first-post', 'score': Decimal('0.4500')}]
+ M src/app.py
+ M tests/test_publish.py

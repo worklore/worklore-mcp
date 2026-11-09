@@ -1,0 +1,77 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..0948678
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,58 @@
++# Fix: HR corridors clamped to the watch's zones
++
++## What was wrong
++
++`gen.py` emitted HR targets as `{"units": "%lthr", "value": <lo>, "end": <hi>}`.
++The `value`/`end` key shape is the problem: at FIT-export time Intervals.icu
++routes it as a Lap-HR / zone-mapped target, so the Garmin watch clamps each
++corridor to its own zone bands (computed from the watch's auto-detected
++LTHR 168) instead of the planned range. That is exactly what
++`readback/watch-notes.md` shows — every step displayed as a watch zone edge,
++never 151–160 or 129–141, and changing the watch's LTHR only moved the bands.
++
++The two earlier attempts failed for related reasons: `units: "bpm"` with
++absolute values is misread by the FIT export as percent-of-something (hence the
++impossible 214–249 bpm), and `start_bpm`/`end_bpm` are not schema fields at
++all (silently dropped, leaving Garmin's constant-101 "no valid HR target"
++fallback).
++
++## The change
++
++`gen.py`, function `hr_target` — one-word change: the lower bound is now
++`start` instead of `value`:
++
++```json
++{"units": "%lthr", "start": <lo>, "end": <hi>}
++```
++
++With `start`/`end` the target routes as an **Instant-HR corridor**: Intervals
++converts the percentages using the LTHR stored in Intervals (172) at export
++time, and the watch displays that raw bpm range — immune to the watch's own
++auto-detected LTHR. This is also the key shape used in Intervals' own API
++examples for ranged targets.
++
++Nothing else changed: plans stay in %LTHR, units stay `%lthr` (absolute bpm
++stays broken — don't reintroduce it), durations/repeats/labels are untouched.
++
++## Verification
++
++- `python3 gen.py plans/tempo-run.json` produces valid JSON with every `hr`
++  target as `start`/`end` (68–75, 88–93, 75–82, 65–72).
++- Expected on-watch rendering after re-pushing and Garmin sync (Intervals
++  LTHR 172): warm-up 117–129, tempo 151–160, float 129–141, cool-down
++  112–124 bpm.
++
++Root cause and fix corroborated by
++[Exact HR corridors on Garmin from Intervals.icu API workouts](https://worklore.dev/s/2026-05-12-exact-hr-corridors-on-garmin-from-intervals-icu-api-workouts)
++(same symptom, same failed attempts, verified fix) and Intervals.icu's API
++documentation.
++
++## Follow-up not done
++
++That source also flags that the Intervals **web UI** renders steps from a
++separate top-level `description` in Intervals' text grammar (not from
++`workout_doc`), so without one the steps may be invisible in the UI even
++though the API accepts the event and the watch shows the workout. That is a
++display concern only, separate from the watch-clamping bug fixed here, so I
++left it alone — worth handling later with care, since a malformed description
++can make Intervals wipe the parsed workout.
+diff --git a/gen.py b/gen.py
+index be0b3bc..4aeba5a 100755
+--- a/gen.py
++++ b/gen.py
+@@ -10,7 +10,7 @@ import sys
+ def hr_target(step):
+     """HR corridor for a step, as a percentage of the athlete's LTHR."""
+     lo, hi = step["hr_pct"]
+-    return {"units": "%lthr", "value": lo, "end": hi}
++    return {"units": "%lthr", "start": lo, "end": hi}
+ 
+ 
+ def build_step(step):

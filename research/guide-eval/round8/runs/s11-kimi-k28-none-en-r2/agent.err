@@ -1,0 +1,20 @@
+.
+
+----------------------------------------------------------------------
+Ran 1 test in 0.000s
+
+OK
+reproduced: Float types are not supported. Use Decimal types instead.
+.
+.
+
+----------------------------------------------------------------------
+Ran 2 tests in 0.001s
+
+OK
+second publish OK, similar = [{'slug': 'first-story', 'score': Decimal('0.8500')}]
+201
+201
+ M src/app.py
+ M tests/test_publish.py
+?? ANSWER.md

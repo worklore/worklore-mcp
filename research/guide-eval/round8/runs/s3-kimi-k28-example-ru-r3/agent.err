@@ -1,0 +1,92 @@
+/private/tmp/h-LmeHyN/bin/nightly-review.zsh
+/private/tmp/h-LmeHyN/bin/notify.sh
+/private/tmp/h-LmeHyN/Library/Logs/nightly-review.out
+/private/tmp/h-LmeHyN/Library/Logs/nightly-review.err
+/private/tmp/h-LmeHyN/Library/LaunchAgents/com.vk.nightly-review.plist
+/private/tmp/h-LmeHyN/README.md
+/private/tmp/h-LmeHyN/launchctl-print.txt
+/private/tmp/h-LmeHyN/.git/config
+/private/tmp/h-LmeHyN/.git/objects/a3/1bd8e78e0483de3851371efec069a50bb695b5
+/private/tmp/h-LmeHyN/.git/objects/a2/bda06be8efe72448ad339b8c634b97f4f12b42
+/private/tmp/h-LmeHyN/.git/objects/c9/5ae56d545d85ec786cc7282c7fd216e9a82808
+/private/tmp/h-LmeHyN/.git/objects/81/8e53103b1e080650b9c3939a6e687942a33bca
+/private/tmp/h-LmeHyN/.git/objects/6e/189da1273f66e02fcc4c624596f36229208e78
+/private/tmp/h-LmeHyN/.git/objects/54/543757cc8d1f8aaa874e20cc984ecaa756d922
+/private/tmp/h-LmeHyN/.git/objects/bf/be29042d7131f6b0ed3ccfe8868cfd31ed4a8a
+/private/tmp/h-LmeHyN/.git/objects/c3/4736303b3e5f0522f00aa2592a75da3fd884f5
+/private/tmp/h-LmeHyN/.git/objects/e6/9de29bb2d1d6434b8b29ae775ad8c2e48c5391
+/private/tmp/h-LmeHyN/.git/objects/c2/b3fd843530cc4deb18b6fd766bc6bfa9597abc
+/private/tmp/h-LmeHyN/.git/objects/e0/b986fd9d59cd8e1f473bf452f98997bd9a1efa
+/private/tmp/h-LmeHyN/.git/objects/2c/6e2b2a3aba2d05fa0d90a74b446e3845f18dbc
+/private/tmp/h-LmeHyN/.git/objects/8b/caaac41578874a88d40f5d61d25853e4197a6c
+/private/tmp/h-LmeHyN/.git/HEAD
+/private/tmp/h-LmeHyN/.git/info/exclude
+/private/tmp/h-LmeHyN/.git/logs/HEAD
+/private/tmp/h-LmeHyN/.git/logs/refs/heads/main
+/private/tmp/h-LmeHyN/.git/description
+/private/tmp/h-LmeHyN/.git/hooks/commit-msg.sample
+/private/tmp/h-LmeHyN/.git/hooks/pre-rebase.sample
+/private/tmp/h-LmeHyN/.git/hooks/sendemail-validate.sample
+/private/tmp/h-LmeHyN/.git/hooks/pre-commit.sample
+/private/tmp/h-LmeHyN/.git/hooks/applypatch-msg.sample
+/private/tmp/h-LmeHyN/.git/hooks/fsmonitor-watchman.sample
+/private/tmp/h-LmeHyN/.git/hooks/pre-receive.sample
+/private/tmp/h-LmeHyN/.git/hooks/prepare-commit-msg.sample
+/private/tmp/h-LmeHyN/.git/hooks/post-update.sample
+/private/tmp/h-LmeHyN/.git/hooks/pre-merge-commit.sample
+/private/tmp/h-LmeHyN/.git/hooks/pre-applypatch.sample
+/private/tmp/h-LmeHyN/.git/hooks/pre-push.sample
+/private/tmp/h-LmeHyN/.git/hooks/update.sample
+/private/tmp/h-LmeHyN/.git/hooks/push-to-checkout.sample
+/private/tmp/h-LmeHyN/.git/refs/heads/main
+/private/tmp/h-LmeHyN/.git/index
+/private/tmp/h-LmeHyN/.git/COMMIT_EDITMSG
+---
+# nightly-review (snapshot of my home dir, the relevant bits)
+
+A launchd user agent runs `bin/nightly-review.zsh` every night at 02:30. The
+script asks a headless coding agent to review yesterday's commits in
+~/projects/shop and sends me the summary (or a failure note) over Telegram
+via `bin/notify.sh`.
+
+Layout, relative to my home:
+
+- `Library/LaunchAgents/com.vk.nightly-review.plist` — loaded with
+  `launchctl bootstrap gui/$UID ...` on 2026-10-12
+- `bin/nightly-review.zsh` — the job
+- `bin/notify.sh` — Telegram notifier (works when run by hand)
+- `Library/Logs/` — where the plist points stdout/stderr
+- `launchctl-print.txt` — output of `launchctl print gui/501/com.vk.nightly-review`, captured 2026-10-18 09:10
+
+I have received nothing on Telegram since it was loaded: no summaries, no
+failure notes.
+zsh:1: read-only variable: status
+exit=1
+ZSH-OK
+/private/tmp/h-LmeHyN/Library/LaunchAgents/com.vk.nightly-review.plist: OK
+--- run1 (success) rc=0
+stdout:
+claude finished in 3s, rc=0
+stderr:
+notify.log:
+NOTIFY: nightly review done: FAKE REVIEW: everything looks fine
+claude received prompt:
+Review the commits in this repository since 2026-11-07.
+For each commit: one line on what it changes and whether anything looks risky
+(migrations, auth, payments, deleted tests).
+End with a three-line summary I can read on my phone.
+Do not modify any file.
+OUT file:
+FAKE REVIEW: everything looks fine
+--- run2 (claude fails) rc=1
+stdout:
+claude finished in 0s, rc=1
+stderr:
+Not logged in · Please run /login
+notify.log:
+NOTIFY: nightly review done: FAKE REVIEW: everything looks fine
+NOTIFY: nightly review FAILED (exit 1), see /private/tmp/h-LmeHyN/.verify/home/Library/Logs/nightly-review-2026-11-08.md
+ZSH-OK
+Library/LaunchAgents/com.vk.nightly-review.plist: OK
+ M Library/LaunchAgents/com.vk.nightly-review.plist
+ M bin/nightly-review.zsh

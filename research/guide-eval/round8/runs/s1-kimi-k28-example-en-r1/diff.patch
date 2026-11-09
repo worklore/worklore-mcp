@@ -1,0 +1,74 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..ae920a1
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,55 @@
++# Fix: HR corridors clamped to the watch's own zones
++
++## What was wrong
++
++`gen.py` built each HR target as `{"units": "%lthr", "value": lo, "end": hi}`
++(gen.py:13). According to the colleague's note, that exact key shape is what
++breaks it: with `value`, Intervals' FIT export treats the target as a
++Lap-HR / zone-mapped target, so the watch clamps the corridor to its own
++(stale, auto-detected) zone bands. That matches the readback exactly — every
++corridor on the watch was one of the Forerunner 965's zone edges (118–137,
++151–162, …) rather than the planned percentages × Intervals' LTHR 172.
++
++## The fix
++
++One-word rename in `hr_target()`: `value` → `start`, giving
++`{"units": "%lthr", "start": lo, "end": hi}`. With `start`, the FIT export
++produces an Instant-HR corridor, so the watch displays the raw bpm Intervals
++computes from its own stored LTHR (172), drift-immune to whatever LTHR the
++watch has auto-detected. Kept `%lthr` units — the note confirms percentages
++are correct; Intervals converts at export time.
++
++Expected result on the next push: warm-up 117–129, tempo 151–160,
++float 129–141, cool-down 112–124 bpm — the "expected" column in
++readback/watch-notes.md.
++
++## Which parts of the colleague's note applied
++
++Applied:
++- The core diagnosis and fix: `value` routes as a zone-mapped Lap-HR target
++  (watch clamps to its own zones), `start` becomes an Instant-HR corridor
++  (watch shows Intervals' raw bpm). The rename in `hr_target()` is taken
++  directly from this.
++- The corroborating detail that `%lthr` percentages are the right units and
++  that Intervals converts them at FIT-export time from its own threshold —
++  our generator already did this, so no change needed there.
++
++Did not apply (no action needed for this bug):
++- `units: "bpm"` with absolute values and `start_bpm`/`end_bpm` — both were
++  already known-bad from earlier tries (recorded in watch-notes.md) and the
++  generator never emitted them.
++- Surveying the Intervals UI target dropdown — wrong turn in the note; the
++  dropdown picks the units label, not the value shape.
++- The bonus `description` text-grammar trap (steps invisible in the Intervals
++  web UI, `m` = minutes, `mtr`/`km`, bare `Z2` = power zones, etc.). That
++  fixes web-UI rendering, which was not part of the reported symptom —
++  watch-notes.md only documents the watch clamping. Left out to keep the
++  change minimal; worth revisiting separately if the web UI rendering
++  matters.
++
++## Verification
++
++`python3 gen.py plans/tempo-run.json` now emits `"start": <lo>, "end": <hi>`
++in every step's `hr` object. Remaining step: re-push the event and confirm on
++the watch that corridors show 151–160 / 129–141 etc., which per the note's
++verified end-to-end recipe should now match Intervals' LTHR-172 math.
+diff --git a/gen.py b/gen.py
+index be0b3bc..4aeba5a 100755
+--- a/gen.py
++++ b/gen.py
+@@ -10,7 +10,7 @@ import sys
+ def hr_target(step):
+     """HR corridor for a step, as a percentage of the athlete's LTHR."""
+     lo, hi = step["hr_pct"]
+-    return {"units": "%lthr", "value": lo, "end": hi}
++    return {"units": "%lthr", "start": lo, "end": hi}
+ 
+ 
+ def build_step(step):

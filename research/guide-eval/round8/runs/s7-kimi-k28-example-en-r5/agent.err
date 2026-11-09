@@ -1,0 +1,77 @@
+/opt/homebrew/bin/python3
+/opt/homebrew/bin/node
+Python 3.14.6
+SYNTAX-OK
+--- 1. POST init (the fixed Connect button call)
+{"authorize_url": "http://127.0.0.1:18766/oauth/authorize?client_id=tricoach-dev&redirect_uri=http:%2F%2Flocalhost:8766%2Fapi%2Fintervals%2Fcallback&scope=ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE&state=dV9va2Fmb3I6MTc5NDE5MTE1MTpmYWJmNjg3Yzc3NTlhNzhiMDcwZmQxNzgxNDhhNTQ1ZQ%3D%3D"}
+--- authorize URL checks
+Traceback (most recent call last):
+  File "<string>", line 7, in <module>
+    assert d["redirect_uri"] == "http://127.0.0.1:8766/api/intervals/callback", d
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: {'client_id': 'tricoach-dev', 'redirect_uri': 'http://localhost:8766/api/intervals/callback', 'scope': 'ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE', 'state': 'dV9va2Fmb3I6MTc5NDE5MTE1MTpmYWJmNjg3Yzc3NTlhNzhiMDcwZmQxNzgxNDhhNTQ1ZQ=='}
+cat: /tmp/state.txt: No such file or directory
+--- 3. provider redirect back: GET callback?code&state
+callback -> 302 redirect=http://localhost:8766/?connected=1
+--- 4. status after connect
+{"connected": true, "status": "connected", "scope": "ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE", "athlete": {"id": "i999", "name": "Stub Athlete"}}
+
+--- 5. wellness proxy
+[{"date": "2026-11-08", "resting_hr": 52}]
+
+--- 6. athlete revokes on Intervals side -> API 401s
+{"error": "intervals returned 401"}
+ [401]
+
+{"connected": false, "status": "expired, reconnect"}
+
+--- 7. reconnect flow works again
+callback -> 302 redirect=http://localhost:8766/?connected=1
+{"connected": true, "status": "connected", "scope": "ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE", "athlete": {"id": "i999", "name": "Stub Athlete"}}
+
+Waiting 1s / 1m 30s · 3 background tasks still running
+Waiting 2s / 1m 30s · 3 background tasks still running
+Waiting 3s / 1m 30s · 3 background tasks still running
+Waiting 4s / 1m 30s · 3 background tasks still running
+Waiting 5s / 1m 30s · 3 background tasks still running
+Waiting 6s / 1m 30s · 3 background tasks still running
+Waiting 7s / 1m 30s · 3 background tasks still running
+Waiting 8s / 1m 30s · 3 background tasks still running
+Waiting 9s / 1m 30s · 3 background tasks still running
+Waiting 10s / 1m 30s · 3 background tasks still running
+Waiting 11s / 1m 30s · 3 background tasks still running
+Waiting 12s / 1m 30s · 3 background tasks still running
+Waiting 13s / 1m 30s · 3 background tasks still running
+Waiting 14s / 1m 30s · 3 background tasks still running
+Waiting 15s / 1m 30s · 3 background tasks still running
+Waiting 16s / 1m 30s · 3 background tasks still running
+Waiting 17s / 1m 30s · 3 background tasks still running
+Waiting 18s / 1m 30s · 3 background tasks still running
+Waiting 19s / 1m 30s · 3 background tasks still running
+Waiting 20s / 1m 30s · 3 background tasks still running
+Waiting 21s / 1m 30s · 3 background tasks still running
+Waiting 22s / 1m 30s · 3 background tasks still running
+Waiting 23s / 1m 30s · 3 background tasks still running
+Waiting 24s / 1m 30s · 3 background tasks still running
+Waiting 25s / 1m 30s · 3 background tasks still running
+Waiting 26s / 1m 30s · 3 background tasks still running
+Waiting 27s / 1m 30s · 3 background tasks still running
+Waiting 28s / 1m 30s · 3 background tasks still running
+Waiting 29s / 1m 30s · 3 background tasks still running
+Waiting 30s / 1m 30s · 3 background tasks still running
+Waiting 31s / 1m 30s · 3 background tasks still running
+Waiting 32s / 1m 30s · 3 background tasks still running
+Waiting 33s / 1m 30s · 3 background tasks still running
+Waiting 34s / 1m 30s · 3 background tasks still running
+Waiting 35s / 1m 30s · 3 background tasks still running
+Waiting 36s / 1m 30s · 3 background tasks still running
+Waiting 37s / 1m 30s · 3 background tasks still running
+Waiting 38s / 1m 30s · 3 background tasks still running
+ M config.py
+ M server.py
+ M static/app.js
+?? ANSWER.md
+ config.py     |  6 +++---
+ server.py     | 64 +++++++++++++++++++++--------------------------------------
+ static/app.js | 13 +++++++++++-
+ 3 files changed, 38 insertions(+), 45 deletions(-)

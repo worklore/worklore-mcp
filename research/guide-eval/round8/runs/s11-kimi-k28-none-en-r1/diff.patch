@@ -1,0 +1,127 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..c498683
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,31 @@
++# Why the second publish returned 500
++
++## Cause
++
++`similarity()` in `src/app.py` returned a Python `float`
++(`round(0.7 * tag_score + 0.3 * word_score, 4)`), and `related()` stored that
++float as `score` inside each entry of the item's `similar` list. boto3's
++DynamoDB serializer rejects floats (`TypeError: Float types are not supported.
++Use Decimal types instead.`), so `table.put_item(...)` blew up.
++
++The bug was invisible on the first publish after deploy: the library was
++empty, `scan()` returned no items, `similar` came out as `[]`, and no float
++ever reached `put_item` — hence the log line `similar=0 stored` and a 201.
++From the second publish on, the table contained at least one story, `similar`
++was non-empty, every entry carried a float `score`, and every request 500'd.
++That's why it "worked once" and then never again.
++
++## Fix (in `src/app.py`)
++
++1. `similarity()` now returns `Decimal(str(round(...)))` — the score is a
++   Decimal at the source, with `str()` avoiding binary-float artifacts.
++2. Defense in depth: `publish()` passes the whole item through a new
++   `_decimalize()` helper that recursively converts any float to `Decimal`
++   before `put_item`. Even if a future change introduces another float
++   somewhere in the item, it can never reach DynamoDB and cause this again.
++
++Regression coverage: `tests/test_publish.py` gained
++`test_second_publish_stores_similar_as_decimal`, which publishes two stories
++(the exact failing scenario) and asserts the stored score is a `Decimal`. The
++old test only published once, which is why the bug slipped through. All tests
++pass: `python3 -m unittest discover tests`.
+diff --git a/src/app.py b/src/app.py
+index db49c5e..9952696 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -8,6 +8,7 @@ import json
+ import logging
+ import re
+ import time
++from decimal import Decimal
+ 
+ log = logging.getLogger("stories")
+ 
+@@ -27,7 +28,7 @@ def similarity(a, b):
+     tag_score = len(ta & tb) / len(ta | tb) if (ta | tb) else 0
+     wa, wb = words(a.get("body")), words(b.get("body"))
+     word_score = len(wa & wb) / len(wa | wb) if (wa | wb) else 0
+-    return round(0.7 * tag_score + 0.3 * word_score, 4)
++    return Decimal(str(round(0.7 * tag_score + 0.3 * word_score, 4)))
+ 
+ 
+ def related(story, existing):
+@@ -48,6 +49,17 @@ def validate(story):
+         raise ValueError("bad slug")
+ 
+ 
++def _decimalize(value):
++    """Deep-convert floats to Decimal; DynamoDB rejects float types."""
++    if isinstance(value, float):
++        return Decimal(str(value))
++    if isinstance(value, dict):
++        return {k: _decimalize(v) for k, v in value.items()}
++    if isinstance(value, (list, tuple)):
++        return [_decimalize(v) for v in value]
++    return value
++
++
+ def publish(table, story):
+     """Store ``story`` with its related stories. Returns the stored item."""
+     validate(story)
+@@ -60,6 +72,7 @@ def publish(table, story):
+         "published_at": int(time.time()),
+         "similar": related(story, existing),
+     }
++    item = _decimalize(item)
+     table.put_item(Item=item)
+     log.info("publish slug=%s similar=%d stored", item["slug"], len(item["similar"]))
+     return item
+diff --git a/tests/test_publish.py b/tests/test_publish.py
+index 6c9ac44..547e3ce 100644
+--- a/tests/test_publish.py
++++ b/tests/test_publish.py
+@@ -1,6 +1,7 @@
+ import os
+ import sys
+ import unittest
++from decimal import Decimal
+ 
+ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+ sys.path.insert(0, os.path.dirname(__file__))
+@@ -23,6 +24,30 @@ class PublishTest(unittest.TestCase):
+         self.assertEqual(table.get_item(Key={"slug": "why-my-cron-ran-twice"})["Item"]["title"], "Why my cron ran twice")
+         self.assertEqual(table.scan()["Count"], 1)
+ 
++    def test_second_publish_stores_similar_as_decimal(self):
++        # Regression: the first publish wrote an empty "similar" list, so the
++        # float scores only reached DynamoDB on the second publish and 500'd.
++        table = FakeTable()
++        first = {
++            "slug": "why-my-cron-ran-twice",
++            "title": "Why my cron ran twice",
++            "tags": ["cron", "linux"],
++            "body": "Two crontabs, one for root and one for me, both had the line.",
++        }
++        second = {
++            "slug": "cron-dst-bite-me",
++            "title": "Cron and DST bit me",
++            "tags": ["cron"],
++            "body": "My cron jobs shifted an hour when DST ended.",
++        }
++        app.publish(table, first)
++        stored = app.publish(table, second)
++        self.assertEqual(len(stored["similar"]), 1)
++        score = stored["similar"][0]["score"]
++        self.assertIsInstance(score, Decimal)
++        self.assertEqual(table.get_item(Key={"slug": "cron-dst-bite-me"})["Item"]["similar"][0]["slug"],
++                         "why-my-cron-ran-twice")
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

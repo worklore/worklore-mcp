@@ -1,0 +1,184 @@
+eae0362 (HEAD -> main) base
+ README.md                |  14 +++
+ config.py                |  13 +++
+ logs/connect-attempt.log |  41 ++++++++
+ logs/support-tickets.md  |  30 ++++++
+ server.py                | 244 +++++++++++++++++++++++++++++++++++++++++++++++
+ static/app.js            |  39 ++++++++
+ static/index.html        |  18 ++++
+ 7 files changed, 399 insertions(+)
+* main
+2026-11-08 02:50:35 [http] GET /api/intervals/auth/init 401 (no Authorization header)
+2026-11-08 02:50:35 [http] "GET /api/intervals/auth/init HTTP/1.1" 401 -
+Connect navigation without bearer header: 401
+2026-11-08 02:50:35 [http] "GET /api/intervals/auth/init HTTP/1.1" 302 -
+Authorized init: 302
+Provider authorize response: 400 {"error":"invalid_request"}
+2026-11-08 02:50:35 [intervals] u_okafor: no refresh_token in response, scheduling expiry in 3600s
+2026-11-08 02:50:35 [intervals] u_okafor: connected as athlete local-athlete (expires in 3600s)
+Invented token lifetime (seconds): 3600
+2026-11-08 02:52:10 [http] "GET /api/intervals/auth/init HTTP/1.1" 200 -
+Traceback (most recent call last):
+  File "<stdin>", line 73, in <module>
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/urllib/request.py", line 187, in urlopen
+    return opener.open(url, data, timeout)
+           ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/urllib/request.py", line 493, in open
+    response = meth(req, response)
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/urllib/request.py", line 602, in http_response
+    response = self.parent.error(
+        'http', request, response, code, msg, hdrs)
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/urllib/request.py", line 525, in error
+    result = self._call_chain(*args)
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/urllib/request.py", line 464, in _call_chain
+    result = func(*args)
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/urllib/request.py", line 718, in http_error_302
+    return self.parent.open(new, timeout=req.timeout)
+           ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/urllib/request.py", line 493, in open
+    response = meth(req, response)
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/urllib/request.py", line 602, in http_response
+    response = self.parent.error(
+        'http', request, response, code, msg, hdrs)
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/urllib/request.py", line 531, in error
+    return self._call_chain(*args)
+           ~~~~~~~~~~~~~~~~^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/urllib/request.py", line 464, in _call_chain
+    result = func(*args)
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/urllib/request.py", line 611, in http_error_default
+    raise HTTPError(req.full_url, code, msg, hdrs, fp)
+urllib.error.HTTPError: HTTP Error 502: Bad Gateway
+2026-11-08 02:52:31 [http] "GET /api/intervals/auth/init HTTP/1.1" 200 -
+2026-11-08 02:52:31 [intervals] u_okafor: connected as athlete local-athlete (no expiry supplied)
+2026-11-08 02:52:31 [http] "GET /api/intervals/callback?code=local-code&state=dV9va2Fmb3I6MTc5NDExNzE1MTo4ZGE4NzgwOTJmNzg5NmJlZGU0NDRmNDcxZGU1OWJiYw%3D%3D HTTP/1.1" 302 -
+2026-11-08 02:52:31 [http] "GET /?connected=1 HTTP/1.1" 200 -
+2026-11-08 02:52:31 [http] "GET /api/intervals/status HTTP/1.1" 200 -
+2026-11-08 02:52:31 [http] "GET /api/intervals/wellness HTTP/1.1" 200 -
+PASS: complete local OAuth flow, valid scopes, connected status, wellness proxy
+PASS: token without expires_in remains connected through background refresh passes
+ M config.py
+ M server.py
+ M static/app.js
+?? ANSWER.md
+?? __pycache__/
+diff --git a/config.py b/config.py
+index 54a8144..e39e425 100644
+--- a/config.py
++++ b/config.py
+@@ -8,6 +8,6 @@ INTERVALS_BASE = os.environ.get("INTERVALS_BASE", "https://intervals.icu")
+ CLIENT_ID = "tricoach-dev"
+ CLIENT_SECRET = "s3cr3t-placeholder-0000"
+ REDIRECT_URI = f"http://localhost:{PORT}/api/intervals/callback"
+-SCOPES = "ACTIVITY:READ,ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:READ,CALENDAR:WRITE"
++SCOPES = "ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE"
+ 
+ REFRESH_INTERVAL = 60      # seconds between passes of the token refresher
+diff --git a/server.py b/server.py
+index 351cbb7..87e50f5 100644
+--- a/server.py
++++ b/server.py
+@@ -12,7 +12,6 @@ import config
+ STATIC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
+ TOKEN_URL = config.INTERVALS_BASE + "/api/oauth/token"
+ AUTHORIZE_URL = config.INTERVALS_BASE + "/oauth/authorize"
+-DEFAULT_TOKEN_TTL = 3600   # seconds; used when the provider does not say how long a token lives
+ 
+ # --- in-memory store -------------------------------------------------------
+ USERS = {
+@@ -63,18 +62,18 @@ def exchange_code(code):
+ 
+ 
+ def store_connection(user_id, tok):
+-    expires_in = int(tok.get("expires_in") or DEFAULT_TOKEN_TTL)
++    expires_in = tok.get("expires_in")
++    expires_at = time.time() + int(expires_in) if expires_in is not None else None
+     refresh = tok.get("refresh_token")
+-    if not refresh:
+-        log(f"{user_id}: no refresh_token in response, scheduling expiry in {expires_in}s")
+     athlete = tok.get("athlete") or {}
+     with LOCK:
+         CONNECTIONS[user_id] = {
+             "athlete_id": athlete.get("id"), "athlete_name": athlete.get("name"),
+             "access_token": tok["access_token"], "refresh_token": refresh,
+-            "scope": tok.get("scope"), "expires_at": time.time() + expires_in, "status": "connected",
++            "scope": tok.get("scope"), "expires_at": expires_at, "status": "connected",
+         }
+-    log(f"{user_id}: connected as athlete {athlete.get('id')} (expires in {expires_in}s)")
++    lifetime = f"expires in {expires_in}s" if expires_in is not None else "no expiry supplied"
++    log(f"{user_id}: connected as athlete {athlete.get('id')} ({lifetime})")
+ 
+ 
+ def refresh_tokens():
+@@ -84,7 +83,8 @@ def refresh_tokens():
+         now = time.time()
+         with LOCK:
+             for uid, c in CONNECTIONS.items():
+-                if c["status"] != "connected" or c["expires_at"] - now > 300:
++                if (c["status"] != "connected" or c["expires_at"] is None
++                        or c["expires_at"] - now > 300):
+                     continue
+                 if not c["refresh_token"]:
+                     log(f"{uid}: token expiry passed and no refresh token on file -> expired, reconnect")
+@@ -185,14 +185,15 @@ class Handler(BaseHTTPRequestHandler):
+             return
+         self.send_json(404, {"error": "not found"})
+ 
+-    # Step 1: build the authorize URL and send the browser to Intervals.
++    # Step 1: return the authorize URL for the SPA to open in the browser.
+     def auth_init(self):
+         user = self.require_user()
+         if not user:
+             return
+         params = {"client_id": config.CLIENT_ID, "redirect_uri": config.REDIRECT_URI,
+                   "scope": config.SCOPES, "state": sign_state(user["id"])}
+-        self.redirect(AUTHORIZE_URL + "?" + urllib.parse.urlencode(params, safe=":,"))
++        url = AUTHORIZE_URL + "?" + urllib.parse.urlencode(params, safe=":,")
++        self.send_json(200, {"authorize_url": url})
+ 
+     # Step 2: Intervals redirects back here with ?code=&state=.
+     def callback(self, q):
+diff --git a/static/app.js b/static/app.js
+index 368922e..910245b 100644
+--- a/static/app.js
++++ b/static/app.js
+@@ -25,10 +25,15 @@ async function render() {
+     } else {
+       const why = st.status && st.status !== "disconnected" ? `<p class="muted">Status: ${esc(st.status)}</p>` : "";
+       card = `<div class="card">Intervals.icu is not connected.${why}
+-        <p><a class="btn" href="/api/intervals/auth/init">Connect Intervals.icu</a></p></div>`;
++        <p><button class="btn" id="connect">Connect Intervals.icu</button></p></div>`;
+     }
+     root.className = "";
+     root.innerHTML = `<p>Signed in as <b>${esc(me.name)}</b>.</p>${card}`;
++    const c = document.getElementById("connect");
++    if (c) c.onclick = async () => {
++      const auth = await api("/api/intervals/auth/init");
++      window.location.assign(auth.authorize_url);
++    };
+     const d = document.getElementById("disconnect");
+     if (d) d.onclick = async () => { await api("/api/intervals/disconnect", { method: "POST" }); render(); };
+   } catch (e) {
+/opt/homebrew/bin/node
+total 24
+drwx------  10 valentinakoniukhova wheel   320 Nov  8 02:52 .
+drwxrwxrwt 552 root                wheel 17664 Nov  8 02:50 ..
+drwxr-xr-x  12 valentinakoniukhova wheel   384 Nov  8 02:53 .git
+-rw-r--r--   1 valentinakoniukhova wheel  1397 Nov  8 02:52 ANSWER.md
+-rw-r--r--   1 valentinakoniukhova wheel   780 Nov  8 02:48 README.md
+drwxr-xr-x   4 valentinakoniukhova wheel   128 Nov  8 02:52 __pycache__
+-rw-r--r--   1 valentinakoniukhova wheel   528 Nov  8 02:51 config.py
+drwxr-xr-x   4 valentinakoniukhova wheel   128 Nov  8 02:48 logs
+-rw-r--r--   1 valentinakoniukhova wheel 10252 Nov  8 02:51 server.py
+drwxr-xr-x   4 valentinakoniukhova wheel   128 Nov  8 02:48 static
+2026-11-08 02:53:42 [http] "GET /api/me HTTP/1.1" 200 -
+2026-11-08 02:53:42 [http] "GET /api/intervals/status HTTP/1.1" 200 -
+2026-11-08 02:53:42 [http] "GET /api/intervals/auth/init HTTP/1.1" 200 -
+2026-11-08 02:53:42 [intervals] u_okafor: connected as athlete athlete (no expiry supplied)
+2026-11-08 02:53:42 [http] "GET /api/intervals/callback?code=code&state=dV9va2Fmb3I6MTc5NDExNzIyMjo5YmNiOWE5MGM1NzJlZjg4ZDllNzljZDg3ZTIxODQ0MA%3D%3D HTTP/1.1" 302 -
+2026-11-08 02:53:42 [http] "GET /?connected=1 HTTP/1.1" 200 -
+2026-11-08 02:53:42 [http] "GET /api/intervals/status HTTP/1.1" 200 -
+PASS: SPA Connect click sends bearer authentication and completes the OAuth flow
+ M config.py
+ M server.py
+ M static/app.js
+?? ANSWER.md

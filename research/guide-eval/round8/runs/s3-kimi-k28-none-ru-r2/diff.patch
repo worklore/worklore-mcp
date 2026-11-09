@@ -1,0 +1,145 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..63ad4bc
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,67 @@
++# Почему ночная задача молчала
++
++Задача запускалась исправно — `launchctl print` показывает `runs = 6` (ровно по разу
++за каждую ночь с 2026-10-12), `state = waiting` — норма. Но каждый запуск умирал
++молча. В `nightly-review.err` на каждый запуск приходится пара строк:
++
++```
++Not logged in · Please run /login
++/Users/vk/bin/nightly-review.zsh:19: read-only variable: status
++```
++
++Из них следуют две независимые причины, и молчание — результат их наложения.
++
++## Причина 1 (главная): сообщение об ошибке никогда не отправлялось
++
++`bin/nightly-review.zsh:19` делает `status=$?`, но `status` в zsh — встроенный
++**read-only** параметр (синоним `$?`). Присваивание обрывает неинтерактивный
++скрипт с exit code 1 *до* блока `if`, который вызывает `notify.sh`. Поэтому
++сообщение «FAILED» до Telegram не доходило ни разу. Это же объясняет
++`last exit code = 1` в `launchctl-print.txt`.
++
++## Причина 2: claude не залогинен в окружении launchd
++
++Каждый запуск `claude -p` завершался stderr'ом `Not logged in · Please run /login`.
++LaunchAgent работает без интерактивной сессии, и доступных креденшелов claude
++в этом контексте нет — сводки получаться не могли в принципе. Скрипт падал,
++а из-за причины 1 вы об этом не узнавали.
++
++Что сделать на реальной машине (я это не делал — запрещено обращаться к
++внешним сервисам): выполнить `claude /login` в сессии пользователя, чтобы
++креды попали в Keychain, либо прописать `ANTHROPIC_API_KEY` в
++`EnvironmentVariables` plist'а. Проверить `claude -p 'ping'` из headless-контекста,
++затем `launchctl start com.vk.nightly-review`. Пока логин не выполнен, задача
++будет присылать не сводку, а осмысленное сообщение об ошибке (см. правки).
++
++## Причина 3 (сопутствующая): notify.sh глотал свои собственные ошибки
++
++`bin/notify.sh` выбрасывал ответ Telegram в `/dev/null`, не проверял код ответа
++curl, а при ошибке чтения токена из keychain `set -e` убивал скрипт без
++диагностики. Даже добравшись до отправки, при плохом токене/сети/API вы бы
++не увидели ни сообщения, ни ошибки.
++
++## Что исправлено
++
++- `bin/nightly-review.zsh`
++  - `status` → `rc` (больше не падает до вызова notify);
++  - stderr claude пишется в `~/Library/Logs/nightly-review-claude-ДАТА.err`,
++    а в сообщение об ошибку включён его фрагмент — теперь уведомление сразу
++    говорит «Not logged in · Please run /login» и не нужно лезть в логи;
++  - `mkdir -p` для директории логов; если `notify.sh` сам падает, об этом
++    пишется в stderr (launchd положит это в `nightly-review.err`).
++- `bin/notify.sh`
++  - явная диагностика при недоступном токене keychain;
++  - проверка exit-кода curl и наличия `"ok":true` в ответе API, ошибки —
++    в stderr с ненулевым exit.
++
++Plist менять не нужно: расписание, пути логов и PATH работали.
++
++## Как проверено
++
++`zsh -n` / `bash -n`; прогон обоих скриптов с заглушками `claude`, `notify.sh`,
++`curl`, `security` во временном HOME внутри рабочей папки. Сценарии: claude
++падает / claude успешен / репозиторий отсутствует / keychain отказ / curl отказ /
++API-ошибка Telegram / успех — все дают ожидаемый результат (notify вызывается,
++exit-коды корректны, ошибки видны). Ни один внешний сервис не вызывался.
++(Мелочь: в этой песочнице `date` — GNU, поэтому `date -v-1d` ругается; на macOS
++это валидный BSD-синтаксис и на реальной машине работает.)
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..f6f4464 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -3,7 +3,9 @@
+ set -u
+ 
+ REPO="$HOME/projects/shop"
+-OUT="$HOME/Library/Logs/nightly-review-$(date +%F).md"
++LOGDIR="$HOME/Library/Logs"
++OUT="$LOGDIR/nightly-review-$(date +%F).md"
++CLAUDE_ERR="$LOGDIR/nightly-review-claude-$(date +%F).err"
+ NOTIFY="$HOME/bin/notify.sh"
+ 
+ SINCE=$(date -v-1d +%F)
+@@ -15,12 +17,16 @@ Do not modify any file."
+ 
+ cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
+ 
+-claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
++mkdir -p "$LOGDIR"
+ 
+-if [ $status -ne 0 ]; then
+-  "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
+-  exit $status
++claude -p "$PROMPT" --output-format text > "$OUT" 2> "$CLAUDE_ERR"
++rc=$?
++
++if [ $rc -ne 0 ]; then
++  "$NOTIFY" "nightly review FAILED (exit $rc): $(head -c 200 "$CLAUDE_ERR")" \
++    || echo "nightly-review: notify.sh failed" >&2
++  exit $rc
+ fi
+ 
+-"$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"
++"$NOTIFY" "nightly review done: $(head -c 300 "$OUT")" \
++  || echo "nightly-review: notify.sh failed" >&2
+diff --git a/bin/notify.sh b/bin/notify.sh
+index 818e531..6db8f3e 100755
+--- a/bin/notify.sh
++++ b/bin/notify.sh
+@@ -1,7 +1,26 @@
+ #!/bin/bash
+ # usage: notify.sh "message"  — sends a Telegram message to me.
+ set -eu
+-: "${TG_BOT_TOKEN:=$(security find-generic-password -s tg-bot -w)}"
++
++if [ -z "${TG_BOT_TOKEN:-}" ]; then
++  if ! TG_BOT_TOKEN=$(security find-generic-password -s tg-bot -w 2>/dev/null); then
++    echo "notify.sh: cannot read tg-bot token from keychain" >&2
++    exit 1
++  fi
++fi
++
+ CHAT_ID=123456789
+-curl -sS -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
+-  -d chat_id="$CHAT_ID" --data-urlencode text="$1" > /dev/null
++
++if ! resp=$(curl -sS -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
++  -d chat_id="$CHAT_ID" --data-urlencode text="$1"); then
++  echo "notify.sh: curl failed to reach Telegram" >&2
++  exit 1
++fi
++
++case "$resp" in
++  *'"ok":true'*) ;;
++  *)
++    echo "notify.sh: Telegram API error: $resp" >&2
++    exit 1
++    ;;
++esac

@@ -1,0 +1,26 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..eeb13d3
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,7 @@
++# Исправление диапазонов пульса
++
++В `hr_target()` в `gen.py` добавлено поле `custom: true` для каждой HR-цели. Значения `units: "%lthr"`, `value` и `end` не изменены, поэтому границы по-прежнему задаются в процентах LTHR из плана.
++
++Без признака произвольной цели Garmin заменял переданный коридор собственной зоной пульса. Поле `custom: true` сохраняет именно заданный диапазон вместо привязки к зонам часов.
++
++Локально проверен вывод `python3 gen.py plans/tempo-run.json`: все четыре шага содержат исходные диапазоны 68–75, 88–93, 75–82 и 65–72 % LTHR с `custom: true`; структура повторов сохранена. Наружу данные не отправлялись.
+diff --git a/gen.py b/gen.py
+index be0b3bc..6f71f9c 100755
+--- a/gen.py
++++ b/gen.py
+@@ -10,7 +10,7 @@ import sys
+ def hr_target(step):
+     """HR corridor for a step, as a percentage of the athlete's LTHR."""
+     lo, hi = step["hr_pct"]
+-    return {"units": "%lthr", "value": lo, "end": hi}
++    return {"units": "%lthr", "value": lo, "end": hi, "custom": True}
+ 
+ 
+ def build_step(step):

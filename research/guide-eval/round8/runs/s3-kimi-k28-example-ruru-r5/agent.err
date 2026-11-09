@@ -1,0 +1,21 @@
+zsh:1: read-only variable: status
+exit=1
+0855452 base
+SYNTAX-OK
+Library/LaunchAgents/com.vk.nightly-review.plist: OK
+=== scenario 1: claude succeeds ===
+nightly-review: start 2026-11-08 23:01:11
+nightly-review: claude exited rc=0 after 0s
+NOTIFY: nightly review done in 0s: STUB-SUMMARY for: Review the commits in this repository since 2026-11-07.
+script exit=0
+--- OUT file:
+STUB-SUMMARY for: Review the commits in this repository since 2026-11-07.
+=== scenario 2: claude fails (not logged in) ===
+nightly-review: start 2026-11-08 23:01:20
+Not logged in · Please run /login
+nightly-review: claude exited rc=1 after 0s
+NOTIFY: nightly review FAILED (exit 1) after 0s, see /private/tmp/h-iCUJRe/.verify/home/Library/Logs/nightly-review-2026-11-08.md and /private/tmp/h-iCUJRe/.verify/home/Library/Logs/nightly-review.err
+script exit=1
+--- OUT file size: 0 bytes
+ M Library/LaunchAgents/com.vk.nightly-review.plist
+ M bin/nightly-review.zsh

@@ -1,0 +1,39 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..21786e7
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,20 @@
++# HR target fix
++
++Changed `hr_target()` in `gen.py` to emit the lower HR bound as `start` instead of `value`. Targets now have the form:
++
++```json
++{"units": "%lthr", "start": 68, "end": 75}
++```
++
++`value`/`end` selects Intervals.icu's zone-mapped Lap-HR target path during FIT export, so Garmin replaces the planned corridor with one of the watch's local zone bands. `start`/`end` selects an Instant-HR corridor, preserving the raw bpm range calculated by Intervals. The units remain `%lthr`, so Intervals continues to convert the planned percentages using its stored LTHR.
++
++## Parts of the colleague's note applied
++
++- Applied the `value` → `start` lower-bound rename while retaining `end`.
++- Kept HR values as `%lthr` percentages rather than absolute bpm.
++
++The failed `bpm` and `start_bpm`/`end_bpm` variants were not used. The note about the top-level `description` text grammar did not apply to this fix: this generator emits `workout_doc` only, and the reported problem was HR targeting rather than web-UI step rendering.
++
++## Validation
++
++Generated `plans/tempo-run.json` and checked all four HR targets, including both repeated steps. Every target uses `%lthr` with the planned `start`/`end` values and none contains `value`. No event was pushed and no external service was contacted, so watch-side behavior was not re-tested here.
+diff --git a/gen.py b/gen.py
+index be0b3bc..4aeba5a 100755
+--- a/gen.py
++++ b/gen.py
+@@ -10,7 +10,7 @@ import sys
+ def hr_target(step):
+     """HR corridor for a step, as a percentage of the athlete's LTHR."""
+     lo, hi = step["hr_pct"]
+-    return {"units": "%lthr", "value": lo, "end": hi}
++    return {"units": "%lthr", "start": lo, "end": hi}
+ 
+ 
+ def build_step(step):

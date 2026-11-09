@@ -1,0 +1,119 @@
+c1b5837 base
+---
+commit c1b5837e08e04a79a575360cbdc9927031dff3ab
+Author: dev <dev@local>
+Date:   Sat Nov 7 19:59:10 2026 -0300
+
+    base
+
+diff --git a/config.py b/config.py
+new file mode 100644
+index 0000000..54a8144
+--- /dev/null
++++ b/config.py
+@@ -0,0 +1,13 @@
++import os
++
++PORT = 8766
++APP_SECRET = "dev-only-change-me-7c1f0a"          # signs the OAuth state parameter
++
++# Intervals.icu OAuth client (placeholders; the real pair is in the deploy env)
++INTERVALS_BASE = os.environ.get("INTERVALS_BASE", "https://intervals.icu")
++CLIENT_ID = "tricoach-dev"
++CLIENT_SECRET = "s3cr3t-placeholder-0000"
++REDIRECT_URI = f"http://localhost:{PORT}/api/intervals/callback"
++SCOPES = "ACTIVITY:READ,ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:READ,CALENDAR:WRITE"
++
++REFRESH_INTERVAL = 60      # seconds between passes of the token refresher
+--- A: no response_type, with scopes ---
+200
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <script>
+      // iOS lets people pinch-zoom whatever maximum-scale says, but uses maximum-scale=1 to skip zooming in on a
+      // field under 16px when it gets focus (our nat
+
+--- B: response_type=code added ---
+200
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <script>
+      // iOS lets people pinch-zoom whatever maximum-scale says, but uses maximum-scale=1 to skip zooming in on a
+      // field under 16px when it gets focus (our nat
+
+--- C: bogus scope ---
+200
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <script>
+      // iOS lets people pinch-zoom whatever maximum-scale says, but uses maximum-scale=1 to skip zooming in on a
+      // field under 16px when it gets focus (our nat
+
+PASS me with token {"id": "u_okafor", "name": "C. Okafor"}
+PASS init without token -> 401 401
+PASS init with token -> 200 json {"authorize_url": "http://127.0.0.1:8899/oauth/authorize?response_type=code&client_id=tricoach-dev&redirect_uri=http:%2F%2Flocalhost:8766%2Fapi%2Fintervals%2Fcallback&scope=ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE&state=dV9va2Fmb3I6MTc5NDA5MzEyODo1MTZiMzhiM2UxNWRhMmRjMmNkYjFmMzdmMzJjNWQ1Yw%3D%3D"}
+PASS authorize url host http://127.0.0.1:8899/oauth/authorize
+PASS response_type=code present ['code']
+PASS scope one-modifier-per-category ['ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE']
+PASS redirect_uri matches config http://localhost:8766/api/intervals/callback
+PASS state signature valid for u_okafor 
+FAIL callback -> 302 /?connected=1 200 None
+PASS status connected with athlete + scope {"connected": true, "status": "connected", "scope": "ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE", "athlete": {"id": "i98765", "name": "T. Rivera"}}
+PASS wellness proxy works [{"id": "2026-11-07", "weight": 70.1}]
+Traceback (most recent call last):
+  File "<stdin>", line 63, in <module>
+KeyError: 'u_okafor'
+/bin/bash: line 1: 98526 Terminated: 15          python3 .stub_intervals.py
+/bin/bash: line 1: 98527 Terminated: 15          INTERVALS_BASE=http://127.0.0.1:8899 python3 server.py > .test-server.log 2>&1
+PASS me with token {"id": "u_okafor", "name": "C. Okafor"}
+PASS init without token -> 401 401
+PASS init with token -> 200 json {"authorize_url": "http://127.0.0.1:8899/oauth/authorize?response_type=code&client_id=tricoach-dev&redirect_uri=http:%2F%2Flocalhost:8766%2Fapi%2Fintervals%2Fcallback&scope=ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE&state=dV9va2Fmb3I6MTc5NDA5MzE3MTplNjdhNzgxNmEzZjJhN2RiMjdjNzI2YzQxYWZhNDIwZg%3D%3D"}
+PASS authorize url path http://127.0.0.1:8899/oauth/authorize
+PASS response_type=code present ['code']
+PASS scope one-modifier-per-category ['ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE']
+PASS redirect_uri matches config 
+PASS state signature valid for u_okafor 
+PASS callback -> 302 /?connected=1 302 /?connected=1
+PASS callback with bad state -> 400 400 {"error": "bad state or code"}
+PASS status connected {"connected": true, "status": "connected", "scope": "ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE", "athlete": {"id": "i98765", "name": "T. Rivera"}}
+PASS wellness proxy works [{"id": "2026-11-07", "weight": 70.1}]
+PASS second user connects independently {"connected": true, "status": "connected", "scope": "ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE", "athlete": {"id": "i98765", "name": "T. Rivera"}}
+PASS no refresh/expiry machinery left 
+PASS expires_at stored as None 
+PASS SPA connect button wired via fetch 
+PASS SPA no longer uses plain <a> for connect 
+
+ALL PASS
+/bin/bash: line 1: 98576 Terminated: 15          python3 .stub_intervals.py
+/bin/bash: line 1: 98577 Terminated: 15          INTERVALS_BASE=http://127.0.0.1:8899 python3 server.py > .test-server.log 2>&1
+ M config.py
+ M server.py
+ M static/app.js
+.
+..
+.git
+README.md
+config.py
+logs
+server.py
+static
+ M config.py
+ M server.py
+ M static/app.js
+?? ANSWER.md
+ config.py     |  7 ++++---
+ server.py     | 53 +++++++++++++----------------------------------------
+ static/app.js | 11 ++++++++++-
+ 3 files changed, 27 insertions(+), 44 deletions(-)

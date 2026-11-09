@@ -1,0 +1,15 @@
+Traceback (most recent call last):
+  File "<stdin>", line 57, in <module>
+  File "/private/tmp/h-TFroHi/bot.py", line 206, in reply
+    log_usage(resp.usage, a.user_id, round_no, tool=",".join(used_tools) or None)
+              ^^^^^^^^^^
+AttributeError: 'Resp' object has no attribute 'usage'
+all checks passed
+ M README.md
+ M bot.py
+?? __pycache__/
+ README.md | 5 +++--
+ bot.py    | 9 ++++++---
+ 2 files changed, 9 insertions(+), 5 deletions(-)
+ M README.md
+ M bot.py

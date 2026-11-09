@@ -1,0 +1,40 @@
+--- readback/event-184233-as-sent.json	2026-11-09 01:19:03
++++ /tmp/event-fixed.json	2026-11-09 01:19:38
+@@ -9,7 +9,7 @@
+         "duration": 600,
+         "hr": {
+           "units": "%lthr",
+-          "value": 68,
++          "start": 68,
+           "end": 75
+         },
+         "text": "Warm-up easy"
+@@ -21,7 +21,7 @@
+             "duration": 480,
+             "hr": {
+               "units": "%lthr",
+-              "value": 88,
++              "start": 88,
+               "end": 93
+             },
+             "text": "Tempo"
+@@ -30,7 +30,7 @@
+             "duration": 120,
+             "hr": {
+               "units": "%lthr",
+-              "value": 75,
++              "start": 75,
+               "end": 82
+             },
+             "text": "Float"
+@@ -41,7 +41,7 @@
+         "duration": 300,
+         "hr": {
+           "units": "%lthr",
+-          "value": 65,
++          "start": 65,
+           "end": 72
+         },
+         "text": "Cool-down"
+diff exit: 1
+ M gen.py

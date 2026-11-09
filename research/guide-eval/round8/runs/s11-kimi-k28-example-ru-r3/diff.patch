@@ -1,0 +1,136 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..887aa17
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,59 @@
++# Почему вторая публикация возвращала 500
++
++## Причина
++
++`similarity()` в `src/app.py` считает оценку похожести через деление и
++`round(...)` — это Python `float`. boto3/DynamoDB не принимает float в
++атрибутах и падает с `TypeError: Float types are not supported. Use Decimal
++types instead.` — ровно та ошибка из `logs/error.log`.
++
++Почему первая публикация проходила: на момент неё таблица была пуста,
++`related()` возвращал пустой список и поле `similar` не содержало ни одного
++значения `score`. Флоат появляется только когда в таблице уже есть хотя бы
++одна история. То есть баг существовал всегда, но ветка кода с ним выполняется
++начиная со второй записи — и после этого ломается уже каждая публикация,
++потому что таблица не снова не станет пустой.
++
++## Исправление
++
++Конвертация вычисляемого скора в `decimal.Decimal` на границе с DynamoDB —
++`src/app.py`, функция `similarity()`:
++
++```python
++score = round(0.7 * tag_score + 0.3 * word_score, 4)
++# DynamoDB rejects floats; str() avoids binary float artifacts (Decimal(0.62) != Decimal("0.62")).
++return Decimal(str(score))
++```
++
++Конвертация через `str()`, а не `Decimal(score)`: `Decimal(0.62)` дал бы
++`0.62000000000000000444...`, а `Decimal("0.62")` — чистое значение. Сортировка
++в `related()` не пострадала: все скоры теперь `Decimal`, сравнение корректно.
++
++Добавлен регрессионный тест `test_publish_with_populated_table`
++(`tests/test_publish.py`): таблица сидируется одной записью, затем через
++`handler` публикуется вторая — проверяется статус 201 (не 500), наполненность
++`similar` и то, что скор имеет тип `Decimal`. Раньше тестовый `publish`
++вызывался напрямую по пустой таблице и эту ветку кода не покрывал вообще.
++
++Проверка: `python3 -m unittest discover tests` — 2 теста OK; ручной прогон
++трёх последовательных публикаций через `handler` — все 201, скоры вида
++`Decimal('0.35')`.
++
++## Что из заметки коллеги пригодилось
++
++- **Диагноз целиком совпал**: тот же `TypeError`, та же причина (float в
++  вычисляемом скоре), тот же механизм «первая запись проходит, потому что
++  таблица пуста».
++- **Шаг «trace every value that feeds a DynamoDB write and flag anything
++  computed»** — по этому пути и нашли единственный float: `score` в `similar`.
++  В `item` остальные значения — `str`/`int`, они DynamoDB подходят.
++- **«Convert to int or Decimal at the boundary»** — взяли `Decimal`
++  (а не int-проценты как у коллеги): здесь скор — дробное значение 0..1 с
++  округлением до 4 знаков, перевод в целые проценты менял бы данные.
++- **«Seed the table with one record before testing the write»** — прямо
++  использовано в новом тесте.
++
++Не пригодилось: шаг «grep for round( and / feeding item dicts» как отдельный
++приём (код маленький, виновник виден сразу) и совет «publish twice against a
++real table» — заменён фейковой таблицей, которая валидирует те же типы, что
++и boto3, без обращения к AWS.
+diff --git a/src/app.py b/src/app.py
+index db49c5e..69443e0 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -8,6 +8,7 @@ import json
+ import logging
+ import re
+ import time
++from decimal import Decimal
+ 
+ log = logging.getLogger("stories")
+ 
+@@ -27,7 +28,9 @@ def similarity(a, b):
+     tag_score = len(ta & tb) / len(ta | tb) if (ta | tb) else 0
+     wa, wb = words(a.get("body")), words(b.get("body"))
+     word_score = len(wa & wb) / len(wa | wb) if (wa | wb) else 0
+-    return round(0.7 * tag_score + 0.3 * word_score, 4)
++    score = round(0.7 * tag_score + 0.3 * word_score, 4)
++    # DynamoDB rejects floats; str() avoids binary float artifacts (Decimal(0.62) != Decimal("0.62")).
++    return Decimal(str(score))
+ 
+ 
+ def related(story, existing):
+diff --git a/tests/test_publish.py b/tests/test_publish.py
+index 6c9ac44..4557886 100644
+--- a/tests/test_publish.py
++++ b/tests/test_publish.py
+@@ -1,6 +1,8 @@
++import json
+ import os
+ import sys
+ import unittest
++from decimal import Decimal
+ 
+ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+ sys.path.insert(0, os.path.dirname(__file__))
+@@ -23,6 +25,34 @@ class PublishTest(unittest.TestCase):
+         self.assertEqual(table.get_item(Key={"slug": "why-my-cron-ran-twice"})["Item"]["title"], "Why my cron ran twice")
+         self.assertEqual(table.scan()["Count"], 1)
+ 
++    def test_publish_with_populated_table(self):
++        # Regression: the second publish is the first one that stores a
++        # computed similarity score — the empty-table path hides float bugs.
++        table = FakeTable()
++        first = {
++            "slug": "why-my-cron-ran-twice",
++            "title": "Why my cron ran twice",
++            "tags": ["cron", "linux"],
++            "body": "Two crontabs, one for root and one for me, both had the line.",
++        }
++        r1 = app.handler({"body": json.dumps(first)}, table)
++        self.assertEqual(r1["statusCode"], 201)
++
++        second = {
++            "slug": "cron-quirks-and-me",
++            "title": "Cron quirks and me",
++            "tags": ["cron"],
++            "body": "Another cron story, partly about the same crontab line.",
++        }
++        r2 = app.handler({"body": json.dumps(second)}, table)
++        self.assertEqual(r2["statusCode"], 201)
++
++        stored = table.get_item(Key={"slug": "cron-quirks-and-me"})["Item"]
++        self.assertEqual(len(stored["similar"]), 1)
++        self.assertEqual(stored["similar"][0]["slug"], "why-my-cron-ran-twice")
++        self.assertIsInstance(stored["similar"][0]["score"], Decimal)
++        self.assertGreater(stored["similar"][0]["score"], 0)
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

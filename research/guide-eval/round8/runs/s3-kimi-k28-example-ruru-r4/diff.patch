@@ -1,0 +1,103 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..90a9147
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,59 @@
++# Почему nightly-review молчала
++
++Задача **запускалась** — `launchctl print` показывает `runs = 6` и
++`last exit code = 1`, а `nightly-review.err` содержит по паре строк на каждый
++запуск. Проблема была не в launchd, а в том, что скрипт падал и не мог
++сообщить об этом: два бага наложились друг на друга.
++
++## Причины
++
++1. **claude под launchd не был залогинен.** Каждый запуск в stderr начинался с
++   `Not logged in · Please run /login`. У агента launchd минимальное
++   окружение: в `EnvironmentVariables` plist-файла был задан только `PATH`, а
++   переменной `USER` не было. Без неё CLI не находит логин в keychain и
++   умирает до начала работы. Исправлено: добавлен `<key>USER</key> =
++   vk` в `EnvironmentVariables` в
++   `Library/LaunchAgents/com.vk.nightly-review.plist`.
++
++2. **`status=$?` убивал скрипт раньше, чем он успевал пожаловаться.** В zsh
++   `status` — встроенная переменная только для чтения, и присваивание ей
++   обрывает скрипт на месте (в логе: `nightly-review.zsh:19: read-only variable:
++   status`). Эта строка стояла между вызовом `claude` и вызовом
++   `notify.sh` с сообщением об ошибке — поэтому падение claude оставалось
++   невидимым. Исправлено: переменная переименована в `rc` в
++   `bin/nightly-review.zsh:19`.
++
++3. **Профилактически: промпт передаётся через stdin.** Раньше многострочный
++   промпт передавался аргументом `claude -p "$PROMPT"` — хрупко в контексте
++   запланированного шелла. Теперь `print -r -- "$PROMPT" | claude -p ...`
++   (`bin/nightly-review.zsh:18`).
++
++Также в скрипт добавлена строка в stdout-лог с длительностью запуска
++(`run took Ns`) — запуск, который заканчивается через пару секунд, почти
++наверняка упал до начала работы.
++
++`bin/notify.sh` не менял: по README он работает при ручном запуске, и его
++вызов из GUI-сессии агента использует тот же доступ к keychain.
++
++## Что пригодилось из заметки коллеги
++
++- **`launchctl print` как первый шаг** — показал `runs = 6` и код выхода 1,
++  то есть отладка «не запускается» была неверной теорией.
++- **Читать `StandardErrorPath` до построения теорий** — лог сразу показал обе
++  ошибки.
++- **В zsh не присваивать `status`, использовать `rc=$?`** — это была причина №2.
++- **Задать `USER` в `EnvironmentVariables` plist** для доступа headless CLI к
++  keychain — причина №1.
++- **Передавать промпт через stdin, а не многострочным аргументом** —
++  применено.
++- **Логировать длительность каждого запуска** — применено.
++
++## Что не пригодилось / не проверить в этом окружении
++
++- **`< /dev/null` для `claude -p`** — из заметки это нужно, когда промпт
++  передаётся аргументом; здесь промпт идёт через stdin, поэтому не применял.
++- **Проверка через `launchctl kickstart -k`** и намеренная поломка с ожиданием
++  уведомлений — здесь снимок домашней директории без живого launchd, `claude`
++  и репозитория `~/projects/shop`, так что проверить конец-в-конец не удалось.
++  Синтаксис скрипта (`zsh -n`) и plist (`plutil -lint`) проверены.
++- Сторожевой таймер из заметки в этом скрипте не использовался.
+diff --git a/Library/LaunchAgents/com.vk.nightly-review.plist b/Library/LaunchAgents/com.vk.nightly-review.plist
+index c347363..d49eacf 100644
+--- a/Library/LaunchAgents/com.vk.nightly-review.plist
++++ b/Library/LaunchAgents/com.vk.nightly-review.plist
+@@ -24,6 +24,8 @@
+   <dict>
+     <key>PATH</key>
+     <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
++    <key>USER</key>
++    <string>vk</string>
+   </dict>
+ </dict>
+ </plist>
+diff --git a/bin/nightly-review.zsh b/bin/nightly-review.zsh
+index e0b986f..c9252b3 100755
+--- a/bin/nightly-review.zsh
++++ b/bin/nightly-review.zsh
+@@ -15,12 +15,15 @@ Do not modify any file."
+ 
+ cd "$REPO" || { "$NOTIFY" "nightly review: repo missing"; exit 1; }
+ 
+-claude -p "$PROMPT" --output-format text > "$OUT"
+-status=$?
++start_ts=$EPOCHSECONDS
++print -r -- "$PROMPT" | claude -p --output-format text > "$OUT"
++rc=$?
+ 
+-if [ $status -ne 0 ]; then
+-  "$NOTIFY" "nightly review FAILED (exit $status), see $OUT"
+-  exit $status
++if [ $rc -ne 0 ]; then
++  "$NOTIFY" "nightly review FAILED (exit $rc), see $OUT"
++  exit $rc
+ fi
+ 
++echo "nightly review run took $((EPOCHSECONDS - start_ts))s"
++
+ "$NOTIFY" "nightly review done: $(head -c 300 "$OUT")"

@@ -1,0 +1,85 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..ec8cffb
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,66 @@
++# Fix: HR corridors clamped to the watch's own zones
++
++## Symptom
++
++Every HR corridor from event 184233 rendered on the watch as one of the
++Forerunner 965's own auto-detected zone bands (118–137, 151–162, 137–151),
++never the planned range (117–129, 151–160, 129–141 — i.e. % LTHR × 172).
++Changing the watch's LTHR moved the bands but they stayed zone edges.
++
++## Root cause
++
++`gen.py` emitted HR targets as `{"units": "%lthr", "value": lo, "end": hi}`.
++With that key shape, Intervals' FIT export routes the target as a
++**Lap-HR / zone-mapped** target: the watch clamps it to its own stored HR
++zones instead of displaying the bpm range Intervals computed. The API accepts
++the body without complaint (the readback shows it stored verbatim), so the
++failure is silent until it lands on the watch.
++
++## What I changed
++
++One line in `gen.py:13` (`hr_target`):
++
++```diff
++-    return {"units": "%lthr", "value": lo, "end": hi}
+++    return {"units": "%lthr", "start": lo, "end": hi}
++```
++
++`{start, end}` switches the FIT export to an **Instant-HR corridor**, which
++the watch displays as the raw bpm Intervals computed from its own stored LTHR
++(172 for this athlete) — drift-immune and independent of the watch's zones.
++Percentages (`%lthr`) are kept rather than absolute bpm, so Intervals
++converts at export time from the threshold it has on file.
++
++Verified: `python3 gen.py plans/tempo-run.json` now emits `start`/`end` on
++every step, including inside the repeat block. End-to-end watch verification
++requires a push + Garmin sync, which is out of scope per the ground rules —
++the readback in `readback/event-184233-as-sent.json` still shows the old
++`value` shape, so a re-push is needed for the fix to reach the watch.
++
++## Parts of the colleague's note that applied
++
++- **The core diagnosis and fix**: `{value, end}` vs `{start, end}` selects
++  Lap-HR/zone-mapped vs Instant-HR routing in the FIT export. This matched
++  our symptom exactly (corridors pinned to the watch's zone bands) and the
++  one-word rename `value` → `start` is the fix. This is precisely the
++  breakthrough they described.
++- **The earlier-failure context**: their tries 1 and 2 (`units: "bpm"` →
++  impossible 214–249 bpm; `start_bpm`/`end_bpm` → constant 101 fallback)
++  match the failed approaches recorded in `readback/watch-notes.md`, which
++  corroborates that we were hitting the same routing behavior.
++- **Percentages over absolute bpm**: they recommend `%lthr` units so
++  Intervals converts at export from its own stored threshold — we already
++  do this and kept it.
++
++## Parts that did not apply
++
++- **The top-level `description` text-grammar trap** (steps invisible in the
++  Intervals web UI, `m` = minutes, `mtr`/`km` for distance, bare `Z2` =
++  power zones, leading digits eaten as durations). Our reported symptom is
++  only the watch-side zone clamping, and the readback shows
++  `workout_doc.steps` populated and returned as sent — the parser accepted
++  the event. The web-UI visibility problem they describe isn't one we
++  observed, so I made no description changes; adding one would be untested
++  guesswork at Intervals' grammar.
++- **Their "absolute bpm is impossible" detour**: irrelevant — we never
++  needed absolute bpm once `%lthr` + `start` was known to work.
+diff --git a/gen.py b/gen.py
+index be0b3bc..4aeba5a 100755
+--- a/gen.py
++++ b/gen.py
+@@ -10,7 +10,7 @@ import sys
+ def hr_target(step):
+     """HR corridor for a step, as a percentage of the athlete's LTHR."""
+     lo, hi = step["hr_pct"]
+-    return {"units": "%lthr", "value": lo, "end": hi}
++    return {"units": "%lthr", "start": lo, "end": hi}
+ 
+ 
+ def build_step(step):

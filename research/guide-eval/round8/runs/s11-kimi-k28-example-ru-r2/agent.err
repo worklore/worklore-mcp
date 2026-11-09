@@ -1,0 +1,16 @@
+publish #1 -> ok
+publish #2 -> TypeError Float types are not supported. Use Decimal types instead.
+test_publish_stores_story (test_publish.PublishTest.test_publish_stores_story) ... 
+ok
+test_publish_with_existing_record_stores_similar_scores (test_publish.PublishTest.test_publish_with_existing_record_stores_similar_scores) ... ok
+
+----------------------------------------------------------------------
+Ran 2 tests in 0.000s
+
+OK
+publish first-story -> 201
+publish second-story -> 201
+publish third-story -> 201
+similar: [('first-story', Decimal('0.0375'), 'Decimal'), ('second-story', Decimal('0.0'), 'Decimal')]
+ M src/app.py
+ M tests/test_publish.py

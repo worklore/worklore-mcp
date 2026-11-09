@@ -1,0 +1,93 @@
+app.js OK
+PASS init POST auth -> 200 | {"authorize_url": "https://intervals.icu/oauth/authorize?client_id=tricoach-dev&redirect_uri=http:%2F%2Flocalhost:8766%2Fapi%2Fintervals%2Fcallback&scope=ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE&state=dV9va2Fmb3I6MTc5NDEwMTc4Nzo4NGZhNjRjYmI3NmQ0MDllODgwMTI1NzU4MzkxYzZmNg%3D%3D"}
+FAIL authorize_url points to Intervals | https://intervals.icu/oauth/authorize?client_id=tricoach-dev&redirect_uri=http:%2F%2Flocalhost:8766%2Fapi%2Fintervals%2Fcallback&scope=ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE&state=dV9va2Fmb3I6MTc5NDEwMTc4Nzo4NGZhNjRjYmI3NmQ0MDllODgwMTI1NzU4MzkxYzZmNg%3D%3D
+PASS scope: each area once, no dup | ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE
+PASS state present
+PASS init POST without auth -> 401 | {"error": "unauthorized"}
+PASS old GET init no longer routed -> 404 | 404
+FAIL callback -> 302 /?connected=1 | (502, None)
+FAIL token exchange sends only client_id/client_secret/code
+FAIL status connected as i98765 | {"connected": false, "status": "disconnected"}
+FAIL wellness proxy 200 | {"error": "intervals not connected"}
+FAIL wellness sent Bearer token
+FAIL wellness after revoke -> 401 reconnect | (409, '{"error": "intervals not connected"}')
+FAIL status after revoke -> 'expired, reconnect' | {"connected": false, "status": "disconnected"}
+FAIL reconnect callback -> 302 | (502, '{"error": "token exchange failed"}')
+FAIL connected again after reconnect | {"connected": false, "status": "disconnected"}
+PASS tampered state -> 400 | (400, '{"error": "bad state or code"}')
+
+FAILURES: ['authorize_url points to Intervals', 'callback -> 302 /?connected=1', 'token exchange sends only client_id/client_secret/code', 'status connected as i98765', 'wellness proxy 200', 'wellness sent Bearer token', 'wellness after revoke -> 401 reconnect', "status after revoke -> 'expired, reconnect'", 'reconnect callback -> 302', 'connected again after reconnect']
+--- server [intervals] log ---
+2026-11-07 22:36:27 [intervals] serving on http://localhost:8766 (intervals: http://127.0.0.1:8799)
+COMMAND   PID                USER   FD   TYPE             DEVICE SIZE/OFF NODE NAME
+Python  62480 valentinakoniukhova    3u  IPv4 0x4756418ef38dc70a      0t0  TCP 127.0.0.1:8766 (LISTEN)
+---
+/bin/bash: /bin/ps: Operation not permitted
+---
+connect-attempt.log
+support-tickets.md
+FAIL init POST auth -> 200 | {"error": "not found"}
+FAIL authorize_url points at Intervals base
+FAIL scope: each area once, no dup
+FAIL state present
+Traceback (most recent call last):
+  File "<stdin>", line 89, in <module>
+KeyError: 'state'
+COMMAND   PID                USER   FD   TYPE             DEVICE SIZE/OFF NODE NAME
+Python  56794 valentinakoniukhova    3u  IPv4 0xa6a093738c9b933b      0t0  TCP 127.0.0.1:8899 (LISTEN)
+exit=0
+total 24
+drwxr-xr-x 4 valentinakoniukhova wheel   128 Nov  7 22:34 .
+drwx------ 9 valentinakoniukhova wheel   288 Nov  7 22:34 ..
+-rw-r--r-- 1 valentinakoniukhova wheel   563 Nov  7 22:34 config.cpython-314.pyc
+-rw-r--r-- 1 valentinakoniukhova wheel 16926 Nov  7 22:34 server.cpython-314.pyc
+---
+Traceback (most recent call last):
+  File "<string>", line 7, in <module>
+    ThreadingHTTPServer(('127.0.0.1', config.PORT), server.Handler).serve_forever()
+    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 457, in __init__
+    self.server_bind()
+    ~~~~~~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 148, in server_bind
+    socketserver.TCPServer.server_bind(self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 478, in server_bind
+    self.socket.bind(self.server_address)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+OSError: [Errno 48] Address already in use
+routes check: True
+{"error": "not found"}
+
+PASS port is served by MY subprocess | ([15936], 15936)
+PASS init POST auth -> 200 | {"authorize_url": "http://127.0.0.1:18799/oauth/authorize?client_id=tricoach-dev&redirect_uri=http:%2F%2Flocalhost:8766%2Fapi%2Fintervals%2Fcallback&scope=ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE&state=dV9va2Fmb3I6MTc5NDEwMjA1OTo3Yzg0YTBjMDY5OTBhNTdlZTY5NTJlNjY5MGE5ODE3Mg%3D%3D"}
+PASS authorize_url points at Intervals base | http://127.0.0.1:18799/oauth/authorize?client_id=tricoach-dev&redirect_uri=http:%2F%2Flocalhost:8766%2Fapi%2Fintervals%2Fcallback&scope=ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE&state=dV9va2Fmb3I6MTc5NDEwMjA1OTo3Yzg0YTBjMDY5OTBhNTdlZTY5NTJlNjY5MGE5ODE3Mg%3D%3D
+PASS scope: each area once, no dup | ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE
+PASS state present
+PASS init POST without auth -> 401 | {"error": "unauthorized"}
+PASS old GET init no longer routed -> 404 | 404
+PASS callback -> 302 /?connected=1 | (302, '/?connected=1')
+PASS token exchange sends only client_id/client_secret/code | {'client_id': 'tricoach-dev', 'client_secret': 's3cr3t-placeholder-0000', 'code': 'code1'}
+PASS status connected as i98765 | {"connected": true, "status": "connected", "scope": "ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE", "athlete": {"id": "i98765", "name": "T. Rivera"}}
+PASS wellness proxy 200 | {"wellness": [{"id": 1, "resting_hr": 52}]}
+PASS wellness sent Bearer token | Bearer at-98765
+PASS wellness after revoke -> 401 reconnect | (401, '{"error": "intervals token revoked, reconnect"}')
+PASS status after revoke -> 'expired, reconnect' | {"connected": false, "status": "expired, reconnect"}
+PASS reconnect callback -> 302 | (302, '')
+PASS connected again after reconnect | {"connected": true, "status": "connected", "scope": "ACTIVITY:WRITE,WELLNESS:READ,CALENDAR:WRITE", "athlete": {"id": "i98765", "name": "T. Rivera"}}
+PASS tampered state -> 400 | (400, '{"error": "bad state or code"}')
+
+FAILURES: none
+--- server log ---
+2026-11-07 22:40:59 [intervals] u_okafor: connected as athlete i98765
+2026-11-07 22:40:59 [intervals] u_okafor: intervals token rejected (401), reconnect required
+2026-11-07 22:40:59 [intervals] u_okafor: connected as athlete i98765
+ M config.py
+ M server.py
+ M static/app.js
+?? __pycache__/
+---
+no .gitignore
+ M config.py
+ M server.py
+ M static/app.js

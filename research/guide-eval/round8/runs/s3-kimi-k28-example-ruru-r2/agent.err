@@ -1,0 +1,22 @@
+Library/LaunchAgents/:
+total 4
+drwxr-xr-x 3 valentinakoniukhova wheel  96 Nov  8 03:39 .
+drwxr-xr-x 4 valentinakoniukhova wheel 128 Nov  8 03:39 ..
+-rw-r--r-- 1 valentinakoniukhova wheel 853 Nov  8 03:39 com.vk.nightly-review.plist
+
+Library/Logs/:
+total 4
+drwxr-xr-x 4 valentinakoniukhova wheel 128 Nov  8 03:39 .
+drwxr-xr-x 4 valentinakoniukhova wheel 128 Nov  8 03:39 ..
+-rw-r--r-- 1 valentinakoniukhova wheel 594 Nov  8 03:39 nightly-review.err
+-rw-r--r-- 1 valentinakoniukhova wheel   0 Nov  8 03:39 nightly-review.out
+zsh syntax OK
+bash syntax OK
+Library/LaunchAgents/com.vk.nightly-review.plist: OK
+=== старый паттерн: status=$? ===
+zsh:1: read-only variable: status
+exit=1 (скрипт умер на присваивании)
+
+=== новый паттерн: rc=$? ===
+ветка ошибки сработала, rc=1
+exit=0

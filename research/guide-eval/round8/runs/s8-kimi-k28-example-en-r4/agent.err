@@ -1,0 +1,12 @@
+calls: 3
+static block: 2484 chars, identical across all calls
+tail sizes: [202, 212, 212] chars
+round 1 tail: "Today: 2026-11-07 (Saturday)\nAthlete: athlete (id 999), sport: running\nZones: Z1 <135, Z2 135-150, Z3 150-162, Z4 162-172, Z5 >172\nGoal: finish a half marathon\nLong-term facts:\n- (none yet)\nLanguage: en"
+round 2 tail: "Today: 2026-11-07 (Saturday)\nAthlete: athlete (id 999), sport: running\nZones: Z1 <135, Z2 135-150, Z3 150-162, Z4 162-172, Z5 >172\nGoal: finish a half marathon\nLong-term facts:\n- prefers morning runs\nLanguage: en"
+ALL CHECKS PASSED
+ M README.md
+ M bot.py
+?? __pycache__/
+ README.md | 5 +++--
+ bot.py    | 9 ++++++---
+ 2 files changed, 9 insertions(+), 5 deletions(-)

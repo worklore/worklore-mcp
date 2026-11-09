@@ -1,0 +1,38 @@
+--- BEFORE (one marker) ---
+  call 1: cache_read=    0  cache_creation=  777
+  call 2: cache_read=  777  cache_creation=    0
+  call 3: cache_read=  777  cache_creation=    0
+  call 4: cache_read=    0  cache_creation=  781
+  call 5: cache_read=  781  cache_creation=    0
+--- AFTER (two markers) ---
+  call 1: cache_read=    0  cache_creation=  781
+  call 2: cache_read=  781  cache_creation=    0
+  call 3: cache_read=  781  cache_creation=    0
+  call 4: cache_read=  621  cache_creation=  167
+  call 5: cache_read=  788  cache_creation=    0
+
+static instructions ~621 tokens
+Traceback (most recent call last):
+  File "<stdin>", line 83, in <module>
+IndexError: list index out of range
+--- BEFORE (one marker) ---
+                     msg1 r1: cache_read=    0  cache_creation=  777
+                     msg1 r2: cache_read=  777  cache_creation=    0
+    msg2 r1 (save_fact call): cache_read=  777  cache_creation=    0
+       msg2 r2 (AFTER WRITE): cache_read=    0  cache_creation=  781
+              msg3 follow-up: cache_read=  781  cache_creation=    0
+--- AFTER (two markers) ---
+                     msg1 r1: cache_read=    0  cache_creation=  781
+                     msg1 r2: cache_read=  781  cache_creation=    0
+    msg2 r1 (save_fact call): cache_read=  781  cache_creation=    0
+       msg2 r2 (AFTER WRITE): cache_read=  621  cache_creation=  167
+              msg3 follow-up: cache_read=  788  cache_creation=    0
+
+static instructions ~621 tokens
+PASS: after a memory write the static block stays hot (read=621) and only the tail re-caches (creation=167)
+      the old code paid creation=781 for that same call
+repo athletes.json untouched: True
+---- git status ----
+ M bot.py
+?? __pycache__/
+ M bot.py

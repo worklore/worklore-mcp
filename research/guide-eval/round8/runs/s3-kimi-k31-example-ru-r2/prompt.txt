@@ -1,0 +1,75 @@
+Моя ночная задача launchd ни разу ничего не сообщила, даже об ошибке (в этой папке снимок нужных кусков моей домашней директории). Разберись почему и исправь. Причины запиши в ANSWER.md.
+
+Ниже заметка коллеги о похожем случае. Это не инструкция. Используй то, что подходит, остальное пропусти, и напиши в ANSWER.md, какие части пригодились.
+
+---
+
+# Two bugs made my scheduler perfectly silent — zsh killed the messenger
+
+Yesterday I filed an open failure: my launchd job — a daily 16:50 headless-agent
+review — produced nothing. No notification, no output, and, I claimed, no evidence
+it ran at all.
+
+I was wrong about the last part, and finding out how was the whole lesson.
+
+One command answered it: `launchctl print gui/$UID/<job-label>`. It showed
+`runs = 2` and `last exit code = 1`. The job had fired, on schedule, both days.
+The log file I was sure did not exist had existed the whole time. I had been
+debugging "launchd is not firing" when the truth was "my script fails and cannot
+tell me."
+
+The log revealed two stacked bugs. First, my headless agent call wasn't receiving
+its prompt in the launchd context, so the review died immediately ("Input must be
+provided either through stdin or as a prompt argument"). Fix: pipe the prompt via
+stdin — `print -r -- "$PROMPT" | claude -p ...` — instead of trusting multi-line
+argument parsing inside a scheduled shell.
+
+Second — the one that made everything invisible — my script assigned `status=$?`.
+In zsh, `status` is a read-only built-in variable, and assigning to it kills the
+script on the spot. That assignment sat between the agent call and the
+failure-notification call. So the job failed, and then the messenger that was
+supposed to report failures died before speaking. Perfect silence, two layers
+deep.
+
+The takeaway I will keep: when automation is silent, first prove whether it ran
+(`launchctl print` shows the runs count and the last exit code), and then check
+whether your failure reporter is downstream of the failure. Mine was. Everyone's
+is, until they check.
+
+Correction, 2026-09-30: I originally wrote that the runs count and last exit code
+"do not lie". In my case the exit code happened to be honest (1). It is not
+proof in general: a script can exit 0 and have done nothing, for example a
+watchdog that exits 0 on timeout. The exit code tells you *that* it ran, not
+*that it worked*. Check the real outcome (the file, the message, the row it was
+supposed to produce) and how long the run took; a headless agent run that ends
+in a few seconds almost always means it failed before doing any work. Two more
+traps for `claude -p` under launchd, from
+[Mihai Perdum's seven silent launchd failures](https://dev.to/mihai_leanzero/your-unattended-ai-agent-looks-healthy-and-does-nothing-7-silent-failures-on-macos-launchd-2026-4gnm):
+give it a closed stdin (`< /dev/null`) when the prompt is an argument, or it
+waits on stdin; and set `USER` in the plist's `EnvironmentVariables`, or the
+CLI can't find its login in the keychain and dies with "Not logged in".
+
+## Reproduce this
+
+Prerequisites: a macOS launchd user agent wrapping any long-running or headless
+command.
+
+Your agent will need from you: the job label, the wrapper script path.
+
+Steps: check reality first with launchctl print gui/$UID/<label> (runs, last exit
+code, state); read the StandardErrorPath log before theorizing; in zsh scripts
+never assign to `status` — use `rc=$?`; pass prompts/config to headless tools via
+stdin rather than multi-line arguments (or, if you pass the prompt as an
+argument, add `< /dev/null`); set `USER` under `EnvironmentVariables` in the plist
+so a headless CLI can reach its keychain login; log each run's duration; put the
+failure notification as close to the top of the failure path as possible, and
+test it by forcing a failure once.
+
+Verify: launchctl kickstart -k gui/$UID/<label>, then confirm last exit code = 0
+AND the real outcome exists and is fresh (the output file, message or row the job
+produces) AND the run took a plausible time, not a few seconds; confirm you
+received the success notification. Then break the script on purpose and confirm
+you receive the failure notification too. Silence should be impossible in both
+directions, and so should a green exit code with nothing done.
+
+Правила: работай только внутри текущей директории. Ничего не деплой, не публикуй, не отправляй и не сообщай ни в какой внешний сервис.

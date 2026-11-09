@@ -1,0 +1,16 @@
+/bin/bash: python: command not found
+/bin/bash: python: command not found
+test_publish_stores_story (test_publish.PublishTest.test_publish_stores_story) ... 
+ok
+test_publish_with_existing_story_computes_similarity (test_publish.PublishTest.test_publish_with_existing_story_computes_similarity) ... ok
+
+----------------------------------------------------------------------
+Ran 2 tests in 0.000s
+
+OK
+Traceback (most recent call last):
+  File "<stdin>", line 9, in <module>
+AssertionError: {'statusCode': 400, 'body': '{"error": "bad slug"}'}
+three publishes in a row: all 201
+ M src/app.py
+ M tests/test_publish.py

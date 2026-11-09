@@ -1,0 +1,3 @@
+Fixed [gen.py](/tmp/h-G3gszJ/gen.py) to emit HR ranges with `start` and `end`, and to select HR as the workout target. The previous `value`/`end` shape did not define a range in [Intervals.icu’s workout format](https://forum.intervals.icu/t/workout-builder/1163/1123).
+
+I recorded the change and reasoning in [ANSWER.md](/tmp/h-G3gszJ/ANSWER.md). Local generation checks passed for all four ranges and the repeat block. I did not push a workout, so the watch display remains unverified.

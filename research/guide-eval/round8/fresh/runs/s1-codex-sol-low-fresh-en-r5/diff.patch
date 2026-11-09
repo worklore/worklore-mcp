@@ -1,0 +1,35 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..ad14455
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,7 @@
++# HR target export fix
++
++Changed `gen.py` to emit each planned HR corridor as `hr: {"start": low, "end": high, "units": "%lthr"}` and to set `workout_doc.target` to `"HR"`.
++
++The old generator put the lower bound in `value`, which represents a single target, rather than a range endpoint. It also left the workout's target mode unspecified. In the current Intervals.icu workout format, `start`/`end` represent a range and `target: "HR"` selects heart rate for export. The API readback only showed that the document was stored; it did not prove that Garmin received the intended target. These changes preserve LTHR percentages so Intervals can resolve them using the athlete's threshold, while making the intended corridor explicit.
++
++Verified locally by generating the sample event and checking its four HR targets and workout target. A new watch sync is still needed to confirm the displayed bpm ranges end to end; no external service was contacted with this workout.
+diff --git a/gen.py b/gen.py
+index be0b3bc..a83cc68 100755
+--- a/gen.py
++++ b/gen.py
+@@ -10,7 +10,7 @@ import sys
+ def hr_target(step):
+     """HR corridor for a step, as a percentage of the athlete's LTHR."""
+     lo, hi = step["hr_pct"]
+-    return {"units": "%lthr", "value": lo, "end": hi}
++    return {"units": "%lthr", "start": lo, "end": hi}
+ 
+ 
+ def build_step(step):
+@@ -32,7 +32,7 @@ def build_doc(plan):
+             })
+         else:
+             steps.append(build_step(block))
+-    return {"steps": steps}
++    return {"target": "HR", "steps": steps}
+ 
+ 
+ def build_event(plan):
