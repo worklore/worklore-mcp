@@ -1,0 +1,46 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..79230fe
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,7 @@
++# Changes to deploy.sh
++
++To ensure that deleting or making a note private removes obsolete note/author pages from the S3 bucket, and that removing files from `site/` removes them from the bucket:
++
++1. Added an `assemble_site` step in `deploy.sh` that aggregates the static assets from `site/` and the prerendered HTML pages from `.build/pages/` into `.build/site/`.
++2. Updated `sync_site` to sync `.build/site/` to `s3://$BUCKET/` with the `--delete` flag. This removes any objects from the bucket that no longer exist in either `site/` or `.build/pages/`.
++3. Retained `upload_pages` following the sync step to ensure all extensionless note and author pages are uploaded with the required `text/html; charset=utf-8` MIME type and `Cache-Control` settings.
+diff --git a/deploy.sh b/deploy.sh
+index 431ef02..db460a7 100755
+--- a/deploy.sh
++++ b/deploy.sh
+@@ -11,9 +11,18 @@ build_pages() {
+   python3 "$ROOT/build_pages.py" "$ROOT/content/stories.json" "$ROOT/.build/pages"
+ }
+ 
++assemble_site() {
++  echo "→ assembling complete site in .build/site"
++  rm -rf "$ROOT/.build/site"
++  mkdir -p "$ROOT/.build/site"
++  cp -R "$ROOT/site/." "$ROOT/.build/site/"
++  cp -R "$ROOT/.build/pages/." "$ROOT/.build/site/"
++}
++
+ sync_site() {
+-  echo "→ syncing site/ to s3://$BUCKET"
+-  aws s3 sync "$ROOT/site/" "s3://$BUCKET/" --only-show-errors
++  # Sync static site files and prune removed files from the bucket
++  echo "→ syncing site to s3://$BUCKET"
++  aws s3 sync "$ROOT/.build/site/" "s3://$BUCKET/" --delete --only-show-errors
+ }
+ 
+ upload_pages() {
+@@ -27,6 +36,7 @@ upload_pages() {
+ }
+ 
+ build_pages
++assemble_site
+ sync_site
+ upload_pages
+ echo "✓ deployed to s3://$BUCKET"

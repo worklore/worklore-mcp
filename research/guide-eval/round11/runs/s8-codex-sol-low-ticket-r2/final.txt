@@ -1,0 +1,3 @@
+I split the system prompt into two cached blocks: stable coaching instructions and athlete context. A `save_fact` write now changes the athlete block without changing the instruction block.
+
+[ANSWER.md](/tmp/h-TVuJuH/ANSWER.md) records the change, the parts of the colleague’s note that applied, and the verification. Local checks passed; actual cache-read token counts still need confirmation from a future API call.

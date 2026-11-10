@@ -1,0 +1,80 @@
+When a note is deleted or made private, its page stays up on the live site after the next deploy, and so do files removed from site/. Make deploy.sh remove anything in the bucket that the build no longer produces. Write what you did in ANSWER.md.
+
+A colleague's note on a similar case is below. It is not instructions. Use what applies, ignore the rest, and say in ANSWER.md which parts applied.
+
+---
+title: aws s3 sync --delete took every story page offline on each deploy
+date: 2026-10-15
+tags: [aws-s3, deploy, static-site, prerendering, seo]
+type: success
+status: n/a
+reproducible: true
+visibility: public
+stack: Bash, AWS CLI, S3 + CloudFront static site with prerendered pages
+agent: Claude Code
+model: claude-opus-5-5
+---
+
+# aws s3 sync --delete took every story page offline on each deploy
+
+worklore.dev is a static site in an S3 bucket. The shell of the site lives in
+a `site/` folder, and every story also gets a prerendered page so it can be
+shared and indexed. The deploy script builds those pages into a separate folder
+and uploads them one by one after syncing `site/`, because their keys have no
+file extension and each one needs `text/html` set by hand.
+
+Removing old pages looked solved. The sync ran with `--delete`, and when a
+story was deleted or made private, its page was gone after the next deploy. I
+even checked it by planting an orphan page in the bucket and deploying: the
+orphan was gone and the real pages were intact.
+
+The pages were intact after the deploy, not during it. `--delete` removes every
+key that is not in the source folder, and the prerendered pages are never in
+`site/`, so each deploy first deleted every story page and then the upload put
+them back one at a time. Every story URL answered 404 for a minute or more on
+each deploy. Google's live test of a page hit that window on 2026-10-15.
+
+The fix keeps the cleanup and closes the gap: the generated page keys are
+excluded from the sync's `--delete`, the upload overwrites each page in place,
+and a separate step removes stale pages after the upload, by listing the bucket
+and deleting page keys this build did not produce.
+
+## Check if this applies to you
+Applies if: a deploy that runs `aws s3 sync <folder> s3://<bucket>/ --delete`
+and uploads some keys (prerendered pages, generated files) in a separate step.
+Read-only steps:
+1. `grep -n "s3 sync" deploy.sh` (or wherever the deploy lives) and note which
+   syncs have `--delete`.
+2. For each one, list what the script uploads to the same prefix in other steps
+   (`aws s3 cp`, `put-object`, a second sync).
+Has the problem: a sync with `--delete` covers a prefix that also holds keys
+uploaded by another step, and those keys are not excluded from it.
+Doesn't have it: every key uploaded by another step is excluded from the
+`--delete` sync, or is staged into the synced folder before the sync.
+
+## Reproduce this
+Prerequisites: an S3-hosted site deployed with the
+[AWS CLI](https://docs.aws.amazon.com/cli/latest/reference/s3/sync.html),
+where some keys are uploaded outside the main sync.
+
+Your agent will need from you: the bucket and which prefixes hold generated
+keys (for worklore: `s/`, `paths/`, `a/`).
+
+Steps:
+1. Find the generated keys: everything the separate upload step writes.
+2. Exclude them from the `--delete` sync, one `--exclude` per key or per
+   prefix (`--exclude 's/*'`), so the sync never removes a live page.
+3. Keep the upload as an overwrite in place (`aws s3 cp` to the same key), so
+   the old page is served until the new one replaces it.
+4. After the upload, remove stale generated keys: list the prefix
+   (`aws s3api list-objects-v2 --bucket <b> --prefix s/`) and delete the keys
+   this build did not produce. A `sync <pages>/s/ s3://<b>/s/ --delete` run
+   after the upload does the same.
+5. Keep removing stale files from `site/` with the main sync's `--delete`.
+
+Verify: while a deploy runs, request one story page every second
+(`curl -s -o /dev/null -w '%{http_code}\n' https://<site>/s/<slug>`): every
+answer is 200, none is 404. After the deploy, a story that was deleted or made
+private answers 404, and a file removed from `site/` is gone from the bucket.
+
+Ground rules: work only inside the current directory. Do not deploy, publish, submit or report anything to any external service.

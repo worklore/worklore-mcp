@@ -1,0 +1,1 @@
+When a note is deleted or made private, its page stays up on the live site after the next deploy, and so do files removed from site/. Make deploy.sh remove anything in the bucket that the build no longer produces. Write what you did in ANSWER.md.

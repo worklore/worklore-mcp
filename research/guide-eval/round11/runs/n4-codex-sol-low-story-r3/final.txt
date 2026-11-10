@@ -1,0 +1,3 @@
+Added the `codex-sandboxed` lane to [run.sh](/tmp/h-SbwKV9/run.sh). It runs the same Codex command under [sandbox/agent.sb](/tmp/h-SbwKV9/sandbox/agent.sb) with a scratch `HOME` and no real-home access exception. Codex writes its final message in `/tmp`; the lane copies it into the run folder and reports an error if it is missing or empty.
+
+I documented the changes and which parts of the colleague’s note applied in [ANSWER.md](/tmp/h-SbwKV9/ANSWER.md). Shell syntax, sandbox profile loading, and `git diff --check` passed. I did not run Codex because the ground rules prohibit sending work to an external service.

@@ -1,0 +1,87 @@
+# Answer: remove stale files and pages on deploy
+
+## What was wrong
+
+`deploy.sh` never removed anything from the bucket. `site/` was synced without
+`--delete`, and the prerendered pages (`s/<slug>`, `a/<handle>`) were uploaded
+by a separate loop. So when a note was deleted or made private, its page stayed
+live after the deploy, and files removed from `site/` stayed in the bucket.
+
+## What changed (`deploy.sh` only)
+
+1. **`sync_site` now runs with `--delete`.** Anything in the bucket that the
+   build no longer produces is removed: deleted `site/` files, and stale or
+   unpublished pages.
+2. **Every page key this build produces is passed as `--exclude`.** The sync
+   never touches a live page. The page keys come from `.build/pages`, so the
+   list follows the build and nothing is hardcoded.
+3. **`upload_pages` is unchanged in behavior.** Each `aws s3 cp` overwrites the
+   page at the same key, so the old version keeps being served until the new
+   one replaces it.
+4. **`page_keys()` is a shared helper** used by both the excludes and the upload
+   loop, so the two lists cannot drift apart.
+5. **`mkdir -p .build/pages` in `build_pages`.** `build_pages.py` writes nothing
+   when there are no public notes, so the folder was never created and the
+   deploy failed. Found while testing the empty case; it would have blocked
+   stale-page cleanup for a site with zero public notes.
+
+Deploy order is unchanged: build → sync `site/` (with `--delete` and excludes) →
+upload pages.
+
+## Which parts of the colleague's note applied
+
+- **Applied: the diagnosis.** A `--delete` sync that covers a prefix also written
+  by another step deletes live pages before the upload restores them. That is
+  why the excludes are needed.
+- **Applied: exclude generated keys from `--delete`.** Done per exact key, not
+  per prefix. This is safer here because the build's output is the source of
+  truth and it has no other prefixes.
+- **Applied: overwrite in place with `aws s3 cp` to the same key.**
+- **Applied: the verify idea.** Polling a live story URL during a deploy to
+  check for 404s. I could not run this (see below).
+- **Not applied: a separate list-and-delete step for stale pages.** The main
+  `--delete` sync already removes stale page keys, because they are not in the
+  exclude list. A second step would add a list call with no benefit.
+- **Not applied: hardcoded prefixes (`s/`, `paths/`, `a/`).** This repo produces
+  only `s/` and `a/`, and there is no `paths/`. The exclude list is taken from
+  the build output instead.
+- **Not applied: the colleague's "already fixed" history.** That deploy had
+  `--delete` and the race. This repo never had `--delete`, so there was nothing
+  to fix, only the new behavior to get right.
+
+## Verification
+
+- `bash -n deploy.sh` passes.
+- Dry run with a stub `aws` CLI (a script that only echoes its arguments),
+  outside the repo, and then removed: the sync gets `--delete` and one
+  `--exclude` per produced page key (`a/ann`, `a/bob`,
+  `s/bird-calls-at-dawn`, `s/tide-tables-offline`, `s/trail-gpx-cleanup`). The
+  upload runs once per page with the `text/html` content type. The draft
+  (private) note gets no page and no exclude, so the sync deletes its old page
+  if one exists.
+- Zero-notes case (temp copy): completes with exit 0, and the sync runs with
+  `--delete` and no excludes.
+- Missing `BUCKET`: still exits 1 with the existing message.
+
+**Not verified:** I have no access to the real bucket, and I did not deploy
+(the repo's rules forbid it). The following are untested against real S3:
+
+- That `aws s3 sync --delete` honors `--exclude` for keys it would delete. This
+  is the documented behavior of the CLI, and the whole fix depends on it.
+  **Before relying on it, run one deploy to a test bucket** and confirm that a
+  page is never 404 during the sync.
+- The curl-every-second check during a live deploy.
+
+## Risks to know about
+
+- **Any object in the bucket that this repo does not produce will be deleted on
+  the first deploy.** `site/app.js` fetches `/notes.json`, but nothing in this
+  repo creates it. If another tool uploads it or any other file to the bucket,
+  this deploy will remove it. If that is not wanted, add those keys as
+  excludes.
+- **Exclude patterns are globs.** `aws s3 sync --exclude` treats `*`, `?` and
+  `[` as wildcards. A slug or handle with those characters would not be
+  excluded, and the sync would delete its live page. Slugs and handles should be
+  restricted to safe characters; I did not add a check for this.
+- **A `site/` file under `s/` or `a/` would be excluded from the sync** if its
+  key matches a page key. None exists today.

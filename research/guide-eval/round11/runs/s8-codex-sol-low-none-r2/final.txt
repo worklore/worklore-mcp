@@ -1,0 +1,3 @@
+I split the system prompt into a cached instruction block and an uncached athlete context block. A `save_fact` now updates the context without changing the cached instructions. I also expanded the stable guidance to help the prefix meet the cache minimum, while leaving tool selection unchanged.
+
+A local check confirmed that the cached block stays identical after a fact is added and the athlete context updates. I made no API call, so cache-read usage remains unmeasured. The changes and that limit are recorded in [ANSWER.md](/tmp/h-1yi7GL/ANSWER.md).

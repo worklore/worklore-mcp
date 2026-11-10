@@ -1,0 +1,49 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..29bb041
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,14 @@
++# Deployment Cleanup Changes
++
++## Problem
++Previously, when a note was deleted or marked private, its prerendered page (`s/<slug>`) and potentially orphaned author pages (`a/<handle>`) remained in the S3 bucket because `deploy.sh` only ran `aws s3 sync` without `--delete` on `site/` and used `aws s3 cp` in a loop for `.build/pages`. Similarly, files removed from `site/` were never deleted from the bucket.
++
++## Changes Made
++Updated `deploy.sh`:
++1. **`sync_site`**:
++   - Added `--delete` to remove files from the S3 bucket that no longer exist in `site/`.
++   - Added `--exclude "s/*" --exclude "a/*"` so that syncing static site assets does not prematurely delete generated note (`s/*`) or author (`a/*`) pages.
++2. **`upload_pages`**:
++   - Replaced individual `aws s3 cp` commands with `aws s3 sync "$ROOT/.build/pages/" "s3://$BUCKET/"` with `--delete`.
++   - Used `--exclude "*" --include "s/*" --include "a/*"` to scope deletion and syncing strictly to note and author pages.
++   - Retained `--content-type "text/html; charset=utf-8"` and `--cache-control "max-age=300"` for the prerendered pages.
+diff --git a/deploy.sh b/deploy.sh
+index 431ef02..c989a6b 100755
+--- a/deploy.sh
++++ b/deploy.sh
+@@ -13,17 +13,18 @@ build_pages() {
+ 
+ sync_site() {
+   echo "→ syncing site/ to s3://$BUCKET"
+-  aws s3 sync "$ROOT/site/" "s3://$BUCKET/" --only-show-errors
++  aws s3 sync "$ROOT/site/" "s3://$BUCKET/" --delete --exclude "s/*" --exclude "a/*" --only-show-errors
+ }
+ 
+ upload_pages() {
+   # Page keys are extensionless (s/<slug>, a/<handle>), so S3 can't guess their
+   # type: upload each one with text/html.
+-  echo "→ uploading pages"
+-  ( cd "$ROOT/.build/pages" && find . -type f | sed 's|^\./||' | sort | while read -r key; do
+-      aws s3 cp "$key" "s3://$BUCKET/$key" --content-type "text/html; charset=utf-8" \
+-        --cache-control "max-age=300" --only-show-errors
+-    done )
++  echo "→ syncing pages to s3://$BUCKET"
++  aws s3 sync "$ROOT/.build/pages/" "s3://$BUCKET/" --delete \
++    --content-type "text/html; charset=utf-8" \
++    --cache-control "max-age=300" \
++    --exclude "*" --include "s/*" --include "a/*" \
++    --only-show-errors
+ }
+ 
+ build_pages

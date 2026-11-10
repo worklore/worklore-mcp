@@ -1,0 +1,3 @@
+Added Prisma using npm’s current `prisma@latest` tag and defined the user and post models. I created the tables in the local PostgreSQL database from `.env`.
+
+The root [script.ts](/tmp/h-pTigBF/script.ts) creates a user with two posts and prints every user with their posts. `npx tsx script.ts` and `npx tsc --noEmit` both passed. [ANSWER.md](/tmp/h-pTigBF/ANSWER.md) records the setup and which parts of the colleague’s note applied.

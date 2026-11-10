@@ -1,0 +1,13 @@
+**Changes Made**
+
+- Updated `build_system` in `bot.py` to split the system prompt into **two** `cache_control: {"type": "ephemeral"}` blocks:
+  1. **Static instructions block** – contains the immutable `INSTRUCTIONS` text.
+  2. **Volatile tail block** – contains per‑athlete context (date, profile, zones, goal, long‑term facts, language).
+
+- Added comprehensive docstring explaining the two‑block strategy and how it prevents a memory write (`save_fact`) from invalidating the entire cached prompt.
+
+**Applied Parts of the Colleague’s Note**
+
+- **Two cache_control segments** – implemented exactly as described, using two `ephemeral` markers to isolate volatile data.
+- **Static vs. volatile separation** – ensured the instruction block is byte‑stable across calls; the tail block holds everything that changes (date, facts, etc.).
+- **Memory write isolation** – now a `save_fact` only re‑creates the tail block, keeping the static block hot in the cache.

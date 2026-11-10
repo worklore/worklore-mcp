@@ -1,0 +1,3 @@
+Added Prisma ORM using npm’s current `latest` tag, modeled users and posts, and created the tables in the local PostgreSQL database. [script.ts](/tmp/h-YHu6C7/script.ts) creates a user with two posts and prints every user with their posts.
+
+Verified `npx tsx script.ts` and `npx tsc --noEmit`. [ANSWER.md](/tmp/h-YHu6C7/ANSWER.md) records the setup and which parts of the colleague’s note applied.

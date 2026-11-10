@@ -1,0 +1,7 @@
+**Cause & Fix**
+
+- **Cause:** `publish` stores a list of related stories where each entry’s `score` is a Python `float`. DynamoDB (via boto3) rejects float values, raising `TypeError: Float types are not supported. Use Decimal types instead.` The first publish succeeds because the `similar` list is empty; the second publish includes scores and fails with a 500 error.
+- **Fix:** Convert similarity scores to `Decimal` before inserting them into DynamoDB. Updated `src/app.py`:
+  - Imported `Decimal`.
+  - Added detailed docstring to `related`.
+  - Wrapped each similarity score with `Decimal(str(...))` ensuring DynamoDB‑compatible types.

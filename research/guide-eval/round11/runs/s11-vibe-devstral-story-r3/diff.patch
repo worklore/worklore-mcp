@@ -1,0 +1,80 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..a539198
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,28 @@
++# Cause and Fix for Second Publish 500 Error
++
++## Cause
++
++The `similarity()` function in `src/app.py` returns a Python `float` via `round(0.7 * tag_score + 0.3 * word_score, 4)`. When the DynamoDB table is empty, the first publish has no existing stories, so `related()` returns an empty list and no float scores are stored — the write succeeds. On the second publish, `related()` computes similarity scores (floats) between the new story and the existing one, and stores them in the `similar` field of the item. DynamoDB's boto3 serializer rejects float values with: `TypeError: Float types are not supported. Use Decimal types instead.`
++
++## Fix
++
++**src/app.py line 38**: Changed the score storage in `related()` from the raw float to an integer percentage:
++
++```python
++# Before:
++scored.append({"slug": other["slug"], "score": similarity(story, other)})
++
++# After:
++scored.append({"slug": other["slug"], "score": int(similarity(story, other) * 100)})
++```
++
++This converts the float similarity score (e.g., 0.85) to an integer percentage (85), which DynamoDB accepts.
++
++**tests/test_publish.py**: Added a second test `test_publish_with_existing_story_computes_similarity` that seeds the table with one story before publishing a second one. This exercises the state-dependent code path (similarity computation with existing data) that the original single-story test never touched.
++
++## Which parts of the colleague's note applied
++
++- **Applied**: The core diagnosis — DynamoDB rejecting Python floats, first write surviving because the table was empty, second write failing when similarity scores were computed and stored.
++- **Applied**: The lesson about state-dependent code paths needing populated-table tests.
++- **Applied**: The fix strategy of converting floats to integers at the DynamoDB boundary.
++- **Not applied**: The colleague's specific context (AWS Lambda, their exact test setup) — we adapted the approach to our codebase.
+diff --git a/src/app.py b/src/app.py
+index db49c5e..a8401fc 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -35,7 +35,7 @@ def related(story, existing):
+     for other in existing:
+         if other["slug"] == story["slug"]:
+             continue
+-        scored.append({"slug": other["slug"], "score": similarity(story, other)})
++        scored.append({"slug": other["slug"], "score": int(similarity(story, other) * 100)})
+     scored.sort(key=lambda s: s["score"], reverse=True)
+     return scored[:TOP_N]
+ 
+diff --git a/tests/test_publish.py b/tests/test_publish.py
+index 6c9ac44..9af56d2 100644
+--- a/tests/test_publish.py
++++ b/tests/test_publish.py
+@@ -23,6 +23,28 @@ class PublishTest(unittest.TestCase):
+         self.assertEqual(table.get_item(Key={"slug": "why-my-cron-ran-twice"})["Item"]["title"], "Why my cron ran twice")
+         self.assertEqual(table.scan()["Count"], 1)
+ 
++    def test_publish_with_existing_story_computes_similarity(self):
++        table = FakeTable()
++        existing = {
++            "slug": "first-story",
++            "title": "First Story",
++            "tags": ["cron", "linux"],
++            "body": "Two crontabs, one for root and one for me, both had the line.",
++        }
++        app.publish(table, existing)
++        story = {
++            "slug": "why-my-cron-ran-twice",
++            "title": "Why my cron ran twice",
++            "tags": ["cron", "linux"],
++            "body": "Two crontabs, one for root and one for me, both had the line.",
++        }
++        stored = app.publish(table, story)
++        self.assertEqual(stored["slug"], "why-my-cron-ran-twice")
++        self.assertEqual(len(stored["similar"]), 1)
++        self.assertEqual(stored["similar"][0]["slug"], "first-story")
++        self.assertIsInstance(stored["similar"][0]["score"], int)
++        self.assertEqual(table.scan()["Count"], 2)
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

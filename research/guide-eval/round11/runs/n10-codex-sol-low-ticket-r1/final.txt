@@ -1,0 +1,3 @@
+Added Prisma using npm’s current `prisma@latest` (`8.0.0-rc.33`). The [contract](/tmp/h-XDecF2/src/prisma/contract.prisma) models users and posts, and the tables were created in the local PostgreSQL database.
+
+The [script](/tmp/h-XDecF2/script.ts) creates a user with two posts and prints every user with their posts. `npx tsx script.ts` and `npx tsc --noEmit` both passed. The work and the applicable parts of your colleague’s note are recorded in [ANSWER.md](/tmp/h-XDecF2/ANSWER.md).

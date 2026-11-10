@@ -1,0 +1,14 @@
+**ANSWER.md**
+
+- **Changed `build_system` in `bot.py`**  
+  - Split the system prompt into two separate text blocks:  
+    1. **Static block** – only the immutable `INSTRUCTIONS`. No `cache_control` (remains permanently cached).  
+    2. **Volatile block** – the per‑athlete context (`athlete_context`) marked with `cache_control: {"type": "ephemeral"}` so that only this part is regenerated after a `save_fact` call.  
+  - Added a docstring explaining the purpose of the split and the caching behavior.
+
+- **Parts of the colleague’s note that were applied**  
+  - **Separate static and volatile sections**: exactly as described – static instructions stay unchanged, volatile tail contains user‑specific data.  
+  - **Use `cache_control: {"type": "ephemeral"}` on the volatile tail** to allow caching of the static prefix across memory writes.  
+  - **Avoid interpolating changing data (e.g., dates) into the static block**; only the volatile block now includes the dynamic `today` value.  
+
+These adjustments prevent a `save_fact` write from evicting the entire cached system prompt, keeping the static instructions hot and reducing token usage on subsequent calls.

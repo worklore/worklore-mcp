@@ -1,0 +1,61 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..15ad695
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,24 @@
++**Cause**
++
++The `similarity` function returned a plain Python ``float``. When the story
++item was written to DynamoDB, the AWS SDK attempted to serialize that value as a
++`Number` attribute. DynamoDB does not accept native floating‑point values – it
++requires numbers to be represented as ``Decimal`` instances. The second publish
++therefore raised:
++
++```
++TypeError: Float types are not supported. Use Decimal types instead.
++```
++
++**Fix**
++
++* Import ``Decimal`` from the ``decimal`` module.
++* After computing the similarity score, convert the rounded float to a
++  ``Decimal`` via ``Decimal(str(raw))``. This preserves the exact decimal value
++  and satisfies DynamoDB's type requirements.
++* Updated the module docstring and added a brief comment explaining the change.
++
++The modification is isolated to `src/app.py` and does not affect other logic.
++
++Running the test suite again passes, and publishing the same story twice no
++longer triggers a 500 error.
+diff --git a/src/app.py b/src/app.py
+index db49c5e..4f5bd54 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -8,6 +8,7 @@ import json
+ import logging
+ import re
+ import time
++from decimal import Decimal
+ 
+ log = logging.getLogger("stories")
+ 
+@@ -22,12 +23,16 @@ def words(text):
+ 
+ 
+ def similarity(a, b):
+-    """Shared-tag ratio (Jaccard), blended with shared words of the two bodies."""
++    """Shared-tag ratio (Jaccard), blended with shared words of the two bodies.
++
++    Returns a ``Decimal`` compatible with DynamoDB instead of a native ``float``.
++    """
+     ta, tb = set(a.get("tags", [])), set(b.get("tags", []))
+     tag_score = len(ta & tb) / len(ta | tb) if (ta | tb) else 0
+     wa, wb = words(a.get("body")), words(b.get("body"))
+     word_score = len(wa & wb) / len(wa | wb) if (wa | wb) else 0
+-    return round(0.7 * tag_score + 0.3 * word_score, 4)
++    raw = round(0.7 * tag_score + 0.3 * word_score, 4)
++    return Decimal(str(raw))
+ 
+ 
+ def related(story, existing):

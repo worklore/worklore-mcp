@@ -1,0 +1,179 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..ff144a9
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,73 @@
++# Answer: codex-sandboxed lane
++
++## What I changed
++
++- **`run.sh`**: new lane `codex-sandboxed`. It runs the same `codex exec` command as the `codex` lane (same flags,
++  same `-C "$W"`, same `--json` stream, same prompt), but inside `sandbox-exec -f sandbox/agent.sb` with an empty
++  scratch `HOME` (`/tmp/codex-home-*`), the same way the `kimi` lane runs. `CODEX_HOME` points at the real `~/.codex`,
++  as `KIMI_CODE_HOME` does for kimi.
++- **Output file**: Codex's `-o` file is written inside the sandbox, so it goes to a scratch folder
++  (`/tmp/codex-out-*`), not to the run folder. After `sandbox-exec` returns, the lane copies `final.txt` into the run
++  folder and deletes both scratch folders. stdout and stderr still go straight into the run folder, because the shell
++  opens them before `sandbox-exec` starts.
++- **Missing output is a failure**: if `final.txt` is not in the scratch folder after the run, the lane writes a line to
++  `agent.err` and sets the exit code to 3 when Codex itself exited 0. A denied write only prints an error, so exit 0
++  alone does not show that the result file was written.
++- **`sandbox/agent.sb`**: the hard-coded `~/.kimi-code` rules are now `AGENT_HOME`, a parameter. The deny rules for
++  `HOME` are unchanged. Each lane opens only its own folder: kimi passes `AGENT_HOME=~/.kimi-code`, codex-sandboxed
++  passes `AGENT_HOME=~/.codex`. Adding `~/.codex` as a second hard-coded rule would have let the kimi shell read
++  Codex's login, so each lane opens only its own folder.
++- **`README.md`**: documents the new lane and the `AGENT_HOME` rule. I also corrected a wrong sentence: it said Codex
++  logs in with `CODEX_API_KEY` and needs nothing from the home folder. On this Mac `CODEX_API_KEY` is not set, and Codex
++  logs in from `~/.codex/auth.json`, so the sandboxed lane has to open `~/.codex`.
++- **`codex` lane**: unchanged.
++
++## Colleague's note: what applied
++
++- **Applied: `-o` writes are denied inside the sandbox.** The fix (scratch folder in `/tmp`, copy afterwards) is in the
++  lane. On this checkout the run folder is under `/private/tmp`, outside `HOME`, so the bug would not show here. On the
++  eval Mac the repo lives in `~/evals/agent-evals`, under `HOME`, so the bug would show there. The fix covers both.
++- **Applied: exit 0 does not prove the output was written.** The lane checks for the file and fails loudly (exit 3).
++- **Applied: stdout and stderr redirects work because the shell opens them outside the sandbox.** Kept as is.
++- **Applied: the ground rules.** I worked only in this repo and `/tmp`. I did not deploy, publish, submit or report
++  anything externally.
++- **Did not apply: Mistral Vibe and `--output-dir` / `--out`.** This repo has no Mistral lane.
++- **Did not apply: `CODEX_API_KEY` as the login.** The colleague's machine may match that, but this one does not (see
++  above). The sandboxed lane therefore opens `~/.codex`.
++- **Partly applied: the list of output flags.** The only flag this lane uses is `-o` / `--output-last-message`, which
++  is the same flag.
++
++## How I checked it (no model calls)
++
++- `bash -n run.sh`: syntax OK.
++- Sandbox probe with the same `-D` parameters the lane uses (`HOME` = real home, `AGENT_HOME` = `~/.codex`):
++  - reading and listing `~/.codex`: allowed;
++  - listing the real home: denied;
++  - writing into the real home: denied (`Operation not permitted`);
++  - writing into `/tmp`: allowed.
++- Kimi profile: parses with `AGENT_HOME=~/.kimi-code`; its shell can list `~/.kimi-code` and cannot read `~/.codex`.
++- End-to-end `./run.sh fizz codex-sandboxed 1` with a stub `codex` on `PATH` (a shell script, no network):
++  - the stub's own config read succeeded; reading and writing the real home were denied;
++  - `final.txt` was copied into the run folder; `meta.json` exit 0; `answer.json` source `final.txt`;
++  - with the stub told to skip the `-o` write, the lane exits 3 and records the reason in `agent.err`.
++- I removed the test run folders and the stub afterwards.
++
++## Not verified
++
++- **No live Codex run.** A real run would send the task to OpenAI, and you asked for no external submissions, so I
++  did not start one. The stub proves the plumbing, not that real Codex starts under the profile.
++- **Codex's other needs under the profile.** Real Codex may write somewhere under `HOME` other than `~/.codex`, for
++  example a cache. With `HOME` set to the scratch folder, any write to a real-home path outside `~/.codex` will be
++  denied. Check the first live run's `agent.err` for `Operation not permitted`.
++- **Kimi lane.** Only the profile was checked; `kimi` is not installed here, so I did not run the lane.
++
++## Limit to know about
++
++The agent's shell can read `~/.codex/auth.json`, because the profile opens `~/.codex` so Codex can log in. The kimi lane
++has the same property with `~/.kimi-code`. The sandbox keeps the rest of the real home out of reach, but it cannot keep
++the login away from the agent's shell. If that matters, use a separate, limited API key passed through the environment.
++That key would also be visible to the agent's shell, so the risk shrinks but does not disappear.
++
++## Not committed
++
++The changes are uncommitted on `main`, as you asked for edits and not commits.
+diff --git a/README.md b/README.md
+index 9d81ca7..3a52a83 100644
+--- a/README.md
++++ b/README.md
+@@ -17,10 +17,19 @@ run folder `runs/<task>-<lane>-r<rep>/`:
+ Lanes:
+ 
+ - `codex`: Codex CLI (`codex exec --json`), unsandboxed.
++- `codex-sandboxed`: the same Codex run, but its shell runs under
++  `sandbox/agent.sb` with an empty scratch HOME, like `kimi`. Codex's own
++  folder `~/.codex` (login and config) is the only part of the real home the
++  profile opens. Codex writes its last message to a scratch folder in `/tmp`
++  (a write into the run folder would be denied by the profile), and the lane
++  copies it into the run folder. If that file is missing, the lane exits 3.
+ - `kimi`: Kimi Code. Its output goes to Moonshot, so its shell runs under the
+   macOS sandbox profile `sandbox/agent.sb` (no reading or writing the real
+   home), with an empty scratch HOME. Kimi's own install and sessions live in
+   `~/.kimi-code`, which the profile opens.
+ 
+-Codex logs in with an API key from the environment (`CODEX_API_KEY`), so it
+-needs nothing from the home folder.
++The profile opens only the folder named by `AGENT_HOME`, so one lane's
++credentials stay out of the other lane's shell.
++
++Codex on the eval Mac logs in from `~/.codex/auth.json`, not from
++`CODEX_API_KEY`, so the sandboxed lane has to open `~/.codex`.
+diff --git a/run.sh b/run.sh
+index c41ad67..490c9a3 100755
+--- a/run.sh
++++ b/run.sh
+@@ -1,7 +1,8 @@
+ #!/usr/bin/env bash
+ # usage: run.sh <task> <lane> [rep]
+-# lanes: codex   Codex CLI, unsandboxed
+-#        kimi    Kimi Code under sandbox/agent.sb (no reading or writing the real home), scratch HOME
++# lanes: codex           Codex CLI, unsandboxed
++#        codex-sandboxed Codex CLI under sandbox/agent.sb (no reading or writing the real home), scratch HOME
++#        kimi            Kimi Code under sandbox/agent.sb (no reading or writing the real home), scratch HOME
+ set -u
+ D="$(cd "$(dirname "$0")" && pwd)"
+ T=$1; A=$2; REP=${3:-1}
+@@ -15,10 +16,30 @@ codex_run() {
+       -o "$R/final.txt" "$P" < /dev/null > "$R/agent.log" 2> "$R/agent.err" )
+ }
+ 
++# Codex run under sandbox/agent.sb. Its shell can't touch the real home except ~/.codex, where Codex keeps its login
++# and config. The -o file is written by Codex inside the sandbox, so it goes to a scratch folder in /tmp (outside the
++# denied paths) and is copied into the run folder afterwards. A denied write only prints an error and still exits 0,
++# so a missing final.txt is turned into a failing exit code.
++codex_sandboxed_run() {
++  local REAL="$HOME" SH OUT rc
++  SH=$(mktemp -d /tmp/codex-home-XXXXXX); OUT=$(mktemp -d /tmp/codex-out-XXXXXX)
++  ( cd "$W" && export HOME="$SH" && sandbox-exec -D HOME="$REAL" -D AGENT_HOME="$REAL/.codex" -f "$D/sandbox/agent.sb" \
++      env CODEX_HOME="$REAL/.codex" timeout $TO codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox \
++      -C "$W" --json -o "$OUT/final.txt" "$P" < /dev/null > "$R/agent.log" 2> "$R/agent.err" )
++  rc=$?
++  if [ -e "$OUT/final.txt" ]; then
++    cp "$OUT/final.txt" "$R/final.txt"
++  else
++    echo "run.sh: Codex did not write its last message to the scratch folder" >> "$R/agent.err"
++    [ "$rc" -eq 0 ] && rc=3
++  fi
++  rm -rf "$SH" "$OUT"; return $rc
++}
++
+ # Kimi's output goes to Moonshot: its shell runs under sandbox/agent.sb with an empty scratch HOME.
+ kimi_run() {
+   local REAL="$HOME" SH; SH=$(mktemp -d /tmp/khome-XXXXXX)
+-  ( cd "$W" && export HOME="$SH" && sandbox-exec -D HOME="$REAL" -f "$D/sandbox/agent.sb" \
++  ( cd "$W" && export HOME="$SH" && sandbox-exec -D HOME="$REAL" -D AGENT_HOME="$REAL/.kimi-code" -f "$D/sandbox/agent.sb" \
+       env KIMI_CODE_HOME="$REAL/.kimi-code" timeout $TO "$REAL/.kimi-code/bin/kimi" -p "$P" --output-format stream-json \
+       < /dev/null > "$R/agent.log" 2> "$R/agent.err" )
+   local rc=$?; rm -rf "$SH"; return $rc
+@@ -27,6 +48,7 @@ kimi_run() {
+ start=$(date +%s)
+ case $A in
+   codex) codex_run;;
++  codex-sandboxed) codex_sandboxed_run;;
+   kimi)  kimi_run;;
+   *) echo "unknown lane $A"; exit 2;;
+ esac
+diff --git a/sandbox/agent.sb b/sandbox/agent.sb
+index 3a517dd..70857a1 100644
+--- a/sandbox/agent.sb
++++ b/sandbox/agent.sb
+@@ -1,9 +1,11 @@
+ ;; OS-level fence for lanes whose output leaves the machine: the agent has a real shell, so the real home must be
+-;; unreachable. Only the agent's own install is opened. Network stays open. HOME is passed with -D HOME=<real home>.
++;; unreachable. Only the agent's own state folder is opened (AGENT_HOME, e.g. ~/.kimi-code or ~/.codex), so one lane's
++;; credentials stay out of another lane's shell. Network stays open.
++;; Pass -D HOME=<real home> and -D AGENT_HOME=<real home>/<the agent's own folder>.
+ (version 1)
+ (allow default)
+ (deny file-read-data (subpath (param "HOME")))
+ (deny file-write* (subpath (param "HOME")))
+-(allow file-read-data (subpath (string-append (param "HOME") "/.kimi-code")))
+-(allow file-write* (subpath (string-append (param "HOME") "/.kimi-code")))
++(allow file-read-data (subpath (param "AGENT_HOME")))
++(allow file-write* (subpath (param "AGENT_HOME")))
+ (deny process-exec (literal "/bin/launchctl") (literal "/usr/bin/security") (literal "/usr/bin/osascript"))

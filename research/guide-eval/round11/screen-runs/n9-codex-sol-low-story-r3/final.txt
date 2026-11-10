@@ -1,0 +1,3 @@
+Rewrote [src/main.ts](/tmp/h-fPMMsg/src/main.ts) with an Effect rates service, HTTP client, Schema validation, and up to three transient retries starting at 50 ms. The requested output and exit codes are implemented.
+
+`npx tsc --noEmit` passes. Local server checks passed for success, unknown currency, invalid response, 404, and recovery after three 503 retries. [ANSWER.md](/tmp/h-fPMMsg/ANSWER.md) records which parts of the colleague’s note applied.

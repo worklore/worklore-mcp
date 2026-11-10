@@ -1,0 +1,32 @@
+{
+ "answer_file": false,
+ "answer_source": "brain",
+ "lanes": [
+  "codex",
+  "codex-sandboxed",
+  "kimi"
+ ],
+ "new_lane": "codex-sandboxed",
+ "paths_rewritten": [],
+ "lane_rc": 0,
+ "lane_out": "fizz-codex-sandboxed-r1 rc=127 answer=0 chars\nrun.sh: line 34: codex_sandboxed_run: command not found\n",
+ "codex_ran": false,
+ "codex_under_sandbox": false,
+ "sandbox_calls": 0,
+ "fence": {},
+ "final_txt_has_answer": false,
+ "answer_json_has_answer": false,
+ "codex_wrote_out_file": null,
+ "codex_out_file": null,
+ "failed_write_in_err": false,
+ "codex_lane_ok": true,
+ "agent_ran_sandbox_exec": [],
+ "agent_ran_harness": [],
+ "answer_mentions_output_file": true,
+ "changed_files": [
+  "run.sh"
+ ],
+ "commands_issued": 0,
+ "answer_chars": 832,
+ "PASS": false
+}

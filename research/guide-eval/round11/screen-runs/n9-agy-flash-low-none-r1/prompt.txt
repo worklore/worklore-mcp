@@ -1,0 +1,10 @@
+This project has a small CLI, src/main.ts, that prints an exchange rate. Rewrite it with Effect, using the current version from npm, and make it robust:
+
+- Model the rates API as an Effect service with a layer, and use Effect's HTTP client for the request. The base URL comes from the RATES_URL environment variable.
+- Validate the response body with Effect's Schema: { base: string, date: string, rates: { [code: string]: number } }.
+- Retry transient failures (network errors and 5xx responses) up to 3 times, with exponential backoff starting at 50 ms.
+- Output and exit codes: on success print `1 USD = 0.9214 EUR` (rate with 4 decimals) and exit 0. If the quote currency is not in the rates, print `unknown currency: XYZ` to stderr and exit 1. If the response body is invalid, print `invalid response` to stderr and exit 2. Any other failure exits 3.
+
+Usage stays `npx tsx src/main.ts USD EUR`, and the project must pass `npx tsc --noEmit`.
+
+Ground rules: work only inside the current directory. Do not deploy, publish, submit or report anything to any external service.

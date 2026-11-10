@@ -1,0 +1,54 @@
+# Fix for prompt caching with long-term memory
+
+## What changed
+
+In `bot.py`, the `build_system()` function was modified to split the system prompt into two separate text blocks instead of one concatenated block.
+
+**Before:**
+```python
+def build_system(a, today):
+    # One block, cached as a whole: instructions + per-athlete context.
+    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
+```
+
+**After:**
+```python
+def build_system(a, today):
+    # Split into two blocks so that save_fact only invalidates the volatile tail.
+    # The static INSTRUCTIONS never change and stay cached across memory writes.
+    # The athlete context (date, profile, facts) is volatile and changes with save_fact.
+    return [
+        {"type": "text", "text": INSTRUCTIONS, "cache_control": {"type": "ephemeral"}},
+        {"type": "text", "text": athlete_context(a, today), "cache_control": {"type": "ephemeral"}},
+    ]
+```
+
+## Why this fixes the issue
+
+The original code concatenated static instructions with volatile athlete context (including facts) into a single text block. When `save_fact` was called, it modified the athlete's facts, which changed the `athlete_context()` output. Since the entire system prompt was one block, changing any part of it (even just the facts) invalidated the entire cache, forcing a full re-read of all ~1000+ tokens on the next call.
+
+By splitting into two blocks:
+- **Block 1:** Static INSTRUCTIONS (~780 tokens) - never changes, stays cached
+- **Block 2:** Volatile athlete context (~240 tokens) - changes with save_fact, only this block is re-cached
+
+Now when `save_fact` is called, only the second block (the tail) is invalidated and re-cached, while the first block (static instructions) remains hot in cache. This reduces the cache miss penalty from ~1000 tokens to ~240 tokens.
+
+## Colleague's note: what applied
+
+The following parts of the colleague's note **applied directly** to this fix:
+
+1. **The problem diagnosis:** "With a single cache marker at the end of the system prompt, every `save_fact` call rewrote the facts block and evicted the whole cached prompt, including instructions that never changed."
+
+2. **The root cause:** "The cause was prefix hashing: changing one byte made everything from that byte to the end of the cached block a miss."
+
+3. **The solution approach:** "I fixed it by splitting `system` into an array of two text blocks, each with `cache_control: {"type": "ephemeral"}`. The first held the static instructions... The second held the per-user tail... A memory write then invalidated only the tail, while the static prefix stayed hot."
+
+4. **The reasoning against alternative approaches:** "I rejected top-N fact selection per message... Loading all facts every time was cheaper than loading fewer facts with a different selection each time." - This confirmed we should keep all facts in the volatile block rather than trying to filter them.
+
+The following parts of the colleague's note **did not apply** (or were already handled):
+
+- Tool filtering by keyword groups - this was already implemented in the codebase (`select_tools()` function) and the colleague noted it as a separate optimization from March.
+- The specific token counts (780 vs 240) - these were the colleague's numbers, not ours, but the principle is the same.
+- Anthropic-specific marker syntax details - the code already uses `cache_control: {"type": "ephemeral"}` which serves the same purpose.
+- The note about tool schemas above the system prompt - tools are passed separately in the request, not part of the system prompt in this codebase.

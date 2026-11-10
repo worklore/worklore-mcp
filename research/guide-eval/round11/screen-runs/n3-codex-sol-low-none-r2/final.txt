@@ -1,0 +1,3 @@
+Updated [deploy.sh](/tmp/h-OjMvDD/deploy.sh) to sync the complete build output with `--delete`, so the next deploy removes stale note pages, author pages, and files removed from `site/`. Generated pages still receive their HTML metadata.
+
+I documented the change and local checks in [ANSWER.md](/tmp/h-OjMvDD/ANSWER.md). No deployment was run.

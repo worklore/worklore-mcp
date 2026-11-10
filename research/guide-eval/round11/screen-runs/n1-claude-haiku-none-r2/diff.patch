@@ -1,0 +1,78 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..f1e609c
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,36 @@
++# Why every run-vibe.sh run exits in about a second
++
++**Cause:** at startup Mistral Vibe looks up `MISTRAL_API_KEY` in the macOS Keychain by running
++`/usr/bin/security`. The run's `agent.sb` sandbox denies `process-exec` for that binary, so the exec fails with
++`PermissionError: [Errno 1] Operation not permitted: '/usr/bin/security'`. Vibe's keyring code
++(`vibe/utils/keyring.py`, `_run_security`) only wraps `FileNotFoundError`, so the `PermissionError` is not turned
++into a handled error and Vibe exits with status 2 before it makes any model call. `logs/last-run.err` shows exactly
++this.
++
++Vibe asks for `MISTRAL_API_KEY` even though the configured provider is OpenRouter, which reads `OPENROUTER_API_KEY`
++from the environment. The OpenRouter key was never the problem: `resolve_api_key("OPENROUTER_API_KEY")` returns
++the env value without touching the Keychain.
++
++**Reproduced:** under the same `agent.sb` profile, `resolve_api_key("MISTRAL_API_KEY")` raises the same
++`PermissionError`, and `resolve_api_key("OPENROUTER_API_KEY")` succeeds.
++
++**Fix:** `run-vibe.sh` now passes `VIBE_TEST_DISABLE_KEYRING=1` into the sandboxed environment. Vibe's keyring
++module honours this switch: `get_api_key_from_keyring` returns `None` without calling `security`. I checked that
++`MISTRAL_API_KEY` then resolves to `None` under the sandbox with no error. I did not loosen `agent.sb`, so the
++Keychain and the real home directory are still unreachable.
++
++**Verification:** with a placeholder `OPENROUTER_API_KEY=dummy-test-key`, the script now gets past startup and fails
++only at OpenRouter's auth check (`Invalid API key (from env var OPENROUTER_API_KEY)`, exit 1). Startup is fixed. I did
++not run a real prompt, because `OPENROUTER_API_KEY` is not set in the shell I worked in. With your real key set,
++`./run-vibe.sh "say hi" /tmp/x` should now run normally.
++
++**Notes:**
++- The stderr text `Reading API keys from the macOS Keychain (...)` in the old log does not appear in the installed
++  Vibe 3.1.0 source. The traceback logic matches, so the log probably came from a slightly different build. The fix
++  holds either way, because the switch is checked before any Keychain read.
++- `VIBE_TEST_DISABLE_KEYRING` is a test-oriented name. It is the only switch I found that stops the Keychain read
++  without changing the installed package or the sandbox. If Vibe is upgraded, check that it still honours it.
++- Alternatives I rejected: allowing `/usr/bin/security` in `agent.sb` (widens the sandbox), or setting a dummy
++  `MISTRAL_API_KEY` (hacky, and it could be sent somewhere). Fixing `_run_security` in the installed package would
++  be the upstream fix, but it is outside this directory.
++- `logs/last-run.out` and `logs/last-run.err` now hold the output of the placeholder-key test run.
+diff --git a/logs/last-run.err b/logs/last-run.err
+index cd6d9ad..01c8bf4 100644
+--- a/logs/last-run.err
++++ b/logs/last-run.err
+@@ -1,2 +1 @@
+-Reading API keys from the macOS Keychain (set them as environment variables to skip this)
+-Error: [Errno 1] Operation not permitted: '/usr/bin/security'
++Error: Invalid API key (from env var OPENROUTER_API_KEY). Please check your API key and try again.
+diff --git a/logs/last-run.out b/logs/last-run.out
+index e69de29..8d37c36 100644
+--- a/logs/last-run.out
++++ b/logs/last-run.out
+@@ -0,0 +1 @@
++{"id":"user-turn-c4b9135821539f0d8d12fe9c2ccbf525-1","sessionId":"8abdd6ac-fa89-b8b8-8e13-0a4928352f02","turnId":"turn-c4b9135821539f0d8d12fe9c2ccbf525","inputEntryId":null,"createdAt":1794247229894,"updatedAt":1794247229894,"generationStatus":"completed","relatedEntryId":null,"type":"message","role":"user","content":[{"type":"text","text":"say hi"}],"source":"turn_start","userDisplayContent":null,"outcome":null}
+diff --git a/run-vibe.sh b/run-vibe.sh
+index c4a5223..fbdfefe 100755
+--- a/run-vibe.sh
++++ b/run-vibe.sh
+@@ -2,6 +2,8 @@
+ # run-vibe.sh "<prompt>" [workdir]: one headless Mistral Vibe run on Devstral 2 through OpenRouter, inside agent.sb.
+ # The agent gets an empty scratch HOME and VIBE_HOME and only the environment names listed below (env -i), so none of
+ # my other secrets reach it. OPENROUTER_API_KEY must be set in the calling shell.
++# VIBE_TEST_DISABLE_KEYRING=1: Vibe otherwise runs /usr/bin/security for a Keychain lookup of MISTRAL_API_KEY at startup;
++# agent.sb denies that exec, so the run died with an uncaught PermissionError. The OpenRouter key comes from the env.
+ set -u
+ D="$(cd "$(dirname "$0")" && pwd)"
+ PROMPT=$1; W=${2:-$PWD}
+@@ -12,7 +14,7 @@ SH=$(mktemp -d /tmp/vhome-XXXXXX); VH=$(mktemp -d /tmp/vibehome-XXXXXX)
+ cp "$D/vibe/config.toml" "$VH/config.toml"
+ mkdir -p "$D/logs"
+ ( cd "$W" && env -i PATH="$PATH" TERM="${TERM:-dumb}" LANG="${LANG:-en_US.UTF-8}" HOME="$SH" VIBE_HOME="$VH" \
+-    OPENROUTER_API_KEY="$OPENROUTER_API_KEY" \
++    OPENROUTER_API_KEY="$OPENROUTER_API_KEY" VIBE_TEST_DISABLE_KEYRING=1 \
+     sandbox-exec -D HOME="$REAL" -f "$D/agent.sb" \
+     "$VIBE" -p "$PROMPT" --model devstral --auto-approve --trust --output streaming --output-dir "$VH/out" \
+       --max-price 1.5 --time-limit 1200 < /dev/null > "$D/logs/last-run.out" 2> "$D/logs/last-run.err" )

@@ -1,0 +1,11 @@
+**What I did**
+
+- Added the Hedera JavaScript SDK (`@hashgraph/sdk`) and kept `dotenv` in `package.json` dependencies.  
+- Created `src/transfer.ts` that:
+  - Loads environment variables via `dotenv`.
+  - Reads `OPERATOR_ID`, `OPERATOR_KEY` (DER‑encoded hex), `RECIPIENT_ID`, and `VALID_START` (Unix seconds).
+  - Builds a `TransactionId` using a `Timestamp` from `VALID_START`.
+  - Constructs a `TransferTransaction` moving **1 hbar** from the operator to the recipient, with memo `invoice 42`, targeting node **0.0.3**.
+  - Freezes, signs with the operator’s private key, and prints the signed transaction bytes as a hex string.
+- Updated `package.json` scripts to run the file via `tsx` (`npm run transfer` or `npx tsx src/transfer.ts`).
+- Verified the TypeScript project compiles with `npx tsc --noEmit` (no errors).

@@ -1,0 +1,115 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..622a3e6
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,51 @@
++# codex-sandbox lane
++
++## What I changed
++
++**`run.sh`**
++
++- Added a `codex-sandbox` lane. It runs the same `codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox -C <scratch> --json -o ... <prompt>` as the `codex` lane.
++- The new `codex_sandbox_run` function wraps that command in `sandbox-exec -D HOME=<real home> -f sandbox/agent.sb`, the same way `kimi_run` does.
++- The process gets a fresh scratch HOME (`mktemp -d /tmp/chome-XXXXXX`), which is removed afterwards.
++- `CODEX_HOME` is set to `<scratch HOME>/.codex`. Without this, Codex would write its state and sessions under the real `~/.codex`, which the profile blocks.
++- The `-o` output file is written into the scratch dir, because Codex writes it from inside the sandbox. After the run, the script copies it to `runs/<task>-codex-sandbox-r<rep>/final.txt`. The run folder sits outside the sandbox, so the copy works even if the harness is located under the real home.
++- The header comment lists the new lane.
++- The `codex` lane is unchanged.
++
++**`README.md`**
++
++- Documented the new lane next to `codex` and `kimi`.
++
++**`sandbox/agent.sb`**
++
++- Not changed. It already allows only `~/.kimi-code` under the real home, and Codex doesn't need anything there because it reads `CODEX_API_KEY` from the environment.
++
++## How I checked it
++
++No model was called. Running Codex would send the task to an external service, which the ground rules rule out.
++
++1. **Syntax:** `bash -n run.sh` passes.
++2. **Sandbox profile**, run directly with `sandbox-exec`:
++   - `ls` on the real home → `Operation not permitted`.
++   - `touch` in the real home → `Operation not permitted`, and no file was created.
++   - Writing to the scratch `CODEX_HOME` → succeeds.
++   - `codex --version` runs under the profile (`codex-cli 0.160.0`).
++3. **Whole lane, end to end:** I put a stub `codex` first on `PATH` and ran `./run.sh fizz codex-sandbox 9`. The stub:
++   - parsed `-o` and wrote the final message,
++   - tried to list the real home and got `READ_DENIED`,
++   - printed the scratch `HOME` and `CODEX_HOME`.
++
++   The run produced `final.txt`, `agent.log`, `agent.err`, `meta.json` and `answer.json` (the grader's `check_answer.py` read the final message correctly). The scratch dir was removed. I then deleted the test run folder and the stub.
++
++## Not verified
++
++- A real Codex run under the sandbox. I did not run one, because that would send the task to OpenAI. Open question: whether Codex needs any file under the real home beyond what the stub showed. The lane is built on the assumption that it does not, and the README says the same of the `codex` lane.
++- Whether `sandbox-exec` (deprecated by Apple, but still present here) keeps working on other macOS versions.
++
++## Files
++
++- `run.sh`: new lane and function.
++- `README.md`: lane documentation.
++- `ANSWER.md`: this file.
++
++Nothing was committed, deployed, published or submitted.
+diff --git a/README.md b/README.md
+index 9d81ca7..7382654 100644
+--- a/README.md
++++ b/README.md
+@@ -17,6 +17,10 @@ run folder `runs/<task>-<lane>-r<rep>/`:
+ Lanes:
+ 
+ - `codex`: Codex CLI (`codex exec --json`), unsandboxed.
++- `codex-sandbox`: the same Codex run, under the same macOS sandbox profile
++  and with a scratch HOME as `kimi`. `CODEX_HOME` points into the scratch HOME,
++  so Codex's state never touches the real home. `final.txt` is copied into the
++  run folder after the run.
+ - `kimi`: Kimi Code. Its output goes to Moonshot, so its shell runs under the
+   macOS sandbox profile `sandbox/agent.sb` (no reading or writing the real
+   home), with an empty scratch HOME. Kimi's own install and sessions live in
+diff --git a/run.sh b/run.sh
+index c41ad67..9776277 100755
+--- a/run.sh
++++ b/run.sh
+@@ -1,7 +1,8 @@
+ #!/usr/bin/env bash
+ # usage: run.sh <task> <lane> [rep]
+-# lanes: codex   Codex CLI, unsandboxed
+-#        kimi    Kimi Code under sandbox/agent.sb (no reading or writing the real home), scratch HOME
++# lanes: codex          Codex CLI, unsandboxed
++#        codex-sandbox  the same Codex run under sandbox/agent.sb (no reading or writing the real home), scratch HOME
++#        kimi           Kimi Code under sandbox/agent.sb (no reading or writing the real home), scratch HOME
+ set -u
+ D="$(cd "$(dirname "$0")" && pwd)"
+ T=$1; A=$2; REP=${3:-1}
+@@ -15,6 +16,19 @@ codex_run() {
+       -o "$R/final.txt" "$P" < /dev/null > "$R/agent.log" 2> "$R/agent.err" )
+ }
+ 
++# Same Codex run, but the agent's shell runs under sandbox/agent.sb with an empty scratch HOME. CODEX_HOME points
++# into the scratch HOME too, so Codex's state and its -o output never touch the real home (the run folder is
++# written by this script, outside the sandbox, after the run).
++codex_sandbox_run() {
++  local REAL="$HOME" SH; SH=$(mktemp -d /tmp/chome-XXXXXX); mkdir -p "$SH/.codex"
++  ( cd "$W" && export HOME="$SH" CODEX_HOME="$SH/.codex" && sandbox-exec -D HOME="$REAL" -f "$D/sandbox/agent.sb" \
++      timeout $TO codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox -C "$W" --json \
++      -o "$SH/final.txt" "$P" < /dev/null > "$R/agent.log" 2> "$R/agent.err" )
++  local rc=$?
++  cp "$SH/final.txt" "$R/final.txt" 2>/dev/null
++  rm -rf "$SH"; return $rc
++}
++
+ # Kimi's output goes to Moonshot: its shell runs under sandbox/agent.sb with an empty scratch HOME.
+ kimi_run() {
+   local REAL="$HOME" SH; SH=$(mktemp -d /tmp/khome-XXXXXX)
+@@ -27,6 +41,7 @@ kimi_run() {
+ start=$(date +%s)
+ case $A in
+   codex) codex_run;;
++  codex-sandbox) codex_sandbox_run;;
+   kimi)  kimi_run;;
+   *) echo "unknown lane $A"; exit 2;;
+ esac

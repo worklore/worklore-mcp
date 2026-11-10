@@ -1,0 +1,28 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..ad456b1
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,9 @@
++# Cause and fix
++
++The saved run exited with code 2 before writing an export. Its stderr says Vibe tried to read API keys from the macOS Keychain, then failed to execute `/usr/bin/security`. The launcher uses `env -i` and supplied only `OPENROUTER_API_KEY`; Vibe 3.1.0 also checks for `MISTRAL_API_KEY` at startup even though the configured model uses OpenRouter. With that variable absent, it falls back to the Keychain, which `agent.sb` deliberately blocks.
++
++I added `MISTRAL_API_KEY=unused` to the environment passed directly to Vibe. The configured provider still gets its key from `OPENROUTER_API_KEY`. The sandbox rule denying `/usr/bin/security` remains in place.
++
++The colleague's note applies to the Keychain error, Vibe's startup check for `MISTRAL_API_KEY` with a non-Mistral provider, and the need to put the placeholder on the `env -i` command. Its `.env` and test-switch alternatives were not needed. I did not use the suggestion to allow Keychain access.
++
++`bash -n run-vibe.sh` passes, and `/usr/bin/security list-keychains` is still denied inside `agent.sb` with “Operation not permitted.” A full Vibe run could not be verified here because `OPENROUTER_API_KEY` is not set in this workspace's environment; no provider request was made.
+diff --git a/run-vibe.sh b/run-vibe.sh
+index c4a5223..a0de335 100755
+--- a/run-vibe.sh
++++ b/run-vibe.sh
+@@ -12,7 +12,7 @@ SH=$(mktemp -d /tmp/vhome-XXXXXX); VH=$(mktemp -d /tmp/vibehome-XXXXXX)
+ cp "$D/vibe/config.toml" "$VH/config.toml"
+ mkdir -p "$D/logs"
+ ( cd "$W" && env -i PATH="$PATH" TERM="${TERM:-dumb}" LANG="${LANG:-en_US.UTF-8}" HOME="$SH" VIBE_HOME="$VH" \
+-    OPENROUTER_API_KEY="$OPENROUTER_API_KEY" \
++    OPENROUTER_API_KEY="$OPENROUTER_API_KEY" MISTRAL_API_KEY=unused \
+     sandbox-exec -D HOME="$REAL" -f "$D/agent.sb" \
+     "$VIBE" -p "$PROMPT" --model devstral --auto-approve --trust --output streaming --output-dir "$VH/out" \
+       --max-price 1.5 --time-limit 1200 < /dev/null > "$D/logs/last-run.out" 2> "$D/logs/last-run.err" )

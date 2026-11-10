@@ -1,0 +1,181 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..1cbfabd
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,79 @@
++# Removing stale pages and files on deploy
++
++## The problem
++
++`deploy.sh` never removed anything from the bucket. The `site/` sync had no
++`--delete`, so a deleted or private note kept its page, and a file removed from
++`site/` stayed too.
++
++## What changed (`deploy.sh`)
++
++Each deploy now runs these steps in order:
++
++1. **Build** the pages into `.build/pages` (unchanged, plus a `mkdir -p` so an
++   empty build, with every note private, doesn't break the later steps).
++2. **Sync `site/` with `--delete`**, with `--exclude <prefix>/*` for each page
++   prefix the build produced. Files removed from `site/` are deleted. Pages are
++   never in the sync's scope, so they aren't deleted and re-uploaded.
++3. **Upload each page in place** with `aws s3 cp` to the same key, as before.
++   The old copy keeps serving until the new one replaces it.
++4. **Remove stale pages.** For each page prefix, list the bucket keys with
++   `s3api list-objects-v2`, subtract the keys this build produced (`comm -23`),
++   and `delete-object` the rest.
++
++The page prefixes are read from the build's output folders (`s`, `a`), not
++hard-coded, so a new prefix is covered without editing the deploy script.
++
++## Why the exclusion is needed
++
++Adding `--delete` without the exclusion would have caused the outage the colleague
++note describes. The page keys are not in `site/`, so the sync would delete every
++page on each deploy, and the uploads would bring them back one at a time, with
++404s in between. The exclusion closes that gap.
++
++## What from the colleague's note applied
++
++- **Exclude generated keys from the `--delete` sync:** applied. The exclusions
++  come from the build's page prefixes.
++- **Upload as an overwrite in place:** already the case (`cp` to the same key),
++  kept as is.
++- **Remove stale pages after the upload by listing the bucket:** applied, as step
++  4. I used `list-objects-v2` plus `delete-object` instead of a second
++  `sync --delete`, so the deletes only touch keys under page prefixes.
++- **Keep removing files from `site/` with the main sync's `--delete`:** applied.
++
++What did not apply: the worklore-specific prefixes (`paths/`, the slugs), the
++2026-10-15 date, the Google test, and the curl-every-second check. That check
++needs a live deploy, and I was not allowed to deploy. The outage in the note was
++caused by a `--delete` sync that this repo didn't have yet. The point that carried
++over is the exclusion, which I added before introducing `--delete`.
++
++## Verification
++
++- `bash -n deploy.sh` passes.
++- I ran `deploy.sh` under `/bin/bash` (3.2, the macOS default) against a fake
++  `aws` CLI outside the repo, with a fixed bucket listing. Nothing touched real
++  S3. The commands came out as intended:
++  - the sync used `--delete --exclude a/* --exclude s/*`;
++  - all three public pages and both authors were uploaded with `text/html`;
++  - `s/draft-moss-survey` (private), `s/bird-calls-at-dawn-old` and
++    `a/gone-author` (not produced by the build) were deleted;
++  - `s/tide-tables-offline` and `a/ann` (live) were not deleted.
++- **Not verified:** the real behavior of `--exclude` against the real bucket. I
++  believe the AWS CLI applies `--exclude` to destination keys when `--delete` is
++  set, which is what makes this work. Before the first live deploy, check it with
++  a read-only dry run:
++  `aws s3 sync site/ s3://<bucket>/ --delete --exclude 's/*' --exclude 'a/*' --dryrun`
++  The output should list no `delete:` lines for `s/` or `a/` keys.
++- **Not verified:** a live deploy. Per the ground rules I did not deploy, so the
++  "every page answers 200 during a deploy" check is still to run.
++
++## Behavior to be aware of
++
++- The sync now deletes **every** bucket key that is not in `site/` and not under
++  a page prefix of the current build. The bucket is assumed to hold only the site
++  and its pages. Anything uploaded to the bucket by hand will be removed on the
++  next deploy.
++- If the build stops producing a prefix entirely (for example, all notes in `s/`
++  become private), that prefix is no longer excluded, so the sync removes its old
++  keys. That is the intended result.
+diff --git a/deploy.sh b/deploy.sh
+index 431ef02..9051261 100755
+--- a/deploy.sh
++++ b/deploy.sh
+@@ -1,5 +1,12 @@
+ #!/usr/bin/env bash
+ # Deploy the site to S3. CI runs this on every push to main with BUCKET set.
++#
++# Order matters. Live pages must never be missing from the bucket mid-deploy:
++#   1. build the pages into .build/pages
++#   2. sync site/ with --delete, excluding the page prefixes, so files removed
++#      from site/ are deleted but pages are never touched by the sync
++#   3. overwrite each page in place (same key, so the old copy serves until replaced)
++#   4. delete page keys under those prefixes that this build did not produce
+ set -euo pipefail
+ ROOT="$(cd "$(dirname "$0")" && pwd)"
+ : "${BUCKET:?set BUCKET to the site bucket}"
+@@ -8,25 +15,75 @@ export AWS_PROFILE="${AWS_PROFILE:-fieldnotes-deploy}"
+ build_pages() {
+   echo "→ building note and author pages"
+   rm -rf "$ROOT/.build/pages"
++  mkdir -p "$ROOT/.build/pages"
+   python3 "$ROOT/build_pages.py" "$ROOT/content/stories.json" "$ROOT/.build/pages"
+ }
+ 
++# Every page key the build produced, relative to the bucket root (s/<slug>, a/<handle>).
++built_keys() {
++  ( cd "$ROOT/.build/pages" && find . -type f | sed 's|^\./||' | LC_ALL=C sort )
++}
++
++# Top-level folders the build writes pages into (s, a). Each one is owned by the page step.
++page_prefixes() {
++  ( cd "$ROOT/.build/pages" && find . -mindepth 1 -maxdepth 1 -type d | sed 's|^\./||' | LC_ALL=C sort )
++}
++
++# Keys currently in the bucket under one prefix, one per line (paginated by the CLI).
++list_keys() {
++  aws s3api list-objects-v2 --bucket "$BUCKET" --prefix "$1" \
++    --query 'Contents[].Key' --output json \
++    | python3 -c 'import json, sys
++for key in json.load(sys.stdin) or []:
++    print(key)'
++}
++
+ sync_site() {
++  # --exclude keeps the sync's --delete away from the page prefixes. Without it,
++  # every page would be deleted on each deploy and re-uploaded one by one.
++  local excludes=()
++  local prefix
++  while read -r prefix; do
++    excludes+=(--exclude "$prefix/*")
++  done < <(page_prefixes)
+   echo "→ syncing site/ to s3://$BUCKET"
+-  aws s3 sync "$ROOT/site/" "s3://$BUCKET/" --only-show-errors
++  aws s3 sync "$ROOT/site/" "s3://$BUCKET/" --delete \
++    ${excludes[@]+"${excludes[@]}"} --only-show-errors
+ }
+ 
+ upload_pages() {
+   # Page keys are extensionless (s/<slug>, a/<handle>), so S3 can't guess their
+-  # type: upload each one with text/html.
++  # type: upload each one with text/html. Same key as before, so this overwrites in place.
+   echo "→ uploading pages"
+-  ( cd "$ROOT/.build/pages" && find . -type f | sed 's|^\./||' | sort | while read -r key; do
++  ( cd "$ROOT/.build/pages" && built_keys | while read -r key; do
+       aws s3 cp "$key" "s3://$BUCKET/$key" --content-type "text/html; charset=utf-8" \
+         --cache-control "max-age=300" --only-show-errors
+     done )
+ }
+ 
++remove_stale_pages() {
++  echo "→ removing pages the build no longer produces"
++  local built live stale key
++  built="$(mktemp)"
++  live="$(mktemp)"
++  stale="$(mktemp)"
++  trap 'rm -f "$built" "$live" "$stale"' RETURN
++
++  built_keys > "$built"
++  while read -r prefix; do
++    list_keys "$prefix/"
++  done < <(page_prefixes) | LC_ALL=C sort > "$live"
++
++  LC_ALL=C comm -23 "$live" "$built" > "$stale"
++  while read -r key; do
++    [ -n "$key" ] || continue
++    echo "  removing s3://$BUCKET/$key"
++    aws s3api delete-object --bucket "$BUCKET" --key "$key" > /dev/null
++  done < "$stale"
++}
++
+ build_pages
+ sync_site
+ upload_pages
++remove_stale_pages
+ echo "✓ deployed to s3://$BUCKET"

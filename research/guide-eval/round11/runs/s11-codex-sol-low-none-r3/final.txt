@@ -1,0 +1,3 @@
+The first publish succeeded because `similar` was empty. The second computed a float similarity score, which DynamoDB rejects, causing the 500.
+
+I changed similarity scores to use `Decimal` and added a regression test that publishes two stories through the handler. The cause and fix are documented in [ANSWER.md](/tmp/h-jWSD34/ANSWER.md). Both tests pass.

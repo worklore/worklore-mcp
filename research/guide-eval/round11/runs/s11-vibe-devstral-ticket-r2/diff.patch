@@ -1,0 +1,89 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..b704754
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,35 @@
++## Cause
++
++The `similarity()` function in `src/app.py` returns a Python `float` (rounded to 4 decimal places). This float is stored in the `similar` list as the `score` field for each related story. When `publish()` writes the item to DynamoDB via `table.put_item(Item=item)`, DynamoDB rejects the float type with: `TypeError: Float types are not supported. Use Decimal types instead.`
++
++The first publish succeeds because the table is empty: `related()` returns an empty list, so no scores (and no floats) are written. Once a story exists in the table, the second publish computes similarity scores and includes float values in the item, triggering the error.
++
++This matches the colleague's note: the empty-database path hid the bug, and the scoring logic had a path that depended on existing state (the populated-table path).
++
++## Fix
++
++**app.py line 37**: Changed the score from a float to an integer percentage by multiplying by 100 and rounding:
++
++```python
++# Before:
++scored.append({"slug": other["slug"], "score": similarity(story, other)})
++
++# After:
++scored.append({"slug": other["slug"], "score": int(round(similarity(story, other) * 100))})
++```
++
++DynamoDB accepts integers, so this eliminates the float-type error. The score is now stored as an integer percentage (e.g., 75 instead of 0.75), which preserves the ordering while being compatible with DynamoDB.
++
++**tests/test_publish.py**: Added `test_publish_with_existing_story` that seeds the table with one record before publishing, ensuring the populated-table path is tested. This prevents the bug from being hidden by empty-table tests.
++
++## Parts of the colleague's note that applied
++
++- The empty-database path hiding the bug: **applied** — first publish worked, second failed
++- Float types from scoring reaching the write: **applied** — similarity() returned floats that DynamoDB rejected
++- Fix by changing floats to integers: **applied** — converted scores to integer percentages
++- Seeding tests with existing data: **applied** — added test that pre-populates the table
++
++## Parts that did not apply
++
++- Using Decimal types: not needed — integers are sufficient and simpler
++- Division/average/rounded scores in item dictionaries: the only path was through the `similar` list's `score` field
+diff --git a/src/app.py b/src/app.py
+index db49c5e..d2f33a1 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -35,7 +35,7 @@ def related(story, existing):
+     for other in existing:
+         if other["slug"] == story["slug"]:
+             continue
+-        scored.append({"slug": other["slug"], "score": similarity(story, other)})
++        scored.append({"slug": other["slug"], "score": int(round(similarity(story, other) * 100))})
+     scored.sort(key=lambda s: s["score"], reverse=True)
+     return scored[:TOP_N]
+ 
+diff --git a/tests/test_publish.py b/tests/test_publish.py
+index 6c9ac44..381fbc1 100644
+--- a/tests/test_publish.py
++++ b/tests/test_publish.py
+@@ -23,6 +23,30 @@ class PublishTest(unittest.TestCase):
+         self.assertEqual(table.get_item(Key={"slug": "why-my-cron-ran-twice"})["Item"]["title"], "Why my cron ran twice")
+         self.assertEqual(table.scan()["Count"], 1)
+ 
++    def test_publish_with_existing_story(self):
++        table = FakeTable()
++        existing = {
++            "slug": "first-story",
++            "title": "First Story",
++            "tags": ["cron", "linux"],
++            "body": "A story about cron jobs.",
++            "published_at": 1234567890,
++            "similar": [],
++        }
++        table.put_item(Item=existing)
++        story = {
++            "slug": "why-my-cron-ran-twice",
++            "title": "Why my cron ran twice",
++            "tags": ["cron", "linux"],
++            "body": "Two crontabs, one for root and one for me, both had the line.",
++        }
++        stored = app.publish(table, story)
++        self.assertEqual(stored["slug"], "why-my-cron-ran-twice")
++        self.assertEqual(table.scan()["Count"], 2)
++        self.assertEqual(len(stored["similar"]), 1)
++        self.assertEqual(stored["similar"][0]["slug"], "first-story")
++        self.assertIsInstance(stored["similar"][0]["score"], int)
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

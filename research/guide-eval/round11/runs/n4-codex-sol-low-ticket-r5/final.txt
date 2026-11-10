@@ -1,0 +1,3 @@
+Added the `codex-sandboxed` lane to [run.sh](/tmp/h-CrzdNm/run.sh). It runs the same Codex command under [sandbox/agent.sb](/tmp/h-CrzdNm/sandbox/agent.sb), with a scratch home and a lane-specific profile exception that keeps the real home inaccessible. Its final message is copied from `/tmp` into the run folder after Codex exits.
+
+I documented the changes, the applicable parts of the colleague’s note, and the verification in [ANSWER.md](/tmp/h-CrzdNm/ANSWER.md). Shell syntax and diff checks passed, and a local sandbox probe blocked reads from the real home. I did not run a Codex task because that would send its prompt to an external service.

@@ -1,0 +1,43 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..bb34c83
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,9 @@
++# Cause and fix
++
++Vibe 3.1.0 failed during session setup, before it sent a prompt. Its automatic utility-model selection looked for a built-in Mistral model. Because `MISTRAL_API_KEY` was absent from the script's `env -i` environment, Vibe tried to read it from the macOS Keychain by running `/usr/bin/security`. The sandbox correctly denies that command, producing exit 2.
++
++Even after selecting the OpenRouter model for utility tasks, Vibe's built-in web-search availability check still resolves `MISTRAL_API_KEY` before disabled tools are filtered. That was a second route to the same failure.
++
++The config now routes both utility tasks to `devstral` and disables the Mistral web-search tool. The launcher supplies a non-secret `MISTRAL_API_KEY=unused` placeholder solely to satisfy Vibe's startup availability check; the real OpenRouter key remains the only usable provider credential. The sandbox's Keychain and home-directory restrictions remain in place.
++
++Verification: an offline probe with a dummy OpenRouter key and network access denied advanced past session setup and ran until its five-second deadline (exit 3), with no Keychain error. No external service was contacted.
+diff --git a/run-vibe.sh b/run-vibe.sh
+index c4a5223..687b295 100755
+--- a/run-vibe.sh
++++ b/run-vibe.sh
+@@ -13,6 +13,7 @@ cp "$D/vibe/config.toml" "$VH/config.toml"
+ mkdir -p "$D/logs"
+ ( cd "$W" && env -i PATH="$PATH" TERM="${TERM:-dumb}" LANG="${LANG:-en_US.UTF-8}" HOME="$SH" VIBE_HOME="$VH" \
+     OPENROUTER_API_KEY="$OPENROUTER_API_KEY" \
++    MISTRAL_API_KEY=unused \
+     sandbox-exec -D HOME="$REAL" -f "$D/agent.sb" \
+     "$VIBE" -p "$PROMPT" --model devstral --auto-approve --trust --output streaming --output-dir "$VH/out" \
+       --max-price 1.5 --time-limit 1200 < /dev/null > "$D/logs/last-run.out" 2> "$D/logs/last-run.err" )
+diff --git a/vibe/config.toml b/vibe/config.toml
+index 4a44d67..8937175 100644
+--- a/vibe/config.toml
++++ b/vibe/config.toml
+@@ -9,6 +9,11 @@ enable_connectors = false
+ enable_mcp = false
+ show_greeting = false
+ outside_workdir = "deny"
++disabled_tools = ["web_search"]
++
++[utility_models]
++title = "devstral"
++smart_approve = "devstral"
+ 
+ [[providers]]
+ name = "openrouter"

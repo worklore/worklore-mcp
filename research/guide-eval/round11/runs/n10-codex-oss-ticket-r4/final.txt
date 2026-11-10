@@ -1,0 +1,30 @@
+**What was done**
+
+- Initialized Prisma 8 (the current `prisma@latest` release candidate) with the ORM scaffold using `npx prisma@latest orm init --yes --target postgres --authoring psl`.
+  - This installed `@prisma/orm-postgres`, added `prisma.config.ts`, `src/prisma/contract.prisma` and `src/prisma/db.ts`.
+  - The command also created the PostgreSQL database schema matching the contract.
+- Updated the **contract** (`src/prisma/contract.prisma`):
+  - Defined a `User` model with a unique `email` and optional `name`.
+  - Defined a `Post` model with `title`, optional `content`, a `published` flag defaulting to `false`, and a required relation to its author.
+  - Removed unused timestamp fields to keep the model minimal for the task.
+- Regenerated the contract JSON and TypeScript types with `npx prisma contract emit`.
+- Ran `npx prisma db init` to create the tables in the local PostgreSQL instance defined in `.env`.
+- Added `script.ts` at the project root:
+  - Creates a user (email `alice@example.com`) with two posts (one published, one draft).
+  - Retrieves **all** users together with their posts using `db.orm.public.User.all()`.
+  - Prints the result as formatted JSON.
+  - Swallows a possible unique‑constraint error so the script can be rerun safely.
+
+**Parts of the colleague’s note that applied**
+
+- The note warned that `prisma@latest` now points to a **release candidate** of Prisma 8, which uses a different package (`@prisma/orm-postgres`) and a different init command (`prisma orm init`). I followed that guidance: used `npx prisma@latest orm init ...` and installed `@prisma/orm-postgres`, supplying `--yes` to avoid interactive prompts.
+- The note mentioned that the generated contract lives in `src/prisma/contract.prisma` and requires emission (`prisma contract emit`). I performed the emission step before creating the DB.
+- The note highlighted that after schema changes you must run `prisma db init` (or `update`/`migrate`) to materialize tables. I executed `npx prisma db init` which pulled the contract into the database.
+
+**How to run the demo**
+
+```bash
+npx tsx script.ts
+```
+
+The script will output a JSON array of users with their nested posts.

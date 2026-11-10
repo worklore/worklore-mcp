@@ -1,0 +1,13 @@
+**Answer Summary**
+
+- Added a **`codex‑sandboxed`** lane to `run.sh`.
+- Implemented the lane by running the Codex CLI inside the same macOS sandbox (`sandbox/agent.sb`) used by the Kimi lane, with a temporary scratch `$HOME` to block real‑home access.
+- Updated the lane documentation comment block to list the new lane.
+
+**What was applied from the colleague’s note**
+
+- **Sandbox profile usage** – replicated the Kimi lane’s approach of launching the agent with `sandbox‑exec -f sandbox/agent.sb`.
+- **Scratch HOME** – created a temporary `$HOME` directory (`/tmp/khome-XXXXX`) and exported it before invoking the sandbox, matching the “empty scratch HOME” strategy.
+- **Isolation of real home** – passed the real `$HOME` to the sandbox via `-D HOME="$REAL"` so the agent cannot read/write the actual home directory.
+
+The note’s additional step of writing output to a `/tmp` scratch folder and copying it back was **not required** for the requested functionality; the lane simply mirrors the Kimi sandbox setup while executing the standard Codex command.

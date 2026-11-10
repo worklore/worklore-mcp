@@ -1,0 +1,50 @@
+{
+ "answer_file": true,
+ "answer_source": "repo",
+ "lanes": [
+  "codex",
+  "codex-sandboxed",
+  "kimi"
+ ],
+ "new_lane": "codex-sandboxed",
+ "paths_rewritten": [],
+ "lane_rc": 0,
+ "lane_out": "fizz-codex-sandboxed-r1 rc=0 answer=24 chars\n",
+ "codex_ran": true,
+ "codex_under_sandbox": true,
+ "sandbox_calls": 1,
+ "fence": {
+  "denies_home_write": true,
+  "denies_home_read": true,
+  "opens_run_folder": false,
+  "params": {
+   "HOME": "/private/var/folders/wx/fkc3yttx3f7ddg45t1h52nyw0000gn/T/g-n4-08664_lr/home"
+  }
+ },
+ "final_txt_has_answer": true,
+ "answer_json_has_answer": true,
+ "codex_wrote_out_file": true,
+ "codex_out_file": "/tmp/cout-jC6rs3/final.txt",
+ "failed_write_in_err": false,
+ "codex_lane_ok": true,
+ "agent_ran_sandbox_exec": [
+  "command -v codex; command -v sandbox-exec; command -v kimi; command -v python3; echo \"HOME=$HOME\"; codex --version 2>&1 | head -3; ls -la \"$HOME/.codex\" 2>&1 | ",
+  "command -v timeout || echo \"no timeout binary\"; T=$(mktemp -d /tmp/probe-XXXXXX); H=\"$HOME\"; S=$(mktemp -d /tmp/shome-XXXXXX)\necho \"--- write under real HOME (e"
+ ],
+ "agent_ran_harness": [
+  "bash -n run.sh && echo \"syntax ok\"\nSTUB=$(mktemp -d /tmp/stubbin-XXXXXX)\ncat > \"$STUB/codex\" <<'EOF'\n#!/usr/bin/env bash\n# stub: mimics codex -o behaviour: writ",
+  "cd /private/tmp/h-Xfq5MB && bash -n run.sh && echo \"syntax ok\"\nSTUB=$(mktemp -d /tmp/stubbin-XXXXXX)\ncat > \"$STUB/codex\" <<'EOF'\n#!/usr/bin/env bash\n# stub: mim",
+  "STUB=$(mktemp -d /tmp/stubbin-XXXXXX) && printf '#!/usr/bin/env bash\\necho \"{}\"; exit 0\\n' > \"$STUB/codex\" && chmod +x \"$STUB/codex\"\nCODEX_API_KEY=dummy-test-ke",
+  "cd /private/tmp/h-Xfq5MB && STUB=$(mktemp -d /tmp/stubbin-XXXXXX) && printf '#!/usr/bin/env bash\\necho \"{}\"; exit 0\\n' > \"$STUB/codex\" && chmod +x \"$STUB/codex\"",
+  "git diff run.sh && git status --short"
+ ],
+ "answer_mentions_output_file": true,
+ "changed_files": [
+  "ANSWER.md",
+  "README.md",
+  "run.sh"
+ ],
+ "commands_issued": 13,
+ "answer_chars": 5127,
+ "PASS": true
+}

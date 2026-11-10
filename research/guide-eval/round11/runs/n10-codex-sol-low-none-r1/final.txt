@@ -1,0 +1,3 @@
+Installed the current npm `latest` Prisma release, modeled users and posts, and applied the migration to the local PostgreSQL database.
+
+Added [script.ts](/tmp/h-VLif4e/script.ts), which creates a user with two posts and prints every user with their posts. Documented the setup in [ANSWER.md](/tmp/h-VLif4e/ANSWER.md). Both `npx tsx script.ts` and `npx tsc --noEmit` passed.

@@ -1,0 +1,3 @@
+Added the `codex-sandboxed` lane to [run.sh](/tmp/h-gliJQh/run.sh). It runs Codex under [sandbox/agent.sb](/tmp/h-gliJQh/sandbox/agent.sb) with a scratch HOME, then copies its final answer from scratch space into the run folder. The profile now grants access to `~/.kimi-code` only for the Kimi lane.
+
+[ANSWER.md](/tmp/h-gliJQh/ANSWER.md) records what changed and which parts of the colleague’s note applied. Shell syntax, profile loading, and a local mock Codex run passed. No provider-backed run was made.

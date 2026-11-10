@@ -1,0 +1,58 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..54df46f
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,30 @@
++# Summary of Changes
++
++## 1. Problem
++When deploying the site:
++- Files removed from `site/` were never deleted from the S3 bucket because `sync_site` ran `aws s3 sync "$ROOT/site/" "s3://$BUCKET/"` without `--delete`.
++- Notes that were deleted or made private, as well as author pages that were no longer produced, remained in the S3 bucket indefinitely under `s/` and `a/`.
++- If `--delete` was simply added to `sync_site` without excluding the prerendered page prefixes, `aws s3 sync` would delete all prerendered note and author pages from S3 during the sync step (since they do not exist in `site/`), causing temporary 404s until `upload_pages` re-uploaded them.
++
++## 2. Changes Made to `deploy.sh`
++- **Updated `sync_site`**:
++  - Added `--delete` to remove any files from the root bucket that were deleted from `site/`.
++  - Added `--exclude 's/*'` and `--exclude 'a/*'` so that the main sync does not delete prerendered note (`s/`) or author (`a/`) pages.
++- **Updated `upload_pages`**:
++  - Retained the `aws s3 cp` step with explicit `--content-type "text/html; charset=utf-8"` and `--cache-control "max-age=300"` for in-place overwriting of prerendered extensionless pages without downtime.
++  - Added cleanup syncs with `--delete` after the upload loop:
++    ```bash
++    aws s3 sync "$ROOT/.build/pages/s/" "s3://$BUCKET/s/" --delete --only-show-errors
++    aws s3 sync "$ROOT/.build/pages/a/" "s3://$BUCKET/a/" --delete --only-show-errors
++    ```
++    This removes any note (`s/<slug>`) or author (`a/<handle>`) pages in the bucket that the current build no longer produces (e.g. when a note is deleted or made private).
++
++## 3. Colleague's Note: What Applied and What Was Ignored
++- **What Applied**:
++  - **Excluding generated key prefixes from the main sync's `--delete` (Step 2)**: Excluded `s/*` and `a/*` from `aws s3 sync "$ROOT/site/" ... --delete` to prevent live story and author pages from being deleted before/during upload.
++  - **Overwriting in place (Step 3)**: Kept the existing `aws s3 cp` loop to overwrite pages with custom content types and cache control headers.
++  - **Post-upload stale key cleanup with `sync ... --delete` (Step 4)**: Used `aws s3 sync "$ROOT/.build/pages/<prefix>/" "s3://$BUCKET/<prefix>/" --delete` after the upload to clean up orphan pages that were deleted or made private.
++  - **Removing stale files from `site/` (Step 5)**: Enabled `--delete` on the main site sync.
++- **What Was Ignored / Adjusted**:
++  - Prefixes specific to worklore (`paths/`) did not apply here; fieldnotes uses `s/` for stories/notes and `a/` for author pages.
++  - The alternative cleanup method mentioned in Step 4 (`aws s3api list-objects-v2` with manual deletion) was not needed because `aws s3 sync ... --delete` directly after the upload achieves the same result cleanly and idiomatically.
+diff --git a/deploy.sh b/deploy.sh
+index 431ef02..4d83eeb 100755
+--- a/deploy.sh
++++ b/deploy.sh
+@@ -13,7 +13,7 @@ build_pages() {
+ 
+ sync_site() {
+   echo "→ syncing site/ to s3://$BUCKET"
+-  aws s3 sync "$ROOT/site/" "s3://$BUCKET/" --only-show-errors
++  aws s3 sync "$ROOT/site/" "s3://$BUCKET/" --delete --exclude 's/*' --exclude 'a/*' --only-show-errors
+ }
+ 
+ upload_pages() {
+@@ -24,6 +24,8 @@ upload_pages() {
+       aws s3 cp "$key" "s3://$BUCKET/$key" --content-type "text/html; charset=utf-8" \
+         --cache-control "max-age=300" --only-show-errors
+     done )
++  aws s3 sync "$ROOT/.build/pages/s/" "s3://$BUCKET/s/" --delete --only-show-errors
++  aws s3 sync "$ROOT/.build/pages/a/" "s3://$BUCKET/a/" --delete --only-show-errors
+ }
+ 
+ build_pages

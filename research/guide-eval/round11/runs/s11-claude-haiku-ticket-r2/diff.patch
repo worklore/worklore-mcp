@@ -1,0 +1,208 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..f5f82a6
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,67 @@
++# Second publish returns 500: float scores reach DynamoDB
++
++## Cause
++
++`similarity()` in `src/app.py` returns a Python `float` (`round(..., 4)`), and
++`related()` stores it as `similar[].score`. The item is written with
++`table.put_item(Item=item)`. boto3 does not accept Python floats, so the write
++raises `TypeError: Float types are not supported. Use Decimal types instead.`
++
++The bug only runs when there is an existing story to score against.
++
++- Publish #1: the table is empty, `existing` is `[]`, `similar` is `[]`, and no
++  float is ever built. It returns 201.
++- Publish #2: `existing` has one item, `related()` computes a score, the float
++  goes into the item, and the write fails. It returns 500.
++
++The existing test only published into an empty `FakeTable`, so it never reached
++the scoring path. `tests/fake_dynamo.py` already rejects floats the way boto3
++does, so the bug was reproducible in the test suite. The test just never seeded
++the table.
++
++## Fix
++
++1. **One write-point conversion.** `to_dynamo()` in `src/app.py` walks the item
++   recursively and converts every `float` to `Decimal(str(x))`. `publish()` calls
++   it right before `put_item`. Every path that can produce a float (scores, ratios,
++   averages, anything added later) is covered, not only the one that failed.
++   `Decimal(str(x))` keeps the value as written (`0.4` stays `0.4`).
++2. **Tests that exercise the populated table.** `tests/test_publish.py` now:
++   - publishes a second story through `handler()`, the same entry point production
++     uses, and expects 201;
++   - checks that stored `similar[].score` values are `Decimal`;
++   - publishes five stories in sequence;
++   - unit-tests `to_dynamo()` with nested floats.
++
++   Against the original `app.py`, the populated-table tests fail (2 failures,
++   2 errors). Against the fixed code, all 6 pass.
++
++Run the tests with `python3 -m unittest discover tests` from the repo root.
++
++## Colleague's note: what applied and what didn't
++
++**Applied**
++- The cause: a float reaches `put_item` only once the table has data, so the
++  empty-table path hides it.
++- The lesson: seed the table in write-path tests so the populated path runs. The
++  new tests do this, and `test_second_publish_on_populated_table_returns_201`
++  is the regression test.
++- Scoring, averages and rounded values feeding item dictionaries are where floats
++  come from. `to_dynamo()` covers all of them at the write point.
++
++**Not applied**
++- **Integer percentages.** The colleague turned scores into integer percentages.
++  I used `Decimal` instead. Integer percentages would drop the 4-decimal precision
++  of the score, so close matches could tie and the top-3 order could change.
++  `Decimal` also works with DynamoDB and keeps the stored score unchanged.
++- **"One-line change."** A one-line change would fix this one float. The
++  write-point conversion is slightly larger, but it means the next float added to
++  an item cannot break publishing again.
++
++## Not done
++
++- Nothing was deployed, published, or sent to any external service.
++- The changes are uncommitted in the working tree. `logs/error.log` is unchanged.
++- The tests use the in-memory `FakeTable`, not real DynamoDB. The fake's float
++  check matches the production error message, but this has not been run against
++  AWS.
+diff --git a/src/app.py b/src/app.py
+index db49c5e..5c59377 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -8,6 +8,7 @@ import json
+ import logging
+ import re
+ import time
++from decimal import Decimal
+ 
+ log = logging.getLogger("stories")
+ 
+@@ -30,6 +31,23 @@ def similarity(a, b):
+     return round(0.7 * tag_score + 0.3 * word_score, 4)
+ 
+ 
++def to_dynamo(value):
++    """Return ``value`` with every float replaced by a Decimal.
++
++    DynamoDB (boto3) rejects Python floats, and the failure only shows up when a
++    computed float reaches the write. Converting at the single write point covers
++    every path (scores, averages, ratios), not just the ones we remember to fix.
++    Decimal(str(x)) keeps the value as written (0.4 stays 0.4).
++    """
++    if isinstance(value, float):
++        return Decimal(str(value))
++    if isinstance(value, dict):
++        return {k: to_dynamo(v) for k, v in value.items()}
++    if isinstance(value, (list, tuple, set, frozenset)):
++        return [to_dynamo(v) for v in value]
++    return value
++
++
+ def related(story, existing):
+     scored = []
+     for other in existing:
+@@ -60,7 +78,7 @@ def publish(table, story):
+         "published_at": int(time.time()),
+         "similar": related(story, existing),
+     }
+-    table.put_item(Item=item)
++    table.put_item(Item=to_dynamo(item))
+     log.info("publish slug=%s similar=%d stored", item["slug"], len(item["similar"]))
+     return item
+ 
+diff --git a/tests/test_publish.py b/tests/test_publish.py
+index 6c9ac44..1d58f68 100644
+--- a/tests/test_publish.py
++++ b/tests/test_publish.py
+@@ -1,6 +1,8 @@
++import json
+ import os
+ import sys
+ import unittest
++from decimal import Decimal
+ 
+ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+ sys.path.insert(0, os.path.dirname(__file__))
+@@ -8,21 +10,69 @@ sys.path.insert(0, os.path.dirname(__file__))
+ import app  # noqa: E402
+ from fake_dynamo import FakeTable  # noqa: E402
+ 
++FIRST = {
++    "slug": "why-my-cron-ran-twice",
++    "title": "Why my cron ran twice",
++    "tags": ["cron", "linux"],
++    "body": "Two crontabs, one for root and one for me, both had the line.",
++}
++SECOND = {
++    "slug": "cron-and-linux-timezones",
++    "title": "Cron and linux timezones",
++    "tags": ["cron", "timezones"],
++    "body": "Cron runs in the server timezone, so the linux job ran twice on DST.",
++}
++
++
++def post(table, story):
++    return app.handler({"body": json.dumps(story)}, table)
++
+ 
+ class PublishTest(unittest.TestCase):
+     def test_publish_stores_story(self):
+         table = FakeTable()
+-        story = {
+-            "slug": "why-my-cron-ran-twice",
+-            "title": "Why my cron ran twice",
+-            "tags": ["cron", "linux"],
+-            "body": "Two crontabs, one for root and one for me, both had the line.",
+-        }
+-        stored = app.publish(table, story)
++        stored = app.publish(table, FIRST)
+         self.assertEqual(stored["slug"], "why-my-cron-ran-twice")
+         self.assertEqual(table.get_item(Key={"slug": "why-my-cron-ran-twice"})["Item"]["title"], "Why my cron ran twice")
+         self.assertEqual(table.scan()["Count"], 1)
+ 
++    def test_first_publish_on_empty_table_returns_201(self):
++        table = FakeTable()
++        self.assertEqual(post(table, FIRST)["statusCode"], 201)
++
++    def test_second_publish_on_populated_table_returns_201(self):
++        # Regression: the second publish scores against the first story, which
++        # produced float scores that DynamoDB rejects (500 in production).
++        table = FakeTable()
++        self.assertEqual(post(table, FIRST)["statusCode"], 201)
++        response = post(table, SECOND)
++        self.assertEqual(response["statusCode"], 201, response["body"])
++
++    def test_related_scores_are_stored_as_decimal(self):
++        table = FakeTable()
++        post(table, FIRST)
++        post(table, SECOND)
++        item = table.get_item(Key={"slug": SECOND["slug"]})["Item"]
++        self.assertEqual(len(item["similar"]), 1)
++        self.assertEqual(item["similar"][0]["slug"], FIRST["slug"])
++        self.assertIsInstance(item["similar"][0]["score"], Decimal)
++        self.assertGreater(item["similar"][0]["score"], 0)
++
++    def test_many_publishes_in_sequence(self):
++        table = FakeTable()
++        for i in range(5):
++            story = dict(FIRST, slug=f"story-number-{i}", title=f"Story {i}")
++            self.assertEqual(post(table, story)["statusCode"], 201)
++        self.assertEqual(table.scan()["Count"], 5)
++
++
++class ToDynamoTest(unittest.TestCase):
++    def test_floats_become_decimals_at_any_depth(self):
++        out = app.to_dynamo({"a": 0.4, "b": [{"c": 1.5}], "d": 3, "e": "x"})
++        self.assertEqual(out, {"a": Decimal("0.4"), "b": [{"c": Decimal("1.5")}], "d": 3, "e": "x"})
++        self.assertIsInstance(out["a"], Decimal)
++        self.assertIsInstance(out["b"][0]["c"], Decimal)
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

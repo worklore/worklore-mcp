@@ -1,0 +1,10 @@
+**Added `codex-sandboxed` lane**
+
+- Updated **`run.sh`** to include a new `codex-sandboxed` case.
+- Implemented `codex_sandboxed_run` which mirrors the original `codex` lane but executes inside `sandbox/agent.sb` using `sandbox-exec`, ensuring the agent’s shell cannot access the real `$HOME`.
+- Reused existing logic for preparing the work directory, prompt handling, and result processing.
+- Added descriptive comments for clarity.
+
+**Documentation**
+
+- Recorded the changes and usage instructions in **`ANSWER.md`**.

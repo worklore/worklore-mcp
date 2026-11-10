@@ -1,0 +1,43 @@
+{
+ "answer_file": true,
+ "reinstalled": false,
+ "prisma_version": "8.0.0-rc.33",
+ "orm_postgres_version": "8.0.0-rc.23",
+ "prisma_client_version": "7.10.1",
+ "package_json_prisma": {
+  "@prisma/orm-postgres": "^8.0.0-rc.23",
+  "@prisma/cli-engine": "^0.9.0",
+  "@prisma/client": "^7.10.1",
+  "prisma": "^8.0.0-rc.33"
+ },
+ "imports_prisma_client": false,
+ "imports_orm_postgres": true,
+ "style": "no-prisma-schema",
+ "on_prisma_8": true,
+ "on_prisma_7": true,
+ "fresh_apply": [],
+ "db_source": "run",
+ "tables": [
+  "Post",
+  "User"
+ ],
+ "user_table": "User",
+ "post_table": null,
+ "table_checks": {
+  "email_unique": true,
+  "name_nullable": true
+ },
+ "tables_ok": false,
+ "script_exists": true,
+ "script_ok": false,
+ "tsc_ok": true,
+ "tsc_tail": "",
+ "looked_up_client_tag": false,
+ "ran_orm_init": true,
+ "read_prisma8_md": true,
+ "web_use": true,
+ "answer_chars": 3136,
+ "run_db": "n10_n10_vibe_devstral_none_r2",
+ "PASS": false,
+ "WORKS_ON_PRISMA7": false
+}

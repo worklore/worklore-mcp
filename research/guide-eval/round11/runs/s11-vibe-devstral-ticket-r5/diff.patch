@@ -1,0 +1,83 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..7c8aa74
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,27 @@
++# Cause and Fix
++
++## Cause
++
++The `similarity()` function in `src/app.py` returns a Python `float` (via `round(..., 4)`). When a second story is published, the `related()` function computes similarity scores between the incoming story and existing stories, and these float scores are stored in the `similar` list within the DynamoDB item. DynamoDB does not accept float types - it only accepts `int`, `str`, `bool`, `bytes`, `Decimal`, `None`, or collections thereof. This causes the `TypeError: Float types are not supported. Use Decimal types instead.` error on the second publish.
++
++The first publish succeeds because the table is empty: `related()` returns an empty list, so no scores (and no floats) are written.
++
++## Fix
++
++1. **In `src/app.py`**: Import `Decimal` from the `decimal` module and change the `similarity()` function to return `Decimal(str(round(...)))` instead of a raw float. This converts the float to a string first (to avoid floating-point precision issues in Decimal constructor), then to a Decimal, which DynamoDB accepts.
++
++2. **In `tests/test_publish.py`**: Seed the table with one story before testing the publish, so the test exercises the populated-table path where similarity scoring actually runs. This prevents the bug from being hidden by empty-table tests.
++
++## Which parts of the colleague's note applied
++
++The following parts of the colleague's note applied directly:
++
++- "The API computed similarity scores between the incoming story and existing stories and stored the top matches." - **Applied**: Our code does exactly this via `related()` and `similarity()`.
++- "The first publish succeeded because the table was empty: there were no matches, so there were no scores or floats to write." - **Applied**: This is the exact same scenario we have.
++- "Once the table contained a story, the scoring path ran and passed Python floats to DynamoDB, which did not accept them." - **Applied**: This is the exact error we're seeing.
++- "Divisions, averages and rounded scores feeding item dictionaries were places where computed floats could reach the write." - **Applied**: Our `similarity()` function uses division and `round()` to compute scores that go into the item dictionary.
++- "I fixed it with a one-line change that made the scores integer percentages." - **Partially applied**: We used Decimal instead of integers, but the principle is the same - use a DynamoDB-compatible numeric type.
++- "I also changed every write-path test to seed the table with one record before testing the write, so the populated-table path actually ran." - **Applied**: We updated the test to seed with one record.
++
++The parts that did not apply:
++- The specific mention of "integer percentages" - we used Decimal for precision, which is also acceptable to DynamoDB.
+diff --git a/src/app.py b/src/app.py
+index db49c5e..af4bb08 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -8,6 +8,7 @@ import json
+ import logging
+ import re
+ import time
++from decimal import Decimal
+ 
+ log = logging.getLogger("stories")
+ 
+@@ -27,7 +28,7 @@ def similarity(a, b):
+     tag_score = len(ta & tb) / len(ta | tb) if (ta | tb) else 0
+     wa, wb = words(a.get("body")), words(b.get("body"))
+     word_score = len(wa & wb) / len(wa | wb) if (wa | wb) else 0
+-    return round(0.7 * tag_score + 0.3 * word_score, 4)
++    return Decimal(str(round(0.7 * tag_score + 0.3 * word_score, 4)))
+ 
+ 
+ def related(story, existing):
+diff --git a/tests/test_publish.py b/tests/test_publish.py
+index 6c9ac44..9f5c8b0 100644
+--- a/tests/test_publish.py
++++ b/tests/test_publish.py
+@@ -12,6 +12,15 @@ from fake_dynamo import FakeTable  # noqa: E402
+ class PublishTest(unittest.TestCase):
+     def test_publish_stores_story(self):
+         table = FakeTable()
++        # Seed the table with one record to test the populated-table path
++        seed_story = {
++            "slug": "first-story",
++            "title": "First Story",
++            "tags": ["test"],
++            "body": "This is the first story.",
++        }
++        app.publish(table, seed_story)
++        
+         story = {
+             "slug": "why-my-cron-ran-twice",
+             "title": "Why my cron ran twice",
+@@ -21,7 +30,7 @@ class PublishTest(unittest.TestCase):
+         stored = app.publish(table, story)
+         self.assertEqual(stored["slug"], "why-my-cron-ran-twice")
+         self.assertEqual(table.get_item(Key={"slug": "why-my-cron-ran-twice"})["Item"]["title"], "Why my cron ran twice")
+-        self.assertEqual(table.scan()["Count"], 1)
++        self.assertEqual(table.scan()["Count"], 2)
+ 
+ 
+ if __name__ == "__main__":

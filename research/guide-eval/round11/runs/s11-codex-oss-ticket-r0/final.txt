@@ -1,0 +1,12 @@
+**ANSWER.md**
+
+- **Cause**  
+  The `related` function stored the raw floating‑point similarity scores in the DynamoDB `similar` attribute. Both DynamoDB and the in‑memory `FakeTable` reject floats, raising `TypeError: Float types are not supported. Use Decimal types instead.` The first publish succeeded because the table was empty (no related scores were written). Subsequent publishes generated similarity scores, triggering the error.
+
+- **Fix**  
+  Updated `src/app.py` → `related` now converts the float similarity to an integer percentage (`int(round(raw_score * 100))`) before storing it. Added a detailed docstring explaining the change and why it prevents the `Float types` error.
+
+- **Applied Parts of Colleague’s Note**  
+  - Identified the same failure path (float scores written to DynamoDB).  
+  - Adopted the one‑line conversion to integer percentages as the fix.  
+  - Included documentation of the fix and the reasoning within the code, mirroring the note’s emphasis on clarifying the change.

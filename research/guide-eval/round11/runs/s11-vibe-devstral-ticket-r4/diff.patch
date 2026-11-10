@@ -1,0 +1,87 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..5cb2451
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,28 @@
++# Root Cause and Fix
++
++## Cause
++
++The `similarity()` function in `src/app.py` returns a Python `float` (via `round(..., 4)`). When a second story is published, the `related()` function computes similarity scores between the new story and existing stories, and these float values are placed into the `similar` list in the item dictionary. DynamoDB's boto3 serializer rejects Python float types with: `TypeError: Float types are not supported. Use Decimal types instead.`
++
++The first publish succeeded because the table was empty, so `related()` returned an empty list and no scores were written. Once a story existed, the scoring path executed and the float values triggered the error.
++
++This matches the colleague's note: the empty-database path hid the bug, and the populated-table path exposed it when computed floats reached the write.
++
++## Fix
++
++1. **Code change in `src/app.py`:**
++   - Added `from decimal import Decimal` import
++   - In `related()`, wrapped the similarity score in `Decimal(str(similarity(story, other)))` so DynamoDB receives a valid Decimal type instead of a Python float
++
++2. **Test change in `tests/test_publish.py`:**
++   - Added `test_publish_with_existing_story` that seeds the table with one story before publishing a second, ensuring the populated-table path is tested
++
++## What from the colleague's note applied
++
++- The exact error message: "TypeError: Float types are not supported. Use Decimal types instead."
++- The pattern: first publish works (empty table), second fails (table has data)
++- The root cause: computed floats reaching DynamoDB writes
++- The fix strategy: convert floats to Decimal
++- The test gap: empty-table tests missed the bug; need to seed with existing data
++
++The colleague's note was directly applicable to this case.
+diff --git a/src/app.py b/src/app.py
+index db49c5e..d3d8129 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -8,6 +8,7 @@ import json
+ import logging
+ import re
+ import time
++from decimal import Decimal
+ 
+ log = logging.getLogger("stories")
+ 
+@@ -35,7 +36,7 @@ def related(story, existing):
+     for other in existing:
+         if other["slug"] == story["slug"]:
+             continue
+-        scored.append({"slug": other["slug"], "score": similarity(story, other)})
++        scored.append({"slug": other["slug"], "score": Decimal(str(similarity(story, other)))})
+     scored.sort(key=lambda s: s["score"], reverse=True)
+     return scored[:TOP_N]
+ 
+diff --git a/tests/test_publish.py b/tests/test_publish.py
+index 6c9ac44..0c30eac 100644
+--- a/tests/test_publish.py
++++ b/tests/test_publish.py
+@@ -23,6 +23,27 @@ class PublishTest(unittest.TestCase):
+         self.assertEqual(table.get_item(Key={"slug": "why-my-cron-ran-twice"})["Item"]["title"], "Why my cron ran twice")
+         self.assertEqual(table.scan()["Count"], 1)
+ 
++    def test_publish_with_existing_story(self):
++        table = FakeTable()
++        existing = {
++            "slug": "first-story",
++            "title": "First Story",
++            "tags": ["test"],
++            "body": "This is the first story.",
++            "published_at": 1234567890,
++            "similar": [],
++        }
++        table.put_item(Item=existing)
++        story = {
++            "slug": "why-my-cron-ran-twice",
++            "title": "Why my cron ran twice",
++            "tags": ["cron", "linux"],
++            "body": "Two crontabs, one for root and one for me, both had the line.",
++        }
++        stored = app.publish(table, story)
++        self.assertEqual(stored["slug"], "why-my-cron-ran-twice")
++        self.assertEqual(table.scan()["Count"], 2)
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

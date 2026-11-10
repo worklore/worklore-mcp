@@ -1,0 +1,60 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..f4e06f5
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,33 @@
++# Fix for System Prompt Caching with Long-Term Memory
++
++## Problem
++Every `save_fact` call was causing the next LLM call to pay full price for the entire system prompt (~1000 tokens) instead of reading it from cache. This happened because the system prompt was built as a single concatenated string of `INSTRUCTIONS + athlete_context(a, today)`, and when `save_fact` modified the athlete's facts, the entire system prompt changed, invalidating the cache.
++
++## Solution
++Split the system prompt into two separate messages in `build_system()`:
++
++1. **Static INSTRUCTIONS** - Passed as a plain text message without `cache_control`. This allows the LLM to cache the static instructions independently across all requests.
++
++2. **Dynamic athlete_context** - Passed as a separate text message with `cache_control: {"type": "ephemeral"}`. This part changes with each athlete and with each fact update, so it remains ephemeral.
++
++## Change Made
++In `bot.py`, modified the `build_system()` function:
++
++```python
++def build_system(a, today):
++    # Split into static instructions (cacheable) and dynamic athlete context (ephemeral).
++    # This prevents memory writes (save_fact) from evicting the static instructions from cache.
++    return [
++        {"type": "text", "text": INSTRUCTIONS},
++        {"type": "text", "text": athlete_context(a, today), "cache_control": {"type": "ephemeral"}},
++    ]
++```
++
++Previously, both parts were concatenated into a single string and marked as ephemeral, causing the entire system prompt to be re-cached whenever the athlete context changed.
++
++## Expected Impact
++After this change:
++- The static INSTRUCTIONS (~1000 tokens) will be cached once and reused across all messages
++- Only the athlete context (small, ~50-100 tokens) will be re-processed when facts change
++- `save_fact` calls will no longer cause the next message to pay full price for the system prompt
++- Cache hit rate should improve significantly, especially for athletes who frequently add facts in their first week
+diff --git a/bot.py b/bot.py
+index e2ff241..9a42863 100644
+--- a/bot.py
++++ b/bot.py
+@@ -128,9 +128,12 @@ def athlete_context(a, today):
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    # Split into static instructions (cacheable) and dynamic athlete context (ephemeral).
++    # This prevents memory writes (save_fact) from evicting the static instructions from cache.
++    return [
++        {"type": "text", "text": INSTRUCTIONS},
++        {"type": "text", "text": athlete_context(a, today), "cache_control": {"type": "ephemeral"}},
++    ]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [
+# 1 file diffs under node_modules/, __pycache__/ or .prisma/ left out of this patch; 2 kept

@@ -1,0 +1,3 @@
+Added `codex-sandboxed` to [run.sh](/tmp/h-BQPYSI/run.sh). It uses the same Codex command as the `codex` lane, runs under [sandbox/agent.sb](/tmp/h-BQPYSI/sandbox/agent.sb), and gives Codex a scratch home without access to the real home. I documented the lane in [README.md](/tmp/h-BQPYSI/README.md) and recorded the work in [ANSWER.md](/tmp/h-BQPYSI/ANSWER.md).
+
+A local smoke test produced the expected run files and confirmed that reads and writes under the real home were denied. No real Codex request was made.

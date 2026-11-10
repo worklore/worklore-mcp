@@ -1,0 +1,17 @@
+**ANSWER.md**
+
+## Changes Made
+
+* Refactored `build_system` in **`bot.py`** to construct the system prompt in **two separate cacheable blocks**:
+  * **Block 1** – static `INSTRUCTIONS` (byte‑stable, never changes).
+  * **Block 2** – volatile per‑athlete context from `athlete_context(a, today)`.
+* Both blocks are marked with `cache_control: {"type": "ephemeral"}`.  
+  Using two markers isolates memory writes to the tail block, preventing eviction of the static instruction block.
+
+## Applied Parts of the Colleague's Note
+
+* **Two `cache_control` segments** – the core fix to keep static instructions cached while only the volatile tail is refreshed on `save_fact` writes.
+* **Static‑vs‑volatile split** – placed invariant instructions in the first segment and mutable user‑specific data in the second.
+* **No per‑message fact selection** – retained the original behavior of including all facts each request, as recommended.
+
+These changes align the bot with the suggested caching strategy and stop full‑prompt re‑caching on each memory write.

@@ -1,0 +1,49 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..dde61ba
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,9 @@
++# Deploy cleanup
++
++Updated `deploy.sh` so the `site/` sync uses `--delete`, removing bucket files that were removed from `site/`. That sync excludes `s/*` and `a/*`, because those pages are built separately and uploaded with an explicit HTML content type.
++
++After uploading the current pages, the script syncs each generated page prefix with `--delete`. This removes pages for deleted or private notes and authors with no remaining public notes. It creates both local prefix directories even when a build produces no pages, so an empty prefix is cleared too.
++
++The colleague's note applies to the separate extensionless page uploads, their required HTML content type, and the risk that a root `--delete` sync would briefly remove every live page. Its proposed prefix exclusions and cleanup after upload apply here. The existing script did not already use `--delete`, so its specific outage was not occurring here.
++
++Verified with `bash -n deploy.sh` and a local stub of `aws`: the recorded calls show the root sync excludes page prefixes, each page uploads before prefix cleanup, and both prefix syncs use `--delete`. No external deploy was run.
+diff --git a/deploy.sh b/deploy.sh
+index 431ef02..66268d0 100755
+--- a/deploy.sh
++++ b/deploy.sh
+@@ -13,7 +13,8 @@ build_pages() {
+ 
+ sync_site() {
+   echo "→ syncing site/ to s3://$BUCKET"
+-  aws s3 sync "$ROOT/site/" "s3://$BUCKET/" --only-show-errors
++  aws s3 sync "$ROOT/site/" "s3://$BUCKET/" --delete \
++    --exclude 's/*' --exclude 'a/*' --only-show-errors
+ }
+ 
+ upload_pages() {
+@@ -26,7 +27,19 @@ upload_pages() {
+     done )
+ }
+ 
++remove_stale_pages() {
++  # Upload current pages first, then delete only obsolete keys in their prefixes.
++  # Create empty directories so the sync also clears a prefix with no pages.
++  mkdir -p "$ROOT/.build/pages/s" "$ROOT/.build/pages/a"
++  for prefix in s a; do
++    aws s3 sync "$ROOT/.build/pages/$prefix/" "s3://$BUCKET/$prefix/" \
++      --delete --content-type "text/html; charset=utf-8" \
++      --cache-control "max-age=300" --only-show-errors
++  done
++}
++
+ build_pages
+ sync_site
+ upload_pages
++remove_stale_pages
+ echo "✓ deployed to s3://$BUCKET"

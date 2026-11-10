@@ -1,0 +1,3 @@
+Rewrote [src/main.ts](/tmp/h-tMMwwo/src/main.ts) with an Effect service and HTTP client, Schema validation, and up to three transient retries with exponential backoff starting at 50 ms. The CLI now uses the requested output and exit codes.
+
+Installed Effect 4.1.2. `npx tsc --noEmit` passes, and a local server check confirmed success, missing currency, invalid JSON and rates, and recovery after three 503 responses. [ANSWER.md](/tmp/h-tMMwwo/ANSWER.md) records which parts of the colleague’s note applied.

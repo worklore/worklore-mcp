@@ -1,0 +1,3 @@
+Installed `@hiero-ledger/sdk` 2.91.0 and added [src/transfer.ts](/tmp/h-Aal5zv/src/transfer.ts). It builds and signs the specified transfer offline, then prints only the signed transaction bytes as hex.
+
+`npx tsc --noEmit` passes. A local run decoded with the SDK confirmed the transfer details. [ANSWER.md](/tmp/h-Aal5zv/ANSWER.md) records the work and which parts of the colleague’s note applied.

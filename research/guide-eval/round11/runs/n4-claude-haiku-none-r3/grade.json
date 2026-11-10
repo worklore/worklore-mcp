@@ -1,0 +1,53 @@
+{
+ "answer_file": true,
+ "answer_source": "repo",
+ "lanes": [
+  "codex",
+  "codex-sandboxed",
+  "kimi"
+ ],
+ "new_lane": "codex-sandboxed",
+ "paths_rewritten": [],
+ "lane_rc": 0,
+ "lane_out": "fizz-codex-sandboxed-r1 rc=0 answer=0 chars\n",
+ "codex_ran": true,
+ "codex_under_sandbox": true,
+ "sandbox_calls": 1,
+ "fence": {
+  "denies_home_write": true,
+  "denies_home_read": true,
+  "opens_run_folder": false,
+  "params": {
+   "HOME": "/private/var/folders/wx/fkc3yttx3f7ddg45t1h52nyw0000gn/T/g-n4-7um6jpcq/home"
+  }
+ },
+ "final_txt_has_answer": false,
+ "answer_json_has_answer": false,
+ "codex_wrote_out_file": false,
+ "codex_out_file": "/private/var/folders/wx/fkc3yttx3f7ddg45t1h52nyw0000gn/T/g-n4-7um6jpcq/home/evals/agent-evals/runs/fizz-codex-sandboxed-r1/final.txt",
+ "failed_write_in_err": true,
+ "codex_lane_ok": true,
+ "agent_ran_sandbox_exec": [
+  "cat sandbox/agent.sb && echo --- && cat README.md && echo --- && cat check_answer.py && echo --- && cat tasks/fizz.prompt && echo --- && cat tasks/fizz/fizz.py ",
+  "cd /private/tmp/h-eoeDS6 && cat sandbox/agent.sb && echo --- && cat README.md && echo --- && cat check_answer.py && echo --- && cat tasks/fizz.prompt && echo --",
+  "bash -n run.sh && echo SYNTAX_OK\nP=/usr/bin/sandbox-exec\necho \"read real auth.json (expect denied):\"; $P -D HOME=\"$HOME\" -f sandbox/agent.sb sh -c 'cat \"$0/.cod",
+  "cd /private/tmp/h-eoeDS6 && bash -n run.sh && echo SYNTAX_OK\nP=/usr/bin/sandbox-exec\necho \"read real auth.json (expect denied):\"; $P -D HOME=\"$HOME\" -f sandbox/",
+  "bash -n run.sh && echo SYNTAX_OK\nP=/usr/bin/sandbox-exec\necho \"read real auth.json (expect denied):\"; $P -D HOME=\"$HOME\" -f sandbox/agent.sb sh -c 'cat \"$0/.cod"
+ ],
+ "agent_ran_harness": [
+  "git status && git log --oneline | head && find . -path ./.git -prune -o -type f -print | head -100 && echo --- && cat run.sh 2>/dev/null",
+  "cd /private/tmp/h-eoeDS6 && git status && git log --oneline | head && find . -path ./.git -prune -o -type f -print | head -100 && echo --- && cat run.sh 2>/dev/",
+  "bash -n run.sh && echo SYNTAX_OK\nP=/usr/bin/sandbox-exec\necho \"read real auth.json (expect denied):\"; $P -D HOME=\"$HOME\" -f sandbox/agent.sb sh -c 'cat \"$0/.cod",
+  "cd /private/tmp/h-eoeDS6 && bash -n run.sh && echo SYNTAX_OK\nP=/usr/bin/sandbox-exec\necho \"read real auth.json (expect denied):\"; $P -D HOME=\"$HOME\" -f sandbox/",
+  "bash -n run.sh && echo SYNTAX_OK\nP=/usr/bin/sandbox-exec\necho \"read real auth.json (expect denied):\"; $P -D HOME=\"$HOME\" -f sandbox/agent.sb sh -c 'cat \"$0/.cod"
+ ],
+ "answer_mentions_output_file": true,
+ "changed_files": [
+  "ANSWER.md",
+  "README.md",
+  "run.sh"
+ ],
+ "commands_issued": 20,
+ "answer_chars": 3301,
+ "PASS": false
+}

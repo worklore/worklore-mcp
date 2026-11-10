@@ -1,0 +1,3 @@
+Added Prisma 8 using the current npm packages, defined the user and post models, and created their tables in the local PostgreSQL database.
+
+The root [script.ts](/tmp/h-IaBF1i/script.ts) creates a user with two posts and prints every user with their posts. `npx tsx script.ts` and `npx tsc --noEmit` both passed. The setup and the parts of the colleague’s note that applied are recorded in [ANSWER.md](/tmp/h-IaBF1i/ANSWER.md).

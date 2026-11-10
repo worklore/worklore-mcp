@@ -1,0 +1,18 @@
+**Changes Made**
+- Added the current Hedera JavaScript SDK `@hiero-ledger/sdk` (v2.91.0) to `package.json`.
+- Created a `.env` file with example `OPERATOR_ID`, DER‑encoded `OPERATOR_KEY`, `RECIPIENT_ID`, and `VALID_START`.
+- Implemented `src/transfer.ts`:
+  * Loads environment variables via `dotenv`.
+  * Constructs a `TransactionId` using the supplied `VALID_START`.
+  * Builds a `TransferTransaction` sending 1 hbar from the operator to the recipient, targeting node 0.0.3 and memo `invoice 42`.
+  * Signs the transaction with the operator private key.
+  * Outputs only the signed transaction bytes as a hex string.
+  * Wrapped in an async IIFE for smooth execution with `tsx`.
+
+**Applied Parts of the Colleague Note**
+- Followed the recommendation to use `@hiero-ledger/sdk` (the SDK’s new name) instead of the deprecated `@hashgraph/sdk`.
+- Used unchanged class names (`TransferTransaction`, `PrivateKey`, `TransactionId`, `AccountId`, `Hbar`, `Timestamp`) which work identically in the new package.
+- Employed `TransactionId.withValidStart` to set a custom valid start time.
+- Specified node `0.0.3` via `AccountId.fromString('0.0.3')`.
+
+The project now passes `npx tsc --noEmit` and `npx tsx src/transfer.ts` prints the signed transaction hex without contacting any network.

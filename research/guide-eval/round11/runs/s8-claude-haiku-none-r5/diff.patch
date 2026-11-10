@@ -1,0 +1,170 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..2360579
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,56 @@
++# Fix: a memory write no longer evicts the cached instructions
++
++## Cause
++
++`build_system()` put the static coaching instructions and the per-athlete context,
++including the `Long-term facts` list, into one text block with `cache_control`.
++Prompt caching matches the prefix byte for byte, so when `save_fact` appended a fact,
++the cached prefix changed. The next request wrote a new cache entry at full
++(1.25x) price and read nothing. That matches `logs/usage.jsonl`: calls right after a
++save show `cache_read_input_tokens: 0` and `cache_creation_input_tokens` around 1000+.
++
++## Change (`bot.py`)
++
++`build_system()` now returns two text blocks, in this order:
++
++1. **Cached block** (`cache_control` on this block): `INSTRUCTIONS` plus a new
++   `athlete_profile()` (name, sport, zones, goal, language). It changes only when the
++   profile changes, not on `save_fact`.
++2. **Uncached block**: a new `athlete_memory()` with today's date and the facts list.
++   It is after the breakpoint, so a memory write or a new day only changes this block.
++
++`athlete_context()` is replaced by those two helpers. Nothing else in the file calls it.
++The `reply()` loop and the tool code are unchanged.
++
++## Verification
++
++- `test_prompt_cache.py` (new, no API calls): run `python3 -m unittest test_prompt_cache -v`.
++  All 5 tests pass on the new code. On the original code 4 of them fail, as they should.
++- End-to-end through `reply()` with a fake LLM: the model calls `save_fact`, and the
++  second request's cached block is identical to the first. The new fact appears only
++  in the uncached block.
++- Not verified against the live API: there is no key here, and I did not deploy or call
++  any external service. Check the next `logs/usage.jsonl` entries after a `save_fact`:
++  `cache_read_input_tokens` should stay near the previous value, and there should be no
++  new `cache_creation_input_tokens`.
++
++## Caveats
++
++- **Minimum cacheable size.** The API only caches a prefix of at least 1024 tokens for
++  Sonnet-class models. The cached block is tools + instructions + profile, which is
++  probably close to that minimum. Before the change, the whole system prompt was cached
++  at about 1050 to 1330 tokens, so the old block cleared the minimum. If the new prefix
++  falls below it, the API silently skips caching and cost goes up. Check
++  `cache_creation_input_tokens` on the first call for each athlete. I did not pad the
++  prompt to force caching.
++- **Tool selection also changes the prefix.** `tools` come before `system` in the cache
++  prefix, and `select_tools()` changes the tool list with message keywords. A message
++  with "plan" or "race" therefore misses the cache even when no fact changed. The log
++  shows this, for example the `plan_week` round 1 at 06:44:31 with `cache_read: 0` and
++  `cache_creation: 1305`. I did not change this, because it is the trade-off the March
++  note in `NOTES.md` describes. Options: always send the full tool list (more tokens on
++  every call, but a stable prefix), or keep the filter and accept misses on keyword
++  messages.
++- `athlete_context()` is gone. The Telegram transport lives in a separate repo; the
++  README says it only calls `reply()`, so this should be safe, but check it does not
++  import `athlete_context`.
+diff --git a/bot.py b/bot.py
+index e2ff241..ac48f5b 100644
+--- a/bot.py
++++ b/bot.py
+@@ -114,23 +114,34 @@ Formatting:
+ """
+ 
+ 
+-def athlete_context(a, today):
++def athlete_profile(a):
++    """Stable per-athlete text. Changes only when the profile itself changes, never on save_fact."""
+     lines = [
+-        f"Today: {today.isoformat()} ({today.strftime('%A')})",
+         f"Athlete: {a.name} (id {a.user_id}), sport: {a.sport}",
+         "Zones: " + ", ".join(f"{k} {v}" for k, v in a.zones.items()),
+         f"Goal: {a.goal}",
+-        "Long-term facts:",
++        f"Language: {a.lang}",
+     ]
++    return "\n".join(lines)
++
++
++def athlete_memory(a, today):
++    """Volatile text: today's date and the long-term facts. Kept out of the cached block."""
++    lines = [f"Today: {today.isoformat()} ({today.strftime('%A')})", "Long-term facts:"]
+     lines += [f"- {f}" for f in a.facts] or ["- (none yet)"]
+-    lines.append(f"Language: {a.lang}")
+     return "\n".join(lines)
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    # Two blocks, in this order. The cache breakpoint sits on the first one, so the
++    # cached prefix is tools + instructions + profile. A save_fact or a new day only
++    # changes the second block, which is after the breakpoint and is not cached.
++    # Putting facts before the breakpoint would make every memory write a cache miss.
++    static = INSTRUCTIONS + "\n\n" + athlete_profile(a)
++    return [
++        {"type": "text", "text": static, "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": athlete_memory(a, today)},
++    ]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [
+diff --git a/test_prompt_cache.py b/test_prompt_cache.py
+new file mode 100644
+index 0000000..0a18926
+--- /dev/null
++++ b/test_prompt_cache.py
+@@ -0,0 +1,56 @@
++"""Checks that a memory write does not change the cached part of the system prompt.
++
++Run: python3 -m unittest test_prompt_cache -v
++No API calls: build_system() is pure and is what reply() sends.
++"""
++import copy
++import datetime as dt
++import unittest
++
++import bot
++
++
++def athlete():
++    return bot.Athlete(user_id="42", name="Marta", facts=["Runs before work, 06:30, Mon/Wed/Fri"])
++
++
++class PromptCacheLayout(unittest.TestCase):
++    def test_only_first_block_is_cached(self):
++        blocks = bot.build_system(athlete(), dt.date(2026, 4, 18))
++        self.assertEqual(len(blocks), 2)
++        self.assertEqual(blocks[0]["cache_control"], {"type": "ephemeral"})
++        self.assertNotIn("cache_control", blocks[1])
++
++    def test_facts_and_date_are_after_the_breakpoint(self):
++        blocks = bot.build_system(athlete(), dt.date(2026, 4, 18))
++        self.assertNotIn("Long-term facts", blocks[0]["text"])
++        self.assertNotIn("Today:", blocks[0]["text"])
++        self.assertIn("Runs before work", blocks[1]["text"])
++        self.assertIn("Today: 2026-04-18", blocks[1]["text"])
++
++    def test_save_fact_does_not_change_cached_block(self):
++        a = athlete()
++        day = dt.date(2026, 4, 18)
++        before = bot.build_system(a, day)[0]["text"]
++        a.facts.append("Owns a Garmin 255")
++        after = bot.build_system(a, day)
++        self.assertEqual(before, after[0]["text"])
++        self.assertIn("Owns a Garmin 255", after[1]["text"])
++
++    def test_new_day_does_not_change_cached_block(self):
++        a = athlete()
++        self.assertEqual(
++            bot.build_system(a, dt.date(2026, 4, 18))[0]["text"],
++            bot.build_system(a, dt.date(2026, 4, 19))[0]["text"],
++        )
++
++    def test_profile_change_still_changes_cached_block(self):
++        a = athlete()
++        before = bot.build_system(a, dt.date(2026, 4, 18))[0]["text"]
++        a2 = copy.deepcopy(a)
++        a2.goal = "sub-1:50 half marathon"
++        self.assertNotEqual(before, bot.build_system(a2, dt.date(2026, 4, 18))[0]["text"])
++
++
++if __name__ == "__main__":
++    unittest.main()

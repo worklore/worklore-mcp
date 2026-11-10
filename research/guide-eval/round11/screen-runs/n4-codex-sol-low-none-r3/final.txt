@@ -1,0 +1,3 @@
+Added the `codex-sandboxed` lane to [run.sh](/tmp/h-MBvw30/run.sh). It uses the same Codex command as the `codex` lane, launched through [sandbox/agent.sb](/tmp/h-MBvw30/sandbox/agent.sb) with a temporary HOME. The profile now uses a lane-specific install path so the Codex lane does not get Kimi’s real-home exception.
+
+Documented the changes in [ANSWER.md](/tmp/h-MBvw30/ANSWER.md). Syntax, sandbox profile launch, and diff checks passed. I did not run an agent task.

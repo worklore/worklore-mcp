@@ -1,0 +1,22 @@
+Now write ANSWER.md documenting steps.
+
+**Implemented Steps**
+
+- Added `prisma/schema.prisma` with PostgreSQL datasource, client generator, and `User` & `Post` models.  
+- Created `prisma.config.ts` to load environment variables and provide datasource URL.  
+- Installed Prisma 7 (`prisma@7.10.1` & `@prisma/client@7.10.1`) for classic CLI commands.  
+- Ran `npx prisma generate` to generate the Prisma client.  
+- Synced the database schema using `npx prisma db push`.  
+- Added `script.ts` at the project root that creates a user with two posts and prints all users with their posts.  
+
+**How to Run**
+
+```bash
+npx tsx script.ts
+```
+
+The script will output the created user and associated posts.  
+
+**Answer Documentation**
+
+All actions and configurations are recorded in `ANSWER.md`.

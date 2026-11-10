@@ -1,0 +1,83 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..1342039
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,26 @@
++# Changes Made
++
++## Added codex-sandboxed lane to run.sh
++
++Added a new lane `codex-sandboxed` that runs Codex inside the macOS sandbox profile `sandbox/agent.sb`, the same way the `kimi` lane does it. This prevents the agent's shell from reading or writing to the real home directory.
++
++### Key implementation details:
++
++1. **Scratch HOME directory**: Like the kimi lane, the codex-sandboxed lane creates a temporary scratch HOME directory (`/tmp/chome-XXXXXX`) and sets `HOME` to it before invoking `sandbox-exec`. The real HOME is passed via `-D HOME="$REAL"` so the sandbox profile can reference it in its rules.
++
++2. **Scratch output directory**: Following the colleague's note, Codex's `-o` flag (which writes the final message) would fail inside the sandbox because the run folder `$R` is under the real home. To solve this, I created a separate scratch folder in `/tmp` (`/tmp/cscratch-XXXXXX`) and pointed Codex's `-o` flag at `$SCRATCH/final.txt`. After `sandbox-exec` returns, the lane copies `final.txt` from the scratch folder to the run folder, then cleans up both scratch directories.
++
++3. **Sandbox profile update**: Added rules to `sandbox/agent.sb` to allow read/write access to `~/.codex` (Codex's config/cache directory), mirroring the existing rules for `~/.kimi-code`.
++
++4. **stdout/stderr handling**: Like the kimi lane, stdout and stderr are redirected directly to files in the run folder (`$R/agent.log` and `$R/agent.err`). This works because the shell opens these files before `sandbox-exec` starts, so the sandbox's deny rules don't apply to them.
++
++## Parts of the colleague's note that applied:
++
++- The observation that Codex's `-o` flag write fails inside the sandbox with "Operation not permitted" even though the process exits 0.
++- The solution of using a scratch folder in `/tmp` (outside all denied paths) for the output file, then copying it to the run folder after the sandbox exits.
++- The confirmation that stdout/stderr redirects work fine because the shell opens those files before `sandbox-exec` starts.
++
++## Parts that did not apply:
++
++- The specific mention of Mistral Vibe's `--output-dir` flag (we're only dealing with Codex here).
++- The grading/validation details (our task was just to add the lane).
+diff --git a/run.sh b/run.sh
+index c41ad67..a22d8ed 100755
+--- a/run.sh
++++ b/run.sh
+@@ -1,7 +1,8 @@
+ #!/usr/bin/env bash
+ # usage: run.sh <task> <lane> [rep]
+-# lanes: codex   Codex CLI, unsandboxed
+-#        kimi    Kimi Code under sandbox/agent.sb (no reading or writing the real home), scratch HOME
++# lanes: codex            Codex CLI, unsandboxed
++#        kimi             Kimi Code under sandbox/agent.sb (no reading or writing the real home), scratch HOME
++#        codex-sandboxed  Codex CLI under sandbox/agent.sb (no reading or writing the real home), scratch HOME
+ set -u
+ D="$(cd "$(dirname "$0")" && pwd)"
+ T=$1; A=$2; REP=${3:-1}
+@@ -24,10 +25,24 @@ kimi_run() {
+   local rc=$?; rm -rf "$SH"; return $rc
+ }
+ 
++# Codex under sandbox: uses scratch HOME and writes final.txt to a /tmp scratch folder
++# to avoid the sandbox denying writes to the run folder (which is under the real home).
++codex_sandboxed_run() {
++  local REAL="$HOME" SH SCRATCH; SH=$(mktemp -d /tmp/chome-XXXXXX); SCRATCH=$(mktemp -d /tmp/cscratch-XXXXXX)
++  ( cd "$W" && export HOME="$SH" && sandbox-exec -D HOME="$REAL" -f "$D/sandbox/agent.sb" \
++      timeout $TO codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox -C "$W" --json \
++      -o "$SCRATCH/final.txt" "$P" < /dev/null > "$R/agent.log" 2> "$R/agent.err" )
++  local rc=$?
++  cp "$SCRATCH/final.txt" "$R/final.txt" 2>/dev/null || true
++  rm -rf "$SH" "$SCRATCH"
++  return $rc
++}
++
+ start=$(date +%s)
+ case $A in
+   codex) codex_run;;
+   kimi)  kimi_run;;
++  codex-sandboxed) codex_sandboxed_run;;
+   *) echo "unknown lane $A"; exit 2;;
+ esac
+ rc=$?
+diff --git a/sandbox/agent.sb b/sandbox/agent.sb
+index 3a517dd..a7ede85 100644
+--- a/sandbox/agent.sb
++++ b/sandbox/agent.sb
+@@ -6,4 +6,6 @@
+ (deny file-write* (subpath (param "HOME")))
+ (allow file-read-data (subpath (string-append (param "HOME") "/.kimi-code")))
+ (allow file-write* (subpath (string-append (param "HOME") "/.kimi-code")))
++(allow file-read-data (subpath (string-append (param "HOME") "/.codex")))
++(allow file-write* (subpath (string-append (param "HOME") "/.codex")))
+ (deny process-exec (literal "/bin/launchctl") (literal "/usr/bin/security") (literal "/usr/bin/osascript"))

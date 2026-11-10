@@ -1,0 +1,16 @@
+**ANSWER.md**
+
+- **Root cause**  
+  The `similarity` function returned a Python `float`. DynamoDB does not accept plain floats in items; it expects numbers as `Decimal` (or integer) types. The first publish succeeded because the `similar` list was empty, so no float was stored. On the second publish the list contained a similarity score, causing DynamoDB to raise `TypeError: Float types are not supported. Use Decimal types instead.` → HTTP 500.
+
+- **Fix applied**  
+  1. Imported `Decimal` from the standard library.  
+  2. Modified `similarity` to compute the float score, then wrap it with `Decimal(str(raw_score))` before returning.  
+  3. Added a detailed docstring explaining why the conversion is required and how it preserves the original semantics while keeping DynamoDB happy.
+
+- **Parts of the colleague’s note that applied**  
+  - The observation that the bug only manifested on the second write when a non‑empty `similar` list existed.  
+  - The principle that code paths dependent on existing state (e.g., similarity calculation) must be exercised in tests.  
+  - The recommendation to convert floats to DynamoDB‑compatible types (here we used `Decimal`).  
+
+The repository now handles repeated publishes without raising a 500 error, and all tests continue to pass.

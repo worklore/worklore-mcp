@@ -1,0 +1,16 @@
+**What was added**
+- Added a new lane `codex-sandboxed` to `run.sh`.
+- Implemented `codex_sandboxed_run` that mirrors the unsandboxed `codex` run but executes inside `sandbox/agent.sb`.
+- Created temporary `HOME` (`SH`) and scratch output directory (`SCRATCH`) in `/tmp`.
+- Directed Codex’s `-o` output to `$SCRATCH/final.txt` inside the sandbox, then copied it to the run folder after `sandbox-exec` finishes.
+- Cleaned up temporary directories and returned the original exit code.
+- Updated the case statement to handle `codex-sandboxed`.
+
+**Parts of the colleague’s note that applied**
+1. **Write output to a scratch folder in `/tmp`** – used `$SCRATCH` for the final answer file.
+2. **Copy the result after `sandbox‑exec` returns** – copied `final.txt` from the scratch folder back to the run folder.
+3. **Keep stdout/stderr redirection unchanged** – `agent.log` and `agent.err` are still written directly to the run folder.
+
+**What was ignored**
+- Log checking for “Operation not permitted” – not needed for the lane implementation.
+- Specific Mistral Vibe references – the fix is generic and only applied to Codex.

@@ -1,0 +1,19 @@
+// use prisma-8
+
+// User model with a unique email and optional name.
+model User {
+  id    Int    @id @default(autoincrement())
+  email String @unique
+  name  String?
+  posts Post[]
+}
+
+// Post model linked to a single author. "published" defaults to false.
+model Post {
+  id        Int    @id @default(autoincrement())
+  title     String
+  content   String?
+  published Boolean @default(false)
+  author    User   @relation(fields: [authorId], references: [id])
+  authorId  Int
+}

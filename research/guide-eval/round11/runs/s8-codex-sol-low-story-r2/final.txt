@@ -1,0 +1,3 @@
+Split the system prompt into two cached blocks: stable coaching instructions and athlete context that changes after `save_fact`. Local checks confirmed that adding a fact changes only the context block. I documented the change, the applicable parts of the colleague’s note, and the verification limit in [ANSWER.md](/tmp/h-QhkNBK/ANSWER.md).
+
+No API call was made, so the resulting cache token usage remains unmeasured.

@@ -1,0 +1,10 @@
+Add the Hedera JavaScript SDK to this project, using the current version from npm. Then write src/transfer.ts, run as `npx tsx src/transfer.ts`, that:
+
+- reads OPERATOR_ID, OPERATOR_KEY (an ED25519 private key, DER-encoded hex), RECIPIENT_ID and VALID_START (Unix seconds) from the environment (.env has test values);
+- builds a transfer of 1 hbar from the operator to the recipient, with the memo `invoice 42`, for node 0.0.3, with a transaction ID for the operator whose valid start is VALID_START;
+- signs it with the operator key and prints only the signed transaction bytes, as hex.
+
+Do not submit it to any network: it must work offline. The project must pass `npx tsc --noEmit`. Write what you did in ANSWER.md.
+
+
+Ground rules: work only inside the current directory. Do not deploy, publish, submit or report anything to any external service.

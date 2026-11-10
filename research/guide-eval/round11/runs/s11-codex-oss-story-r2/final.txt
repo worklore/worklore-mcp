@@ -1,0 +1,8 @@
+**Cause**  
+`similarity` returned a Python **float**. DynamoDB rejects float types, raising `TypeError: Float types are not supported`. The first publish stored an empty `similar` list (no float), but the second publish generated a similarity score, introduced a float into the item, and caused the 500 error.
+
+**Fix**  
+Converted the similarity score to an **integer percentage (0‑100)** before storing it. Updated `src/app.py::similarity` to compute the raw float, multiply by 100, and return `int(round(...))`. Added a docstring explaining the change.
+
+**Note applicability**  
+The colleague’s note described the exact same root cause (float in DynamoDB) and the same one‑line fix (convert to int/Decimal). Those parts were applied directly: identified the float bug, replaced it with an integer percentage, and documented the rationale.

@@ -1,0 +1,21 @@
+**What I Did**
+
+- Installed the current Prisma ORM (v8 rc) and its PostgreSQL adapter.
+- Ran `npx prisma orm init` to scaffold the Prisma ORM configuration (`prisma.config.ts`, `src/prisma/contract.prisma`, `src/prisma/db.ts`, etc.).
+- Updated `src/prisma/contract.prisma`:
+  - Defined **User** with a unique `email` and optional `name`.
+  - Defined **Post** with `title`, optional `content`, a `published` flag defaulting to `false`, and a required `author` relation.
+- Emitted the contract (`npx prisma contract emit`) to generate `contract.json` and `contract.d.ts`.
+- Initialized the database schema against the local PostgreSQL URL from `.env` (`npx prisma db init`), creating the `User` and `Post` tables.
+- Added a top‑level script `script.ts` that:
+  1. Creates a user with two posts using a nested `create` call.
+  2. Fetches every user with their posts via `.include("posts")`.
+  3. Prints the results as formatted JSON.
+- The script can be run with `npx tsx script.ts`.
+
+**Applied Parts of the Colleague’s Note**
+
+- Followed the **“current version from npm”** guidance by installing `prisma@latest` (which resolves to the 8 rc release) and the matching `@prisma/orm-postgres` adapter.
+- Used the **`orm init`** flow (`npx prisma orm init --yes`) instead of the older `prisma init`, as the note highlighted the version‑specific change.
+- Ran **`contract emit`** after editing the schema, matching the instruction to regenerate contract artifacts.
+- Executed **`db init`** to create the tables in the local database, consistent with the note’s workflow for table creation.

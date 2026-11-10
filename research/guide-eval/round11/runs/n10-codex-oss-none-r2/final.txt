@@ -1,0 +1,24 @@
+**Added Prisma ORM**
+
+- Installed `prisma` & `@prisma/client` (v5) and initialized ORM config.
+- Created `prisma/schema.prisma` with `User` and `Post` models (email unique, optional name, post fields, author relation).
+- Updated `prisma.config.ts` to include a minimal `orm` section required by Prisma 8.
+- Ran `npx prisma generate` → generated Prisma Client.
+- Ran `npx prisma db push` → synchronized local PostgreSQL database with the schema.
+
+**Demo script**
+
+- Added `script.ts` at project root:
+  - Instantiates `PrismaClient`.
+  - Creates a user with two posts.
+  - Prints the created user.
+  - Queries and prints all users with their posts.
+  - Proper error handling and disconnect.
+
+**Run**
+
+```bash
+npx tsx script.ts
+```
+
+The script will output the created user and a list of all users with their posts.

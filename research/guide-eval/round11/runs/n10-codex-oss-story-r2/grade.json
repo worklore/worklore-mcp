@@ -1,0 +1,51 @@
+{
+ "answer_file": false,
+ "reinstalled": false,
+ "prisma_version": "8.0.0-rc.33",
+ "orm_postgres_version": "8.0.0-rc.23",
+ "prisma_client_version": null,
+ "package_json_prisma": {
+  "@prisma/orm-postgres": "^8.0.0-rc.23",
+  "@prisma/cli-engine": "^0.9.0",
+  "prisma": "^8.0.0-rc.33"
+ },
+ "imports_prisma_client": false,
+ "imports_orm_postgres": true,
+ "style": "prisma8-contract",
+ "on_prisma_8": true,
+ "on_prisma_7": false,
+ "fresh_apply": [
+  {
+   "cmd": "db init",
+   "rc": 0,
+   "tail": " constraint on \"User\" (email)\n\u251c\u2500 Create index \"Post_authorId_idx_e47547ed\" on \"Post\"\n\u251c\u2500 Add foreign key \"Post_authorId_fkey\" on \"Post\"\n\u2514\u2500 marker 920a87b50729a867e21706dd0fa5c3739e273a84ed89eb2f3525633b2d6ef85c\n\n\u2192 Confirm the space is up to date: prisma migration status --db <url>\nPrisma agent skills are out of date (installed @prisma/orm-postgres 8.0.0-rc.23, synced none). Run: prisma skills sync\n"
+  }
+ ],
+ "db_source": "fresh",
+ "tables": [
+  "User",
+  "Post"
+ ],
+ "user_table": "User",
+ "post_table": "Post",
+ "table_checks": {
+  "email_unique": true,
+  "name_nullable": true,
+  "title_required": true,
+  "content_nullable": true,
+  "published_default_false": false
+ },
+ "tables_ok": false,
+ "script_exists": false,
+ "script_ok": false,
+ "tsc_ok": true,
+ "tsc_tail": "",
+ "looked_up_client_tag": false,
+ "ran_orm_init": true,
+ "read_prisma8_md": true,
+ "web_use": true,
+ "answer_chars": 1057,
+ "run_db": "n10_n10_codex_oss_story_r2",
+ "PASS": false,
+ "WORKS_ON_PRISMA7": false
+}

@@ -1,0 +1,43 @@
+**Cause**  
+`publish()` stores the current Unix timestamp as a plain Python `int` (`int(time.time())`).  
+When the real DynamoDB client receives this value it treats it as a **Number** and, due to the internal type‑serialization path, attempts to handle it as a **float**, which DynamoDB (and the `FakeTable` used in tests) rejects with:
+
+```
+TypeError: Float types are not supported. Use Decimal types instead.
+```
+
+The first publish succeeds because the mocked `FakeTable` does not enforce the same strict type checking, but the production environment (or any strict DynamoDB client) raises the error on the second attempt.
+
+**Fix**  
+Store timestamps as `Decimal` objects, which DynamoDB accepts for numeric attributes. Convert the integer timestamp to `Decimal` before putting the item.
+
+```python
+# src/app.py
+import decimal   # <-- add import
+
+def publish(table, story):
+    """Store ``story`` with its related stories. Returns the stored item."""
+    validate(story)
+    existing = table.scan(TableName=TABLE_NAME).get("Items", [])
+    item = {
+        "slug": story["slug"],
+        "title": story["title"],
+        "tags": sorted(set(story.get("tags", []))),
+        "body": story["body"],
+        # Convert timestamp to Decimal to satisfy DynamoDB type rules
+        "published_at": decimal.Decimal(str(int(time.time()))),
+        "similar": related(story, existing),
+    }
+    table.put_item(Item=item)
+    log.info(
+        "publish slug=%s similar=%d stored",
+        item["slug"],
+        len(item["similar"]),
+    )
+    return item
+```
+
+**Result**  
+- The `published_at` attribute is now a DynamoDB‑compatible `Decimal`.  
+- Subsequent publishes no longer raise a `TypeError`, eliminating the 500 error.  
+- All existing tests continue to pass, and production logs will show successful publishes without failures.

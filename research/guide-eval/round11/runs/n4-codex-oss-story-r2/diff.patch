@@ -1,0 +1,83 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..a4dc13b
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,30 @@
++# Answer
++
++Implemented a **codex‑sandboxed** lane in `run.sh` that mirrors the existing `codex` lane but runs the Codex CLI inside the sandbox profile (`sandbox/agent.sb`).
++
++## What was added
++* Updated the lane list comment to include `codex-sandboxed`.
++* Added a new function `codex_sandboxed_run`:
++  * Creates a temporary HOME directory (`/tmp/codex-sb-xxxxxx`).
++  * Executes `codex exec` under `sandbox-exec` with the same profile used for the `kimi` lane.
++  * Directs the tool’s `-o` output to the temporary HOME (allowed by the sandbox).
++  * After the sandbox process finishes, copies the generated `final.txt` back into the run folder.
++  * Cleans up the temporary HOME directory.
++* Extended the lane dispatcher (`case $A in`) to recognise `codex-sandboxed` and invoke the new function.
++
++## Parts of the colleague’s note that applied
++* **Problem identification** – the note described that Codex fails to write its output file when the sandbox blocks writes to the run directory. The solution is to write to an allowed temporary directory and copy the result out after sandbox execution.
++* **Use of a scratch HOME** – the note’s recommendation to create a scratch folder outside the denied paths (`mktemp -d /tmp/...`) was directly adopted for the temporary HOME.
++* **Copying result after sandbox** – after the sandboxed command finishes, the script copies `final.txt` from the temporary HOME back into the run folder, exactly as suggested.
++* **Keeping stdout/stderr outside the sandbox** – the redirections to `$R/agent.log` and `$R/agent.err` remain unchanged, ensuring they are opened before entering the sandbox, matching the note’s guidance.
++
++No other parts of the note were needed for this change.
++
++The new lane can be invoked as:
++
++```
++./run.sh fizz codex-sandboxed
++```
++
++It behaves like the original `codex` lane but respects the sandbox’s HOME restrictions.
++
+diff --git a/run.sh b/run.sh
+index c41ad67..77e015e 100755
+--- a/run.sh
++++ b/run.sh
+@@ -1,7 +1,8 @@
+ #!/usr/bin/env bash
+ # usage: run.sh <task> <lane> [rep]
+-# lanes: codex   Codex CLI, unsandboxed
+-#        kimi    Kimi Code under sandbox/agent.sb (no reading or writing the real home), scratch HOME
++# lanes: codex               Codex CLI, unsandboxed
++#        codex-sandboxed    Codex CLI inside sandbox/agent.sb (no real HOME access)
++#        kimi                Kimi Code under sandbox/agent.sb (no reading or writing the real home), scratch HOME
+ set -u
+ D="$(cd "$(dirname "$0")" && pwd)"
+ T=$1; A=$2; REP=${3:-1}
+@@ -15,6 +16,23 @@ codex_run() {
+       -o "$R/final.txt" "$P" < /dev/null > "$R/agent.log" 2> "$R/agent.err" )
+ }
+ 
++# Codex run inside sandbox/agent.sb. Mirrors `codex_run` but writes the
++# result file to a temporary HOME directory that the sandbox profile allows,
++# then copies it back into the run folder after the sandbox exits.
++codex_sandboxed_run() {
++  local REAL="$HOME" SH; SH=$(mktemp -d /tmp/codex-sb-XXXXXX)
++  ( cd "$W" && export HOME="$SH" && sandbox-exec -D HOME="$REAL" -f "$D/sandbox/agent.sb" \
++      timeout $TO codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox -C "$W" --json \
++      -o "$SH/final.txt" "$P" < /dev/null > "$R/agent.log" 2> "$R/agent.err" )
++  local rc=$?
++  # Copy the final answer out of the sandbox‑restricted home.
++  if [ -f "$SH/final.txt" ]; then
++    cp "$SH/final.txt" "$R/final.txt"
++  fi
++  rm -rf "$SH"
++  return $rc
++}
++
+ # Kimi's output goes to Moonshot: its shell runs under sandbox/agent.sb with an empty scratch HOME.
+ kimi_run() {
+   local REAL="$HOME" SH; SH=$(mktemp -d /tmp/khome-XXXXXX)
+@@ -27,6 +45,7 @@ kimi_run() {
+ start=$(date +%s)
+ case $A in
+   codex) codex_run;;
++  codex-sandboxed) codex_sandboxed_run;;
+   kimi)  kimi_run;;
+   *) echo "unknown lane $A"; exit 2;;
+ esac

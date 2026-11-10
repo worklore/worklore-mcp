@@ -1,0 +1,48 @@
+{
+ "answer_file": true,
+ "answer_source": "repo",
+ "lanes": [
+  "codex",
+  "codex-sandboxed",
+  "kimi"
+ ],
+ "new_lane": "codex-sandboxed",
+ "paths_rewritten": [],
+ "lane_rc": 0,
+ "lane_out": "fizz-codex-sandboxed-r1 rc=0 answer=24 chars\n",
+ "codex_ran": true,
+ "codex_under_sandbox": true,
+ "sandbox_calls": 1,
+ "fence": {
+  "denies_home_write": true,
+  "denies_home_read": true,
+  "opens_run_folder": false,
+  "params": {
+   "HOME": "/private/var/folders/wx/fkc3yttx3f7ddg45t1h52nyw0000gn/T/g-n4-8j6ijbd2/home"
+  }
+ },
+ "final_txt_has_answer": true,
+ "answer_json_has_answer": true,
+ "codex_wrote_out_file": true,
+ "codex_out_file": "/tmp/chome-gZdtMV/final.txt",
+ "failed_write_in_err": false,
+ "codex_lane_ok": true,
+ "agent_ran_sandbox_exec": [
+  "/bin/zsh -lc 'cat README.md && cat check_answer.py && rg --files tasks runs && command -v codex && command -v sandbox-exec || true && git status --short'",
+  "/bin/zsh -lc 'bash -n run.sh && git diff --check && sandbox-exec -D HOME=\"$HOME\" -f sandbox/agent.sb /bin/sh -c '\"'test \"'! -r \"$HOME/.zshrc\"'\"'\""
+ ],
+ "agent_ran_harness": [
+  "/bin/zsh -lc 'cat run.sh && cat sandbox/agent.sb && ls -la'",
+  "/bin/zsh -lc 'bash -n run.sh && command -v timeout && git diff --check && git diff -- run.sh README.md'",
+  "/bin/zsh -lc 'bash -n run.sh && git diff --check && sandbox-exec -D HOME=\"$HOME\" -f sandbox/agent.sb /bin/sh -c '\"'test \"'! -r \"$HOME/.zshrc\"'\"'\""
+ ],
+ "answer_mentions_output_file": true,
+ "changed_files": [
+  "ANSWER.md",
+  "README.md",
+  "run.sh"
+ ],
+ "commands_issued": 6,
+ "answer_chars": 1003,
+ "PASS": true
+}

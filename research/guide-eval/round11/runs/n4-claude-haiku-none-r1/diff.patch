@@ -1,0 +1,137 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..1a598c1
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,64 @@
++# Answer: codex-sandboxed lane
++
++## What I changed
++
++- **`run.sh`**: added a `codex-sandboxed` lane. It runs the same `codex exec`
++  command as the `codex` lane (same flags, same prompt, same `-o final.txt`,
++  same timeout), but wraps it in `sandbox-exec -f sandbox/agent.sb` the way the
++  `kimi` lane does. The `codex` and `kimi` lanes are unchanged.
++- **`README.md`**: listed the new lane, and corrected the Codex login note.
++  On this machine Codex logs in with `~/.codex/auth.json`, not `CODEX_API_KEY`.
++- **`sandbox/agent.sb`**: not changed. It already denies reads, writes and
++  listing of `$HOME` and opens nothing under `~/.codex`.
++
++## How the lane keeps the real home out of reach
++
++1. A scratch home `/tmp/khome-XXXXXX` is created and used as `HOME`.
++2. Codex can't read its login from the real home under the profile, so the
++   lane sets `CODEX_HOME` to `<scratch>/.codex` and copies in `auth.json`,
++   `config.toml` and `installation_id`.
++3. The whole `codex exec` process runs under the profile with
++   `-D HOME=<real home>`. The agent's shell commands are children of that
++   process, so they inherit the same profile.
++4. The scratch home is removed when the run ends.
++
++## What I checked
++
++- **Profile behavior** (run directly under `sandbox-exec`): reading
++  `~/.codex/auth.json` fails with "Operation not permitted", listing `~` fails,
++  writing into `~` fails, and writing to `/tmp` works.
++- **Real run**: `./run.sh fizz codex-sandboxed 1` exited 0 in 23 s and wrote
++  `runs/fizz-codex-sandboxed-r1/` (`final.txt`, `agent.log`, `agent.err`,
++  `meta.json`, `answer.json`). The agent read `fizz.py`, found that multiples of
++  15 hit the "Fizz" branch first, fixed the copy in its scratch folder, and ran
++  the script to confirm `FizzBuzz`. The answer is in `final.txt`.
++- The repo's `tasks/fizz/fizz.py` is unchanged.
++- `bash -n run.sh` passes.
++
++I did not exercise the agent's own shell against the real home from inside a
++Codex run. The check above was done directly against the profile, and the
++inheritance behavior is standard for macOS sandbox profiles.
++
++## Things to know
++
++- **The agent's shell can read the login copy.** `auth.json` is copied into
++  `/tmp` so that Codex can authenticate. The agent's shell is not blocked from
++  that scratch folder, so it could read the token during a run. This is not the
++  real home, but it is a credential reachable from the sandbox. If that matters,
++  the next step is to use an API key via `CODEX_API_KEY` instead of a login
++  file, which the lane would then not need to copy.
++- **Token refresh.** `auth.json` was last modified on Nov 4 (file mtime), so a
++  token refresh could happen during a run. If the refresh token rotates, the scratch copy
++  would hold the new one and the real `~/.codex/auth.json` could be left with a
++  stale one. I did not check whether that happened in this run, and I did not
++  look at the token contents.
++- **MCP plugins.** The copied `config.toml` still lists MCP servers that live
++  under the real home (`~/.pencil`, plus PostHog and GitHub plugins). Under the
++  profile they fail to start or authenticate. Codex logs those errors in
++  `agent.err`, and the run completes anyway. This is the expected price of the
++  fence.
++- **Run output.** The test run is in `runs/fizz-codex-sandboxed-r1/`. `runs/*`
++  is gitignored, so nothing was committed or published. No external service was
++  used beyond the Codex API call that the lane exists to make.
++
++Nothing has been committed.
+diff --git a/README.md b/README.md
+index 9d81ca7..0911573 100644
+--- a/README.md
++++ b/README.md
+@@ -17,10 +17,16 @@ run folder `runs/<task>-<lane>-r<rep>/`:
+ Lanes:
+ 
+ - `codex`: Codex CLI (`codex exec --json`), unsandboxed.
++- `codex-sandboxed`: the same Codex run, under the same profile and scratch
++  HOME as `kimi`. Codex gets a scratch `CODEX_HOME` holding copies of
++  `auth.json`, `config.toml` and `installation_id` from `~/.codex`; the real
++  `~/.codex` stays closed to the sandbox.
+ - `kimi`: Kimi Code. Its output goes to Moonshot, so its shell runs under the
+   macOS sandbox profile `sandbox/agent.sb` (no reading or writing the real
+   home), with an empty scratch HOME. Kimi's own install and sessions live in
+   `~/.kimi-code`, which the profile opens.
+ 
+-Codex logs in with an API key from the environment (`CODEX_API_KEY`), so it
+-needs nothing from the home folder.
++The `codex` lane needs nothing from the home folder when it logs in with an
++API key from the environment (`CODEX_API_KEY`). On a machine where Codex logs
++in with `~/.codex/auth.json` instead, the `codex-sandboxed` lane copies that
++file into its scratch `CODEX_HOME`.
+diff --git a/run.sh b/run.sh
+index c41ad67..78828f7 100755
+--- a/run.sh
++++ b/run.sh
+@@ -1,7 +1,8 @@
+ #!/usr/bin/env bash
+ # usage: run.sh <task> <lane> [rep]
+-# lanes: codex   Codex CLI, unsandboxed
+-#        kimi    Kimi Code under sandbox/agent.sb (no reading or writing the real home), scratch HOME
++# lanes: codex            Codex CLI, unsandboxed
++#        codex-sandboxed  same Codex run under sandbox/agent.sb (no reading or writing the real home), scratch HOME
++#        kimi             Kimi Code under sandbox/agent.sb (no reading or writing the real home), scratch HOME
+ set -u
+ D="$(cd "$(dirname "$0")" && pwd)"
+ T=$1; A=$2; REP=${3:-1}
+@@ -15,6 +16,20 @@ codex_run() {
+       -o "$R/final.txt" "$P" < /dev/null > "$R/agent.log" 2> "$R/agent.err" )
+ }
+ 
++# The codex lane's run, inside the same fence as kimi. Codex keeps its login (auth.json) and config.toml in
++# $CODEX_HOME, so it gets a scratch CODEX_HOME with copies of those files; the real ~/.codex stays closed to the
++# sandbox, and the agent's shell (a child of codex) inherits the same profile.
++codex_sandboxed_run() {
++  local REAL="$HOME" SH CH f; SH=$(mktemp -d /tmp/khome-XXXXXX); CH="$SH/.codex"; mkdir -p "$CH"
++  for f in auth.json config.toml installation_id; do
++    [ -f "$REAL/.codex/$f" ] && cp "$REAL/.codex/$f" "$CH/$f"
++  done
++  ( cd "$W" && export HOME="$SH" CODEX_HOME="$CH" && sandbox-exec -D HOME="$REAL" -f "$D/sandbox/agent.sb" \
++      timeout $TO codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox -C "$W" --json \
++      -o "$R/final.txt" "$P" < /dev/null > "$R/agent.log" 2> "$R/agent.err" )
++  local rc=$?; rm -rf "$SH"; return $rc
++}
++
+ # Kimi's output goes to Moonshot: its shell runs under sandbox/agent.sb with an empty scratch HOME.
+ kimi_run() {
+   local REAL="$HOME" SH; SH=$(mktemp -d /tmp/khome-XXXXXX)
+@@ -27,6 +42,7 @@ kimi_run() {
+ start=$(date +%s)
+ case $A in
+   codex) codex_run;;
++  codex-sandboxed) codex_sandboxed_run;;
+   kimi)  kimi_run;;
+   *) echo "unknown lane $A"; exit 2;;
+ esac

@@ -1,0 +1,35 @@
+diff --git a/src/app.py b/src/app.py
+index db49c5e..df7a315 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -8,6 +8,7 @@ import json
+ import logging
+ import re
+ import time
++from decimal import Decimal
+ 
+ log = logging.getLogger("stories")
+ 
+@@ -31,11 +32,21 @@ def similarity(a, b):
+ 
+ 
+ def related(story, existing):
++    """Return the top ``TOP_N`` similar stories.
++
++    DynamoDB does not accept native ``float`` values. ``similarity`` returns a
++    ``float`` but the first publish succeeds because the ``similar`` list is
++    empty when the table is initially empty. On subsequent publishes the list
++    contains scores, triggering a ``TypeError``. To avoid this we coerce each
++    score to a ``Decimal`` before storing it.
++    """
+     scored = []
+     for other in existing:
+         if other["slug"] == story["slug"]:
+             continue
+-        scored.append({"slug": other["slug"], "score": similarity(story, other)})
++        # Convert the float similarity score to Decimal for DynamoDB compatibility
++        score = Decimal(str(similarity(story, other)))
++        scored.append({"slug": other["slug"], "score": score})
+     scored.sort(key=lambda s: s["score"], reverse=True)
+     return scored[:TOP_N]
+ 

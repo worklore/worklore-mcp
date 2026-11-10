@@ -1,0 +1,79 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..8bb6ce7
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,23 @@
++**What was added**
++
++- Introduced a new lane called `codex-sandboxed` to `run.sh`.
++- Implemented `codex_sandboxed_run` which mirrors the existing `codex` execution but runs the Codex CLI inside the same sandbox profile used by the `kimi` lane (`sandbox/agent.sb`).
++- Created a temporary `HOME` directory (`SH`) and a temporary scratch directory (`SCRATCH`) inside `/tmp` for the sandboxed execution. The Codex CLI writes its final answer to `$SCRATCH/final.txt`, which is copied back to the run folder after the sandbox exits.
++- Cleaned up the temporary directories and returned the original exit code.
++- Updated the case statement to dispatch `codex-sandboxed` to the new function.
++
++**Parts of the colleague’s note that applied**
++
++1. **Write output to a scratch folder inside `/tmp`** – The note advises directing tools to a writable location outside the denied paths. I used `$SCRATCH` inside `/tmp` for the `-o` flag.
++2. **Copy the result out after `sandbox-exec` returns** – After the sandbox run finishes, the script copies `final.txt` from the scratch folder back into the run folder, matching the suggested fix.
++3. **Keep stdout/stderr redirection unchanged** – The note mentions that redirection works because the shell opens those files before `sandbox-exec`. The script still writes `agent.log` and `agent.err` directly to the run folder.
++
++**What was ignored**
++
++- The note’s discussion about checking for “Operation not permitted” in logs – not needed for the lane implementation.
++- Specific references to Mistral Vibe – the fix is generic and applied only to Codex.
++
++**Result**
++
++Running `./run.sh <task> codex-sandboxed` now executes Codex CLI inside the sandbox, isolating the agent’s home directory and ensuring the final answer file is correctly written and captured.
++
+diff --git a/run.sh b/run.sh
+index c41ad67..5796464 100755
+--- a/run.sh
++++ b/run.sh
+@@ -1,7 +1,8 @@
+ #!/usr/bin/env bash
+ # usage: run.sh <task> <lane> [rep]
+-# lanes: codex   Codex CLI, unsandboxed
+-#        kimi    Kimi Code under sandbox/agent.sb (no reading or writing the real home), scratch HOME
++# lanes: codex           Codex CLI, unsandboxed
++#        kimi            Kimi Code under sandbox/agent.sb (no reading or writing the real home), scratch HOME
++#        codex-sandboxed Codex CLI executed inside sandbox/agent.sb (isolated HOME), with output written to a temporary location and copied back after the sandbox exits
+ set -u
+ D="$(cd "$(dirname "$0")" && pwd)"
+ T=$1; A=$2; REP=${3:-1}
+@@ -15,6 +16,26 @@ codex_run() {
+       -o "$R/final.txt" "$P" < /dev/null > "$R/agent.log" 2> "$R/agent.err" )
+ }
+ 
++# Codex run inside the same sandbox used for the kimi lane. The sandbox profile denies
++# read/write access to the real HOME, so we give the agent a temporary HOME and write
++# the final answer to a scratch directory inside /tmp. After sandbox‑exec returns we
++# copy the result into the run folder.
++codex_sandboxed_run() {
++  local REAL="$HOME" SH SCRATCH
++  SH=$(mktemp -d /tmp/khome-XXXXXX)
++  SCRATCH=$(mktemp -d /tmp/codex-sb-XXXXXX)
++  ( cd "$W" && export HOME="$SH" && sandbox-exec -D HOME="$REAL" -f "$D/sandbox/agent.sb" \
++      timeout $TO codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox -C "$W" --json \
++      -o "$SCRATCH/final.txt" "$P" < /dev/null > "$R/agent.log" 2> "$R/agent.err" )
++  local rc=$?
++  # copy final answer out of the sandbox if it exists
++  if [ -f "$SCRATCH/final.txt" ]; then
++    cp "$SCRATCH/final.txt" "$R/final.txt"
++  fi
++  rm -rf "$SH" "$SCRATCH"
++  return $rc
++}
++
+ # Kimi's output goes to Moonshot: its shell runs under sandbox/agent.sb with an empty scratch HOME.
+ kimi_run() {
+   local REAL="$HOME" SH; SH=$(mktemp -d /tmp/khome-XXXXXX)
+@@ -27,6 +48,7 @@ kimi_run() {
+ start=$(date +%s)
+ case $A in
+   codex) codex_run;;
++  codex-sandboxed) codex_sandboxed_run;;
+   kimi)  kimi_run;;
+   *) echo "unknown lane $A"; exit 2;;
+ esac

@@ -1,0 +1,55 @@
+{
+ "answer_file": true,
+ "answer_source": "repo",
+ "lanes": [
+  "codex",
+  "codex-sandboxed",
+  "kimi"
+ ],
+ "new_lane": "codex-sandboxed",
+ "paths_rewritten": [],
+ "lane_rc": 0,
+ "lane_out": "fizz-codex-sandboxed-r1 rc=0 answer=24 chars\n",
+ "codex_ran": true,
+ "codex_under_sandbox": true,
+ "sandbox_calls": 1,
+ "fence": {
+  "denies_home_write": true,
+  "denies_home_read": true,
+  "opens_run_folder": false,
+  "params": {
+   "HOME": "/private/var/folders/wx/fkc3yttx3f7ddg45t1h52nyw0000gn/T/g-n4-z84th9iu/home",
+   "AGENT_HOME": "/private/var/folders/wx/fkc3yttx3f7ddg45t1h52nyw0000gn/T/g-n4-z84th9iu/home/.codex"
+  }
+ },
+ "final_txt_has_answer": true,
+ "answer_json_has_answer": true,
+ "codex_wrote_out_file": true,
+ "codex_out_file": "/tmp/codex-out-YifPEw/final.txt",
+ "failed_write_in_err": false,
+ "codex_lane_ok": true,
+ "agent_ran_sandbox_exec": [
+  "cat README.md; echo ---; cat check_answer.py; echo ---; cat .gitignore; echo ---; cat tasks/fizz.prompt; echo ---; cat tasks/fizz/fizz.py; echo ---; ls -la runs",
+  "cd /private/tmp/h-WragEg && cat README.md; echo ---; cat check_answer.py; echo ---; cat .gitignore; echo ---; cat tasks/fizz.prompt; echo ---; cat tasks/fizz/fi",
+  "bash -n run.sh && echo SYNTAX_OK; H=$HOME; for f in .gitconfig .zshrc .profile .npmrc; do [ -e \"$H/$f\" ] && echo \"exists: $f\"; done; echo \"--- probe under profi",
+  "cd /private/tmp/h-WragEg && bash -n run.sh && echo SYNTAX_OK; H=$HOME; for f in .gitconfig .zshrc .profile .npmrc; do [ -e \"$H/$f\" ] && echo \"exists: $f\"; done;",
+  "H=$HOME && sandbox-exec -D HOME=\"$H\" -D AGENT_HOME=\"$H/.kimi-code\" -f sandbox/agent.sb sh -c \"ls '$H/.kimi-code' >/dev/null 2>&1 && echo 'kimi: own folder lista"
+ ],
+ "agent_ran_harness": [
+  "git status && git log --oneline | head && ls -la && echo --- && find . -path ./.git -prune -o -type f -print | head -100 && echo --- && cat run.sh 2>/dev/null; ",
+  "cd /private/tmp/h-WragEg && git status && git log --oneline | head && ls -la && echo --- && find . -path ./.git -prune -o -type f -print | head -100 && echo ---",
+  "bash -n run.sh && echo SYNTAX_OK; H=$HOME; for f in .gitconfig .zshrc .profile .npmrc; do [ -e \"$H/$f\" ] && echo \"exists: $f\"; done; echo \"--- probe under profi",
+  "cd /private/tmp/h-WragEg && bash -n run.sh && echo SYNTAX_OK; H=$HOME; for f in .gitconfig .zshrc .profile .npmrc; do [ -e \"$H/$f\" ] && echo \"exists: $f\"; done;",
+  "mkdir -p /tmp/codex-stub-test && cat > /tmp/codex-stub-test/codex <<'EOF'\n#!/bin/sh\n# Test stub: no network. Reports what the sandbox allows, then writes the -o"
+ ],
+ "answer_mentions_output_file": true,
+ "changed_files": [
+  "ANSWER.md",
+  "README.md",
+  "run.sh",
+  "sandbox/agent.sb"
+ ],
+ "commands_issued": 13,
+ "answer_chars": 5191,
+ "PASS": true
+}

@@ -1,0 +1,23 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..94cd548
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,5 @@
++# Cause and fix
++
++Vibe 3.1.0 tries to inspect the macOS Keychain during startup, even though the OpenRouter key is supplied through `OPENROUTER_API_KEY`. It runs `/usr/bin/security` for that inspection. `agent.sb` deliberately forbids that executable, so the subprocess raises `Operation not permitted` and Vibe exits with code 2 before handling the prompt.
++
++`run-vibe.sh` now passes `VIBE_TEST_DISABLE_KEYRING=1` into Vibe's allowlisted environment. In this installed Vibe version, that switch makes its Keychain reads return no credential without launching `/usr/bin/security`. The OpenRouter key still comes from `OPENROUTER_API_KEY`, and the sandbox continues to deny Keychain access.
+diff --git a/run-vibe.sh b/run-vibe.sh
+index c4a5223..5c16847 100755
+--- a/run-vibe.sh
++++ b/run-vibe.sh
+@@ -12,6 +12,7 @@ SH=$(mktemp -d /tmp/vhome-XXXXXX); VH=$(mktemp -d /tmp/vibehome-XXXXXX)
+ cp "$D/vibe/config.toml" "$VH/config.toml"
+ mkdir -p "$D/logs"
+ ( cd "$W" && env -i PATH="$PATH" TERM="${TERM:-dumb}" LANG="${LANG:-en_US.UTF-8}" HOME="$SH" VIBE_HOME="$VH" \
++    VIBE_TEST_DISABLE_KEYRING=1 \
+     OPENROUTER_API_KEY="$OPENROUTER_API_KEY" \
+     sandbox-exec -D HOME="$REAL" -f "$D/agent.sb" \
+     "$VIBE" -p "$PROMPT" --model devstral --auto-approve --trust --output streaming --output-dir "$VH/out" \

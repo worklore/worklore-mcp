@@ -1,0 +1,13 @@
+Added a **`codex-sandboxed` lane** to `run.sh` that mirrors the existing `kimi` lane but runs Codex inside the sandbox profile.
+
+- Updated lane description comment to include `codex-sandboxed`.
+- Implemented `codex_sandboxed_run`:
+  - Creates a temporary scratch directory in `/tmp`.
+  - Sets `HOME` to this scratch dir and runs `sandbox-exec -f sandbox/agent.sb` with `-D HOME="$REAL_HOME"`.
+  - Executes `codex exec` with output directed to the scratch folder.
+  - After sandbox exit, copies the generated `final.txt` back to the run folder and cleans up.
+- Added case handling for `codex-sandboxed`.
+
+**Applied parts of colleague’s note**
+- Recognized that sandbox denies writes to the run folder, causing Codex to fail writing its final output.
+- Fixed by writing to a temporary `/tmp` folder permitted by the sandbox and copying the result back after execution.

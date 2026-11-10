@@ -1,0 +1,122 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..ae440b5
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,78 @@
++# Fix: a `save_fact` write no longer evicts the static instructions
++
++## Cause
++
++`build_system()` returned one text block containing `INSTRUCTIONS` plus the per-athlete
++context, with a single `cache_control` marker at the end. Prompt caching is by prefix, so
++any byte change in the block (a new fact, or a new day in `Today:`) made the whole block a
++miss. `logs/usage.jsonl` shows it: the call after every `save_fact` has
++`cache_read_input_tokens: 0` and `cache_creation_input_tokens` around 1000+.
++
++## Change
++
++`bot.py`, `build_system()` now returns two text blocks, each with an ephemeral marker:
++
++1. `INSTRUCTIONS`: the static coaching rules. Byte-identical for every athlete and every day.
++2. `athlete_context(...)`: the per-athlete tail (date, name, zones, goal, facts, language).
++
++A memory write changes only block 2, so block 1 keeps its cache entry. The tool-loop rounds
++and the next message still read both blocks from cache within the 5-minute TTL.
++
++`README.md`: the caching paragraph now describes the two blocks and the rule to keep block 1
++free of interpolated values. No other behaviour changed. Tool filtering, the fact list, and
++the model are untouched.
++
++## Verification
++
++I ran a local check with no API calls (the SDK is not installed here, and there is no key):
++
++- Block 1 is the same bytes for user 42 and user 77, and for two different dates.
++- Block 1 is unchanged after `save_fact`, while block 2 changes and contains the new fact.
++- Block 1 contains none of the athlete name, id, date, or `Today:` text.
++- Both blocks carry `cache_control: {"type": "ephemeral"}`.
++
++The check passed. I did not measure cache hits against the live API.
++
++## Open risk: the static block may be below the cacheable minimum
++
++Anthropic only caches a breakpoint when the prefix up to it is at least 1024 tokens
++(Sonnet 4.5). The static block is 2484 characters, about 620 tokens by a rough 4-chars/token
++estimate. With the core tool schemas above it (about 105 tokens), the prefix is about 730
++tokens. If that estimate holds, the marker on block 1 is silently ignored: no error, no
++cache entry. Then block 2's marker covers the whole prefix again, and a memory write still
++evicts everything. The fix works only if block 1's prefix (tools + block 1) is at least 1024
++tokens.
++
++I could not confirm the real count here. The usage log suggests the total prefix is about
++1024–1100 tokens, which fits the estimate. The check after deploy is:
++
++- After a `save_fact`, the next call should show `cache_read_input_tokens` close to the
++  static size, and `cache_creation_input_tokens` close to the tail size (about 100–250
++  tokens), not the full prompt.
++- If `cache_creation_input_tokens` is still about the full prompt after a `save_fact`, the
++  static block is below the minimum. Options, in order of preference:
++  1. Keep the full tool list in every request. The prefix then includes all the tool schemas
++     and probably clears 1024. This gives up the keyword tool filter win from March, which
++     the notes say to keep, so it is a trade-off for the owner to decide.
++  2. Add real static content to the instructions. Padding with filler is not a fix.
++
++## Separate cache misses (not fixed here)
++
++Tools sit above the system prompt in the cached prefix. Keyword tool filtering produces
++four possible tool sets, and each switch rewrites the whole prefix. The log shows this:
++the `plan_week` and `predict_race` rounds have `cache_creation` of 1305 and 1334 with zero
++reads. This is unrelated to memory writes and is the expected cost of the filter, so I left
++it alone.
++
++## What applied from the colleague's note
++
++- **Applied:** split the system prompt into a static block and a per-user tail, each with a
++  marker. Keep the static block free of interpolated values. Use the usage fields
++  (`cache_creation_input_tokens` / `cache_read_input_tokens`) to confirm the effect.
++- **Applied:** keep the fact list whole, not top-N per message. A per-message fact selection
++  would change block 2 on every message and stop tail cache hits. This matches the current
++  code, which loads all facts.
++- **Applied, with a caveat:** tool-set changes evict the cache, as the note says. The
++  keyword filter has the same cost here, which is listed above.
++- **Not applicable:** the Telegram transport, the token counts (they are for their bot, not
++  this one), and the 4-marker limit (we use 2, which is also fine here).
+diff --git a/README.md b/README.md
+index ebd390e..cfe2cbf 100644
+--- a/README.md
++++ b/README.md
+@@ -12,5 +12,8 @@ Run it locally with `COACH_ANTHROPIC_KEY=sk-ant-... python3 bot.py 42` and type
+ messages on stdin (the Telegram long-polling transport, which needs
+ `COACH_TELEGRAM_TOKEN`, lives in a separate deploy repo and just calls `reply()`).
+ Requires Python 3.11+ and `pip install anthropic`. Prompt caching is on: the system
+-prompt carries a `cache_control` marker so the tool-loop rounds and follow-up
+-messages inside the 5-minute window read it from cache.
++prompt is two text blocks, each with a `cache_control` marker. Block 1 is the static
++coaching instructions (byte-identical for every athlete); block 2 is the per-athlete
++tail (date, profile, zones, goal, facts, language). A `save_fact` write only
++invalidates block 2, so the instructions stay cached. Keep block 1 free of
++interpolated values.
+diff --git a/bot.py b/bot.py
+index e2ff241..cdda375 100644
+--- a/bot.py
++++ b/bot.py
+@@ -128,9 +128,14 @@ def athlete_context(a, today):
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    # Two cached blocks. Caching is by prefix, so a change in block 2 (a new fact,
++    # a new day) only invalidates block 2; block 1 (the static instructions, byte-identical
++    # for every athlete and every day) keeps its cache entry.
++    # Keep INSTRUCTIONS free of interpolated values: any byte change there evicts both blocks.
++    return [
++        {"type": "text", "text": INSTRUCTIONS, "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": athlete_context(a, today), "cache_control": {"type": "ephemeral"}},
++    ]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [
+# 1 file diffs under node_modules/, __pycache__/ or .prisma/ left out of this patch; 3 kept

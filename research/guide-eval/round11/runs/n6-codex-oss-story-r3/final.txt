@@ -1,0 +1,24 @@
+**Implemented the requested offline Hedera transfer script.**
+
+- Added **@hiero-ledger/sdk** (current Hedera JavaScript SDK) to `package.json`.
+- Created `.env` with placeholder test values for `OPERATOR_ID`, `OPERATOR_KEY`, `RECIPIENT_ID`, and `VALID_START`.
+- Added `src/transfer.ts`:
+  - Loads env vars via `dotenv`.
+  - Parses required variables.
+  - Builds a `TransferTransaction` sending 1 hbar from the operator to the recipient, targeting node `0.0.3` with memo `invoice 42`.
+  - Uses `Timestamp.fromDate` to create a valid `Timestamp` for `TransactionId.withValidStart`.
+  - Freezes, signs with the operator’s ED25519 DER‑encoded key, and prints the signed transaction bytes as a hex string.
+  - Works completely offline.
+- Verified compilation with `npx tsc --noEmit`.
+
+**Applied parts of colleague’s note**
+- Followed the SDK rename to `@hiero-ledger/sdk`.
+- Utilized unchanged API (`TransferTransaction`, `PrivateKey.fromStringDer`, `TransactionId.withValidStart`).
+
+Run the script:
+
+```
+npx tsx src/transfer.ts
+```
+
+It will output the signed transaction bytes in hex.

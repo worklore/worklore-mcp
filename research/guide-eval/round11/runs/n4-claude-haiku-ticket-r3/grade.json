@@ -1,0 +1,52 @@
+{
+ "answer_file": true,
+ "answer_source": "repo",
+ "lanes": [
+  "codex",
+  "codex-sandboxed",
+  "kimi"
+ ],
+ "new_lane": "codex-sandboxed",
+ "paths_rewritten": [],
+ "lane_rc": 0,
+ "lane_out": "fizz-codex-sandboxed-r1 rc=0 answer=24 chars\n",
+ "codex_ran": true,
+ "codex_under_sandbox": true,
+ "sandbox_calls": 1,
+ "fence": {
+  "denies_home_write": true,
+  "denies_home_read": true,
+  "opens_run_folder": false,
+  "params": {
+   "HOME": "/private/var/folders/wx/fkc3yttx3f7ddg45t1h52nyw0000gn/T/g-n4-nh2q5gtr/home"
+  }
+ },
+ "final_txt_has_answer": true,
+ "answer_json_has_answer": true,
+ "codex_wrote_out_file": true,
+ "codex_out_file": "/tmp/cout-2HgDwB/final.txt",
+ "failed_write_in_err": false,
+ "codex_lane_ok": true,
+ "agent_ran_sandbox_exec": [
+  "cat README.md && echo ---- && cat check_answer.py && echo ---- && cat .gitignore && echo ---- && ls -R tasks runs | head -50 && echo ---- && which codex sandbox",
+  "cd /private/tmp/h-A7v2QM && cat README.md && echo ---- && cat check_answer.py && echo ---- && cat .gitignore && echo ---- && ls -R tasks runs | head -50 && echo",
+  "bash -n run.sh && echo SYNTAX_OK\n# Probe the profile directly: real home must be unreadable/unwritable, scratch writable\nSH=$(mktemp -d /tmp/probe-home-XXXXXX);",
+  "cd /private/tmp/h-A7v2QM && bash -n run.sh && echo SYNTAX_OK\n# Probe the profile directly: real home must be unreadable/unwritable, scratch writable\nSH=$(mktemp"
+ ],
+ "agent_ran_harness": [
+  "git status && git log --oneline | head -5 && ls -la && cat run.sh 2>/dev/null; ls -la sandbox 2>/dev/null; cat sandbox/agent.sb 2>/dev/null",
+  "cd /private/tmp/h-A7v2QM && git status && git log --oneline | head -5 && ls -la && cat run.sh 2>/dev/null; ls -la sandbox 2>/dev/null; cat sandbox/agent.sb 2>/d",
+  "bash -n run.sh && echo SYNTAX_OK\n# Probe the profile directly: real home must be unreadable/unwritable, scratch writable\nSH=$(mktemp -d /tmp/probe-home-XXXXXX);",
+  "cd /private/tmp/h-A7v2QM && bash -n run.sh && echo SYNTAX_OK\n# Probe the profile directly: real home must be unreadable/unwritable, scratch writable\nSH=$(mktemp",
+  "FB=$(mktemp -d /tmp/fakebin-XXXXXX); cat > \"$FB/codex\" <<'EOF'\n#!/usr/bin/env bash\n# stub: reports what the sandboxed process can see, writes the -o file the wa"
+ ],
+ "answer_mentions_output_file": true,
+ "changed_files": [
+  "ANSWER.md",
+  "README.md",
+  "run.sh"
+ ],
+ "commands_issued": 13,
+ "answer_chars": 4303,
+ "PASS": true
+}

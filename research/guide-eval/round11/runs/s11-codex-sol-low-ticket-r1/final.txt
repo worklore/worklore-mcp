@@ -1,0 +1,3 @@
+The second publish failed because it created a float in `similar[].score`, which DynamoDB rejects. The first publish had no related stories, so it never reached that path.
+
+I changed scoring to use `Decimal` throughout and added regression tests for a second publish and a zero score. All 3 tests pass. [ANSWER.md](/tmp/h-ME90MD/ANSWER.md) records the cause, fix, and which parts of the colleague’s note applied.

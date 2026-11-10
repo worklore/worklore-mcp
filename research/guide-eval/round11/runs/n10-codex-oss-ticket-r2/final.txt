@@ -1,0 +1,30 @@
+**What was done**
+
+- Added Prisma 8 (the current `latest` tag) and the PostgreSQL adapter (`@prisma/orm-postgres`) via `npm install`.
+- Ran `npx prisma orm init` which created `prisma.config.ts`, the contract folder and initial files.
+- Inserted the required `// use prisma-8` pragma at the top of `src/prisma/contract.prisma`.
+- Defined the data model in `src/prisma/contract.prisma`:
+  - `User` with a unique `email`, optional `name`, and a relation to `Post`.
+  - `Post` with `title`, optional `content`, a `published` flag defaulting to `false`, and a required `author` relation.
+- Emitted the contract (`npx prisma contract emit`) to generate `contract.json` and `contract.d.ts`.
+- Initialized the PostgreSQL database (`npx prisma db init`), creating the tables and a marker confirming schema‑contract alignment.
+- Added `script.ts` at the project root that:
+  1. Creates a user.
+  2. Creates two posts linked to that user.
+  3. Retrieves all users with their posts (`include('posts').all()`).
+  4. Prints the results and closes the Prisma runtime.
+- Documented the steps, relevance of the colleague’s note, and how to run the script in `ANSWER.md`.
+
+**Parts of the colleague’s note that applied**
+
+- **Version handling** – The note correctly warned that `prisma@latest` points to the Prisma 8 RC; we used this version.
+- **`// use prisma-8` directive** – Required to make the contract source load; added as instructed.
+- **Workflow** – The sequence `prisma orm init → contract emit → db init` matches the successful pattern described.
+
+**How to run the script**
+
+```bash
+npx tsx script.ts
+```
+
+Running the command prints the created user and a JSON dump of all users with their associated posts, confirming the Prisma ORM integration works as intended.

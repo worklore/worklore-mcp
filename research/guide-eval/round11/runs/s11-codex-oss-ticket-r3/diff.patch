@@ -1,0 +1,101 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..f6c35ea
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,28 @@
++**Cause**
++
++The `related` function stored the raw similarity score (a Python `float`) in the
++`similar` attribute of the DynamoDB item. DynamoDB rejects floats – it requires a
++`Decimal` or an integer type. The first publish succeeded because the table was
++empty, so no scores were written. On subsequent publishes a score was present and
++the write failed with:
++
++```
++TypeError: Float types are not supported. Use Decimal types instead.
++```
++
++**Fix**
++
++Convert the similarity value to an integer percentage before storing it. The
++updated `related` function multiplies the float (range 0‑1) by 100, rounds it, and
++stores the resulting integer in the `score` field. This satisfies DynamoDB’s
++type requirements while preserving the relative ordering of similarity scores.
++
++**Applied notes from colleague**
++
++- Identified that the bug only appears after the table contains a story (the
++  empty‑table path hides the issue).
++- Changed the write‑path to store integer percentages instead of floats.
++ - Updated documentation/comments to explain the reasoning.
++
++All tests now pass.
++
+diff --git a/src/app.py b/src/app.py
+index db49c5e..9f811da 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -4,6 +4,7 @@ Each story is stored in one DynamoDB item together with the three most similar
+ stories already in the library (``similar``), so the reader page can show
+ "related" without a query at read time.
+ """
++
+ import json
+ import logging
+ import re
+@@ -18,6 +19,7 @@ _WORD = re.compile(r"[a-z0-9]+")
+ 
+ 
+ def words(text):
++    """Return a set of lowercase alphanumeric words from *text*."""
+     return set(_WORD.findall((text or "").lower()))
+ 
+ 
+@@ -31,16 +33,31 @@ def similarity(a, b):
+ 
+ 
+ def related(story, existing):
++    """Return the top ``TOP_N`` related stories.
++
++    The original implementation stored raw ``float`` similarity scores in the
++    DynamoDB ``similar`` attribute, which DynamoDB rejects (it requires ``Decimal``
++    or integer types). The first publish succeeded because the table was empty,
++    resulting in an empty ``similar`` list, so no floats were written. Subsequent
++    publishes attempted to write a ``float`` ``score`` and raised:
++
++    ``TypeError: Float types are not supported. Use Decimal types instead.``
++
++    The fix converts the similarity (0‑1) to an integer percentage before storing.
++    """
+     scored = []
+     for other in existing:
+         if other["slug"] == story["slug"]:
+             continue
+-        scored.append({"slug": other["slug"], "score": similarity(story, other)})
++        raw_score = similarity(story, other)
++        int_score = int(round(raw_score * 100))
++        scored.append({"slug": other["slug"], "score": int_score})
+     scored.sort(key=lambda s: s["score"], reverse=True)
+     return scored[:TOP_N]
+ 
+ 
+ def validate(story):
++    """Validate required fields and slug format."""
+     for k in ("slug", "title", "body"):
+         if not story.get(k):
+             raise ValueError(f"missing field: {k}")
+@@ -66,7 +83,7 @@ def publish(table, story):
+ 
+ 
+ def handler(event, table):
+-    """Lambda-style entry point for POST /stories. Body is the story as JSON."""
++    """Lambda‑style entry point for POST /stories. Body is the story as JSON."""
+     try:
+         story = json.loads(event.get("body") or "{}")
+         stored = publish(table, story)
+@@ -76,3 +93,4 @@ def handler(event, table):
+     except Exception:
+         log.exception("publish failed")
+         return {"statusCode": 500, "body": json.dumps({"error": "Internal Server Error"})}
++

@@ -1,0 +1,130 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..7d45047
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,32 @@
++# codex-sandboxed lane
++
++## What changed
++
++- **`run.sh`**: new lane `codex-sandboxed`. It runs the same `codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox -C <work> --json -o final.txt <prompt>` command as the `codex` lane, but wrapped in `sandbox-exec -f sandbox/agent.sb` with `HOME` and `CODEX_HOME` pointing at an empty scratch dir under `/tmp`, which is removed afterwards. The kimi lane gets the same treatment, unchanged in behavior.
++- **`sandbox/agent.sb`**: the profile previously had a hard-coded exception that re-opened `~/.kimi-code` for every lane that used it. I checked: under that profile, a shell could list `~/.kimi-code`, so reusing the profile unchanged would have left part of the real home readable to the codex lane. The exception is now a parameter, `(param "OPEN")`. Kimi passes `OPEN=$REAL/.kimi-code`; codex passes its scratch dir, so it opens nothing under the real home.
++- **`README.md`**: documents the new lane and the `OPEN` parameter.
++
++## Verification (local only)
++
++- `bash -n run.sh` passes.
++- `./run.sh fizz codex-sandboxed` with no `CODEX_API_KEY` exits 2 with a clear message and leaves no work dir behind.
++- Probes under the profile with `OPEN` set to the scratch dir (codex lane): contents of `~/.codex/auth.json` are unreadable, `~/.codex` cannot be listed, and writes to `~/.codex` fail with "Operation not permitted". `~/.kimi-code` is also unreadable.
++- Probe with `OPEN=~/.kimi-code` (kimi lane): `~/.kimi-code/bin` is listable, and `~/.codex` is blocked.
++- `codex` 0.160.0 starts under the profile with a scratch `CODEX_HOME` and no sandbox errors. `codex login status` reports "Not logged in", as expected for that check.
++
++## What I did not verify
++
++- **No full codex run.** I did not run a real task through `codex exec`, because that sends the prompt to OpenAI and needs a key. So the end-to-end path is untested.
++- **Auth is the blocker on this Mac.** The codex CLI here logs in with a ChatGPT login in `~/.codex/auth.json`, and no `CODEX_API_KEY` is set. The sandboxed codex process cannot read that file, and Seatbelt cannot tell codex's own reads from its shell's, so the lane cannot use it. The lane therefore takes the key from `CODEX_API_KEY` (the README's documented design). Until that variable is set, the lane refuses to run. I have not confirmed that `codex exec` accepts `CODEX_API_KEY` on this CLI version. If the key is set but exec still fails, that is the first thing to check.
++- **Copying `auth.json` into the scratch dir** would have made the lane runnable with the current login, but it hands the shell the credential itself. I did not do that.
++
++## Differences from the `codex` lane
++
++- The real `~/.codex/config.toml` is not loaded, so its MCP servers (`pencil`) and plugins (`github`, `posthog`) are absent. The config sets no model, so both lanes use codex's default model.
++- Auth comes from `CODEX_API_KEY`, not the ChatGPT login.
++- Network stays open, as in the kimi lane.
++
++## Not done
++
++- Nothing committed, deployed, published or sent to any external service.
++- No `runs/` output was produced; the test run directories were removed.
+diff --git a/README.md b/README.md
+index 9d81ca7..f7446de 100644
+--- a/README.md
++++ b/README.md
+@@ -17,10 +17,17 @@ run folder `runs/<task>-<lane>-r<rep>/`:
+ Lanes:
+ 
+ - `codex`: Codex CLI (`codex exec --json`), unsandboxed.
++- `codex-sandboxed`: the same Codex run, but its process and shell run under
++  `sandbox/agent.sb` with an empty scratch HOME and `CODEX_HOME`. Nothing under
++  the real home is opened, so it needs `CODEX_API_KEY` in the environment; the
++  ChatGPT login in `~/.codex` is out of its reach. It does not load the real
++  `~/.codex/config.toml`, so that config's MCP servers and plugins are absent.
+ - `kimi`: Kimi Code. Its output goes to Moonshot, so its shell runs under the
+   macOS sandbox profile `sandbox/agent.sb` (no reading or writing the real
+   home), with an empty scratch HOME. Kimi's own install and sessions live in
+   `~/.kimi-code`, which the profile opens.
+ 
+-Codex logs in with an API key from the environment (`CODEX_API_KEY`), so it
+-needs nothing from the home folder.
++The profile takes the one real-home path a lane may open as `-D OPEN=<path>`:
++kimi opens `~/.kimi-code`, `codex-sandboxed` opens its scratch dir.
++
++The plain `codex` lane logs in with the ChatGPT login in `~/.codex`.
+diff --git a/run.sh b/run.sh
+index c41ad67..0c2fcb5 100755
+--- a/run.sh
++++ b/run.sh
+@@ -1,7 +1,9 @@
+ #!/usr/bin/env bash
+ # usage: run.sh <task> <lane> [rep]
+-# lanes: codex   Codex CLI, unsandboxed
+-#        kimi    Kimi Code under sandbox/agent.sb (no reading or writing the real home), scratch HOME
++# lanes: codex            Codex CLI, unsandboxed
++#        codex-sandboxed  the same Codex run under sandbox/agent.sb (no reading or writing the real home), scratch HOME;
++#                         needs CODEX_API_KEY in the environment, since the ChatGPT login lives in the real home
++#        kimi             Kimi Code under sandbox/agent.sb (no reading or writing the real home), scratch HOME
+ set -u
+ D="$(cd "$(dirname "$0")" && pwd)"
+ T=$1; A=$2; REP=${3:-1}
+@@ -15,10 +17,21 @@ codex_run() {
+       -o "$R/final.txt" "$P" < /dev/null > "$R/agent.log" 2> "$R/agent.err" )
+ }
+ 
++# Same Codex run, but its process and shell run under sandbox/agent.sb with an empty scratch HOME and CODEX_HOME.
++# Nothing under the real home is opened (OPEN is the scratch dir), so auth comes from CODEX_API_KEY, not ~/.codex.
++codex_sandboxed_run() {
++  local REAL="$HOME" SH; SH=$(mktemp -d /tmp/chome-XXXXXX); mkdir -p "$SH/.codex"
++  ( cd "$W" && export HOME="$SH" CODEX_HOME="$SH/.codex" && sandbox-exec -D HOME="$REAL" -D OPEN="$SH" -f "$D/sandbox/agent.sb" \
++      timeout $TO codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox -C "$W" --json \
++      -o "$R/final.txt" "$P" < /dev/null > "$R/agent.log" 2> "$R/agent.err" )
++  local rc=$?; rm -rf "$SH"; return $rc
++}
++
+ # Kimi's output goes to Moonshot: its shell runs under sandbox/agent.sb with an empty scratch HOME.
++# Its only real-home path in the profile is its own install, ~/.kimi-code.
+ kimi_run() {
+   local REAL="$HOME" SH; SH=$(mktemp -d /tmp/khome-XXXXXX)
+-  ( cd "$W" && export HOME="$SH" && sandbox-exec -D HOME="$REAL" -f "$D/sandbox/agent.sb" \
++  ( cd "$W" && export HOME="$SH" && sandbox-exec -D HOME="$REAL" -D OPEN="$REAL/.kimi-code" -f "$D/sandbox/agent.sb" \
+       env KIMI_CODE_HOME="$REAL/.kimi-code" timeout $TO "$REAL/.kimi-code/bin/kimi" -p "$P" --output-format stream-json \
+       < /dev/null > "$R/agent.log" 2> "$R/agent.err" )
+   local rc=$?; rm -rf "$SH"; return $rc
+@@ -27,6 +40,9 @@ kimi_run() {
+ start=$(date +%s)
+ case $A in
+   codex) codex_run;;
++  codex-sandboxed)
++    [ -n "${CODEX_API_KEY:-}" ] || { echo "codex-sandboxed needs CODEX_API_KEY set (the ChatGPT login in the real home is out of its reach)" >&2; rm -rf "$W"; exit 2; }
++    codex_sandboxed_run;;
+   kimi)  kimi_run;;
+   *) echo "unknown lane $A"; exit 2;;
+ esac
+diff --git a/sandbox/agent.sb b/sandbox/agent.sb
+index 3a517dd..a16cb84 100644
+--- a/sandbox/agent.sb
++++ b/sandbox/agent.sb
+@@ -1,9 +1,11 @@
+ ;; OS-level fence for lanes whose output leaves the machine: the agent has a real shell, so the real home must be
+-;; unreachable. Only the agent's own install is opened. Network stays open. HOME is passed with -D HOME=<real home>.
++;; unreachable. HOME is the real home (-D HOME=<real home>). OPEN is the one path under it that the lane's own
++;; install needs (-D OPEN=<path>): kimi passes ~/.kimi-code; codex passes a scratch dir, so nothing under the real
++;; home is opened. Network stays open.
+ (version 1)
+ (allow default)
+ (deny file-read-data (subpath (param "HOME")))
+ (deny file-write* (subpath (param "HOME")))
+-(allow file-read-data (subpath (string-append (param "HOME") "/.kimi-code")))
+-(allow file-write* (subpath (string-append (param "HOME") "/.kimi-code")))
++(allow file-read-data (subpath (param "OPEN")))
++(allow file-write* (subpath (param "OPEN")))
+ (deny process-exec (literal "/bin/launchctl") (literal "/usr/bin/security") (literal "/usr/bin/osascript"))

@@ -1,0 +1,32 @@
+**What was done**
+
+- Installed the current Prisma version (`prisma@latest`, 8.0.0‑rc.33) together with `@prisma/orm-postgres` and `dotenv`.
+- Initialized Prisma ORM (ORM‑8 style) using `npx prisma@latest orm init --yes --target postgres --authoring psl`, creating `prisma` config and `src/prisma` contract files.
+- Updated `src/prisma/contract.prisma`:
+  - `User` with unique `email` and optional `name`.
+  - `Post` with `title`, optional `content`, `published` defaulting to `false`, and a required `author` relation to `User`.
+- Ran `npx prisma@latest contract emit` to generate `contract.json` and `contract.d.ts`.
+- Executed `npx prisma@latest db init` to create the tables in the PostgreSQL database defined in `.env`.
+- Added `script.ts` at the project root that:
+  - Clears existing `User`/`Post` rows for idempotent runs.
+  - Creates a user with two posts in a single call.
+  - Retrieves and prints every user with their posts.
+  - Closes the DB connection.
+  - Runs with `npx tsx script.ts`.
+
+**Parts of the colleague’s note that applied**
+
+- The “current” Prisma version is 8 (RC) and `@prisma/client` remains on 7; the workflow uses Prisma 8 (`prisma orm init`).
+- Passed `--yes` to avoid interactive prompts.
+- Followed the `contract emit` → `db init` sequence.
+
+**Verification**
+
+Running `npx tsx script.ts` outputs:
+
+```
+Created user: { … }
+All users with posts: [ { … } ]
+```
+
+showing the user and both posts, confirming the schema, migration, and script work together. All changes are limited to the new `script.ts`, the updated Prisma model, and generated contract files—no existing code was altered.

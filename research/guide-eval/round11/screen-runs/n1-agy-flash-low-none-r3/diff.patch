@@ -1,0 +1,47 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..afa3ef2
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,28 @@
++# Cause of Failure
++
++## Summary
++During startup, Mistral Vibe (`vibe-rs` / `vibe.utils.keyring`) attempts to inspect or preflight credentials from the macOS Keychain unless explicitly instructed not to. Specifically, during headless startup, Vibe checks whether `MISTRAL_API_KEY` is present in the environment; if it is not set (because this configuration uses OpenRouter via `OPENROUTER_API_KEY`), Vibe defaults to reading from the system keychain by executing `/usr/bin/security`.
++
++However, the macOS sandbox profile ([`agent.sb`](file:///tmp/h-fg4dyh/agent.sb)) explicitly denies process execution of `/usr/bin/security`:
++```scheme
++(deny process-exec (literal "/bin/launchctl") (literal "/usr/bin/security") (literal "/usr/bin/osascript"))
++```
++
++Because `run-vibe.sh` uses `env -i` without disabling keyring access or setting `MISTRAL_API_KEY`, Vibe invokes `/usr/bin/security`, which immediately fails with:
++```
++Reading API keys from the macOS Keychain (set them as environment variables to skip this)
++Error: [Errno 1] Operation not permitted: '/usr/bin/security'
++```
++causing Vibe to exit immediately with return code 2.
++
++## Fix
++In [`run-vibe.sh`](file:///tmp/h-fg4dyh/run-vibe.sh), pass `VIBE_TEST_DISABLE_KEYRING=1` in the sanitized environment provided to the sandboxed process:
++
++```bash
++( cd "$W" && env -i PATH="$PATH" TERM="${TERM:-dumb}" LANG="${LANG:-en_US.UTF-8}" HOME="$SH" VIBE_HOME="$VH" \
++    OPENROUTER_API_KEY="$OPENROUTER_API_KEY" VIBE_TEST_DISABLE_KEYRING=1 \
++    sandbox-exec -D HOME="$REAL" -f "$D/agent.sb" \
++...
++```
++
++Setting `VIBE_TEST_DISABLE_KEYRING=1` tells Vibe's keyring utilities in both Rust (`vibe_rs::credentials::keyring::keyring_disabled`) and Python (`vibe.utils.keyring._is_keyring_disabled`) to skip macOS Keychain queries via `/usr/bin/security`. This allows Vibe to proceed using the provided `OPENROUTER_API_KEY` without triggering sandbox violation errors.
+diff --git a/run-vibe.sh b/run-vibe.sh
+index c4a5223..b3c67ee 100755
+--- a/run-vibe.sh
++++ b/run-vibe.sh
+@@ -12,7 +12,7 @@ SH=$(mktemp -d /tmp/vhome-XXXXXX); VH=$(mktemp -d /tmp/vibehome-XXXXXX)
+ cp "$D/vibe/config.toml" "$VH/config.toml"
+ mkdir -p "$D/logs"
+ ( cd "$W" && env -i PATH="$PATH" TERM="${TERM:-dumb}" LANG="${LANG:-en_US.UTF-8}" HOME="$SH" VIBE_HOME="$VH" \
+-    OPENROUTER_API_KEY="$OPENROUTER_API_KEY" \
++    OPENROUTER_API_KEY="$OPENROUTER_API_KEY" VIBE_TEST_DISABLE_KEYRING=1 \
+     sandbox-exec -D HOME="$REAL" -f "$D/agent.sb" \
+     "$VIBE" -p "$PROMPT" --model devstral --auto-approve --trust --output streaming --output-dir "$VH/out" \
+       --max-price 1.5 --time-limit 1200 < /dev/null > "$D/logs/last-run.out" 2> "$D/logs/last-run.err" )

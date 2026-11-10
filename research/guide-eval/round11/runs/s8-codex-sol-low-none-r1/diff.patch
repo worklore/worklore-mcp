@@ -1,0 +1,67 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..e886ed5
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,7 @@
++# Prompt cache fix
++
++`bot.py` now sends two cached system blocks. The first contains the coaching instructions and stable athlete profile; the second contains today's date and long-term facts. A `save_fact` changes only the second block, so the static prefix can be read from cache instead of being created again. The second cache marker still allows the full prompt to be reused when the context is unchanged.
++
++I kept tool selection as it was. I added a short context-handling instruction to keep the stable cached prefix above the model's cache minimum, since the previous full prompt was only slightly above it.
++
++Verified locally with assertions that a fact write and date change leave the first block identical while changing the second, and that both blocks retain cache markers. `python3 -m py_compile bot.py` and `git diff --check` passed. Actual cache token usage requires a live API call and was not measured.
+diff --git a/bot.py b/bot.py
+index e2ff241..3d7b91e 100644
+--- a/bot.py
++++ b/bot.py
+@@ -111,26 +111,43 @@ Formatting:
+ - Plain text. No markdown headings, no tables.
+ - Lists only for a session structure (warm-up / main / cool-down).
+ - Numbers with units: 45 min, 12 km, 150 bpm.
++
++Context handling:
++- The profile gives the athlete's current sport, goal, zones and language.
++- The dated context gives today's date and saved long-term facts. Use those facts
++  when relevant to the question, and check them before saving another fact.
++- Treat the profile and saved facts as information about this athlete only.
+ """
+ 
+ 
+-def athlete_context(a, today):
++def athlete_profile(a):
+     lines = [
+-        f"Today: {today.isoformat()} ({today.strftime('%A')})",
+         f"Athlete: {a.name} (id {a.user_id}), sport: {a.sport}",
+         "Zones: " + ", ".join(f"{k} {v}" for k, v in a.zones.items()),
+         f"Goal: {a.goal}",
++        f"Language: {a.lang}",
++    ]
++    return "\n".join(lines)
++
++
++def athlete_context(a, today):
++    lines = [
++        f"Today: {today.isoformat()} ({today.strftime('%A')})",
+         "Long-term facts:",
+     ]
+     lines += [f"- {f}" for f in a.facts] or ["- (none yet)"]
+-    lines.append(f"Language: {a.lang}")
+     return "\n".join(lines)
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    # Keep the stable prefix cached when a fact or the date changes. The second
++    # breakpoint also caches unchanged context across tool rounds and messages.
++    return [
++        {"type": "text", "text": INSTRUCTIONS + "\n\n" + athlete_profile(a),
++         "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": athlete_context(a, today),
++         "cache_control": {"type": "ephemeral"}},
++    ]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [

@@ -1,0 +1,52 @@
+# Fix: Two cache_control segments for agent memory writes
+
+## What changed
+
+In `bot.py`, the `build_system` function was modified to split the system prompt into two separate cache segments instead of one:
+
+**Before:**
+```python
+def build_system(a, today):
+    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
+```
+
+**After:**
+```python
+def build_system(a, today):
+    return [
+        {"type": "text", "text": INSTRUCTIONS, "cache_control": {"type": "ephemeral"}},
+        {"type": "text", "text": athlete_context(a, today), "cache_control": {"type": "ephemeral"}},
+    ]
+```
+
+## Why this fixes the issue
+
+The Anthropic prompt cache uses a prefix hash mechanism. When a single byte changes in a cached block, everything from that byte to the end is a cache miss. With the original single-segment approach, every `save_fact` call modified the athlete's facts in `athlete_context`, which changed the entire cached block and evicted the static INSTRUCTIONS (which never change).
+
+With two segments:
+- Segment 1: Static INSTRUCTIONS (~780 tokens, byte-identical across all calls)
+- Segment 2: Volatile athlete context (~240+ tokens: date, profile, zones, goal, facts, language)
+
+A memory write via `save_fact` only invalidates segment 2. Segment 1 stays hot in the cache, reducing the cost of subsequent calls.
+
+## What from the colleague's note applied
+
+The following parts of the colleague's note were directly applicable and implemented:
+
+1. **"Two cache_control segments"** - The core fix: splitting into two ephemeral cache blocks instead of one.
+2. **"Segment one is the static instructions (byte-stable)"** - INSTRUCTIONS is guaranteed byte-stable with no interpolated values.
+3. **"Segment two is the per-user tail (date, profile, zones, goal, facts, language)"** - The `athlete_context` function contains all volatile data.
+4. **"A memory write now invalidates only the tail; the static prefix stays hot"** - This is exactly the behavior achieved.
+
+The following parts were noted but not directly relevant to this fix:
+- Tool filtering optimization (already implemented in the codebase via `select_tools`)
+- The specific token counts from their implementation (our INSTRUCTIONS is ~780 tokens, their tail ~240 tokens)
+- The rejection of top-N fact selection (we already include all facts every time)
+- Anthropic SDK specifics (we're using the same SDK)
+
+## Expected behavior after the fix
+
+Looking at the existing logs:
+- Before: After a `save_fact`, the next message shows `cache_creation_input_tokens: 1061, cache_read_input_tokens: 0` (full miss)
+- After: After a `save_fact`, the next message should show `cache_creation_input_tokens: ~240, cache_read_input_tokens: ~780` (only the tail is re-cached, the static prefix is read from cache)

@@ -1,0 +1,7 @@
+**Changes made**
+
+- Updated `build_system` in `bot.py` to return two separate system‑prompt blocks:
+  1. **Static block** with immutable coaching `INSTRUCTIONS` (no cache marker).
+  2. **Volatile block** with per‑athlete context (date, zones, facts, language) marked `{"type":"ephemeral"}`.
+- Fixed malformed `volatile_block` definition (removed stray `+` characters).
+- Added `ANSWER.md` documenting what was changed, why it works, and which parts of the colleague’s note were applied.

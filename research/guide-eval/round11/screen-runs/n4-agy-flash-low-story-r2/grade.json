@@ -1,0 +1,51 @@
+{
+ "answer_file": true,
+ "answer_source": "repo",
+ "lanes": [
+  "codex",
+  "codex-sandboxed",
+  "kimi"
+ ],
+ "new_lane": "codex-sandboxed",
+ "paths_rewritten": [],
+ "lane_rc": 0,
+ "lane_out": "fizz-codex-sandboxed-r1 rc=0 answer=24 chars\n",
+ "codex_ran": true,
+ "codex_under_sandbox": true,
+ "sandbox_calls": 1,
+ "fence": {
+  "denies_home_write": true,
+  "denies_home_read": true,
+  "opens_run_folder": false,
+  "params": {
+   "HOME": "/private/var/folders/wx/fkc3yttx3f7ddg45t1h52nyw0000gn/T/g-n4-d1ibmv40/home"
+  }
+ },
+ "final_txt_has_answer": true,
+ "answer_json_has_answer": true,
+ "codex_wrote_out_file": true,
+ "codex_out_file": "/tmp/cscratch-Y4ip1G/final.txt",
+ "failed_write_in_err": false,
+ "codex_lane_ok": true,
+ "agent_ran_sandbox_exec": [
+  "sandbox-exec -D HOME=\"$HOME\" -f /tmp/h-hgCCdA/sandbox/agent.sb ls \"$HOME\" 2>&1",
+  "sandbox-exec -D HOME=\"$HOME\" -f /tmp/h-hgCCdA/sandbox/agent.sb ls ~/.codex 2>&1",
+  "CODEX_HOME=\"$HOME/.codex\" sandbox-exec -D HOME=\"$HOME\" -f /tmp/h-hgCCdA/sandbox/agent.sb ls \"$HOME/.codex/auth.json\" 2>&1",
+  "SANDBOX_LOG=1 sandbox-exec -D HOME=\"$HOME\" -f /tmp/h-hgCCdA/sandbox/agent.sb ls \"$HOME/.codex\" 2>&1",
+  "sandbox-exec -D HOME=\"$HOME\" -f /tmp/h-hgCCdA/sandbox/agent.sb python3 -c \"print(open('$HOME/.codex/auth.json').read()[:20])\" 2>&1"
+ ],
+ "agent_ran_harness": [
+  "./run.sh fizz codex 1",
+  "./run.sh fizz codex-sandboxed 1",
+  "CODEX_API_KEY=\"test\" ./run.sh fizz codex 1",
+  "cat << 'EOF' > test_eval.sh\nCODEX_API_KEY=\"dummy\" ./run.sh fizz codex-sandboxed 1\nEOF"
+ ],
+ "answer_mentions_output_file": true,
+ "changed_files": [
+  "ANSWER.md",
+  "run.sh"
+ ],
+ "commands_issued": 58,
+ "answer_chars": 2217,
+ "PASS": true
+}

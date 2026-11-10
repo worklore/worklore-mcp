@@ -1,0 +1,69 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..61e80db
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,21 @@
++Added a `codex-sandboxed` lane to `run.sh` that runs Codex inside `sandbox/agent.sb`, mirroring how the `kimi` lane works.
++
++Changes to `run.sh`:
++- Added `codex-sandboxed` to the lane list in the header comment
++- Added `codex_sandboxed_run()` function that:
++  - Creates a scratch HOME directory (`/tmp/chome-XXXXXX`) to pass as HOME inside the sandbox
++  - Creates a scratch output directory (`/tmp/cscratch-XXXXXX`) for Codex's `-o` output file
++  - Runs Codex under `sandbox-exec -f sandbox/agent.sb` with `-D HOME=$REAL`
++  - After the sandboxed command returns, copies `final.txt` from the scratch folder to the run folder
++  - Cleans up both scratch directories
++- Added `codex-sandboxed` case to the lane selector
++
++Colleague's note - what applied:
++- The observation that Codex's `-o` flag writes inside the sandbox and is denied by the sandbox profile's `deny file-write*` rules applied directly. The run folder is under the real home, so writes to `$R/final.txt` would fail with "Operation not permitted".
++- The fix of using a scratch folder in `/tmp` (outside all denied paths) for the output file, then copying it into the run folder after `sandbox-exec` returns, applied directly.
++- The note that stdout/stderr redirects work because the shell opens them before `sandbox-exec` starts was already handled correctly - those redirects remain pointing to the run folder.
++
++What did not apply:
++- The specific flags `--output-last-message`, `--output-dir`, `--out` mentioned for other tools don't apply to Codex, which uses `-o`.
++- The Mistral Vibe-specific details don't apply here.
++- The grading/answer extraction logic was already in place via `check_answer.py` and `answer.json`.
+diff --git a/run.sh b/run.sh
+index c41ad67..2a0feda 100755
+--- a/run.sh
++++ b/run.sh
+@@ -1,7 +1,8 @@
+ #!/usr/bin/env bash
+ # usage: run.sh <task> <lane> [rep]
+-# lanes: codex   Codex CLI, unsandboxed
+-#        kimi    Kimi Code under sandbox/agent.sb (no reading or writing the real home), scratch HOME
++# lanes: codex          Codex CLI, unsandboxed
++#        kimi            Kimi Code under sandbox/agent.sb (no reading or writing the real home), scratch HOME
++#        codex-sandboxed Codex CLI under sandbox/agent.sb (no reading or writing the real home), scratch HOME
+ set -u
+ D="$(cd "$(dirname "$0")" && pwd)"
+ T=$1; A=$2; REP=${3:-1}
+@@ -24,10 +25,24 @@ kimi_run() {
+   local rc=$?; rm -rf "$SH"; return $rc
+ }
+ 
++# Codex under sandbox/agent.sb: same as codex lane but shell can't read/write real home.
++# Uses scratch folder in /tmp for output file since sandbox denies writes to run folder.
++codex_sandboxed_run() {
++  local REAL="$HOME" SH SCRATCH; SH=$(mktemp -d /tmp/chome-XXXXXX); SCRATCH=$(mktemp -d /tmp/cscratch-XXXXXX)
++  ( cd "$W" && export HOME="$SH" && sandbox-exec -D HOME="$REAL" -f "$D/sandbox/agent.sb" \
++      timeout $TO codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox -C "$W" --json \
++      -o "$SCRATCH/final.txt" "$P" < /dev/null > "$R/agent.log" 2> "$R/agent.err" )
++  local rc=$?
++  cp "$SCRATCH/final.txt" "$R/final.txt" 2>/dev/null || true
++  rm -rf "$SH" "$SCRATCH"
++  return $rc
++}
++
+ start=$(date +%s)
+ case $A in
+-  codex) codex_run;;
+-  kimi)  kimi_run;;
++  codex)          codex_run;;
++  kimi)           kimi_run;;
++  codex-sandboxed) codex_sandboxed_run;;
+   *) echo "unknown lane $A"; exit 2;;
+ esac
+ rc=$?

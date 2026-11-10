@@ -1,0 +1,23 @@
+**Answer Summary**
+
+- Added a **codex‑sandboxed** lane to `run.sh` that runs Codex inside `sandbox/agent.sb`.
+- Implemented a temporary scratch HOME and output directory to bypass sandbox write restrictions, mirroring the approach used for the existing `kimi` lane.
+- Updated the usage comment and case statement to expose the new lane.
+- Documented the changes and rationale in `ANSWER.md`.
+
+**What was applied from the colleague’s note**
+
+- **Sandbox execution**: Ran the Codex command via `sandbox‑exec -f sandbox/agent.sb`.
+- **Scratch HOME & output dir**: Created a temporary directory (`/tmp/codex-XXXXXX`) for `HOME` and for the `-o` output file, avoiding denied writes to the real home.
+- **Post‑sandbox copy**: After the sandbox run, moved `final.txt` back into the run folder.
+- **Preserved stdout/stderr**: Kept logs (`agent.log`, `agent.err`) outside the sandbox, as they are opened before `sandbox‑exec`.
+
+**Created / Updated Files**
+
+- **run.sh**
+  - Updated usage comment to list the new lane.
+  - Added `codex_sandboxed_run` function implementing the sandboxed execution.
+  - Added `codex-sandboxed)` case to invoke the new function.
+
+- **ANSWER.md**
+  - Summarizes the modifications and links them to the colleague’s guidance.

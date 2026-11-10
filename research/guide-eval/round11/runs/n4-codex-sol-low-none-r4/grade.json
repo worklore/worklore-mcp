@@ -1,0 +1,51 @@
+{
+ "answer_file": true,
+ "answer_source": "repo",
+ "lanes": [
+  "codex",
+  "codex-sandboxed",
+  "kimi"
+ ],
+ "new_lane": "codex-sandboxed",
+ "paths_rewritten": [],
+ "lane_rc": 0,
+ "lane_out": "fizz-codex-sandboxed-r1 rc=0 answer=0 chars\n",
+ "codex_ran": true,
+ "codex_under_sandbox": true,
+ "sandbox_calls": 1,
+ "fence": {
+  "denies_home_write": true,
+  "denies_home_read": true,
+  "opens_run_folder": false,
+  "params": {
+   "HOME": "/private/var/folders/wx/fkc3yttx3f7ddg45t1h52nyw0000gn/T/g-n4-5ehjfs3p/home",
+   "AGENT_HOME": "/tmp/chome-7vJpyc"
+  }
+ },
+ "final_txt_has_answer": false,
+ "answer_json_has_answer": false,
+ "codex_wrote_out_file": false,
+ "codex_out_file": "/private/var/folders/wx/fkc3yttx3f7ddg45t1h52nyw0000gn/T/g-n4-5ehjfs3p/home/evals/agent-evals/runs/fizz-codex-sandboxed-r1/final.txt",
+ "failed_write_in_err": true,
+ "codex_lane_ok": true,
+ "agent_ran_sandbox_exec": [
+  "/bin/zsh -lc 'command -v codex; command -v sandbox-exec; command -v timeout; ls -l \"$(command -v codex)\" 2>/dev/null; ls -la'",
+  "/bin/zsh -lc 'bash -n run.sh && sandbox-exec -D HOME=\"$HOME\" -D AGENT_HOME=\"/tmp/codex-scratch-check\" -f sandbox/agent.sb /bin/bash -c '\"'if cat \\\"\"'$1\" >/dev/n"
+ ],
+ "agent_ran_harness": [
+  "/bin/zsh -lc \"git status --short && sed -n '1,240p' run.sh && sed -n '1,240p' sandbox/agent.sb\"",
+  "/bin/zsh -lc 'bash -n run.sh && sandbox-exec -D HOME=\"$HOME\" -D AGENT_HOME=\"/tmp/codex-scratch-check\" -f sandbox/agent.sb /bin/bash -c '\"'if cat \\\"\"'$1\" >/dev/n",
+  "/bin/zsh -lc 'git diff --check && git diff -- run.sh sandbox/agent.sb README.md'",
+  "/bin/zsh -lc 'chmod +x .codex-test-bin/codex && PATH=\"$PWD/.codex-test-bin:$PATH\" TEST_REAL_HOME=\"$HOME\" ./run.sh fizz codex-sandboxed 99 && cat runs/fizz-codex"
+ ],
+ "answer_mentions_output_file": true,
+ "changed_files": [
+  "ANSWER.md",
+  "README.md",
+  "run.sh",
+  "sandbox/agent.sb"
+ ],
+ "commands_issued": 11,
+ "answer_chars": 633,
+ "PASS": false
+}

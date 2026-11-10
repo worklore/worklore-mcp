@@ -1,0 +1,3 @@
+The run stopped during startup because Vibe tried to read a Mistral key from the macOS Keychain, and the sandbox correctly blocked `/usr/bin/security`. I added `MISTRAL_API_KEY=unused` to the launcher's `env -i` allowlist in [run-vibe.sh](/tmp/h-mzGHq9/run-vibe.sh) and documented the cause and applicable parts of the colleague’s note in [ANSWER.md](/tmp/h-mzGHq9/ANSWER.md).
+
+`bash -n` and `git diff --check` pass. I did not make a live OpenRouter request, so a successful run remains unverified.

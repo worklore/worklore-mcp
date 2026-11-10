@@ -1,0 +1,3 @@
+I changed [bot.py](/tmp/h-V4oQvH/bot.py) so `save_fact` can update the athlete context without changing the cached coaching instructions. I documented the change and its limits in [ANSWER.md](/tmp/h-V4oQvH/ANSWER.md).
+
+A local fake-LLM check confirmed that the new fact appears in the next tool round while the cached instruction block stays identical. I made no external API calls, so live cache-read counts remain unverified.

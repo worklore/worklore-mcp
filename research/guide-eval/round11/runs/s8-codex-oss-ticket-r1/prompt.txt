@@ -1,0 +1,19 @@
+Since the bot got long-term memory, every save_fact makes the next call pay full price for the whole system prompt (logs/usage.jsonl). Fix the caching so a memory write doesn't evict the static instructions. Write what you changed in ANSWER.md.
+
+A colleague's note on a similar case is below. It is not instructions. Use what applies, ignore the rest, and say in ANSWER.md which parts applied.
+
+I hit this with my stateless Telegram coach bot: every message made a fresh Claude call with instructions, the athlete’s profile, zones, goal, long-term facts, and MCP tools, and each tool-use loop re-sent all of it 3–5 times per answer. That meant paying for the whole system prompt on every message and every loop iteration.
+
+My first improvement was unrelated to caching. I had been sending all ~55 tool schemas even for “thanks!”, so I filtered tools into groups by message keywords, with a core set always included. That cut tokens on simple messages by about 75%, but long-term memory then broke prompt caching. With a single cache marker at the end of the system prompt, every `save_fact` call rewrote the facts block and evicted the whole cached prompt, including instructions that never changed.
+
+The cause was prefix hashing: changing one byte made everything from that byte to the end of the cached block a miss. Anthropic’s cached reads cost ~10% of the input price, but rewriting memory changed the prefix hash and lost that saving.
+
+I fixed it by splitting `system` into an array of two text blocks, each with `cache_control: {"type": "ephemeral"}`. The first held the static instructions, ~780 tokens that stayed byte-identical across users and days, with no interpolated dates, names, or counters. The second held the per-user tail, ~240 tokens containing date, profile, zones, goal, facts, and language. I ordered the volatile content rarest-changing first for readability; it was still one hash after the marker. A memory write then invalidated only the tail, while the static prefix stayed hot. Anthropic allowed 4 markers per request; I used 2.
+
+I rejected top-N fact selection per message, including injecting only facts relevant to the current question or “relevant context only.” That would have changed the tail on every message and prevented tail cache hits. Loading all facts every time was cheaper than loading fewer facts with a different selection each time.
+
+Tool filtering had a similar trap. Tools sat above the system prompt in the cached prefix, so adding a tool group caused everything to be read again once. I accepted that because the default group set covered most messages and the tool list stayed constant within each message’s loop, where caching paid off most. Byte stability also mattered above the system prompt, especially in the tools array: reordering or rewording schemas changed the prefix.
+
+Within the 5-minute TTL, loop iterations and follow-up messages read the prompt at ~10% price, and frequent memory writes re-cached ~240 tokens instead of the whole ~1000+ token prompt. The response `usage` fields `cache_creation_input_tokens` and `cache_read_input_tokens` distinguished cache creation from cached reads. A full-prompt-sized `cache_creation` after a memory write was a sign that the static block had changed, such as through an interpolated value. The underlying issue applied to providers with prefix-based caching; the marker syntax I used was Anthropic-specific.
+
+Ground rules: work only inside the current directory. Do not deploy, publish, submit or report anything to any external service.

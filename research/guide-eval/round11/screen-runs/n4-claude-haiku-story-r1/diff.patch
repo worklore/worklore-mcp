@@ -1,0 +1,124 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..4d8249d
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,54 @@
++# Answer: `codex-sandboxed` lane
++
++## What I did
++
++Added a lane `codex-sandboxed` to `run.sh`. It runs the same `codex exec` call as the `codex` lane, with the same flags and prompt, under `sandbox/agent.sb`, the same profile the `kimi` lane uses. `sandbox/agent.sb` is unchanged.
++
++- **Scratch `CODEX_HOME`.** `HOME` and `CODEX_HOME` point at a fresh folder in `/tmp`. Codex keeps its state there (sqlite files, sessions, logs), so nothing is written under the real home.
++- **Config and login copied in.** The real `~/.codex/config.toml` and `~/.codex/auth.json` are copied into the scratch folder before the run. Without them the run can't authenticate and can't match the `codex` lane's config. The copies are deleted after the run.
++- **`-o` goes to scratch.** Codex writes its last message to `$OUT/final.txt` in `/tmp`, and the file is copied to `runs/<task>-codex-sandboxed-rN/final.txt` after `sandbox-exec` returns.
++- **Checks.** The lane prints a warning on stderr if `final.txt` is missing or empty, or if `agent.err` contains "Operation not permitted".
++- `README.md` has a short entry for the new lane.
++
++Usage: `./run.sh <task> codex-sandboxed [rep]`.
++
++## Colleague's note: what applied
++
++- **Applied: scratch folder in `/tmp`, copy out after `sandbox-exec` returns.** The README puts the harness in `~/evals/agent-evals`. In that layout the run folder is under `HOME`, which the profile denies, so `-o` into the run folder would fail. In this checkout the repo is in `/private/tmp`, so it would not fail here. I used the same approach anyway so the lane doesn't depend on where the repo sits.
++- **Applied: stdout and stderr stay redirected straight into the run folder.** The existing redirects already do this. I kept them.
++- **Applied: don't trust the exit code alone.** The lane checks that `final.txt` is non-empty and greps `agent.err` for "Operation not permitted", printing a warning if either fails.
++- **Not verified: the claim that Codex 0.160 exits 0 after a refused `-o` write.** I did not run that failure case. The new lane does not depend on it.
++- **Not applicable: the Mistral Vibe part.** There is no Vibe lane here.
++- **Not applicable: the premise that the run folder is under `HOME`.** It isn't in this checkout. See the first applied point for the README layout.
++- **Ground rules.** I did not deploy, publish, submit, or report anything to an external service. The smoke run sent the `fizz` task to OpenAI through Codex, which is what the `codex` lane does by design.
++
++## Verification
++
++- `bash -n run.sh`: passes.
++- Profile probe, run with `sandbox-exec -D HOME=$HOME -f sandbox/agent.sb`:
++  - reading `~/.codex/config.toml` fails with "Operation not permitted";
++  - creating a file in the real home fails with "Operation not permitted";
++  - writing to `/tmp` succeeds;
++  - reading a copy of the config from `/tmp` succeeds.
++- Smoke run `./run.sh fizz codex-sandboxed 1`:
++  - exit code 0, about 26 s;
++  - `final.txt` has a 265-character final message, and `answer.json` reads it (`source: final.txt`);
++  - no "Operation not permitted" in `agent.err`, and no warnings;
++  - the scratch folders were removed.
++  - Output is in `runs/fizz-codex-sandboxed-r1/`, which is git-ignored.
++  - `agent.err` has two `rmcp` lines about PostHog MCP OAuth. They come from the copied config and are not sandbox errors. I did not compare them with the unsandboxed lane.
++
++## Not verified, and limits
++
++- I did not check from inside the Codex run that its agent shell is denied real-home access. The probe above uses the same profile through `sandbox-exec`, but not Codex's child shell. A check would need a run that asks the agent to read a home file.
++- **The login is readable by the agent's shell.** The copied `auth.json` sits in `/tmp` during the run, and the agent's shell runs under the same profile, so it can read it. Codex has to hold the login to call the API, and the profile cannot separate Codex from its shell. The lane keeps the rest of the real home unreadable, not the token.
++- **README mismatch I did not change.** The README says Codex "logs in with an API key from the environment (`CODEX_API_KEY`)". On this machine `CODEX_API_KEY` is unset, and Codex authenticates from `~/.codex/auth.json`. The new lane depends on `auth.json`, so the README sentence is wrong for this setup. Please confirm which one you intend before I change the README.
++
++## Files
++
++- `run.sh`: new `codex_sandbox_run` function, the `codex-sandboxed` case, and the lane list in the header.
++- `README.md`: entry for the new lane.
++- `ANSWER.md`: this file.
++- `runs/fizz-codex-sandboxed-r1/`: smoke-run output. Not committed.
++
++Nothing is committed.
+diff --git a/README.md b/README.md
+index 9d81ca7..cdecf6d 100644
+--- a/README.md
++++ b/README.md
+@@ -17,6 +17,11 @@ run folder `runs/<task>-<lane>-r<rep>/`:
+ Lanes:
+ 
+ - `codex`: Codex CLI (`codex exec --json`), unsandboxed.
++- `codex-sandboxed`: the same Codex run, under the same profile as `kimi`: no
++  reading or writing the real home. Codex's state goes to a scratch
++  `CODEX_HOME` in `/tmp`; its `config.toml` and `auth.json` are copied in for
++  the run, so the agent's shell can read that login too. `-o` writes to scratch
++  and the file is copied into the run folder after the sandbox exits.
+ - `kimi`: Kimi Code. Its output goes to Moonshot, so its shell runs under the
+   macOS sandbox profile `sandbox/agent.sb` (no reading or writing the real
+   home), with an empty scratch HOME. Kimi's own install and sessions live in
+diff --git a/run.sh b/run.sh
+index c41ad67..50ac12f 100755
+--- a/run.sh
++++ b/run.sh
+@@ -1,7 +1,8 @@
+ #!/usr/bin/env bash
+ # usage: run.sh <task> <lane> [rep]
+-# lanes: codex   Codex CLI, unsandboxed
+-#        kimi    Kimi Code under sandbox/agent.sb (no reading or writing the real home), scratch HOME
++# lanes: codex           Codex CLI, unsandboxed
++#        codex-sandboxed Codex CLI under sandbox/agent.sb (no reading or writing the real home), scratch CODEX_HOME
++#        kimi            Kimi Code under sandbox/agent.sb (no reading or writing the real home), scratch HOME
+ set -u
+ D="$(cd "$(dirname "$0")" && pwd)"
+ T=$1; A=$2; REP=${3:-1}
+@@ -15,6 +16,24 @@ codex_run() {
+       -o "$R/final.txt" "$P" < /dev/null > "$R/agent.log" 2> "$R/agent.err" )
+ }
+ 
++# The codex lane's run under sandbox/agent.sb, as kimi does it. Codex keeps its state in CODEX_HOME, a scratch folder
++# in /tmp; its config and login are copied in for the run. The copied login is readable by the agent's shell too,
++# since Codex must hold it to call the API. -o writes into scratch, not the run folder: the profile denies writes
++# under the real home, and Codex exits 0 even when its -o write is refused, so the file is copied out afterwards.
++codex_sandbox_run() {
++  local REAL="$HOME" CH OUT rc
++  CH=$(mktemp -d /tmp/codex-home-XXXXXX); OUT=$(mktemp -d /tmp/codex-out-XXXXXX)
++  cp "$REAL/.codex/config.toml" "$REAL/.codex/auth.json" "$CH/" || { echo "cannot copy codex config/login from $REAL/.codex"; rm -rf "$CH" "$OUT"; return 1; }
++  ( cd "$W" && export HOME="$CH" CODEX_HOME="$CH" && sandbox-exec -D HOME="$REAL" -f "$D/sandbox/agent.sb" \
++      timeout $TO codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox -C "$W" --json \
++      -o "$OUT/final.txt" "$P" < /dev/null > "$R/agent.log" 2> "$R/agent.err" )
++  rc=$?
++  cp "$OUT/final.txt" "$R/final.txt" 2>/dev/null
++  [ -s "$R/final.txt" ] || echo "warning: no final message in $R/final.txt" >&2
++  grep -q "Operation not permitted" "$R/agent.err" && echo "warning: 'Operation not permitted' in $R/agent.err" >&2
++  rm -rf "$CH" "$OUT"; return $rc
++}
++
+ # Kimi's output goes to Moonshot: its shell runs under sandbox/agent.sb with an empty scratch HOME.
+ kimi_run() {
+   local REAL="$HOME" SH; SH=$(mktemp -d /tmp/khome-XXXXXX)
+@@ -27,6 +46,7 @@ kimi_run() {
+ start=$(date +%s)
+ case $A in
+   codex) codex_run;;
++  codex-sandboxed) codex_sandbox_run;;
+   kimi)  kimi_run;;
+   *) echo "unknown lane $A"; exit 2;;
+ esac

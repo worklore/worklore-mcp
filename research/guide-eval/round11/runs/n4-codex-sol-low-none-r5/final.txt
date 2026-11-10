@@ -1,0 +1,3 @@
+Added the `codex-sandboxed` lane to [run.sh](/tmp/h-AMEVUR/run.sh). It uses the same Codex command and outputs as the `codex` lane, with scratch `HOME` and `CODEX_HOME` inside the macOS sandbox. I updated [agent.sb](/tmp/h-AMEVUR/sandbox/agent.sb) so Codex cannot use Kimi’s exception for accessing the real home.
+
+The change and verification are recorded in [ANSWER.md](/tmp/h-AMEVUR/ANSWER.md). Shell syntax, sandbox profile launch, and diff checks passed. I did not run an agent task because it would contact an external service.

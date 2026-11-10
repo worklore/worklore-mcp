@@ -1,0 +1,3 @@
+Added Prisma ORM with `User` and `Post` models, applied the migration to the local PostgreSQL database, and added [script.ts](/tmp/h-IOeqig/script.ts) to create a user with two posts and print all users with their posts. The setup and version choice are recorded in [ANSWER.md](/tmp/h-IOeqig/ANSWER.md).
+
+Verified `npx prisma generate`, `npx tsx script.ts`, and `npx tsc --noEmit`.

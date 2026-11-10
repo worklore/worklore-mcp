@@ -1,0 +1,4 @@
+Reading additional input from stdin...
+2026-11-09T19:46:51.251256Z ERROR rmcp::transport::worker: worker quit with fatal: Transport channel closed, when AuthRequired(AuthRequiredError { www_authenticate_header: "Bearer resource_metadata=\"https://mcp.posthog.com/.well-known/oauth-protected-resource/mcp\"" })
+2026-11-09T19:47:48.099991Z ERROR codex_core::tools::router: error=apply_patch verification failed: invalid patch: multiple operations target /tmp/h-n0mQrh/src/ramp.ts
+2026-11-09T19:48:19.542345Z ERROR codex_core::tools::router: error=exec_command failed: CreateProcess { message: "Rejected(\"`/bin/zsh -lc 'rm -rf node_modules && git status --short && cat package.json'` rejected: rm -f style commands are not permitted. Use a safer approach\")" }

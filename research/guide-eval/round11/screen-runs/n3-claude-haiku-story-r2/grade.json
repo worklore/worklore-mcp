@@ -1,0 +1,36 @@
+{
+ "answer_file": true,
+ "answer_source": "repo",
+ "deploy1_rc": 0,
+ "deploy1_missing": [],
+ "deploy2_rc": 0,
+ "deploy2_tail": "",
+ "calls_deploy2": 11,
+ "keys_kept": 7,
+ "gaps": [],
+ "gap_calls": 0,
+ "max_missing_at_once": 0,
+ "stale_left": [],
+ "stale_expected": [
+  "a/bob",
+  "old-map.js",
+  "s/river-gauge-alerts",
+  "s/trail-gpx-cleanup"
+ ],
+ "new_missing": [],
+ "pages_html": true,
+ "failed_or_unsupported_aws_calls": [],
+ "absolute_aws_rewritten": [],
+ "agent_ran_aws": [
+  "mkdir -p /tmp/fakeaws-test/bin && cat > /tmp/fakeaws-test/bin/aws <<'EOF'\n#!/usr/bin/env bash\n# Fake aws CLI: logs every call; answers list-objects-v2 from a fi"
+ ],
+ "agent_ran_deploy": true,
+ "answer_mentions_window": true,
+ "changed_files": [
+  "ANSWER.md",
+  "deploy.sh"
+ ],
+ "commands_issued": 8,
+ "answer_chars": 4074,
+ "PASS": true
+}

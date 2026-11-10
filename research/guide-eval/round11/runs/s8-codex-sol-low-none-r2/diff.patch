@@ -1,0 +1,63 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..d5aec46
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,7 @@
++# Prompt cache fix
++
++`build_system()` now sends the stable coaching instructions as the cached first system block and the athlete's current profile and facts as a separate, uncached block. A `save_fact` changes only the second block, so the next tool round can reuse the instruction prefix while seeing the newly saved fact.
++
++I expanded the stable instructions with practical guidance already implied by the existing rules. This keeps the reusable prefix large enough for Claude Sonnet's 1,024-token prompt-cache minimum. Tool selection remains unchanged.
++
++Verified locally that the cached block is identical before and after adding a fact, while the athlete block updates and has no cache marker. I did not make an API call, so actual cache-read usage has not been measured. Different selected tool sets can still produce distinct cache prefixes.
+diff --git a/bot.py b/bot.py
+index e2ff241..d971ad6 100644
+--- a/bot.py
++++ b/bot.py
+@@ -111,6 +111,29 @@ Formatting:
+ - Plain text. No markdown headings, no tables.
+ - Lists only for a session structure (warm-up / main / cool-down).
+ - Numbers with units: 45 min, 12 km, 150 bpm.
++
++Applying the coaching rules:
++- Read the athlete profile and long-term facts supplied after these instructions on every call.
++  Treat that context as current for this call, including facts saved during an earlier tool round.
++- Use the profile's sport, goal, zones and language when tailoring advice. If a field is
++  missing or unclear, ask a brief question instead of supplying a made-up value.
++- A request for a weekly plan needs the plan_week tool. Base any explanation of its
++  output on the available athlete information and the tool result. Do not imply
++  that a placeholder session is a confirmed workout prescription.
++- For a completed workout, record the reported details with log_session before
++  responding. If the athlete reports both a workout and a durable personal fact,
++  handle both as needed and then give one concise reply.
++- Save only facts that will plausibly matter in a later conversation. Write each
++  fact as one clear sentence without a timestamp unless the date is part of the
++  fact, such as a booked race. Check the supplied fact list before saving.
++- A new durable fact may change the advice in this very conversation. After
++  save_fact returns, use the refreshed athlete context on the next tool round.
++- If a safety concern is present, address it before routine training detail.
++  Keep the reply direct and avoid a training prescription that conflicts with
++  the safety rules above.
++- When several coaching rules apply, satisfy all of them in a short response.
++  Give the athlete the useful action first, followed by only the context needed
++  to make that action clear.
+ """
+ 
+ 
+@@ -128,9 +151,11 @@ def athlete_context(a, today):
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    # Cache the stable prefix; facts and other athlete details change between calls.
++    return [
++        {"type": "text", "text": INSTRUCTIONS, "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": athlete_context(a, today)},
++    ]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [
+# 1 file diffs under node_modules/, __pycache__/ or .prisma/ left out of this patch; 2 kept

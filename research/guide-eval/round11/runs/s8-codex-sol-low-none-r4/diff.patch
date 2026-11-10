@@ -1,0 +1,50 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..f11f0ea
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,7 @@
++# Prompt cache fix
++
++`build_system()` now sends the coaching instructions as a stable system block with the cache breakpoint immediately after it. The athlete profile, date, and long-term facts are in a following uncached block. When `save_fact` updates memory, the next tool round receives the new fact without changing the cached instruction prefix.
++
++I added stable guidance on using athlete context to keep that prefix large enough for the model's prompt-cache minimum. Tool selection remains as before; calls with different selected tool sets can still have separate cache entries because tools precede the system prompt in the request.
++
++Verified locally with a fake LLM: a `save_fact` tool round kept the cached block identical, exposed the new fact in the next request, and left the new fact outside the cache breakpoint. `bot.py` also compiled successfully. No live API call was made, so actual cache-read token counts remain to be checked in future usage logs.
+diff --git a/bot.py b/bot.py
+index e2ff241..cf07cb3 100644
+--- a/bot.py
++++ b/bot.py
+@@ -111,6 +111,17 @@ Formatting:
+ - Plain text. No markdown headings, no tables.
+ - Lists only for a session structure (warm-up / main / cool-down).
+ - Numbers with units: 45 min, 12 km, 150 bpm.
++
++How to use the athlete context:
++- The athlete context follows these rules in a separate system block. Read it on every request.
++- The profile gives the athlete's current name, sport, goal, zones and language. Treat those values as authoritative for this reply.
++- Long-term facts are durable details remembered from earlier chats. Use them when relevant to the question and avoid repeating them back without a reason.
++- A new fact saved during a tool round can appear in the athlete context on the next round. Use the updated list when deciding whether another fact needs saving.
++- If a new statement conflicts with a remembered fact, follow the athlete's latest statement for the current reply and save the updated durable detail when appropriate.
++- If the profile or facts do not contain a needed training number, ask the athlete for it. A goal, a zone boundary or a remembered preference does not imply recent volume or fitness.
++- When giving a session, make its duration and effort clear. For an easy session, use the athlete's Z1 or Z2 boundaries or an easy RPE. For a hard session, include recovery and keep the total load appropriate to the available history.
++- When interpreting a completed session, acknowledge what was reported and avoid inferring unreported distance, heart rate or pace.
++- Keep tool results and athlete facts distinct: a tool result describes what happened in this conversation; a saved fact describes a durable detail for later conversations.
+ """
+ 
+ 
+@@ -128,9 +139,11 @@ def athlete_context(a, today):
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    # Cache the stable rules; facts and other per-athlete data may change after a tool call.
++    return [
++        {"type": "text", "text": INSTRUCTIONS, "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": athlete_context(a, today)},
++    ]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [

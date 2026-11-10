@@ -1,0 +1,3 @@
+Vibe was trying to run `/usr/bin/security` during startup to inspect the macOS Keychain. The sandbox correctly blocked it, causing exit 2 before the prompt ran.
+
+I updated [run-vibe.sh](/tmp/h-mbPO5X/run-vibe.sh) to disable Vibe’s Keychain lookup and documented the cause in [ANSWER.md](/tmp/h-mbPO5X/ANSWER.md). The sandbox still blocks Keychain access. Shell syntax and the local Keychain bypass check passed; I did not run a live OpenRouter request.

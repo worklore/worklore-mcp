@@ -1,0 +1,3 @@
+Added the `codex-sandboxed` lane to [run.sh](/tmp/h-eOY9IF/run.sh). It runs the same Codex command under `sandbox/agent.sb` with a temporary HOME and copies Codex’s final message into the run folder afterward. I updated [README.md](/tmp/h-eOY9IF/README.md) and documented the changes and applicable parts of the colleague’s note in [ANSWER.md](/tmp/h-eOY9IF/ANSWER.md).
+
+Shell syntax and diff checks passed, and a direct sandbox check confirmed that a readable file in the real home was inaccessible inside the sandbox. I did not run Codex: automatic approval review rejected the mock run command because it included temporary-file cleanup.

@@ -1,0 +1,67 @@
+{
+ "effect_version": "4.1.2",
+ "platform_version": null,
+ "platform_node_version": null,
+ "schema_pkg_version": null,
+ "package_json_effect": {
+  "effect": "^4.1.2"
+ },
+ "on_effect_4": true,
+ "tsc_ok": true,
+ "tsc_errors": 0,
+ "tsc_tail": "",
+ "tests": {
+  "ok": true,
+  "retries_then_ok": true,
+  "unknown_currency": true,
+  "invalid_response": true,
+  "gives_up_after_3_retries": true
+ },
+ "runs": {
+  "ok": {
+   "exit": 0,
+   "out": "1 USD = 0.9214 EUR\n",
+   "err": "",
+   "requests": 1
+  },
+  "flaky": {
+   "exit": 0,
+   "out": "1 USD = 0.9214 EUR\n",
+   "err": "",
+   "requests": 3
+  },
+  "unknown": {
+   "exit": 1,
+   "out": "",
+   "err": "unknown currency: XYZ\n",
+   "requests": 1
+  },
+  "bad": {
+   "exit": 2,
+   "out": "",
+   "err": "invalid response\n",
+   "requests": 1
+  },
+  "down": {
+   "exit": 3,
+   "out": "",
+   "err": "HTTP 503\n",
+   "requests": 4
+  }
+ },
+ "tests_passed": 5,
+ "uses": {
+  "effect_http": true,
+  "platform_pkg": false,
+  "context_service": true,
+  "context_tag": false,
+  "effect_service": false,
+  "schema": true,
+  "fetch_direct": false
+ },
+ "read_shipped_docs": false,
+ "read_source": true,
+ "web_use": false,
+ "PASS": true,
+ "reinstalled": false
+}

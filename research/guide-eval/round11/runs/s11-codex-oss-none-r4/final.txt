@@ -1,0 +1,10 @@
+**Answer**
+
+- **Cause** – `related()` returned similarity scores as Python `float`s. DynamoDB (and the in‑memory `FakeTable`) reject floats, raising `TypeError: Float types are not supported. Use Decimal types instead.` This error appears on the second publish when the `similar` list is non‑empty, causing a 500 response.
+
+- **Fix** – Convert each similarity score to a `Decimal` before storing it. The updated `related()` now:
+  1. Imports `Decimal`.
+  2. Converts `similarity()` output with `Decimal(str(...))`.
+  3. Documents the reason for the conversion.
+
+- **Result** – Publishing a story now succeeds every time; the `similar` field contains `Decimal` scores, which DynamoDB accepts, eliminating the 500 error.

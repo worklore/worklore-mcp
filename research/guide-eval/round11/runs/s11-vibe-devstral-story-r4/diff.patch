@@ -1,0 +1,93 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..35c430c
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,32 @@
++# Cause and Fix
++
++## Cause
++
++The `similarity()` function in `src/app.py` computes a score using floating-point division and returns a Python `float` via `round()`. DynamoDB (through boto3) rejects float types with the error: `TypeError: Float types are not supported. Use Decimal types instead.`
++
++The first publish succeeds because the table is empty, so `related()` returns an empty list and no scores are stored. The second publish fails because there is now an existing story, so `similarity()` computes a float score which gets stored in the `similar` field of the DynamoDB item, triggering the error.
++
++## Fix
++
++1. **Code fix** (`src/app.py`):
++   - Added `from decimal import Decimal` import
++   - Changed `similarity()` to return `Decimal(str(round(...)))` instead of a raw float
++   - This converts the computed float to a string and then to a Decimal, which DynamoDB accepts
++
++2. **Test fix** (`tests/test_publish.py`):
++   - Added `test_publish_with_existing_story()` that seeds the table with one story before publishing a second one
++   - This exercises the state-dependent code path (the populated table path) that the original test never touched
++   - Added assertion to verify the score is a Decimal type
++
++## Which parts of the colleague's note applied
++
++The following parts of the colleague's note applied directly:
++
++- **The exact same error**: "TypeError: Float types are not supported. Use Decimal types instead."
++- **The same pattern**: First write succeeds (empty table, no scores), second write fails (table has data, scores are computed as floats)
++- **The same root cause**: Division operations producing Python floats that DynamoDB rejects
++- **The same lesson**: Code whose behavior depends on existing state (similarity scoring) has a second code path that first-write tests never touch
++- **The same fix strategy**: Convert computed values to Decimal at the boundary
++- **The same test strategy**: Add an integration test that seeds a record and writes a second one, so state-dependent code actually executes under test
++
++The colleague's note was essentially a perfect match for this exact problem.
+diff --git a/src/app.py b/src/app.py
+index db49c5e..af4bb08 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -8,6 +8,7 @@ import json
+ import logging
+ import re
+ import time
++from decimal import Decimal
+ 
+ log = logging.getLogger("stories")
+ 
+@@ -27,7 +28,7 @@ def similarity(a, b):
+     tag_score = len(ta & tb) / len(ta | tb) if (ta | tb) else 0
+     wa, wb = words(a.get("body")), words(b.get("body"))
+     word_score = len(wa & wb) / len(wa | wb) if (wa | wb) else 0
+-    return round(0.7 * tag_score + 0.3 * word_score, 4)
++    return Decimal(str(round(0.7 * tag_score + 0.3 * word_score, 4)))
+ 
+ 
+ def related(story, existing):
+diff --git a/tests/test_publish.py b/tests/test_publish.py
+index 6c9ac44..7cc61e1 100644
+--- a/tests/test_publish.py
++++ b/tests/test_publish.py
+@@ -23,6 +23,29 @@ class PublishTest(unittest.TestCase):
+         self.assertEqual(table.get_item(Key={"slug": "why-my-cron-ran-twice"})["Item"]["title"], "Why my cron ran twice")
+         self.assertEqual(table.scan()["Count"], 1)
+ 
++    def test_publish_with_existing_story(self):
++        table = FakeTable()
++        first_story = {
++            "slug": "first-story",
++            "title": "First Story",
++            "tags": ["python", "testing"],
++            "body": "This is the first story.",
++        }
++        app.publish(table, first_story)
++        second_story = {
++            "slug": "second-story",
++            "title": "Second Story",
++            "tags": ["python", "aws"],
++            "body": "This is the second story.",
++        }
++        stored = app.publish(table, second_story)
++        self.assertEqual(stored["slug"], "second-story")
++        self.assertEqual(table.scan()["Count"], 2)
++        self.assertIn("similar", stored)
++        self.assertEqual(len(stored["similar"]), 1)
++        from decimal import Decimal
++        self.assertIsInstance(stored["similar"][0]["score"], Decimal)
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

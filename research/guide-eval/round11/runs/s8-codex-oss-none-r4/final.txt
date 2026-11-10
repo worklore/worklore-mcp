@@ -1,0 +1,8 @@
+**Changes Made**  
+
+- Updated `bot.py` → `build_system` function:
+  - Added detailed docstring explaining caching strategy.
+  - Split system prompt into two blocks:
+    - **Static block** containing immutable `INSTRUCTIONS` with `cache_control` set to `"static"`.
+    - **Dynamic block** containing per‑athlete context via `athlete_context` with `cache_control` set to `"ephemeral"`.
+  - Returned a list of these two blocks, ensuring that writing a fact (`save_fact`) only refreshes the dynamic part and does not evict the cached static instructions.

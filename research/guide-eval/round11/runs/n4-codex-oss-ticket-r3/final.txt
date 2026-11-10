@@ -1,0 +1,21 @@
+**Answer**
+
+- Added a **`codex-sandboxed`** lane to `run.sh`.
+- Implemented `codex_sandboxed_run()`:
+  - Runs Codex inside `sandbox/agent.sb` just like the `kimi` lane.
+  - Uses a temporary fake `HOME` (`/tmp/khome-XXXXXX`) so the agent cannot touch the real home.
+  - Writes Codex’s final output to a scratch directory (`/tmp/codex-sb-XXXXXX`) outside the sandbox.
+  - After the sandbox finishes, copies `final.txt` from the scratch location back into the run folder.
+  - Cleans up both the fake home and scratch directories.
+- Updated the lane selector in `run.sh` to handle the new `codex-sandboxed` option.
+- Updated the lane description comment at the top of `run.sh`.
+
+**Parts of the colleague’s note that were applied**
+
+- Reused the `sandbox-exec -f sandbox/agent.sb` pattern from the `kimi` lane.
+- Prevented reads/writes to the real `$HOME` using `-D HOME=` and a fake HOME directory.
+- Created a temporary scratch folder in `/tmp` for Codex’s `-o` output, avoiding sandbox‑denied writes.
+- Copied the output file out of the sandbox after execution.
+- Cleaned up temporary directories after the run.
+
+The other details (specific error messages, handling of other agents) were not needed for this task. Running `./run.sh <task> codex-sandboxed` now executes Codex in a sandboxed environment while still producing the expected artifacts in the run folder.

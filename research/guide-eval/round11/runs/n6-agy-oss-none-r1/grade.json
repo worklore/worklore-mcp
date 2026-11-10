@@ -1,0 +1,59 @@
+{
+ "answer_file": false,
+ "hiero_version": null,
+ "hashgraph_version": "2.81.0",
+ "package_json_sdk": {
+  "@hashgraph/sdk": "*"
+ },
+ "imports_hiero": false,
+ "imports_hashgraph": true,
+ "on_current_sdk": false,
+ "tsc_ok": true,
+ "tsc_tail": "",
+ "cases": [
+  {
+   "exit": 1,
+   "only_hex": false,
+   "err_tail": "search/guide-eval/round11/runs/n6-agy-oss-none-r1/repo/src/transfer.ts:41:13)\n    at ModuleJob.run (node:internal/modules/esm/module_job:561:25)\n    at async node:internal/modules/esm/loader:647:26\n    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)\n\nNode.js v24.22.2\n",
+   "verify": {
+    "is_transfer": true,
+    "transfers": {
+     "0.0.2001": "-100000000",
+     "0.0.2002": "100000000"
+    },
+    "amounts_ok": true,
+    "memo_ok": true,
+    "node_ok": true,
+    "txid_ok": true,
+    "error": "Error: transaction must have been frozen before calculating the hash will be stable, try calling `freeze`",
+    "ok": false
+   }
+  },
+  {
+   "exit": 1,
+   "only_hex": false,
+   "err_tail": "search/guide-eval/round11/runs/n6-agy-oss-none-r1/repo/src/transfer.ts:41:13)\n    at ModuleJob.run (node:internal/modules/esm/module_job:561:25)\n    at async node:internal/modules/esm/loader:647:26\n    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)\n\nNode.js v24.22.2\n",
+   "verify": {
+    "is_transfer": true,
+    "transfers": {
+     "0.0.48151": "-100000000",
+     "0.0.62342": "100000000"
+    },
+    "amounts_ok": true,
+    "memo_ok": true,
+    "node_ok": true,
+    "txid_ok": true,
+    "error": "Error: transaction must have been frozen before calculating the hash will be stable, try calling `freeze`",
+    "ok": false
+   }
+  }
+ ],
+ "output_ok": false,
+ "only_hex": false,
+ "read_skill_md": false,
+ "web_use": true,
+ "npm_looked_up": [],
+ "PASS": false,
+ "WORKS_ON_OLD_SDK": false,
+ "reinstalled": false
+}

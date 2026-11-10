@@ -1,0 +1,15 @@
+diff --git a/run.sh b/run.sh
+index c41ad67..962602c 100755
+--- a/run.sh
++++ b/run.sh
+@@ -1,7 +1,8 @@
+ #!/usr/bin/env bash
+ # usage: run.sh <task> <lane> [rep]
+-# lanes: codex   Codex CLI, unsandboxed
+-#        kimi    Kimi Code under sandbox/agent.sb (no reading or writing the real home), scratch HOME
++# lanes: codex               Codex CLI, unsandboxed
++#        kimi                Kimi Code under sandbox/agent.sb (no reading or writing the real home), scratch HOME
++#        codex-sandboxed     Codex CLI run inside sandbox/agent.sb, sandboxed HOME, output via temporary scratch
+ set -u
+ D="$(cd "$(dirname "$0")" && pwd)"
+ T=$1; A=$2; REP=${3:-1}

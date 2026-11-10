@@ -1,0 +1,36 @@
+**What I did**
+
+- Installed the current Prisma 8 (`prisma@latest`) and its PostgreSQL runtime `@prisma/orm-postgres`.
+- Ran `npx prisma@latest orm init --yes --target postgres --authoring psl` which scaffolded:
+  - `src/prisma/contract.prisma`
+  - `src/prisma/db.ts`
+  - `prisma.config.ts`
+  - generated contract files and docs.
+- Updated the generated `src/prisma/contract.prisma` to match the requested models:
+  - `User` with unique `email` and optional `name`.
+  - `Post` with `title`, optional `content`, `published` default `false`, and required author relation.
+- Ran `npx prisma contract emit` to regenerate `contract.json`/`contract.d.ts`.
+- Executed `npx prisma db init` to create the `User` and `Post` tables in the local PostgreSQL database.
+- Added a root‑level script **`script.ts`** that:
+  1. Connects to the DB (`await using conn = await db.connect({...})`).
+  2. Creates a user and two posts (one published, one not).
+  3. Retrieves all users with their posts via `select(...).all()`.
+  4. Prints the JSON result.
+- Added a minimal `.env` with a placeholder `DATABASE_URL` so the script runs with `npx tsx script.ts`.
+
+**Which parts of the colleague’s note applied**
+
+- **Version choice** – “current” means Prisma 8, not the older 7 line.
+- **`prisma orm init --yes`** – ensured the CLI didn’t wait for interactive answers.
+- **Edit contract → `prisma contract emit`** – followed the prescribed workflow.
+- **`prisma db init`** – used to create the tables.
+
+Other notes (telemetry, skill sync, npm audit warnings) were left untouched as they aren’t required for the task.
+
+You can now run the script:
+
+```bash
+npx tsx script.ts
+```
+
+and see the created user and their posts printed to the console.

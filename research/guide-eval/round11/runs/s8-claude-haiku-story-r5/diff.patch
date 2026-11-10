@@ -1,0 +1,178 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..53d4f2d
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,81 @@
++# Answer: keep the static instructions cached through `save_fact` writes
++
++## Cause
++
++`build_system()` returned one text block: `INSTRUCTIONS + athlete_context(...)`, with a single
++`cache_control` marker at the end. The cache is a prefix hash, so any change in the athlete
++tail (a new fact, a new day) changes the hash of the whole block. `logs/usage.jsonl` shows it:
++after each `save_fact`, the next call has `cache_read_input_tokens: 0` and
++`cache_creation_input_tokens` back to the full prompt size (about 1050).
++
++## What changed
++
++- `bot.py`, `build_system()`: the system prompt is now two text blocks, each with
++  `cache_control: ephemeral`.
++  - Block 1 is `INSTRUCTIONS` only. It is byte-identical for every athlete and every day.
++  - Block 2 is `athlete_context()`: date, athlete, zones, goal, facts, language.
++  - A `save_fact` or a day change now re-caches only block 2. The static prefix stays hot.
++- `tests/test_cache_split.py` (new): offline unit tests. They check the two-marker layout,
++  that block 1 is identical across athletes and days, that a fact write changes only block 2,
++  and that block 1 contains no interpolated values. Run with
++  `python3 -m unittest tests/test_cache_split.py`. All 4 pass.
++- `README.md`: the caching paragraph now describes the two-block layout.
++
++Nothing else changed. The tools, the tool loop, and the usage log are the same. The only
++request change is that `system` is now a list of two blocks instead of one.
++
++## Colleague's note: what applied and what didn't
++
++Applied:
++- Two `cache_control: ephemeral` markers, instructions first, per-user tail second. This is the
++  core of the change.
++- Keep block 1 free of interpolated values (dates, names, counters). The test enforces this.
++- Read `usage` on each response to verify (see below).
++
++Did not apply, or already in place:
++- Top-N fact selection per message. The bot already loads all facts every time, so there is
++  nothing to change.
++- Tool filtering. It was already done by keyword in March (see `NOTES.md`), so I left it alone.
++- The "4 markers" point. We use 2, which is enough.
++
++Did not carry over: the note's numbers (about 780 static tokens) are for its own prompt. Ours
++is smaller, and that matters, as described next.
++
++## Risk: the 1024-token minimum (not verified live)
++
++Anthropic only caches a prefix that is at least 1024 tokens long for Sonnet models
++(`MODEL = "claude-sonnet-4-5"`). The cacheable prefix for block 1 is the tool definitions
++plus `INSTRUCTIONS`. Their size, estimated from the character counts and calibrated against the
++logged `cache_creation_input_tokens: 1046`, is roughly 950–1000 tokens for the default core
++tools. That is just under the minimum.
++
++Consequences:
++- If block 1 is under 1024 tokens, the first marker creates no cache entry. Block 2's marker
++  then caches the whole prefix, as before. In that case a memory write still re-creates the
++  whole prompt, so the change gains nothing. It does no harm either.
++- Adding a `plan` tool group changes the tool list and goes over the minimum. Tool-group changes
++  also evict the cache, because tools come before the system prompt (see below).
++
++Recommended next step: grow `INSTRUCTIONS` by a few hundred characters of real guidance. This
++is a content decision, so I did not pad it. Then check the logs.
++
++## How to verify (needs the live API; I could not run it here)
++
++Send two messages within 5 minutes, then one `save_fact` message, then one more message. Expect:
++- Message 2: `cache_read_input_tokens` covers the whole prompt.
++- After `save_fact`: `cache_read_input_tokens` covers block 1 (about 1000 or more if the minimum
++  is met), and `cache_creation_input_tokens` is about the size of block 2 (about 250 characters,
++  roughly 80–100 tokens), not the full prompt.
++
++If `cache_creation` is still the full prompt size, either block 1 is under the minimum (see
++above) or something in block 1 changes per request. The offline tests guard against the second
++case.
++
++## Not changed: other eviction sources
++
++- Tool groups. `select_tools()` changes the `tools` array per message. Tools come before the
++  system prompt in the cache prefix, so a message that adds the `plan` or `race` group re-caches
++  everything (for example the `plan_week` row in the log: `cache_creation` 1305). This is a
++  separate, known trade-off (`NOTES.md`). Fixing it would mean sending all tools every time,
++  which the March change was meant to avoid. I left it for you to decide.
++- Daily date change: block 2 re-caches once per day. This is expected.
+diff --git a/README.md b/README.md
+index ebd390e..42d9399 100644
+--- a/README.md
++++ b/README.md
+@@ -12,5 +12,7 @@ Run it locally with `COACH_ANTHROPIC_KEY=sk-ant-... python3 bot.py 42` and type
+ messages on stdin (the Telegram long-polling transport, which needs
+ `COACH_TELEGRAM_TOKEN`, lives in a separate deploy repo and just calls `reply()`).
+ Requires Python 3.11+ and `pip install anthropic`. Prompt caching is on: the system
+-prompt carries a `cache_control` marker so the tool-loop rounds and follow-up
+-messages inside the 5-minute window read it from cache.
++prompt is two blocks, each with a `cache_control` marker. Block 1 is the static
++coaching instructions (byte-identical for everyone); block 2 is the per-athlete
++tail (date, profile, facts). A `save_fact` write only re-caches block 2. Tests:
++`python3 -m unittest tests/test_cache_split.py`.
+diff --git a/bot.py b/bot.py
+index e2ff241..63229a7 100644
+--- a/bot.py
++++ b/bot.py
+@@ -128,9 +128,17 @@ def athlete_context(a, today):
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    # Two cached blocks. The cache is a prefix hash, so a marker only helps if
++    # everything before it is byte-stable:
++    #   block 1 = INSTRUCTIONS: identical for every athlete and every day, so it
++    #             stays cached through memory writes (save_fact) and day changes.
++    #   block 2 = per-athlete tail (date, profile, zones, goal, facts, language).
++    #             A save_fact or a new day re-caches only this block.
++    # Keep block 1 free of interpolated values; put any per-user text in block 2.
++    return [
++        {"type": "text", "text": INSTRUCTIONS, "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": athlete_context(a, today), "cache_control": {"type": "ephemeral"}},
++    ]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [
+diff --git a/tests/test_cache_split.py b/tests/test_cache_split.py
+new file mode 100644
+index 0000000..b210cc3
+--- /dev/null
++++ b/tests/test_cache_split.py
+@@ -0,0 +1,46 @@
++"""Offline checks for the prompt-cache layout. Run: python3 -m unittest tests/test_cache_split.py"""
++import datetime as dt
++import importlib.util
++import os
++import unittest
++
++_HERE = os.path.dirname(os.path.abspath(__file__))
++_spec = importlib.util.spec_from_file_location("bot", os.path.join(_HERE, "..", "bot.py"))
++bot = importlib.util.module_from_spec(_spec)
++_spec.loader.exec_module(bot)
++
++
++class SystemPromptCacheLayout(unittest.TestCase):
++    def setUp(self):
++        self.day1 = dt.date(2026, 11, 10)
++        self.day2 = dt.date(2026, 11, 11)
++
++    def test_two_cached_blocks_static_first(self):
++        blocks = bot.build_system(bot.Athlete(user_id="42", name="Sam"), self.day1)
++        self.assertEqual(len(blocks), 2)
++        self.assertTrue(all(b["cache_control"] == {"type": "ephemeral"} for b in blocks))
++        self.assertEqual(blocks[0]["text"], bot.INSTRUCTIONS)
++
++    def test_static_block_identical_across_athletes_and_days(self):
++        a = bot.Athlete(user_id="42", name="Sam")
++        b = bot.Athlete(user_id="77", name="Lee", facts=["Commutes by bike."], lang="de")
++        first = bot.build_system(a, self.day1)[0]["text"]
++        self.assertEqual(first, bot.build_system(b, self.day1)[0]["text"])
++        self.assertEqual(first, bot.build_system(a, self.day2)[0]["text"])
++
++    def test_memory_write_changes_only_the_tail(self):
++        a = bot.Athlete(user_id="42", name="Sam")
++        before = bot.build_system(a, self.day1)
++        a.facts.append("Has a knee injury history from 2023.")  # what save_fact does
++        after = bot.build_system(a, self.day1)
++        self.assertEqual(before[0], after[0])
++        self.assertNotEqual(before[1], after[1])
++
++    def test_static_block_has_no_interpolated_values(self):
++        text = bot.build_system(bot.Athlete(user_id="42", name="Sam"), self.day1)[0]["text"]
++        self.assertNotIn("2026", text)
++        self.assertNotIn("Sam", text)
++
++
++if __name__ == "__main__":
++    unittest.main()

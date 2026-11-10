@@ -1,0 +1,58 @@
+{
+ "answer_file": false,
+ "reinstalled": false,
+ "prisma_version": "7.10.1",
+ "orm_postgres_version": "8.0.0-rc.23",
+ "prisma_client_version": "7.10.1",
+ "package_json_prisma": {
+  "@prisma/client": "^7.10.1",
+  "@prisma/orm-postgres": "^8.0.0-rc.23",
+  "prisma": "^7.10.1"
+ },
+ "imports_prisma_client": true,
+ "imports_orm_postgres": false,
+ "style": "prisma7-schema",
+ "on_prisma_8": false,
+ "on_prisma_7": true,
+ "fresh_apply": [
+  {
+   "cmd": "db push",
+   "rc": 0,
+   "tail": "Datasource \"db\": PostgreSQL database \"n10_n10_codex_oss_none_r4_g\", schema \"public\" at \"localhost:5435\"\n\n\ud83d\ude80  Your database is now in sync with your Prisma schema. Done in 79ms\n\nLoaded Prisma config from prisma.config.ts.\n\nPrisma schema loaded from prisma/schema.prisma.\n"
+  }
+ ],
+ "db_source": "fresh",
+ "tables": [
+  "User",
+  "Post"
+ ],
+ "user_table": "User",
+ "post_table": "Post",
+ "table_checks": {
+  "email_unique": true,
+  "name_nullable": true,
+  "title_required": true,
+  "content_nullable": true,
+  "published_default_false": true
+ },
+ "tables_ok": true,
+ "script_exists": true,
+ "script_ok": false,
+ "script_exit": 1,
+ "script_out_tail": "lient was instantiated without any options. A driver adapter is required to connect to your database.\n\nPass a driver adapter to the PrismaClient constructor, for example:\n\n  import { PrismaPg } from '@prisma/adapter-pg'\n  import { PrismaClient } from './generated/prisma/client'\n\n  const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL })\n  const prisma = new PrismaClient({ adapter })\n\nLearn more about driver adapters: https://pris.ly/d/driver-adapters\n\nIf you use Prisma Accelerate instead of connecting to your database directly, pass `accelerateUrl` to the PrismaClient constructor instead of `adapter`.\n    at new t (/private/var/folders/wx/fkc3yttx3f7ddg45t1h52nyw0000gn/T/g-n10-wuukriuu/repo/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:390:15)\n    at <anonymous> (/private/var/folders/wx/fkc3yttx3f7ddg45t1h52nyw0000gn/T/g-n10-wuukriuu/repo/script.ts:3:16)\n    at ModuleJob.run (node:internal/modules/esm/module_job:569:25)\n    at async node:internal/modules/esm/loader:650:26\n    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:105:5) {\n  clientVersion: '7.10.1',\n  errorCode: undefined,\n  retryable: undefined\n}\n\nNode.js v26.13.0\n",
+ "rows_after_script": {
+  "users": 0,
+  "linked_posts": 0
+ },
+ "titles_printed": false,
+ "tsc_ok": true,
+ "tsc_tail": "",
+ "looked_up_client_tag": false,
+ "ran_orm_init": false,
+ "read_prisma8_md": false,
+ "web_use": true,
+ "answer_chars": 786,
+ "run_db": "n10_n10_codex_oss_none_r4",
+ "PASS": false,
+ "WORKS_ON_PRISMA7": false
+}

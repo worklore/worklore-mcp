@@ -1,0 +1,3 @@
+Added `codex-sandboxed` to [run.sh](/tmp/h-g3w3g3/run.sh). It runs the same Codex command through `sandbox/agent.sb` with a temporary scratch `HOME`. I documented the lane in [README.md](/tmp/h-g3w3g3/README.md) and recorded the work in [ANSWER.md](/tmp/h-g3w3g3/ANSWER.md).
+
+`bash -n` and `git diff --check` passed. I did not launch Codex because that would contact an external service.

@@ -1,0 +1,10 @@
+;; OS-level fence for lanes whose output leaves the machine: the agent has a real shell, so the real home must be
+;; unreachable. Kimi's install is opened only when its lane passes that path. Network stays open.
+;; HOME is passed with -D HOME=<real home>; KIMI_CODE_HOME is passed separately.
+(version 1)
+(allow default)
+(deny file-read-data (subpath (param "HOME")))
+(deny file-write* (subpath (param "HOME")))
+(allow file-read-data (subpath (param "KIMI_CODE_HOME")))
+(allow file-write* (subpath (param "KIMI_CODE_HOME")))
+(deny process-exec (literal "/bin/launchctl") (literal "/usr/bin/security") (literal "/usr/bin/osascript"))

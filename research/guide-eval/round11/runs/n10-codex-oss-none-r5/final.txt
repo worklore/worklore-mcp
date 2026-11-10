@@ -1,0 +1,14 @@
+**What I Did**
+
+- Added **Prisma ORM** (v5) and **@prisma/client** to the project.  
+- Created `prisma/schema.prisma` defining `User` (unique email, optional name) and `Post` (title, optional content, `published` default false) with a one‑to‑many relation.  
+- Ran `npx prisma db push` – this created the tables in the local PostgreSQL database referenced by `.env` and generated the Prisma client.  
+- Added `script.ts` at the project root that:
+  1. Clears any existing data (so repeated runs are safe).  
+  2. Creates a user with two posts.  
+  3. Prints the created user and then lists every user together with their posts.  
+- Documented the steps in `ANSWER.md` and noted that the script can be run with:
+
+```bash
+npx tsx script.ts
+```

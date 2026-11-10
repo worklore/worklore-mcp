@@ -1,0 +1,73 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..1ec64a8
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,7 @@
++# Cause and fix
++
++The first publish found no existing stories, so it stored an empty `similar` list. On the second publish, `related()` calculated a similarity score for the first story. `similarity()` returned a Python `float`, and `publish()` put that float inside the item sent to DynamoDB. The `TypeError: Float types are not supported. Use Decimal types instead.` in `logs/error.log` comes from boto3 serializing that item; the handler turned it into HTTP 500.
++
++`similarity()` now returns a `Decimal` after rounding to the existing four decimal places. This preserves the score's value and makes nested `similar` entries valid for DynamoDB. A regression test publishes three stories through the handler into the validating fake table, checks the populated write succeeds, and verifies stored scores are `Decimal`. `python3 -m unittest discover tests` passes (2 tests). No external table was used.
++
++The colleague's note applies to the state-dependent path, DynamoDB's rejection of floats, and the need to test a write after seeding data. Its integer-percentage fix was not used because it would reduce score precision and change the stored score scale. Its suggestion to publish twice against a real table was not used because this task is confined to the current directory and the fake table already checks the relevant boto3 type rule.
+diff --git a/src/app.py b/src/app.py
+index db49c5e..358feb9 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -8,6 +8,7 @@ import json
+ import logging
+ import re
+ import time
++from decimal import Decimal
+ 
+ log = logging.getLogger("stories")
+ 
+@@ -27,7 +28,8 @@ def similarity(a, b):
+     tag_score = len(ta & tb) / len(ta | tb) if (ta | tb) else 0
+     wa, wb = words(a.get("body")), words(b.get("body"))
+     word_score = len(wa & wb) / len(wa | wb) if (wa | wb) else 0
+-    return round(0.7 * tag_score + 0.3 * word_score, 4)
++    # DynamoDB's serializer rejects floats, including floats nested in lists.
++    return Decimal(str(round(0.7 * tag_score + 0.3 * word_score, 4)))
+ 
+ 
+ def related(story, existing):
+diff --git a/tests/test_publish.py b/tests/test_publish.py
+index 6c9ac44..0a39801 100644
+--- a/tests/test_publish.py
++++ b/tests/test_publish.py
+@@ -1,6 +1,8 @@
++import json
+ import os
+ import sys
+ import unittest
++from decimal import Decimal
+ 
+ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+ sys.path.insert(0, os.path.dirname(__file__))
+@@ -23,6 +25,24 @@ class PublishTest(unittest.TestCase):
+         self.assertEqual(table.get_item(Key={"slug": "why-my-cron-ran-twice"})["Item"]["title"], "Why my cron ran twice")
+         self.assertEqual(table.scan()["Count"], 1)
+ 
++    def test_publish_with_existing_stories_stores_decimal_scores(self):
++        table = FakeTable()
++        stories = [
++            {"slug": "first-story", "title": "First", "tags": ["python"], "body": "shared words"},
++            {"slug": "second-story", "title": "Second", "tags": ["python"], "body": "shared text"},
++            {"slug": "third-story", "title": "Third", "tags": ["python"], "body": "shared words"},
++        ]
++        for story in stories:
++            response = app.handler({"body": json.dumps(story)}, table)
++            self.assertEqual(response["statusCode"], 201)
++
++        self.assertEqual(table.scan()["Count"], 3)
++        second = table.get_item(Key={"slug": "second-story"})["Item"]
++        third = table.get_item(Key={"slug": "third-story"})["Item"]
++        self.assertEqual(second["similar"], [{"slug": "first-story", "score": Decimal("0.8")}])
++        self.assertEqual(len(third["similar"]), 2)
++        self.assertTrue(all(isinstance(match["score"], Decimal) for match in third["similar"]))
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

@@ -1,0 +1,23 @@
+**What was done**
+
+- Ran `npx prisma@latest orm init --yes --target postgres --authoring psl` which installed Prisma 8 (rc) packages (`prisma`, `@prisma/orm-postgres`, `dotenv`) and created scaffold files (`prisma.config.ts`, `src/prisma/contract.prisma`, `src/prisma/db.ts`).
+- Updated the contract model definitions in `src/prisma/contract.prisma` to match the requested schema:
+  * `User` – unique `email`, optional `name`.
+  * `Post` – required `title`, optional `content`, `published` defaulting to `false`, and a required relation to its author.
+- Ran `npx prisma contract emit` to generate `src/prisma/contract.json` and `src/prisma/contract.d.ts`.
+- Ran `npx prisma db init` which created the tables in the local PostgreSQL database defined by `.env`.
+- Added `script.ts` at the project root. The script:
+  1. Creates a user (`alice@example.com`) with two posts – one unpublished and one published.
+  2. Retrieves **all** users together with their posts using `include("posts")`.
+  3. Prints the resulting JSON to stdout.
+  4. Handles errors and exits with a non‑zero code on failure.
+- The script can be executed with `npx tsx script.ts` as requested.
+
+**Parts of the colleague’s note that applied**
+
+- **Use the current version from npm** – the note explains that `prisma@latest` points to Prisma 8 RC while `@prisma/client` is still on 7. We followed the note and used `prisma@latest orm init`, which installs the correct 8‑rc packages (`@prisma/orm-postgres`) instead of the old client.
+- **Pass `--yes` to avoid interactive prompts** – the initialization command was run with `--yes` to skip the questions the note warns about.
+- **Run `contract emit` after editing the model** – exactly as described, we emitted the contract after changing the schema.
+- **Run `db init` to create tables** – the note’s workflow was followed; we used `npx prisma db init` to materialise the tables.
+
+The remainder of the note (details about `@prisma/client` not existing, upgrade‑specific quirks, etc.) was not needed for this task.

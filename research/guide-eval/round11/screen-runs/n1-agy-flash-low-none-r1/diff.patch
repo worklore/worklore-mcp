@@ -1,0 +1,33 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..d3f008a
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,14 @@
++# Cause of Failure and Resolution
++
++## Cause of Failure
++
++1. `run-vibe.sh` executes Vibe inside a clean environment using `env -i`, passing only select environment variables (`PATH`, `TERM`, `LANG`, `HOME`, `VIBE_HOME`, `OPENROUTER_API_KEY`).
++2. Even when `OPENROUTER_API_KEY` is provided, Vibe's backend startup checks the macOS Keychain for stored credentials via `/usr/bin/security`.
++3. The macOS sandbox profile `agent.sb` specifically restricts Keychain access and denies execution of security tools with `(deny process-exec (literal "/bin/launchctl") (literal "/usr/bin/security") (literal "/usr/bin/osascript"))`.
++4. When Vibe attempts to execute `/usr/bin/security` to inspect the Keychain, the sandbox blocks execution with `[Errno 1] Operation not permitted: '/usr/bin/security'`, leading to an immediate unhandled crash with exit code 2.
++
++## Fix
++
++Vibe provides an environment variable `VIBE_TEST_DISABLE_KEYRING=1` (supported in both the Python keyring integration and the Rust core) to completely disable querying the OS keyring / macOS Keychain.
++
++In [run-vibe.sh](file:///tmp/h-uZhMeF/run-vibe.sh), `VIBE_TEST_DISABLE_KEYRING=1` was added to the `env -i` environment passed to `sandbox-exec`. This prevents Vibe from invoking `/usr/bin/security` inside the sandbox, allowing it to authenticate purely via `OPENROUTER_API_KEY` without crashing.
+diff --git a/run-vibe.sh b/run-vibe.sh
+index c4a5223..b3c67ee 100755
+--- a/run-vibe.sh
++++ b/run-vibe.sh
+@@ -12,7 +12,7 @@ SH=$(mktemp -d /tmp/vhome-XXXXXX); VH=$(mktemp -d /tmp/vibehome-XXXXXX)
+ cp "$D/vibe/config.toml" "$VH/config.toml"
+ mkdir -p "$D/logs"
+ ( cd "$W" && env -i PATH="$PATH" TERM="${TERM:-dumb}" LANG="${LANG:-en_US.UTF-8}" HOME="$SH" VIBE_HOME="$VH" \
+-    OPENROUTER_API_KEY="$OPENROUTER_API_KEY" \
++    OPENROUTER_API_KEY="$OPENROUTER_API_KEY" VIBE_TEST_DISABLE_KEYRING=1 \
+     sandbox-exec -D HOME="$REAL" -f "$D/agent.sb" \
+     "$VIBE" -p "$PROMPT" --model devstral --auto-approve --trust --output streaming --output-dir "$VH/out" \
+       --max-price 1.5 --time-limit 1200 < /dev/null > "$D/logs/last-run.out" 2> "$D/logs/last-run.err" )

@@ -1,0 +1,44 @@
+{
+ "answer_file": false,
+ "answer_source": "brain",
+ "lanes": [
+  "codex",
+  "codex-sandboxed",
+  "kimi"
+ ],
+ "new_lane": "codex-sandboxed",
+ "paths_rewritten": [],
+ "lane_rc": 0,
+ "lane_out": "fizz-codex-sandboxed-r1 rc=0 answer=24 chars\n",
+ "codex_ran": true,
+ "codex_under_sandbox": true,
+ "sandbox_calls": 1,
+ "fence": {
+  "denies_home_write": true,
+  "denies_home_read": true,
+  "opens_run_folder": false,
+  "params": {
+   "HOME": "/private/var/folders/wx/fkc3yttx3f7ddg45t1h52nyw0000gn/T/g-n4-gc8r1g2y/home"
+  }
+ },
+ "final_txt_has_answer": true,
+ "answer_json_has_answer": true,
+ "codex_wrote_out_file": true,
+ "codex_out_file": "/tmp/codex-Oe4gOQ/final.txt",
+ "failed_write_in_err": false,
+ "codex_lane_ok": true,
+ "agent_ran_sandbox_exec": [
+  "/bin/zsh -lc 'apply_patch \"*** Begin Patch\n*** Update File: run.sh\n@@\n codex_run() {\n   ( cd \"$W\" && timeout $TO codex exec --skip-git-repo-check --dangerously-"
+ ],
+ "agent_ran_harness": [
+  "/bin/zsh -lc 'apply_patch \"*** Begin Patch\n*** Update File: run.sh\n@@\n-# usage: run.sh <task> <lane> [rep]\n-# lanes: codex   Codex CLI, unsandboxed\n-#        ki",
+  "/bin/zsh -lc 'apply_patch \"*** Begin Patch\n*** Update File: run.sh\n@@\n codex_run() {\n   ( cd \"$W\" && timeout $TO codex exec --skip-git-repo-check --dangerously-"
+ ],
+ "answer_mentions_output_file": true,
+ "changed_files": [
+  "run.sh"
+ ],
+ "commands_issued": 7,
+ "answer_chars": 1243,
+ "PASS": true
+}

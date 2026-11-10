@@ -1,0 +1,26 @@
+**Added Prisma ORM**
+
+- Initialized Prisma with `npx prisma init`
+- Updated `prisma/schema.prisma`:
+  - Defined `User` model (unique `email`, optional `name`)
+  - Defined `Post` model (`title`, optional `content`, `published` default `false`, relation to `User`)
+- Ran `npx prisma migrate dev --name init` to create tables in local PostgreSQL
+- Added `script.ts` at project root:
+  - Uses `@prisma/client` to create a user with two posts
+  - Retrieves and logs every user with their posts
+- Updated `package.json` scripts:
+  - `"seed": "tsx script.ts"` (run with `npx tsx script.ts`)
+
+**Files modified / created**
+
+- `prisma/schema.prisma`
+- `script.ts`
+- `package.json` (added `seed` script)
+
+**How to run**
+
+```bash
+npx tsx script.ts
+```
+
+This will create the sample data and print all users with their associated posts.

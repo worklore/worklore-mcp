@@ -1,0 +1,149 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..09bb0c2
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,76 @@
++# Answer: codex-sandboxed lane
++
++## What I changed
++
++**`run.sh`** gets a `codex-sandboxed` lane. It runs the same `codex exec` command as the `codex` lane (same flags, same
++`-C`, same `--json`, same `< /dev/null` and stdout/stderr redirects into the run folder), but:
++
++- the Codex process runs under `sandbox-exec -D HOME=<real home> -f sandbox/agent.sb`, as the kimi lane does;
++- `HOME` is an empty scratch folder in `/tmp` and `CODEX_HOME` points inside it, so Codex doesn't read `~/.codex`;
++- `-o` writes to a scratch folder in `/tmp`. After `sandbox-exec` returns, the lane copies `final.txt` into the run
++  folder and deletes the scratch folders;
++- if no `final.txt` ends up in the run folder, the lane sets the exit code to 1 (or keeps a non-zero code) and writes a
++  line to `agent.err`. It also prints a warning if `agent.err` contains "Operation not permitted";
++- it exits with code 2 before starting if `CODEX_API_KEY` is unset.
++
++The lane is also listed in the `run.sh` header comment and in `README.md`.
++
++**`sandbox/agent.sb` is unchanged.** Its existing rules already cover this lane: they deny reads and writes under the real
++home and allow `/tmp`.
++
++**`README.md`** has a bullet for the new lane.
++
++## Which parts of the colleague's note applied
++
++- **Applied: output files inside a denied folder.** I checked this directly. Under the profile, a write into a folder
++  under the real home fails with `Operation not permitted`, and a write under `/tmp` works. The README says the harness
++  lives in `~/evals/agent-evals` on the eval Mac, so on that machine `-o "$R/final.txt"` would be denied. That is the
++  same failure the note describes. The fix is the note's: scratch in `/tmp`, copy out after the sandbox exits.
++- **Applied: don't trust the exit code alone.** Codex exits 0 when it can't write its output, so the lane checks for
++  `final.txt` and does not pass a run without it.
++- **Applied: stdout and stderr redirects are fine.** The shell opens them before `sandbox-exec` starts, so the logs stay
++  in the run folder.
++- **Did not apply: Mistral Vibe and `--output-dir`.** This repo has no Mistral lane.
++- **Did not apply: the Codex 0.160 specifics.** The lane uses `-o` as the `codex` lane already does. I did not check the
++  note's exact error text against this Codex version, because I did not run a live Codex job.
++- **Not done: the note's smoke run.** I did not run a live job, so the note's verify step is still open; see "Not verified" below.
++
++## Decisions you may want to change
++
++- **Login comes from `CODEX_API_KEY`, not `~/.codex/auth.json`.** The README already says Codex logs in from that
++  variable. Here `CODEX_API_KEY` is not set, and `~/.codex/auth.json` holds the login. I did not copy `auth.json` into
++  `/tmp` or open it in the profile. The sandboxed shell has network access, so either would let the agent read the
++  credentials and send them out. If you want this lane to run without an API key, that needs a decision from you.
++- **The sandboxed Codex does not get `~/.codex/config.toml`.** That file holds MCP servers, plugins, and trust entries
++  for project paths. I checked its key names with values redacted. I saw no top-level `model` or `model_provider`
++  lines, but I did not read the whole file. The sandboxed run therefore uses Codex's defaults, not those settings. If
++  the two lanes should differ only in the sandbox, copy the non-secret settings into the scratch `CODEX_HOME`.
++- **The sandboxed Codex runs with `--dangerously-bypass-approvals-and-sandbox`**, the same as the `codex` lane. The
++  outer `sandbox-exec` is the fence. Codex's own sandbox would likely not nest inside it.
++
++## What I verified
++
++1. **The profile denies writes under the real home.** I created a folder in `~` outside the sandbox, then wrote into it
++   from inside `sandbox-exec`. The write failed with `Operation not permitted`.
++2. **The profile denies reads of `~/.codex/auth.json`.** A `cat` from inside the sandbox failed with `Operation not
++   permitted`.
++3. **The profile allows writes under `/tmp`.** A write there succeeded.
++4. **Lane plumbing, with a stub `codex` on `PATH`** (the stub is not the real Codex; it is in `/tmp` and I removed it):
++   - Normal case: `final.txt` was copied into the run folder, `answer.json` read it (`source: final.txt`), and the exit
++     code was 0. The stub's `auth.json` read was denied inside the sandbox, and `CODEX_HOME` pointed at the scratch
++     folder.
++   - No `CODEX_API_KEY`: the lane exited with code 2 and a clear message.
++   - Stub exits 0 without writing its output file: the lane recorded exit 1 and wrote a line to `agent.err`.
++   - Test runs were removed from `runs/`. `bash -n run.sh` passes.
++
++## Not verified
++
++- **A live `codex exec` run in the sandbox.** I have no `CODEX_API_KEY` in this shell, and a real run sends the task to
++  the model provider, so I did not start one. The first real check is `./run.sh fizz codex-sandboxed 1` with the key
++  set. Look for: a non-empty `final.txt`, `answer.json` with `source: final.txt`, and no "Operation not permitted" in
++  `agent.err`. Codex itself may need something from the real home that the profile blocks. The stub test does not
++  show that. If it does, the fix is to allow that specific path, not to open the whole home.
++- **Whether `answer.json` is graded.** `check_answer.py` falls back to the event stream only for `kimi*` lanes. The new
++  lane reads `final.txt` only, so an empty `final.txt` gives `source: none`. I left the grader alone.
++- **The leftover `/tmp/chome-*` folders.** Three from earlier today, from before my tests, are still in `/tmp`. I left
++  them alone.
+diff --git a/README.md b/README.md
+index 9d81ca7..32244ba 100644
+--- a/README.md
++++ b/README.md
+@@ -17,6 +17,11 @@ run folder `runs/<task>-<lane>-r<rep>/`:
+ Lanes:
+ 
+ - `codex`: Codex CLI (`codex exec --json`), unsandboxed.
++- `codex-sandboxed`: the same Codex run, under the same profile and with a
++  scratch HOME and `CODEX_HOME`, so `~/.codex` (the login) is out of reach.
++  It needs `CODEX_API_KEY` set. Codex writes its last message to a scratch
++  folder in `/tmp`, which the lane copies into the run folder after the
++  sandbox exits. A run with no `final.txt` exits 1.
+ - `kimi`: Kimi Code. Its output goes to Moonshot, so its shell runs under the
+   macOS sandbox profile `sandbox/agent.sb` (no reading or writing the real
+   home), with an empty scratch HOME. Kimi's own install and sessions live in
+diff --git a/run.sh b/run.sh
+index c41ad67..08e4b98 100755
+--- a/run.sh
++++ b/run.sh
+@@ -1,7 +1,8 @@
+ #!/usr/bin/env bash
+ # usage: run.sh <task> <lane> [rep]
+-# lanes: codex   Codex CLI, unsandboxed
+-#        kimi    Kimi Code under sandbox/agent.sb (no reading or writing the real home), scratch HOME
++# lanes: codex            Codex CLI, unsandboxed
++#        codex-sandboxed  the same Codex run under sandbox/agent.sb (as kimi), scratch HOME and CODEX_HOME; needs CODEX_API_KEY
++#        kimi             Kimi Code under sandbox/agent.sb (no reading or writing the real home), scratch HOME
+ set -u
+ D="$(cd "$(dirname "$0")" && pwd)"
+ T=$1; A=$2; REP=${3:-1}
+@@ -15,6 +16,27 @@ codex_run() {
+       -o "$R/final.txt" "$P" < /dev/null > "$R/agent.log" 2> "$R/agent.err" )
+ }
+ 
++# Codex under the same fence as kimi. Its shell runs under sandbox/agent.sb with an empty scratch HOME and CODEX_HOME,
++# so ~/.codex (which holds the login) stays unreadable. Login comes from CODEX_API_KEY, passed in the environment;
++# ~/.codex/auth.json is not copied in, because the sandboxed shell has network access.
++# The profile denies writes to the real home, and the -o file can sit under the eval repo in the real home, so Codex
++# writes its last message to a scratch folder in /tmp and the lane copies it into the run folder after sandbox-exec returns.
++# Codex can exit 0 without writing that file (it did so inside the sandbox), so a missing final.txt is a failure here.
++codex_sandboxed_run() {
++  [ -n "${CODEX_API_KEY:-}" ] || { echo "codex-sandboxed: CODEX_API_KEY is not set" >&2; return 2; }
++  local REAL="$HOME" SH OUT rc
++  SH=$(mktemp -d /tmp/chome-XXXXXX); OUT=$(mktemp -d /tmp/cout-XXXXXX)
++  ( cd "$W" && export HOME="$SH" && sandbox-exec -D HOME="$REAL" -f "$D/sandbox/agent.sb" \
++      env CODEX_HOME="$SH/.codex" timeout $TO codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox -C "$W" --json \
++      -o "$OUT/final.txt" "$P" < /dev/null > "$R/agent.log" 2> "$R/agent.err" )
++  rc=$?
++  if cp "$OUT/final.txt" "$R/final.txt" 2>/dev/null; then :; else
++    echo "codex-sandboxed: no final.txt written (exit $rc)" >> "$R/agent.err"; [ $rc -eq 0 ] && rc=1
++  fi
++  grep -q "Operation not permitted" "$R/agent.err" && echo "codex-sandboxed: 'Operation not permitted' in agent.err" >&2
++  rm -rf "$SH" "$OUT"; return $rc
++}
++
+ # Kimi's output goes to Moonshot: its shell runs under sandbox/agent.sb with an empty scratch HOME.
+ kimi_run() {
+   local REAL="$HOME" SH; SH=$(mktemp -d /tmp/khome-XXXXXX)
+@@ -27,6 +49,7 @@ kimi_run() {
+ start=$(date +%s)
+ case $A in
+   codex) codex_run;;
++  codex-sandboxed) codex_sandboxed_run;;
+   kimi)  kimi_run;;
+   *) echo "unknown lane $A"; exit 2;;
+ esac

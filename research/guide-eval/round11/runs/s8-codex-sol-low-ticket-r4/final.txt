@@ -1,0 +1,3 @@
+I split the system prompt into two cached blocks: fixed coaching instructions and athlete context. A `save_fact` write now changes only the context block, leaving the instructions byte-identical for cache reuse.
+
+The local check passed. I documented the change, which parts of the colleague’s note applied, and the lack of a live cache measurement in [ANSWER.md](/tmp/h-E7L4Kp/ANSWER.md).

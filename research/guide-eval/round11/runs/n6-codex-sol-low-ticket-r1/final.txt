@@ -1,0 +1,3 @@
+Installed the current npm release of `@hiero-ledger/sdk` (2.91.0) and added [src/transfer.ts](/tmp/h-XUgthx/src/transfer.ts). It builds and signs the requested transfer offline, then prints only the signed transaction bytes as hex. Nothing was submitted to a network.
+
+`npx tsc --noEmit` passed. A local run produced bytes that decoded with the requested fields and a signature. The work and which parts of the colleague’s note applied are recorded in [ANSWER.md](/tmp/h-XUgthx/ANSWER.md).

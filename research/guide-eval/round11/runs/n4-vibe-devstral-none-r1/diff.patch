@@ -1,0 +1,90 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..757c07d
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,30 @@
++# Changes Made
++
++## Summary
++Added a `codex-sandboxed` lane to `run.sh` that runs the Codex CLI inside the sandbox profile `sandbox/agent.sb`, mirroring how the `kimi` lane operates. This prevents the agent's shell from reading or writing to the real home directory.
++
++## Files Modified
++
++### 1. `run.sh`
++- Updated the usage comment to document the new `codex-sandboxed` lane
++- Added `codex_sandboxed_run()` function that:
++  - Creates a temporary scratch HOME directory (`/tmp/chome-XXXXXX`)
++  - Sets `CODEX_HOME` environment variable to point to `$REAL/.codex`
++  - Runs Codex CLI under `sandbox-exec` with the `sandbox/agent.sb` profile
++  - Uses the same Codex command flags as the unsandboxed `codex` lane
++  - Cleans up the temporary directory after execution
++- Added `codex-sandboxed` case to the lane selector
++
++### 2. `sandbox/agent.sb`
++- Added two new rules to allow read/write access to `~/.codex` directory:
++  - `(allow file-read-data (subpath (string-append (param "HOME") "/.codex")))`
++  - `(allow file-write* (subpath (string-append (param "HOME") "/.codex")))`
++- These mirror the existing rules for `~/.kimi-code`
++
++## Behavior
++The `codex-sandboxed` lane now:
++- Runs the same Codex CLI command as the `codex` lane
++- Uses a scratch HOME directory for the agent's shell
++- Can only access `~/.codex` in the real home directory (via sandbox rules)
++- Cannot read or write any other files in the real home directory
++- Produces the same output files in `runs/` as other lanes
+diff --git a/run.sh b/run.sh
+index c41ad67..e93c90b 100755
+--- a/run.sh
++++ b/run.sh
+@@ -1,7 +1,8 @@
+ #!/usr/bin/env bash
+ # usage: run.sh <task> <lane> [rep]
+-# lanes: codex   Codex CLI, unsandboxed
+-#        kimi    Kimi Code under sandbox/agent.sb (no reading or writing the real home), scratch HOME
++# lanes: codex            Codex CLI, unsandboxed
++#        codex-sandboxed  Codex CLI under sandbox/agent.sb (no reading or writing the real home), scratch HOME
++#        kimi             Kimi Code under sandbox/agent.sb (no reading or writing the real home), scratch HOME
+ set -u
+ D="$(cd "$(dirname "$0")" && pwd)"
+ T=$1; A=$2; REP=${3:-1}
+@@ -15,6 +16,15 @@ codex_run() {
+       -o "$R/final.txt" "$P" < /dev/null > "$R/agent.log" 2> "$R/agent.err" )
+ }
+ 
++# Codex's output goes to Moonshot: its shell runs under sandbox/agent.sb with an empty scratch HOME.
++codex_sandboxed_run() {
++  local REAL="$HOME" SH; SH=$(mktemp -d /tmp/chome-XXXXXX)
++  ( cd "$W" && export HOME="$SH" && sandbox-exec -D HOME="$REAL" -f "$D/sandbox/agent.sb" \
++      env CODEX_HOME="$REAL/.codex" timeout $TO codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox -C "$W" --json \
++      -o "$R/final.txt" "$P" < /dev/null > "$R/agent.log" 2> "$R/agent.err" )
++  local rc=$?; rm -rf "$SH"; return $rc
++}
++
+ # Kimi's output goes to Moonshot: its shell runs under sandbox/agent.sb with an empty scratch HOME.
+ kimi_run() {
+   local REAL="$HOME" SH; SH=$(mktemp -d /tmp/khome-XXXXXX)
+@@ -26,8 +36,9 @@ kimi_run() {
+ 
+ start=$(date +%s)
+ case $A in
+-  codex) codex_run;;
+-  kimi)  kimi_run;;
++  codex)            codex_run;;
++  codex-sandboxed)  codex_sandboxed_run;;
++  kimi)             kimi_run;;
+   *) echo "unknown lane $A"; exit 2;;
+ esac
+ rc=$?
+diff --git a/sandbox/agent.sb b/sandbox/agent.sb
+index 3a517dd..a7ede85 100644
+--- a/sandbox/agent.sb
++++ b/sandbox/agent.sb
+@@ -6,4 +6,6 @@
+ (deny file-write* (subpath (param "HOME")))
+ (allow file-read-data (subpath (string-append (param "HOME") "/.kimi-code")))
+ (allow file-write* (subpath (string-append (param "HOME") "/.kimi-code")))
++(allow file-read-data (subpath (string-append (param "HOME") "/.codex")))
++(allow file-write* (subpath (string-append (param "HOME") "/.codex")))
+ (deny process-exec (literal "/bin/launchctl") (literal "/usr/bin/security") (literal "/usr/bin/osascript"))

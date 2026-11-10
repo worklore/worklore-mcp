@@ -1,0 +1,51 @@
+{
+ "answer_file": true,
+ "answer_source": "repo",
+ "lanes": [
+  "codex",
+  "codex-sandboxed",
+  "kimi"
+ ],
+ "new_lane": "codex-sandboxed",
+ "paths_rewritten": [],
+ "lane_rc": 0,
+ "lane_out": "fizz-codex-sandboxed-r1 rc=0 answer=24 chars\n",
+ "codex_ran": true,
+ "codex_under_sandbox": true,
+ "sandbox_calls": 1,
+ "fence": {
+  "denies_home_write": true,
+  "denies_home_read": true,
+  "opens_run_folder": false,
+  "params": {
+   "HOME": "/private/var/folders/wx/fkc3yttx3f7ddg45t1h52nyw0000gn/T/g-n4-15qr5_tp/home"
+  }
+ },
+ "final_txt_has_answer": true,
+ "answer_json_has_answer": true,
+ "codex_wrote_out_file": true,
+ "codex_out_file": "/tmp/chome-Ysae1y/final.txt",
+ "failed_write_in_err": false,
+ "codex_lane_ok": true,
+ "agent_ran_sandbox_exec": [
+  "cd /private/tmp/h-CRBcCP; cat README.md check_answer.py .gitignore; ls -R runs tasks | head -30; which codex; ls -la $(which codex) 2>/dev/null; ls ~/.codex 2>/",
+  "cd /private/tmp/h-CRBcCP; python3 - <<'EOF'\np='run.sh'; s=open(p).read()\ns=s.replace(\"\"\"#        kimi    Kimi Code\"\"\",\"\"\"#        codex-sandboxed  same Codex ru",
+  "cd /private/tmp/h-CRBcCP; REAL=\"$HOME\"; SH=$(mktemp -d /tmp/chome-XXXXXX); mkdir -p \"$SH/.codex\"\n( cd /tmp && export HOME=\"$SH\" CODEX_HOME=\"$SH/.codex\" && sandb",
+  "cd /private/tmp/h-CRBcCP; D=$PWD; REAL=\"$HOME\"; SH=$(mktemp -d /tmp/chome-XXXXXX); mkdir -p \"$SH/.codex\"\n( cd /tmp && export HOME=\"$SH\" CODEX_HOME=\"$SH/.codex\" ",
+  "cd /private/tmp/h-CRBcCP; python3 - <<'EOF'\np='README.md'; s=open(p).read()\ns=s.replace(\"\"\"- `kimi`: Kimi Code.\"\"\",\"\"\"- `codex-sandboxed`: the same `codex exec`"
+ ],
+ "agent_ran_harness": [
+  "cd /private/tmp/h-CRBcCP; python3 - <<'EOF'\np='run.sh'; s=open(p).read()\ns=s.replace(\"\"\"#        kimi    Kimi Code\"\"\",\"\"\"#        codex-sandboxed  same Codex ru",
+  "cd /private/tmp/h-CRBcCP; python3 - <<'EOF'\np='run.sh'; s=open(p).read()\ns=s.replace(\"\"\"# seatbelt profiles can't nest, and agent.sb is the fence here.\ncodex_sa",
+  "cd /private/tmp/h-CRBcCP; python3 - <<'EOF'\np='README.md'; s=open(p).read()\ns=s.replace(\"\"\"- `kimi`: Kimi Code.\"\"\",\"\"\"- `codex-sandboxed`: the same `codex exec`"
+ ],
+ "answer_mentions_output_file": true,
+ "changed_files": [
+  "ANSWER.md",
+  "README.md",
+  "run.sh"
+ ],
+ "commands_issued": 7,
+ "answer_chars": 2858,
+ "PASS": true
+}

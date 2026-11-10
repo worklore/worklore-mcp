@@ -1,0 +1,33 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..21ab6c1
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,7 @@
++# Prompt cache fix
++
++`build_system()` now sends two text blocks, each with `cache_control: {"type": "ephemeral"}`. The first contains only the constant coaching instructions. The second contains the date, athlete profile, zones, goal, facts, and language. A `save_fact` update changes the second block while leaving the first block byte-identical, so it can reuse the static prefix cache.
++
++The colleague's two-cache-boundary approach applies here. Its advice to keep tool schemas and their order stable also applies; the existing keyword-based tool filtering remains in place, with a fixed selection throughout each tool loop. Its advice against per-message fact selection applies too: the bot already includes all facts, so no selection was added. The note's token savings and five-minute live verification figures are examples from another bot, not measurements of this change.
++
++Local verification built the prompt before and after adding a fact: the static block stayed equal, the athlete block changed, both blocks had cache markers, and the core tool selection stayed the same. No API calls were made, so actual `cache_read_input_tokens` and `cache_creation_input_tokens` after this change have not been measured. `logs/usage.jsonl` already records both fields for later verification.
+diff --git a/bot.py b/bot.py
+index e2ff241..b4690d0 100644
+--- a/bot.py
++++ b/bot.py
+@@ -128,9 +128,11 @@ def athlete_context(a, today):
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    # Keep the invariant prefix cacheable when save_fact changes athlete context.
++    return [
++        {"type": "text", "text": INSTRUCTIONS, "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": athlete_context(a, today), "cache_control": {"type": "ephemeral"}},
++    ]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [
+# 1 file diffs under node_modules/, __pycache__/ or .prisma/ left out of this patch; 2 kept

@@ -1,0 +1,22 @@
+// use prisma-8
+
+// Updated to match the requested schema
+model User {
+  id        Int      @id @default(autoincrement())
+  email     String   @unique               // unique email as required
+  name      String?                     // optional name
+  posts     Post[]                     // relation to posts
+  createdAt DateTime @default(now()) @onCreate(now())
+  updatedAt temporal.UpdatedAt
+}
+
+model Post {
+  id        Int      @id @default(autoincrement())
+  title     String                     // required title
+  content   String?                    // optional content
+  published Boolean @default(false)   // published flag, default false
+  author    User   @relation(fields: [authorId], references: [id])
+  authorId  Int
+  createdAt DateTime @default(now()) @onCreate(now())
+  updatedAt temporal.UpdatedAt
+}

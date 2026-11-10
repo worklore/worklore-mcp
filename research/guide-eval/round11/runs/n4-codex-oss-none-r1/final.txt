@@ -1,0 +1,9 @@
+**Changes Made**
+
+- Added a new lane **codex‑sandboxed** to `run.sh`.
+- Implemented `codex_sandboxed_run` which executes the Codex CLI within `sandbox/agent.sb`, isolating `$HOME` similarly to the existing `kimi` lane.
+- Updated lane documentation comments to list the new lane.
+- Extended the case statement to dispatch the new lane.
+- Created `ANSWER.md` documenting the modifications.
+
+The new lane mirrors the original unsandboxed Codex run but runs under the sandbox profile, preventing the agent from accessing the real home directory.

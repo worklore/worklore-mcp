@@ -1,0 +1,57 @@
+{
+ "answer_file": false,
+ "reinstalled": false,
+ "prisma_version": "5.22.0",
+ "orm_postgres_version": null,
+ "prisma_client_version": "5.22.0",
+ "package_json_prisma": {
+  "@prisma/client": "^5.22.0",
+  "prisma": "^5.22.0"
+ },
+ "imports_prisma_client": true,
+ "imports_orm_postgres": false,
+ "style": "prisma7-schema",
+ "on_prisma_8": false,
+ "on_prisma_7": false,
+ "fresh_apply": [
+  {
+   "cmd": "migrate deploy",
+   "rc": 0,
+   "tail": "om .env\nPrisma schema loaded from prisma/schema.prisma\nDatasource \"db\": PostgreSQL database \"n10_n10_agy_oss_none_r3_g\", schema \"public\" at \"localhost:5435\"\n\n1 migration found in prisma/migrations\n\nApplying migration `20261110023635_init`\n\nThe following migration(s) have been applied:\n\nmigrations/\n  \u2514\u2500 20261110023635_init/\n    \u2514\u2500 migration.sql\n      \nAll migrations have been successfully applied.\n"
+  }
+ ],
+ "db_source": "fresh",
+ "tables": [
+  "User",
+  "Post"
+ ],
+ "user_table": "User",
+ "post_table": "Post",
+ "table_checks": {
+  "email_unique": true,
+  "name_nullable": true,
+  "title_required": true,
+  "content_nullable": true,
+  "published_default_false": true
+ },
+ "tables_ok": true,
+ "script_exists": true,
+ "script_ok": true,
+ "script_exit": 0,
+ "script_out_tail": "Created user: { id: 1, email: 'alice@example.com', name: 'Alice' }\n\nAll users with their posts:\nUser: alice@example.com (id=1)\n  Name: Alice\n  Post: First post (published=false)\n    Content: Hello world!\n  Post: Second post (published=false)\n",
+ "rows_after_script": {
+  "users": 1,
+  "linked_posts": 2
+ },
+ "titles_printed": true,
+ "tsc_ok": true,
+ "tsc_tail": "",
+ "looked_up_client_tag": false,
+ "ran_orm_init": false,
+ "read_prisma8_md": false,
+ "web_use": true,
+ "answer_chars": 1254,
+ "run_db": "n10_n10_agy_oss_none_r3",
+ "PASS": false,
+ "WORKS_ON_PRISMA7": false
+}

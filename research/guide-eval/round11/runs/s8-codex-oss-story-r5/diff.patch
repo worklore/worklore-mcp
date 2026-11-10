@@ -1,0 +1,42 @@
+diff --git a/bot.py b/bot.py
+index e2ff241..2225cbf 100644
+--- a/bot.py
++++ b/bot.py
+@@ -128,9 +128,34 @@ def athlete_context(a, today):
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    """Construct the system prompt split into two cache‑controlled blocks.
++
++    * **Block 1 – static instructions** – never changes between calls, so
++      it can stay hot in the Anthropic cache.
++    * **Block 2 – volatile per‑athlete context** – includes the date, athlete
++      profile, zones, goal, long‑term facts and language. This block changes
++      when a memory write (save_fact) updates a.facts or when the date
++      rolls over.
++
++    Using two cache_control: {"type": "ephemeral"} markers isolates a
++    memory write to the tail only, preventing the whole system prompt from
++    being re‑generated and re‑cached on each save_fact call.
++    """
++    # Block 1 – static instructions (byte‑stable).
++    instructions_block = {
++        "type": "text",
++        "text": INSTRUCTIONS,
++        "cache_control": {"type": "ephemeral"},
++    }
++
++    # Block 2 – per‑user volatile tail.
++    tail_block = {
++        "type": "text",
++        "text": athlete_context(a, today),
++        "cache_control": {"type": "ephemeral"},
++    }
++
++    return [instructions_block, tail_block]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [

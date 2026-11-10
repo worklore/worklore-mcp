@@ -1,0 +1,51 @@
+{
+ "answer_file": true,
+ "answer_source": "repo",
+ "lanes": [
+  "codex",
+  "codex-sandbox",
+  "kimi"
+ ],
+ "new_lane": "codex-sandbox",
+ "paths_rewritten": [],
+ "lane_rc": 0,
+ "lane_out": "fizz-codex-sandbox-r1 rc=0 answer=24 chars\n",
+ "codex_ran": true,
+ "codex_under_sandbox": true,
+ "sandbox_calls": 1,
+ "fence": {
+  "denies_home_write": true,
+  "denies_home_read": true,
+  "opens_run_folder": false,
+  "params": {
+   "HOME": "/private/var/folders/wx/fkc3yttx3f7ddg45t1h52nyw0000gn/T/g-n4-frhht8pd/home"
+  }
+ },
+ "final_txt_has_answer": true,
+ "answer_json_has_answer": true,
+ "codex_wrote_out_file": true,
+ "codex_out_file": "/tmp/chome-NXkGLo/final.txt",
+ "failed_write_in_err": false,
+ "codex_lane_ok": true,
+ "agent_ran_sandbox_exec": [
+  "cat sandbox/agent.sb && echo ---README && cat README.md && echo ---check && cat check_answer.py && echo ---gitignore && cat .gitignore && echo ---prompt && cat ",
+  "cd /private/tmp/h-w4QVuK && cat sandbox/agent.sb && echo ---README && cat README.md && echo ---check && cat check_answer.py && echo ---gitignore && cat .gitigno",
+  "cd /tmp && REAL=\"$HOME\"; SH=$(mktemp -d /tmp/chome-test-XXXXXX); mkdir -p \"$SH/.codex\"\nexport HOME=\"$SH\" CODEX_HOME=\"$SH/.codex\"\necho \"== read real home (expect"
+ ],
+ "agent_ran_harness": [
+  "git status && git log --oneline | head && find . -path ./.git -prune -o -type f -print | head -100 && cat run.sh 2>/dev/null",
+  "cd /private/tmp/h-w4QVuK && git status && git log --oneline | head && find . -path ./.git -prune -o -type f -print | head -100 && cat run.sh 2>/dev/null",
+  "FB=$(mktemp -d /tmp/fakebin-XXXX); cat > \"$FB/codex\" <<'EOF'\n#!/bin/bash\n# stub: parse -o, write final message, probe real home\nout=\"\"; while [ $# -gt 0 ]; do c",
+  "bash -n run.sh && echo SYNTAX_OK && git status --short && git diff --stat",
+  "cd /private/tmp/h-w4QVuK && bash -n run.sh && echo SYNTAX_OK && git status --short && git diff --stat"
+ ],
+ "answer_mentions_output_file": true,
+ "changed_files": [
+  "ANSWER.md",
+  "README.md",
+  "run.sh"
+ ],
+ "commands_issued": 8,
+ "answer_chars": 2877,
+ "PASS": true
+}

@@ -1,0 +1,32 @@
+**What was done**
+- Added **@hiero-ledger/sdk** (the current Hedera JavaScript SDK) to the project dependencies.
+- Created `src/transfer.ts` which:
+  - Loads `OPERATOR_ID`, `OPERATOR_KEY`, `RECIPIENT_ID` and `VALID_START` from the environment (via a `.env` file if present).
+  - Builds a `TransactionId` whose valid‑start timestamp is derived from `VALID_START`.
+  - Constructs a `TransferTransaction` that moves **1 hbar** from the operator to the recipient, adds memo `invoice 42`, targets node `0.0.3`, and uses the custom transaction ID.
+  - Freezes, signs the transaction with the operator’s ED25519 private key (DER‑encoded hex) and prints **only the signed transaction bytes** as a hex string.
+  - All operations are performed offline; no network calls are made.
+
+The script can be run with the existing npm script:
+```bash
+npx tsx src/transfer.ts
+```
+The TypeScript compiler (`npx tsc --noEmit`) now passes without errors.
+
+**Parts of the colleague’s note that applied**
+- The note explained that the Hedera SDK has moved to **@hiero-ledger/sdk** and that imports remain the same. We therefore installed `@hiero-ledger/sdk` (latest 2.91.0) and imported the required classes from that package.
+- The suggestion to replace any existing `@hashgraph/sdk` reference was followed (the original project didn’t have it, but we ensured only the new package is present).
+
+Other details in the note (e.g., version comparison, publishing) were not needed for this task.
+
+**Running the example**
+1. Create a `.env` file in the repository root, for example:
+```
+OPERATOR_ID=0.0.1234
+OPERATOR_KEY=302e020100300506032b657004220420...   # DER‑encoded hex
+RECIPIENT_ID=0.0.5678
+VALID_START=1735689600   # Unix seconds
+```
+2. Execute the script as shown above. The console will output a single line containing the signed transaction bytes in hex.
+
+No network interaction occurs, satisfying the offline requirement.

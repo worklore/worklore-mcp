@@ -1,0 +1,34 @@
+diff --git a/bot.py b/bot.py
+index e2ff241..5b84104 100644
+--- a/bot.py
++++ b/bot.py
+@@ -128,9 +128,26 @@ def athlete_context(a, today):
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    """Construct the system prompt split into two parts.
++
++    * The static coaching *INSTRUCTIONS* are supplied as a plain system block.
++      This block has no ``cache_control`` flag, allowing the underlying model
++      cache to retain it across calls.
++    * The per‑athlete context (date, zones, facts, etc.) is supplied as a
++      second system block with ``cache_control: {type: "ephemeral"}``.  This
++      tells the model that the block may change between requests (e.g. when a
++      new fact is saved) without discarding the cached static instructions.
++
++    Returning two separate blocks preserves the static instruction cache while
++    still updating the dynamic athlete information.
++    """
++    static_block = {"type": "text", "text": INSTRUCTIONS}
++    dynamic_block = {
++        "type": "text",
++        "text": athlete_context(a, today),
++        "cache_control": {"type": "ephemeral"},
++    }
++    return [static_block, dynamic_block]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [

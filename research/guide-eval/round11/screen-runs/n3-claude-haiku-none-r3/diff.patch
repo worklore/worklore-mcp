@@ -1,0 +1,121 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..eaf483f
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,63 @@
++# Answer: remove stale objects on deploy
++
++## Problem
++
++`deploy.sh` only ever copied files into the bucket. Nothing removed an object
++whose source had gone away, so:
++
++- a note that was deleted or made `private` kept its `s/<slug>` page, because
++  `build_pages.py` no longer writes it but the old object was still in S3;
++- an author with no public notes kept `a/<handle>`;
++- a file removed from `site/` stayed in the bucket.
++
++## Change
++
++**`deploy.sh`**
++
++- `sync_site` now runs `aws s3 sync site/ s3://$BUCKET/ --delete`, with
++  `--exclude "s/*" --exclude "a/*"` so this step never deletes page keys.
++- `upload_pages` replaces the per-file `aws s3 cp` loop with
++  `aws s3 sync .build/pages/ s3://$BUCKET/ --delete`, restricted to
++  `--exclude "*" --include "s/*" --include "a/*"`. That scope means it only
++  creates, updates or deletes page keys, never `site/` files.
++- The page sync keeps the same headers as before: `Content-Type: text/html;
++  charset=utf-8` (needed because the keys have no extension) and
++  `Cache-Control: max-age=300`.
++- The build still runs first and `set -e` still applies, so a failed build
++  stops the deploy before anything is deleted.
++
++**`build_pages.py`**
++
++- Calls `os.makedirs(out, exist_ok=True)` up front. Without this, when no
++  notes are public the output directory is never created and the `aws s3 sync`
++  source path does not exist. (The old per-file loop tolerated that case; sync
++  does not.)
++
++## Verification
++
++I could not test against a real bucket. The README says there is no test
++bucket, and I was not allowed to deploy. What I did check locally:
++
++- Ran `deploy.sh` with `BUCKET=test-bucket` and a stub `aws` on `PATH` that
++  only logs its arguments. The build output was correct (3 notes, 2 authors,
++  the private note excluded), and both sync commands had the expected flags
++  and filters.
++- Ran `build_pages.py` with every note set to private. It exits cleanly and
++  creates an empty output directory, so the sync would delete all `s/` and `a/`
++  keys, which is the intended result.
++- I did not verify S3's filter behaviour (exclude and include combined with
++  `--delete`) against live S3. The AWS CLI documents that files excluded by
++  filters are not deleted, and that is what the scoping relies on. Check it on
++  the first CI run, or with `aws s3 sync --dryrun` against a bucket you own.
++
++## Things to know before merging
++
++- **`--delete` on the site sync removes anything in the bucket root that is not
++  in `site/` or `.build/pages`.** Any file uploaded by hand, or by another
++  process, will be deleted on the next push to main.
++- **CloudFront still serves cached copies.** Deleting an object from S3 does
++  not purge the CDN. A removed page can stay live at the edge until its TTL
++  expires (`max-age=300` on pages). For immediate removal, add a CloudFront
++  invalidation for the deleted paths. I did not add one because it needs the
++  distribution ID and is an action on an external service.
++- Changes are uncommitted in the working tree.
+diff --git a/build_pages.py b/build_pages.py
+index ccba1c0..cee9c75 100644
+--- a/build_pages.py
++++ b/build_pages.py
+@@ -15,6 +15,7 @@ def write(key, text):
+     with open(p, "w") as f:
+         f.write(text)
+ 
++os.makedirs(out, exist_ok=True)  # so the sync still works when nothing is public
+ authors = {}
+ for s in stories:
+     write(f"s/{s['slug']}", page(s["title"], f"<h1>{html.escape(s['title'])}</h1><p>{html.escape(s['summary'])}</p>"
+diff --git a/deploy.sh b/deploy.sh
+index 431ef02..efc5d44 100755
+--- a/deploy.sh
++++ b/deploy.sh
+@@ -11,19 +11,27 @@ build_pages() {
+   python3 "$ROOT/build_pages.py" "$ROOT/content/stories.json" "$ROOT/.build/pages"
+ }
+ 
++# Each sync runs with --delete so objects the build no longer produces (deleted
++# or private notes, removed site/ files, authors with no public notes) are
++# removed from the bucket. The two syncs are scoped so neither deletes the
++# other's keys: the site sync skips the page prefixes, and the page sync only
++# touches them.
++
+ sync_site() {
+-  echo "→ syncing site/ to s3://$BUCKET"
+-  aws s3 sync "$ROOT/site/" "s3://$BUCKET/" --only-show-errors
++  echo "→ syncing site/ to s3://$BUCKET (deleting removed files)"
++  aws s3 sync "$ROOT/site/" "s3://$BUCKET/" --delete \
++    --exclude "s/*" --exclude "a/*" --only-show-errors
+ }
+ 
+ upload_pages() {
+   # Page keys are extensionless (s/<slug>, a/<handle>), so S3 can't guess their
+-  # type: upload each one with text/html.
+-  echo "→ uploading pages"
+-  ( cd "$ROOT/.build/pages" && find . -type f | sed 's|^\./||' | sort | while read -r key; do
+-      aws s3 cp "$key" "s3://$BUCKET/$key" --content-type "text/html; charset=utf-8" \
+-        --cache-control "max-age=300" --only-show-errors
+-    done )
++  # type: upload them all with text/html. Only s/ and a/ are in scope, so
++  # --delete removes stale pages without touching site/ files.
++  echo "→ uploading pages (deleting stale pages)"
++  aws s3 sync "$ROOT/.build/pages/" "s3://$BUCKET/" --delete \
++    --exclude "*" --include "s/*" --include "a/*" \
++    --content-type "text/html; charset=utf-8" --cache-control "max-age=300" \
++    --only-show-errors
+ }
+ 
+ build_pages

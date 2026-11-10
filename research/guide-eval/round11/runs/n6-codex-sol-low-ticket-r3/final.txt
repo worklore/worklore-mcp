@@ -1,0 +1,3 @@
+Installed the current npm release of `@hiero-ledger/sdk` (2.91.0) and added [src/transfer.ts](/tmp/h-AbAm32/src/transfer.ts). It builds and signs the specified transfer offline and prints only the signed bytes as hex. [ANSWER.md](/tmp/h-AbAm32/ANSWER.md) records the work and which parts of the colleague’s note applied.
+
+Verified `npx tsc --noEmit` passes and `npx tsx src/transfer.ts` produces one hex line. No transaction was submitted.

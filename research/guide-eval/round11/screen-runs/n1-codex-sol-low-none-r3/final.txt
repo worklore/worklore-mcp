@@ -1,0 +1,3 @@
+The launcher exited because Vibe tried to read API keys through macOS Keychain, and the sandbox blocked `/usr/bin/security`. I documented the cause in [ANSWER.md](/tmp/h-panKMn/ANSWER.md) and updated [run-vibe.sh](/tmp/h-panKMn/run-vibe.sh) to supply an inert `MISTRAL_API_KEY` placeholder, preventing that lookup while keeping the real OpenRouter key separate.
+
+A local sandbox test confirmed startup passes the Keychain step. Shell syntax and diff checks passed. I did not run a live OpenRouter request.

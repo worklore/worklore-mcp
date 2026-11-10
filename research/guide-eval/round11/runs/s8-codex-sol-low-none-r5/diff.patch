@@ -1,0 +1,42 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..cba1e57
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,5 @@
++# Cache fix
++
++`build_system()` now places the coaching instructions and athlete profile in the cached prefix, with long-term facts in a separate block after the cache boundary. A `save_fact` write changes only that later block, so the next request can reuse the existing prefix instead of recreating the whole prompt cache.
++
++Verified locally that adding a fact leaves the cached block identical, updates the fact block, and keeps the cache marker only on the prefix. `python3 -m py_compile bot.py` passes. Live cache usage was not tested because it requires an API call.
+diff --git a/bot.py b/bot.py
+index e2ff241..0fe3bb3 100644
+--- a/bot.py
++++ b/bot.py
+@@ -120,17 +120,19 @@ def athlete_context(a, today):
+         f"Athlete: {a.name} (id {a.user_id}), sport: {a.sport}",
+         "Zones: " + ", ".join(f"{k} {v}" for k, v in a.zones.items()),
+         f"Goal: {a.goal}",
+-        "Long-term facts:",
++        f"Language: {a.lang}",
+     ]
+-    lines += [f"- {f}" for f in a.facts] or ["- (none yet)"]
+-    lines.append(f"Language: {a.lang}")
+     return "\n".join(lines)
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    # Cache the rules and profile; facts change after save_fact and must follow the boundary.
++    facts = "\n".join(f"- {fact}" for fact in a.facts) if a.facts else "- (none yet)"
++    return [
++        {"type": "text", "text": INSTRUCTIONS + "\n\n" + athlete_context(a, today),
++         "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": "Long-term facts:\n" + facts},
++    ]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [
+# 1 file diffs under node_modules/, __pycache__/ or .prisma/ left out of this patch; 2 kept

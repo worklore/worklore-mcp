@@ -1,0 +1,14 @@
+**ANSWER.md**
+
+- **Changed `build_system` in `bot.py`**
+  - Split the system prompt into **two separate blocks**:
+    1. **Static block** – contains the full coaching instructions. No `cache_control` marker, allowing the provider to keep this prefix cached across all requests.
+    2. **Volatile block** – contains per‑athlete context (date, profile, zones, goal, long‑term facts). Marked with `{"cache_control": {"type": "ephemeral"}}` so that only this tail is rebuilt when `save_fact` updates the facts list.
+  - Added a detailed docstring explaining the two‑block approach and why the volatile tail is marked `ephemeral`.
+
+- **Relevant parts from the colleague’s note that were applied**
+  - **Split system into static + volatile text blocks** to keep the unchanged instructions hot in cache.
+  - **Placed an `ephemeral` cache marker on the mutable tail** (facts block) so writes only invalidate that part.
+  - **Ensured the static block contains no interpolated values** (no dates, usernames, counters) to keep its byte‑level representation identical across users and days.
+
+These modifications prevent a `save_fact` write from evicting the entire cached system prompt, reducing token usage on subsequent LLM calls.

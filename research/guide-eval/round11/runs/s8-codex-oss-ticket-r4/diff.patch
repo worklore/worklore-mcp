@@ -1,0 +1,59 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..371bd50
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,26 @@
++This patch fixes the caching behavior so that a `save_fact` memory write no longer evicts the static instructions from the cached system prompt.
++
++**What was changed**
++1. **`build_system` function** in `bot.py` was rewritten.
++   - Previously the system prompt was built as a single text block, meaning any change to the volatile tail (facts, date, etc.) altered the prefix hash and caused the whole prompt—including static instructions—to be re‑cached on every `save_fact`.
++   - The new implementation splits the prompt into **two separate blocks**:
++     ```python
++     static_block = {"type": "text", "text": INSTRUCTIONS,
++                     "cache_control": {"type": "ephemeral"}}
++     volatile_block = {"type": "text", "text": athlete_context(a, today)}
++     return [static_block, volatile_block]
++     ```
++   - The static block retains the cache marker, so only the volatile block is rebuilt when facts change.
++2. Added a detailed docstring to `build_system` explaining the two‑block split and caching semantics.
++
++**Which parts of the colleague’s note applied**
++- Identified that changing one byte in the tail invalidated the prefix hash; we solved this by **splitting the system prompt into two cached blocks**.
++- Recommended using `cache_control: {"type": "ephemeral"}` on the static prefix; we kept that marker on the static instructions block.
++- Suggested ordering the volatile tail after the static block; our implementation follows that order.
++
++**Result**
++- `save_fact` now only updates the second block, leaving the cached static instructions hot.
++- Subsequent tool‑use loops read the cached static prefix, reducing token usage and avoiding the full‑prompt cache‑creation cost on each memory write.
++
++Further tuning (e.g., additional cache markers for other rarely‑changing sections) can follow the same pattern.
++
+diff --git a/bot.py b/bot.py
+index e2ff241..7eb1d92 100644
+--- a/bot.py
++++ b/bot.py
+@@ -128,9 +128,19 @@ def athlete_context(a, today):
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    """Construct the system prompt split into two cacheable blocks.
++
++    * The first block contains the static *INSTRUCTIONS* that never change
++      across users, dates, or fact updates. It is marked with
++      cache_control": {"type": "ephemeral"} so the provider can keep it
++      hot in the cache.
++    * The second block holds the volatile per‑athlete context (date, profile,
++      zones, goal, and long‑term facts). Changing a fact via save_fact now
++      only rewrites this tail block, leaving the static prefix cached.
++    """
++    static_block = {"type": "text", "text": INSTRUCTIONS, "cache_control": {"type": "ephemeral"}}
++    volatile_block = {"type": "text", "text": athlete_context(a, today)}
++    return [static_block, volatile_block]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [

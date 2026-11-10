@@ -1,0 +1,3 @@
+Added the `codex-sandboxed` lane. It runs the same Codex command under `sandbox/agent.sb` with a scratch home, then copies Codex’s final message from `/tmp` into the run folder after the sandbox exits.
+
+[ANSWER.md](/tmp/h-XcIZYw/ANSWER.md) records the changes and which parts of the colleague’s note applied. Shell syntax, diff checks, and a sandbox read-denial probe passed. I did not run Codex against the external model provider.

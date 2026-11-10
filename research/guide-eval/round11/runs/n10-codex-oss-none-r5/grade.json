@@ -1,0 +1,58 @@
+{
+ "answer_file": true,
+ "reinstalled": false,
+ "prisma_version": "5.22.0",
+ "orm_postgres_version": "8.0.0-rc.23",
+ "prisma_client_version": "5.22.0",
+ "package_json_prisma": {
+  "@prisma/client": "^5.22.0",
+  "@prisma/orm-postgres": "^8.0.0-rc.23",
+  "prisma": "^5.22.0"
+ },
+ "imports_prisma_client": true,
+ "imports_orm_postgres": false,
+ "style": "prisma7-schema",
+ "on_prisma_8": false,
+ "on_prisma_7": false,
+ "fresh_apply": [
+  {
+   "cmd": "db push",
+   "rc": 0,
+   "tail": "/schema.prisma\nDatasource \"db\": PostgreSQL database \"n10_n10_codex_oss_none_r5_g\", schema \"public\" at \"localhost:5435\"\n\n\ud83d\ude80  Your database is now in sync with your Prisma schema. Done in 28ms\n\nRunning generate... (Use --skip-generate to skip the generators)\n\u001b[2K\u001b[1A\u001b[2K\u001b[GRunning generate... - Prisma Client\n\u001b[2K\u001b[1A\u001b[2K\u001b[G\u2714 Generated Prisma Client (v5.22.0) to ./node_modules/@prisma/client in 55ms\n\n"
+  }
+ ],
+ "db_source": "fresh",
+ "tables": [
+  "User",
+  "Post"
+ ],
+ "user_table": "User",
+ "post_table": "Post",
+ "table_checks": {
+  "email_unique": true,
+  "name_nullable": true,
+  "title_required": true,
+  "content_nullable": true,
+  "published_default_false": true
+ },
+ "tables_ok": true,
+ "script_exists": true,
+ "script_ok": true,
+ "script_exit": 0,
+ "script_out_tail": "Created user: {\n  id: 1,\n  email: 'alice@example.com',\n  name: 'Alice',\n  posts: [\n    {\n      id: 1,\n      title: 'First Post',\n      content: 'Hello world!',\n      published: true,\n      authorId: 1\n    },\n    {\n      id: 2,\n      title: 'Second Post',\n      content: 'Another post',\n      published: false,\n      authorId: 1\n    }\n  ]\n}\nAll users with posts:\n- alice@example.com (Alice):\n  * First Post [published]\n  * Second Post [draft]\n",
+ "rows_after_script": {
+  "users": 1,
+  "linked_posts": 2
+ },
+ "titles_printed": true,
+ "tsc_ok": true,
+ "tsc_tail": "",
+ "looked_up_client_tag": false,
+ "ran_orm_init": true,
+ "read_prisma8_md": false,
+ "web_use": true,
+ "answer_chars": 699,
+ "run_db": "n10_n10_codex_oss_none_r5",
+ "PASS": false,
+ "WORKS_ON_PRISMA7": false
+}

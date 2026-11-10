@@ -1,0 +1,17 @@
+**Added `codex‑sandboxed` lane**
+
+- Updated lane header in `run.sh` to list the new lane.
+- Implemented `codex_sandboxed_run`:
+  1. Creates a temporary scratch `HOME`.
+  2. Executes `codex exec` inside `sandbox/agent.sb` via `sandbox-exec`, mirroring the `kimi` lane.
+  3. Directs output to the same files as the regular `codex` lane.
+  4. Cleans up the temporary `HOME` directory.
+- Extended the `case` statement to invoke this function when the lane argument is `codex‑sandboxed`.
+
+**Usage**
+
+```bash
+./run.sh <task> codex-sandboxed [rep]
+```
+
+The lane runs Codex CLI with the agent’s shell sandboxed, preventing access to the real `$HOME`. No other files were modified.

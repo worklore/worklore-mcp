@@ -1,0 +1,3 @@
+Added Prisma ORM 7.10.1 with `User` and `Post` models, and applied the migration to the local PostgreSQL database in `.env`. [script.ts](/tmp/h-eUj6Qf/script.ts) creates a user with two posts and prints every user with their posts. [ANSWER.md](/tmp/h-eUj6Qf/ANSWER.md) records the setup.
+
+Verified `npx tsx script.ts` and `npx tsc --noEmit`. After a fresh install, run `npx prisma generate` before the script.

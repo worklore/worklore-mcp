@@ -1,0 +1,6 @@
+Reading additional input from stdin...
+2026-11-10T01:29:52.358508Z ERROR codex_core::tools::router: error=apply_patch verification failed: Failed to find expected lines in /tmp/h-xx1LDE/package.json:
+  "dependencies": {
+    "dotenv": "^17.2.0"
+  },
+2026-11-10T01:30:08.406323Z ERROR codex_core::tools::router: error=apply_patch verification failed: invalid hunk at line 3, '@@' is not a valid hunk header. Valid hunk headers: '*** Add File: {path}', '*** Delete File: {path}', '*** Update File: {path}'

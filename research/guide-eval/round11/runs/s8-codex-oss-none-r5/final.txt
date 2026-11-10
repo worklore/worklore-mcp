@@ -1,0 +1,1 @@
+Implemented split system‑prompt caching in `bot.py` and documented the change in `ANSWER.md`. The static instructions are now cached with `type: "static"` while the dynamic athlete context remains ephemeral, preventing cache eviction on memory writes. No other files were modified.

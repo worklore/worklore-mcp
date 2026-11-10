@@ -1,0 +1,8 @@
+**Added codex‑sandboxed Lane**
+
+- Created a new `codex_sandboxed` function in `run.sh` that mirrors the existing `codex` lane but runs under `sandbox/agent.sb`.
+- Uses a temporary scratch `$HOME` (via `mktemp -d /tmp/codex‑sb‑XXXXXX`) so the sandbox blocks real‑home access.
+- Executes `codex exec` inside `sandbox-exec` with `-D HOME="$REAL"` and writes the final answer to a scratch file (`$SCRATCH/final.txt`) that the sandbox permits.
+- After `sandbox-exec` returns, copies the scratch `final.txt` back into the run folder (`$R/final.txt`) and removes the temporary home.
+- Updated the lane selector case statement to include the new `codex-sandboxed` lane.
+- Documented the changes and rationale in `ANSWER.md`, noting which parts of the colleague’s note were applied (scratch‑home usage, output redirection, post‑sandbox copy).

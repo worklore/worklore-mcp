@@ -1,0 +1,77 @@
+{
+ "core_version": "0.12.0",
+ "react_version": "0.12.0",
+ "reinstalled": false,
+ "package_json_pollar": {
+  "@pollar/core": "^0.12.0",
+  "@pollar/react": "^0.12.0"
+ },
+ "versions_ok": true,
+ "old_ramp_api_left": false,
+ "tsc_ok": true,
+ "tsc_tail": "",
+ "checks": {
+  "base_url": {
+   "value": "https://sdk.api.pollar.xyz",
+   "ok": true
+  },
+  "balances": {
+   "lines": [
+    "USDC unavailable",
+    "XLM 12.50"
+   ],
+   "ok": true
+  },
+  "kyc": {
+   "expired": "Verification expired",
+   "approved": "Verified",
+   "ok": true
+  },
+  "trustline": {
+   "calls": [
+    [
+     {
+      "code": "USDC",
+      "issuer": "GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5"
+     }
+    ]
+   ],
+   "ok": true
+  },
+  "ramp": {
+   "body": {
+    "direction": "ONRAMP",
+    "fiat": {
+     "currency": "ARS",
+     "country": "AR",
+     "rail": "BANK_TRANSFER"
+    },
+    "asset": {
+     "code": "USDC",
+     "identifier": "GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5",
+     "chain": "STELLAR"
+    },
+    "amount": {
+     "value": "10000",
+     "denomination": "in"
+    }
+   },
+   "rate": 1250,
+   "none": null,
+   "ok": true
+  }
+ },
+ "base_url_ok": true,
+ "balances_ok": true,
+ "kyc_ok": true,
+ "trustline_ok": true,
+ "ramp_ok": true,
+ "trap_base_url_ok": true,
+ "trap_balance_ok": true,
+ "read_upgrade_guide": true,
+ "read_llms_full": false,
+ "used_migrate_tool": false,
+ "web_use": true,
+ "answer_chars": 4420,
+ "PASS": true
+}

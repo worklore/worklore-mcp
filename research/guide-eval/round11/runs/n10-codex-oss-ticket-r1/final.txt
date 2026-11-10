@@ -1,0 +1,21 @@
+**What I did**
+
+- Added **Prisma ORM 8 (rc)** to the project with `npm install prisma@latest @prisma/orm-postgres@latest`.
+- Ran `npx prisma orm init --yes --target postgres --authoring psl` to scaffold a Prisma 8 project.
+- Updated the data contract in `src/prisma/contract.prisma`:
+  - `User` now has a unique `email` and optional `name`.
+  - `Post` now has `title`, optional `content`, a `published` flag defaulting to `false`, and a required `author` relation.
+- Regenerated the contract artifacts (`contract.json`, `contract.d.ts`) with `npx prisma contract emit`.
+- Created the database tables using `npx prisma db init --yes` (the `--yes` flag auto‑accepts prompts, matching the colleague’s “use `--yes` to avoid hanging” advice).
+- Added **`script.ts`** at the project root that:
+  1. Creates a user with two posts.
+  2. Retrieves every user with their posts via `include('posts')`.
+  3. Prints the result as formatted JSON.
+  4. Closes the Prisma client when possible.
+
+**Applied parts of the colleague’s note**
+
+- **Used the current npm version** (`prisma@8.0.0‑rc.33`) rather than the older 7 line.
+- **Ran `orm init` with `--yes`** to avoid interactive prompts that would stall the process.
+- Followed the **Prisma‑8 workflow** (`prisma contract emit` → `prisma db init`) as described.
+- Leveraged the **ORM query syntax** (`db.orm.public.User.create`, `db.orm.public.Post.create`, `include('posts')`) shown in the note’s examples.

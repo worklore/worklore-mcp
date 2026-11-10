@@ -1,0 +1,99 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..88b16a3
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,37 @@
++# Changes Made
++
++## Summary
++Added a `codex-sandboxed` lane to `run.sh` that runs Codex CLI inside the sandbox profile `sandbox/agent.sb`, mirroring how the `kimi` lane operates. This prevents the agent's shell from reading or writing to the real home directory.
++
++## Files Modified
++
++### 1. `run.sh`
++- Updated the usage comment to document the new `codex-sandboxed` lane
++- Added `codex_sandboxed_run()` function that:
++  - Creates a temporary scratch HOME directory (`/tmp/chome-XXXXXX`)
++  - Uses `sandbox-exec` with `-D HOME="$REAL"` to pass the real home directory
++  - Uses `-f "$D/sandbox/agent.sb"` to apply the sandbox profile
++  - Sets `HOME` to the scratch directory for the agent's shell
++  - Runs the same Codex command as the unsandboxed `codex` lane
++  - Cleans up the scratch directory after execution
++- Added `codex-sandboxed` case to the lane selector
++
++### 2. `sandbox/agent.sb`
++- Added rules to allow read access to Codex's installation directories:
++  - `/opt/homebrew/lib/node_modules/@openai/codex` (Codex npm package)
++  - `/opt/homebrew/bin/codex` (Codex CLI entry point)
++- Added rules to allow read/write access to Codex's data directory in the real home:
++  - `$(param "HOME")/.codex` (Codex config and cache)
++
++## Behavior
++The `codex-sandboxed` lane now:
++1. Runs Codex CLI with the same command-line arguments as the unsandboxed `codex` lane
++2. Executes within the sandbox profile that blocks access to the real home directory
++3. Uses a temporary scratch HOME to prevent the agent from reading/writing real user files
++4. Allows access only to Codex's installation and its own data directory under the real home
++5. Maintains the same timeout (1200 seconds) and output structure as other lanes
++
++## Usage
++```bash
++./run.sh <task> codex-sandboxed [rep]
++```
+diff --git a/run.sh b/run.sh
+index c41ad67..92c005d 100755
+--- a/run.sh
++++ b/run.sh
+@@ -1,7 +1,8 @@
+ #!/usr/bin/env bash
+ # usage: run.sh <task> <lane> [rep]
+-# lanes: codex   Codex CLI, unsandboxed
+-#        kimi    Kimi Code under sandbox/agent.sb (no reading or writing the real home), scratch HOME
++# lanes: codex            Codex CLI, unsandboxed
++#        codex-sandboxed  Codex CLI under sandbox/agent.sb (no reading or writing the real home), scratch HOME
++#        kimi              Kimi Code under sandbox/agent.sb (no reading or writing the real home), scratch HOME
+ set -u
+ D="$(cd "$(dirname "$0")" && pwd)"
+ T=$1; A=$2; REP=${3:-1}
+@@ -15,6 +16,15 @@ codex_run() {
+       -o "$R/final.txt" "$P" < /dev/null > "$R/agent.log" 2> "$R/agent.err" )
+ }
+ 
++# Codex sandboxed: runs under sandbox/agent.sb with an empty scratch HOME, same as kimi.
++codex_sandboxed_run() {
++  local REAL="$HOME" SH; SH=$(mktemp -d /tmp/chome-XXXXXX)
++  ( cd "$W" && export HOME="$SH" && sandbox-exec -D HOME="$REAL" -f "$D/sandbox/agent.sb" \
++      timeout $TO codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox -C "$W" --json \
++      -o "$R/final.txt" "$P" < /dev/null > "$R/agent.log" 2> "$R/agent.err" )
++  local rc=$?; rm -rf "$SH"; return $rc
++}
++
+ # Kimi's output goes to Moonshot: its shell runs under sandbox/agent.sb with an empty scratch HOME.
+ kimi_run() {
+   local REAL="$HOME" SH; SH=$(mktemp -d /tmp/khome-XXXXXX)
+@@ -26,8 +36,9 @@ kimi_run() {
+ 
+ start=$(date +%s)
+ case $A in
+-  codex) codex_run;;
+-  kimi)  kimi_run;;
++  codex)           codex_run;;
++  codex-sandboxed) codex_sandboxed_run;;
++  kimi)            kimi_run;;
+   *) echo "unknown lane $A"; exit 2;;
+ esac
+ rc=$?
+diff --git a/sandbox/agent.sb b/sandbox/agent.sb
+index 3a517dd..27d98a8 100644
+--- a/sandbox/agent.sb
++++ b/sandbox/agent.sb
+@@ -6,4 +6,8 @@
+ (deny file-write* (subpath (param "HOME")))
+ (allow file-read-data (subpath (string-append (param "HOME") "/.kimi-code")))
+ (allow file-write* (subpath (string-append (param "HOME") "/.kimi-code")))
++(allow file-read-data (subpath (string-append (param "HOME") "/.codex")))
++(allow file-write* (subpath (string-append (param "HOME") "/.codex")))
++(allow file-read-data (subpath "/opt/homebrew/lib/node_modules/@openai/codex"))
++(allow file-read-data (subpath "/opt/homebrew/bin/codex"))
+ (deny process-exec (literal "/bin/launchctl") (literal "/usr/bin/security") (literal "/usr/bin/osascript"))

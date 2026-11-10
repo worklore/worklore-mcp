@@ -1,0 +1,51 @@
+{
+ "answer_file": true,
+ "answer_source": "repo",
+ "lanes": [
+  "codex",
+  "codex-sandboxed",
+  "kimi"
+ ],
+ "new_lane": "codex-sandboxed",
+ "paths_rewritten": [],
+ "lane_rc": 0,
+ "lane_out": "fizz-codex-sandboxed-r1 rc=0 answer=24 chars\n",
+ "codex_ran": true,
+ "codex_under_sandbox": true,
+ "sandbox_calls": 1,
+ "fence": {
+  "denies_home_write": true,
+  "denies_home_read": true,
+  "opens_run_folder": false,
+  "params": {
+   "HOME": "/private/var/folders/wx/fkc3yttx3f7ddg45t1h52nyw0000gn/T/g-n4-xqd01b37/home"
+  }
+ },
+ "final_txt_has_answer": true,
+ "answer_json_has_answer": true,
+ "codex_wrote_out_file": true,
+ "codex_out_file": "/tmp/cout-01dUPr/final.txt",
+ "failed_write_in_err": false,
+ "codex_lane_ok": true,
+ "agent_ran_sandbox_exec": [
+  "echo \"HOME=$HOME\"; which codex kimi sandbox-exec python3 timeout gtimeout 2>&1; command -v codex && readlink -f \"$(command -v codex)\"; echo \"CODEX_API_KEY set: ",
+  "bash -n run.sh && echo SYNTAX_OK; rm -f \"$HOME/.probe-denied-$$\" /tmp/probe-allowed-$$; sandbox-exec -D HOME=\"$HOME\" -f sandbox/agent.sb sh -c \"echo ok > /tmp/p",
+  "cd /private/tmp/h-NMesor && bash -n run.sh && echo SYNTAX_OK; rm -f \"$HOME/.probe-denied-$$\" /tmp/probe-allowed-$$; sandbox-exec -D HOME=\"$HOME\" -f sandbox/agen"
+ ],
+ "agent_ran_harness": [
+  "git status && git log --oneline | head -5 && ls -la && echo --- && ls -la sandbox 2>/dev/null; echo ---; cat run.sh 2>/dev/null; echo ---; ls /tmp/h-NMesor | he",
+  "cd /private/tmp/h-NMesor && git status && git log --oneline | head -5 && ls -la && echo --- && ls -la sandbox 2>/dev/null; echo ---; cat run.sh 2>/dev/null; ech",
+  "bash -n run.sh && echo SYNTAX_OK; rm -f \"$HOME/.probe-denied-$$\" /tmp/probe-allowed-$$; sandbox-exec -D HOME=\"$HOME\" -f sandbox/agent.sb sh -c \"echo ok > /tmp/p",
+  "cd /private/tmp/h-NMesor && bash -n run.sh && echo SYNTAX_OK; rm -f \"$HOME/.probe-denied-$$\" /tmp/probe-allowed-$$; sandbox-exec -D HOME=\"$HOME\" -f sandbox/agen",
+  "set -u; FB=$(mktemp -d /tmp/fakebin-XXXXXX); cat > \"$FB/codex\" <<'EOF'\n#!/bin/sh\n# stub: mimics `codex exec ... -o FILE PROMPT` \u2014 writes the last message, tries"
+ ],
+ "answer_mentions_output_file": true,
+ "changed_files": [
+  "ANSWER.md",
+  "README.md",
+  "run.sh"
+ ],
+ "commands_issued": 20,
+ "answer_chars": 5504,
+ "PASS": true
+}

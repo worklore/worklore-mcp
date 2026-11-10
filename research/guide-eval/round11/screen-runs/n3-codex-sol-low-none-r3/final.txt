@@ -1,0 +1,3 @@
+Updated [deploy.sh](/tmp/h-jX9XPV/deploy.sh) to sync the complete build with `--delete`, so the next deploy removes bucket files that the build no longer produces, including pages for deleted or private notes and files removed from `site/`. Documented the change in [ANSWER.md](/tmp/h-jX9XPV/ANSWER.md).
+
+Verified locally with a mocked AWS command. No deployment or external service call was made.

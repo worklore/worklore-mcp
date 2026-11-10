@@ -1,0 +1,46 @@
+{
+ "answer_file": true,
+ "answer_source": "repo",
+ "lanes": [
+  "codex",
+  "codex-sandboxed",
+  "kimi"
+ ],
+ "new_lane": "codex-sandboxed",
+ "paths_rewritten": [],
+ "lane_rc": 0,
+ "lane_out": "fizz-codex-sandboxed-r1 rc=0 answer=0 chars\n",
+ "codex_ran": true,
+ "codex_under_sandbox": true,
+ "sandbox_calls": 1,
+ "fence": {
+  "denies_home_write": true,
+  "denies_home_read": true,
+  "opens_run_folder": false,
+  "params": {
+   "HOME": "/private/var/folders/wx/fkc3yttx3f7ddg45t1h52nyw0000gn/T/g-n4-6mrt5l_0/home"
+  }
+ },
+ "final_txt_has_answer": false,
+ "answer_json_has_answer": false,
+ "codex_wrote_out_file": false,
+ "codex_out_file": "/private/var/folders/wx/fkc3yttx3f7ddg45t1h52nyw0000gn/T/g-n4-6mrt5l_0/home/evals/agent-evals/runs/fizz-codex-sandboxed-r1/final.txt",
+ "failed_write_in_err": true,
+ "codex_lane_ok": true,
+ "agent_ran_sandbox_exec": [
+  "/bin/zsh -lc 'apply_patch \"*** Begin Patch\n*** Update File: run.sh\n@@\n-# lanes: codex   Codex CLI, unsandboxed\n-#        kimi    Kimi Code under sandbox/agent.s",
+  "/bin/zsh -lc \"cat > run.sh <<'EOF'\n#\"'!/usr/bin/env bash\n# usage: run.sh <task> <lane> [rep]\n# lanes: codex            Codex CLI, unsandboxed\n#        codex-san"
+ ],
+ "agent_ran_harness": [
+  "/bin/zsh -lc 'apply_patch \"*** Begin Patch\n*** Update File: run.sh\n@@\n-# lanes: codex   Codex CLI, unsandboxed\n-#        kimi    Kimi Code under sandbox/agent.s",
+  "/bin/zsh -lc \"cat > run.sh <<'EOF'\n#\"'!/usr/bin/env bash\n# usage: run.sh <task> <lane> [rep]\n# lanes: codex            Codex CLI, unsandboxed\n#        codex-san"
+ ],
+ "answer_mentions_output_file": false,
+ "changed_files": [
+  "ANSWER.md",
+  "run.sh"
+ ],
+ "commands_issued": 6,
+ "answer_chars": 564,
+ "PASS": false
+}

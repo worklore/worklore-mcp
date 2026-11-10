@@ -1,0 +1,58 @@
+{
+ "answer_file": true,
+ "reinstalled": false,
+ "prisma_version": "8.0.0-rc.33",
+ "orm_postgres_version": "8.0.0-rc.23",
+ "prisma_client_version": null,
+ "package_json_prisma": {
+  "@prisma/orm-postgres": "^8.0.0-rc.23",
+  "@prisma/cli-engine": "^0.9.0",
+  "prisma": "^8.0.0-rc.33"
+ },
+ "imports_prisma_client": false,
+ "imports_orm_postgres": true,
+ "style": "prisma8-contract",
+ "on_prisma_8": true,
+ "on_prisma_7": false,
+ "fresh_apply": [
+  {
+   "cmd": "db init",
+   "rc": 0,
+   "tail": " constraint on \"User\" (email)\n\u251c\u2500 Create index \"Post_authorId_idx_e47547ed\" on \"Post\"\n\u251c\u2500 Add foreign key \"Post_authorId_fkey\" on \"Post\"\n\u2514\u2500 marker bd5fe21ff49e17c00bfe645409be030ddefcddd91119f084f3bc447e0e3c04ac\n\n\u2192 Confirm the space is up to date: prisma migration status --db <url>\nPrisma agent skills are out of date (installed @prisma/orm-postgres 8.0.0-rc.23, synced none). Run: prisma skills sync\n"
+  }
+ ],
+ "db_source": "fresh",
+ "tables": [
+  "User",
+  "Post"
+ ],
+ "user_table": "User",
+ "post_table": "Post",
+ "table_checks": {
+  "email_unique": true,
+  "name_nullable": true,
+  "title_required": true,
+  "content_nullable": true,
+  "published_default_false": true
+ },
+ "tables_ok": true,
+ "script_exists": true,
+ "script_ok": true,
+ "script_exit": 0,
+ "script_out_tail": "Created user: { email: 'alice@example.com', id: 1, name: 'Alice' }\nCreated posts: {\n  authorId: 1,\n  content: 'This is my first post',\n  id: 1,\n  published: false,\n  title: 'First Post'\n} {\n  authorId: 1,\n  content: 'This is my second post',\n  id: 2,\n  published: true,\n  title: 'Second Post'\n}\n\nAll users with their posts:\n\nUser 1: alice@example.com (Alice)\n  Posts:\n    - First Post: This is my first post (published: false)\n    - Second Post: This is my second post (published: true)\n",
+ "rows_after_script": {
+  "users": 1,
+  "linked_posts": 2
+ },
+ "titles_printed": true,
+ "tsc_ok": false,
+ "tsc_tail": "lean' is not assignable to type 'true'.\nscript.ts(6,9): error TS2684: The 'this' context of type 'Collection<Contract, \"User\", DefaultModelRow<Contract, \"User\", \"public\">, WithNsId<DefaultCollectionTypeState, \"public\">>' is not assignable to method's 'this' of type 'HasWhere & HasNoUniqueFilter'.\n  Type 'Collection<Contract, \"User\", DefaultModelRow<Contract, \"User\", \"public\">, WithNsId<DefaultCollectionTypeState, \"public\">>' is not assignable to type 'HasWhere'.\n    The types of '[TypeState].hasWhere' are incompatible between these types.\n      Type 'boolean' is not assignable to type 'true'.\n",
+ "looked_up_client_tag": true,
+ "ran_orm_init": true,
+ "read_prisma8_md": true,
+ "web_use": false,
+ "answer_chars": 3514,
+ "run_db": "n10_n10_vibe_devstral_story_r3",
+ "PASS": true,
+ "WORKS_ON_PRISMA7": false
+}

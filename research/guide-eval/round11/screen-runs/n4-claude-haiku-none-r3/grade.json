@@ -1,0 +1,52 @@
+{
+ "answer_file": true,
+ "answer_source": "repo",
+ "lanes": [
+  "codex",
+  "codex-sandbox",
+  "kimi"
+ ],
+ "new_lane": "codex-sandbox",
+ "paths_rewritten": [],
+ "lane_rc": 0,
+ "lane_out": "fizz-codex-sandbox-r1 rc=0 answer=0 chars\n",
+ "codex_ran": true,
+ "codex_under_sandbox": true,
+ "sandbox_calls": 1,
+ "fence": {
+  "denies_home_write": true,
+  "denies_home_read": true,
+  "opens_run_folder": false,
+  "params": {
+   "HOME": "/private/var/folders/wx/fkc3yttx3f7ddg45t1h52nyw0000gn/T/g-n4-w0hvrwbm/home"
+  }
+ },
+ "final_txt_has_answer": false,
+ "answer_json_has_answer": false,
+ "codex_wrote_out_file": false,
+ "codex_out_file": "/private/var/folders/wx/fkc3yttx3f7ddg45t1h52nyw0000gn/T/g-n4-w0hvrwbm/home/evals/agent-evals/runs/fizz-codex-sandbox-r1/final.txt",
+ "failed_write_in_err": true,
+ "codex_lane_ok": true,
+ "agent_ran_sandbox_exec": [
+  "cat README.md; echo ---; cat check_answer.py; echo ---; cat tasks/fizz.prompt; echo ---; cat .gitignore; echo ---; ls -la runs; which codex sandbox-exec kimi; l",
+  "cd /private/tmp/h-yrDiZe && cat README.md; echo ---; cat check_answer.py; echo ---; cat tasks/fizz.prompt; echo ---; cat .gitignore; echo ---; ls -la runs; whic",
+  "bash -n run.sh && echo SYNTAX_OK\nS=$(mktemp -d /tmp/khome-test-XXXXXX)\necho \"--- probe: real home read/write under profile (expect denied)\"\nsandbox-exec -D HOME",
+  "cd /private/tmp/h-yrDiZe && bash -n run.sh && echo SYNTAX_OK\nS=$(mktemp -d /tmp/khome-test-XXXXXX)\necho \"--- probe: real home read/write under profile (expect d"
+ ],
+ "agent_ran_harness": [
+  "cat run.sh 2>/dev/null; echo ---; cat sandbox/agent.sb 2>/dev/null; echo ---; cat ANSWER.md 2>/dev/null | head -50",
+  "cd /private/tmp/h-yrDiZe && cat run.sh 2>/dev/null; echo ---; cat sandbox/agent.sb 2>/dev/null; echo ---; cat ANSWER.md 2>/dev/null | head -50",
+  "bash -n run.sh && echo SYNTAX_OK\nS=$(mktemp -d /tmp/khome-test-XXXXXX)\necho \"--- probe: real home read/write under profile (expect denied)\"\nsandbox-exec -D HOME",
+  "cd /private/tmp/h-yrDiZe && bash -n run.sh && echo SYNTAX_OK\nS=$(mktemp -d /tmp/khome-test-XXXXXX)\necho \"--- probe: real home read/write under profile (expect d",
+  "F=$(mktemp -d /tmp/fakecodex-XXXXXX) && cat > \"$F/codex\" <<'EOF'\n#!/usr/bin/env bash\nout=\"\"; while [ $# -gt 0 ]; do case \"$1\" in -o) out=$2; shift;; esac; shift"
+ ],
+ "answer_mentions_output_file": true,
+ "changed_files": [
+  "ANSWER.md",
+  "README.md",
+  "run.sh"
+ ],
+ "commands_issued": 13,
+ "answer_chars": 3345,
+ "PASS": false
+}

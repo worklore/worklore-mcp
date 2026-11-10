@@ -1,0 +1,41 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..4d63563
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1 @@
++Changes made to fix caching of long‑term memory writes.
+diff --git a/bot.py b/bot.py
+index e2ff241..dd54889 100644
+--- a/bot.py
++++ b/bot.py
+@@ -128,9 +128,26 @@ def athlete_context(a, today):
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    """Construct the system prompt as two separate blocks.
++
++    The first block contains the static coaching instructions. It never changes
++    between requests, so we leave it without a cache_control marker – the
++    provider can keep it hot indefinitely.
++
++    The second block holds the per‑athlete, volatile context (date, zones,
++    facts, etc.). This block is marked ephemeral so that only it is
++    regenerated when a save_fact call mutates a.facts. Changing the
++    volatile block no longer invalidates the cached static block, fixing the
++    excessive cache misses described in the issue.
++    """
++    static_block = {"type": "text", "text": INSTRUCTIONS}
++    volatile_text = athlete_context(a, today)
++    volatile_block = {
++        type: text,
++        text: volatile_text,
++        cache_control: {type: ephemeral},
++    }
++    return [static_block, volatile_block]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [

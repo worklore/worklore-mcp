@@ -1,0 +1,3 @@
+Added the `codex-sandboxed` lane and documented it in [ANSWER.md](/tmp/h-eRJbtI/ANSWER.md). It runs the same Codex command with a scratch home, then copies the final message out after the sandbox exits. The profile now limits Kimi’s real-home exception to the Kimi lane.
+
+Shell syntax and diff checks passed. I did not run a Codex smoke test because the task prohibits contacting an external service.

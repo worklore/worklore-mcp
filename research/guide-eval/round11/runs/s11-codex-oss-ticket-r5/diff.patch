@@ -1,0 +1,35 @@
+diff --git a/src/app.py b/src/app.py
+index db49c5e..f6c321a 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -31,11 +31,29 @@ def similarity(a, b):
+ 
+ 
+ def related(story, existing):
++    """Return the top *N* most similar stories.
++
++    The original implementation stored the raw ``float`` similarity scores
++    returned by :func:`similarity`.  DynamoDB (and the provided ``FakeTable``
++    test double) reject ``float`` values – they must be ``Decimal`` or an
++    integer type.  When the library is empty the *related* list is empty, so the
++    bug goes unnoticed on the first publish.  On subsequent publishes a list
++    containing ``float`` scores is written, triggering a ``TypeError`` and a
++    500 response.
++
++    To avoid the float‑type restriction we convert the score to an integer
++    representing a percentage (0‑100).  This preserves the ordering semantics
++    while producing a DynamoDB‑compatible type.
++    """
+     scored = []
+     for other in existing:
+         if other["slug"] == story["slug"]:
+             continue
+-        scored.append({"slug": other["slug"], "score": similarity(story, other)})
++        # similarity returns a float in the range [0, 1]. Convert to an int
++        # percentage to satisfy DynamoDB's type constraints.
++        raw_score = similarity(story, other)
++        int_score = int(round(raw_score * 100))
++        scored.append({"slug": other["slug"], "score": int_score})
+     scored.sort(key=lambda s: s["score"], reverse=True)
+     return scored[:TOP_N]
+ 

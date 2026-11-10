@@ -1,0 +1,4 @@
+**Patch Summary**
+
+- **Modified** `bot.py` – rewritten `build_system` to split the system prompt into two cacheable blocks: a static instructions block (with `cache_control: {"type": "ephemeral"}`) and a volatile athlete‑context block. Added a detailed docstring explaining the split and caching rationale.
+- **Added** `ANSWER.md` – documents what was changed, which parts of the colleague’s note were applied, and the resulting behavior (facts updates no longer evict static instructions from cache).

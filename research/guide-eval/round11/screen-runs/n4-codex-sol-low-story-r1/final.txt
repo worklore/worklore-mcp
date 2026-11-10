@@ -1,0 +1,3 @@
+Added `codex-sandboxed` to [run.sh](/tmp/h-drZ1Au/run.sh). It runs the same Codex command under [sandbox/agent.sb](/tmp/h-drZ1Au/sandbox/agent.sb) with a scratch home, then copies Codex’s final answer from `/tmp` into the run folder. The profile’s home-folder exception is now lane specific, so Codex cannot use Kimi’s exception.
+
+[ANSWER.md](/tmp/h-drZ1Au/ANSWER.md) records the changes and which parts of the colleague’s note applied. Shell syntax, diff checks, and a local sandbox read/write probe passed. I did not run Codex against the external provider.

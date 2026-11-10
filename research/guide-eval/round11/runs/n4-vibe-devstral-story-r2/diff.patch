@@ -1,0 +1,87 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..6399034
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,39 @@
++# Added codex-sandboxed lane to run.sh
++
++## What I did
++
++Added a new lane `codex-sandboxed` that runs the Codex CLI under `sandbox-exec -f sandbox/agent.sb`, the same way the `kimi` lane does it. This prevents the agent's shell from reading or writing the real home directory.
++
++### Changes to run.sh
++
++1. **Added `codex_sandboxed_run()` function** (lines 27-34):
++   - Creates two scratch folders in `/tmp`: one for the sandboxed HOME (`/tmp/chome-XXXXXX`) and one for Codex's output file (`/tmp/cs-XXXXXX`)
++   - Runs `codex exec` under `sandbox-exec` with `-D HOME="$REAL"` and the `agent.sb` profile
++   - Points Codex's `-o` flag to `$SCRATCH/final.txt` (in `/tmp`, which the profile allows)
++   - After `sandbox-exec` returns, copies `final.txt` from the scratch folder to the run folder `$R/final.txt`
++   - Cleans up both scratch folders
++   - Returns the exit code from the sandboxed command
++
++2. **Updated the lane selector** (line 40): Added `codex-sandboxed) codex_sandboxed_run;;` case
++
++3. **Updated usage comment** (lines 2-4): Added `codex-sandboxed` to the lane list with its description
++
++## What applied from the colleague's note
++
++The colleague's note **applied directly** to this case:
++
++- **Problem identified**: Codex CLI writes its final message to the file given with `-o`, and that file was in the run folder under the real home directory. Inside the sandbox, that write is denied by the `deny file-write*` rule for `(subpath (param "HOME"))`.
++
++- **Fix applied**: Point Codex's `-o` flag at a scratch folder in `/tmp` (which the profile allows), then copy the file into the run folder after `sandbox-exec` returns.
++
++- **The note's check list**:
++  - Output-file flag: `-o "$R/final.txt"` in the original `codex_run()` → falls under denied path
++  - After fix: `-o "$SCRATCH/final.txt"` where `$SCRATCH` is `/tmp/cs-XXXXXX` → allowed
++  - stdout/stderr redirects remain direct to the run folder (opened by the shell before `sandbox-exec` starts)
++
++The note's reproduction steps and verification were followed: output path moved to `/tmp`, files copied after sandbox exits, and the exit code is not trusted alone (the grader checks for the final answer file).
++
++## What did not apply
++
++- The colleague mentioned Mistral Vibe's `--output-dir` flag having the same issue. This lane only uses Codex CLI, so that part was not relevant.
++- The specific error messages and paths from their environment were examples, not instructions to copy.
+diff --git a/run.sh b/run.sh
+index c41ad67..f27b684 100755
+--- a/run.sh
++++ b/run.sh
+@@ -1,7 +1,8 @@
+ #!/usr/bin/env bash
+ # usage: run.sh <task> <lane> [rep]
+-# lanes: codex   Codex CLI, unsandboxed
+-#        kimi    Kimi Code under sandbox/agent.sb (no reading or writing the real home), scratch HOME
++# lanes: codex           Codex CLI, unsandboxed
++#        codex-sandboxed Codex CLI under sandbox/agent.sb (no reading or writing the real home)
++#        kimi             Kimi Code under sandbox/agent.sb (no reading or writing the real home), scratch HOME
+ set -u
+ D="$(cd "$(dirname "$0")" && pwd)"
+ T=$1; A=$2; REP=${3:-1}
+@@ -24,10 +25,24 @@ kimi_run() {
+   local rc=$?; rm -rf "$SH"; return $rc
+ }
+ 
++# Codex under sandbox/agent.sb: shell cannot read or write the real home.
++# Output file goes to a scratch folder in /tmp, then copied to the run folder.
++codex_sandboxed_run() {
++  local REAL="$HOME" SH SCRATCH; SCRATCH=$(mktemp -d /tmp/cs-XXXXXX); SH=$(mktemp -d /tmp/chome-XXXXXX)
++  ( cd "$W" && export HOME="$SH" && sandbox-exec -D HOME="$REAL" -f "$D/sandbox/agent.sb" \
++      timeout $TO codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox -C "$W" --json \
++      -o "$SCRATCH/final.txt" "$P" < /dev/null > "$R/agent.log" 2> "$R/agent.err" )
++  local rc=$?
++  cp "$SCRATCH/final.txt" "$R/final.txt" 2>/dev/null || true
++  rm -rf "$SH" "$SCRATCH"
++  return $rc
++}
++
+ start=$(date +%s)
+ case $A in
+-  codex) codex_run;;
+-  kimi)  kimi_run;;
++  codex)          codex_run;;
++  codex-sandboxed) codex_sandboxed_run;;
++  kimi)            kimi_run;;
+   *) echo "unknown lane $A"; exit 2;;
+ esac
+ rc=$?

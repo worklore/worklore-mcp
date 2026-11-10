@@ -1,0 +1,36 @@
+diff --git a/bot.py b/bot.py
+index e2ff241..e11d05e 100644
+--- a/bot.py
++++ b/bot.py
+@@ -128,9 +128,28 @@ def athlete_context(a, today):
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    """Return the system prompt split into two independent cached blocks.
++
++    The first block contains the static coaching instructions. It never
++    changes between users or calls, so it can stay cached for the full TTL.
++    The second block contains per‑user, per‑day volatile information such as
++    the athlete profile, zones, goal, and long‑term facts. Marking this block
++    with ``cache_control: {"type": "ephemeral"}`` tells the provider that only
++    this part should be re‑generated on a memory write, preserving the cache
++    hit for the static instructions.
++    """
++    # Static instructions – unchanged across calls.
++    static_block = {"type": "text", "text": INSTRUCTIONS}
++
++    # Volatile athlete context – may change when facts are saved.
++    volatile_text = athlete_context(a, today)
++    volatile_block = {
++        "type": "text",
++        "text": volatile_text,
++        "cache_control": {"type": "ephemeral"},
++    }
++
++    return [static_block, volatile_block]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [

@@ -1,0 +1,102 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..da1f8d5
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,36 @@
++# Cause and Fix for Second Publish 500 Error
++
++## Cause
++
++The `similarity()` function in `src/app.py` computes similarity scores using Python's division operator (`/`), which produces `float` values. These float scores are then stored in the `similar` list within DynamoDB items. DynamoDB (via boto3) rejects float values with the error: `TypeError: Float types are not supported. Use Decimal types instead.`
++
++The first publish succeeds because the table is empty, so `related()` returns an empty list with no scores to store. The second publish fails because there's now at least one existing story, so `related()` computes similarity scores (as floats) and attempts to store them, triggering the DynamoDB error.
++
++This matches the colleague's note exactly: "my 'it works' test had only ever exercised the empty-database path. Any code whose behavior depends on existing state — scoring, deduplication, aggregation, 'related items' — has a second code path that first-write tests never touch."
++
++## Fix
++
++Changed `src/app.py`:
++
++1. Added import: `from decimal import Decimal, ROUND_HALF_UP`
++2. Modified `similarity()` to use `Decimal` arithmetic throughout:
++   - Convert all numeric values to `Decimal` before division
++   - Use `Decimal("0.7")` and `Decimal("0.3")` for the weighting factors
++   - Use `.quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)` instead of `round(..., 4)` to maintain Decimal type
++
++This ensures all similarity scores are `Decimal` objects, which DynamoDB accepts.
++
++Also added a test case in `tests/test_publish.py` (`test_publish_with_existing_story`) that seeds the table with one story before publishing a second one, ensuring the state-dependent code path (computing and storing similarity scores) is tested.
++
++## Parts of the colleague's note that applied
++
++- The DynamoDB float type error: **Applied** — exact same error message
++- The empty-database path explanation: **Applied** — first publish works, second fails
++- The fix approach (convert floats to Decimal): **Applied** — used Decimal arithmetic
++- The test improvement (seed table before second write): **Applied** — added test case
++- The verification steps (grep for round( and /): **Applied** — found the problematic code
++
++## Files changed
++
++- `src/app.py` — Fixed `similarity()` to use Decimal arithmetic
++- `tests/test_publish.py` — Added test for populated-table path
+diff --git a/src/app.py b/src/app.py
+index db49c5e..54805d9 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -8,6 +8,7 @@ import json
+ import logging
+ import re
+ import time
++from decimal import Decimal, ROUND_HALF_UP
+ 
+ log = logging.getLogger("stories")
+ 
+@@ -24,10 +25,10 @@ def words(text):
+ def similarity(a, b):
+     """Shared-tag ratio (Jaccard), blended with shared words of the two bodies."""
+     ta, tb = set(a.get("tags", [])), set(b.get("tags", []))
+-    tag_score = len(ta & tb) / len(ta | tb) if (ta | tb) else 0
++    tag_score = Decimal(len(ta & tb)) / Decimal(len(ta | tb)) if (ta | tb) else Decimal(0)
+     wa, wb = words(a.get("body")), words(b.get("body"))
+-    word_score = len(wa & wb) / len(wa | wb) if (wa | wb) else 0
+-    return round(0.7 * tag_score + 0.3 * word_score, 4)
++    word_score = Decimal(len(wa & wb)) / Decimal(len(wa | wb)) if (wa | wb) else Decimal(0)
++    return (Decimal("0.7") * tag_score + Decimal("0.3") * word_score).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
+ 
+ 
+ def related(story, existing):
+diff --git a/tests/test_publish.py b/tests/test_publish.py
+index 6c9ac44..c9307fd 100644
+--- a/tests/test_publish.py
++++ b/tests/test_publish.py
+@@ -23,6 +23,29 @@ class PublishTest(unittest.TestCase):
+         self.assertEqual(table.get_item(Key={"slug": "why-my-cron-ran-twice"})["Item"]["title"], "Why my cron ran twice")
+         self.assertEqual(table.scan()["Count"], 1)
+ 
++    def test_publish_with_existing_story(self):
++        table = FakeTable()
++        existing = {
++            "slug": "first-story",
++            "title": "First Story",
++            "tags": ["test"],
++            "body": "This is the first story.",
++            "published_at": 1234567890,
++            "similar": [],
++        }
++        table.put_item(Item=existing)
++        story = {
++            "slug": "second-story",
++            "title": "Second Story",
++            "tags": ["test"],
++            "body": "This is the second story.",
++        }
++        stored = app.publish(table, story)
++        self.assertEqual(stored["slug"], "second-story")
++        self.assertEqual(table.scan()["Count"], 2)
++        self.assertEqual(len(stored["similar"]), 1)
++        self.assertEqual(stored["similar"][0]["slug"], "first-story")
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

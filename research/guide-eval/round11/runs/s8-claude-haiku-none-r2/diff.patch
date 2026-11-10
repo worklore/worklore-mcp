@@ -1,0 +1,88 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..04132ff
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,60 @@
++# Answer: save_fact was evicting the cached system prompt
++
++## Cause
++
++`build_system()` in `bot.py` put the static coaching rules (`INSTRUCTIONS`) and the
++per-athlete context (today's date, zones, goal, and the `facts` list) into one text
++block and put `cache_control` on that block. The cache key is the whole block, so
++any change to the athlete's facts changed the block and invalidated the cache for
++the static instructions too.
++
++`save_fact` appends to `facts`, so the next request after a save wrote the whole
++block again (`cache_creation_input_tokens` ~1000, `cache_read_input_tokens: 0`).
++This matches the pattern in `logs/usage.jsonl` and `NOTES.md`.
++
++## Change
++
++`bot.py`, `build_system()`. The system prompt is now two blocks:
++
++1. `INSTRUCTIONS`, with `cache_control: ephemeral`. It is identical for every athlete
++   and every day, so it stays cached across `save_fact` writes, across athletes, and
++   across the date change.
++2. `athlete_context(a, today)`, with no cache marker. It holds the date, zones, goal,
++   facts and language. It is small, and it is the only part that changes when a fact
++   is saved.
++
++The cache prefix is `tools` + block 1. The `tools` list does not change on a `save_fact`
++because `save_fact` is a core tool, so a memory write now only re-sends the small
++athlete block.
++
++No other behaviour changed. Message text, tools, and the tool loop are untouched.
++
++## Verification
++
++Offline, with a stub LLM and `save_athlete` patched out so `data/athletes.json` was
++not written:
++
++- A message that triggers `save_fact` produced two requests. The static block was
++  byte-identical in both and carried `cache_control`. The athlete block had no marker
++  and did change (the new fact appeared).
++
++I did not call the Anthropic API, so the cache hit rate is not measured here. Check
++it on the next deploy: after a `save_fact`, the following round should show
++`cache_read_input_tokens` ≈ the static block size and `cache_creation_input_tokens`
++only ≈ the athlete block.
++
++## Things to check or not yet fixed
++
++- **Minimum cacheable length.** Caching only applies above the model's minimum prefix
++  length (about 1024 tokens for Sonnet-class models). `INSTRUCTIONS` is about 2,500
++  characters, which is probably under 1,024 tokens on its own. The breakpoint still
++  covers `tools` + block 1, which together should clear the minimum, but confirm this
++  in the first logged requests. If `cache_creation_input_tokens` stays at 0 for the
++  static part, the prefix is too small and the cache marker is not doing anything.
++- **Keyword tool groups still change the prefix.** `select_tools()` adds the `plan` or
++  `race` tools when a message mentions their keywords. That changes the `tools` list,
++  which is part of the cached prefix, so such messages still miss the cache. This is
++  not caused by `save_fact` and was not changed here. NOTES.md says the filtering is
++  worth keeping, so the fix would be to keep the tools constant or to move the group
++  tools into a separate cache-controlled position. That is a design decision for you.
++- `MODEL` is `claude-sonnet-4-5`. Not changed.
+diff --git a/bot.py b/bot.py
+index e2ff241..bd01b89 100644
+--- a/bot.py
++++ b/bot.py
+@@ -128,9 +128,14 @@ def athlete_context(a, today):
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    # Two blocks. The static instructions come first and carry the cache
++    # breakpoint: they are identical for every athlete and every day, so a
++    # save_fact (which changes only the athlete block) never evicts them.
++    # The per-athlete block (date, facts, ...) follows uncached; it is small.
++    return [
++        {"type": "text", "text": INSTRUCTIONS, "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": athlete_context(a, today)},
++    ]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [

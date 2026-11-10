@@ -1,0 +1,84 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..73f2e29
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,36 @@
++## Cause
++
++The `similarity()` function in `src/app.py` returns a Python `float` (from `round(...)`). This float is stored in the `similar` list as the `score` field of each related story. When `publish()` writes the item to DynamoDB via `table.put_item(Item=item)`, DynamoDB rejects the float type with:
++
++```
++TypeError: Float types are not supported. Use Decimal types instead.
++```
++
++The first publish succeeds because the table is empty: `related()` returns an empty list, so no scores are written. Once the table contains at least one story, `similarity()` is invoked, producing float scores that reach the write path, causing the 500 error.
++
++## Fix
++
++Changed `similarity()` to return an integer percentage instead of a float:
++
++```python
++# Before:
++return round(0.7 * tag_score + 0.3 * word_score, 4)
++
++# After:
++return int(round((0.7 * tag_score + 0.3 * word_score) * 100))
++```
++
++This converts the similarity score to an integer percentage (0-100), which DynamoDB accepts.
++
++Also updated the test in `tests/test_publish.py` to seed the table with one story before testing the write, ensuring the populated-table path is exercised and this class of bug cannot hide in the empty-table path again.
++
++## Colleague's Note - What Applied
++
++The colleague's note described the exact same issue: floats being passed to DynamoDB writes, with the empty-database path hiding the bug. The following parts applied:
++
++- "TypeError: Float types are not supported. Use Decimal types instead." - Same error message
++- "The first publish succeeded because the table was empty: there were no matches, so there were no scores or floats to write." - Same root cause
++- "Once the table contained a story, the scoring path ran and passed Python floats to DynamoDB, which did not accept them." - Same failure mode
++- "The empty-table path had hidden the bug until the data existed." - Same testing gap
++- "I fixed it with a one-line change that made the scores integer percentages." - Same fix approach
++- "I also changed every write-path test to seed the table with one record before testing the write, so the populated-table path actually ran." - Same test improvement
+diff --git a/src/app.py b/src/app.py
+index db49c5e..f3c95f7 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -27,7 +27,7 @@ def similarity(a, b):
+     tag_score = len(ta & tb) / len(ta | tb) if (ta | tb) else 0
+     wa, wb = words(a.get("body")), words(b.get("body"))
+     word_score = len(wa & wb) / len(wa | wb) if (wa | wb) else 0
+-    return round(0.7 * tag_score + 0.3 * word_score, 4)
++    return int(round((0.7 * tag_score + 0.3 * word_score) * 100))
+ 
+ 
+ def related(story, existing):
+diff --git a/tests/test_publish.py b/tests/test_publish.py
+index 6c9ac44..3de9757 100644
+--- a/tests/test_publish.py
++++ b/tests/test_publish.py
+@@ -12,6 +12,15 @@ from fake_dynamo import FakeTable  # noqa: E402
+ class PublishTest(unittest.TestCase):
+     def test_publish_stores_story(self):
+         table = FakeTable()
++        # Seed the table with one record to exercise the populated-table path
++        seed_story = {
++            "slug": "first-story",
++            "title": "First Story",
++            "tags": ["test"],
++            "body": "This is the first story.",
++        }
++        app.publish(table, seed_story)
++        
+         story = {
+             "slug": "why-my-cron-ran-twice",
+             "title": "Why my cron ran twice",
+@@ -21,7 +30,7 @@ class PublishTest(unittest.TestCase):
+         stored = app.publish(table, story)
+         self.assertEqual(stored["slug"], "why-my-cron-ran-twice")
+         self.assertEqual(table.get_item(Key={"slug": "why-my-cron-ran-twice"})["Item"]["title"], "Why my cron ran twice")
+-        self.assertEqual(table.scan()["Count"], 1)
++        self.assertEqual(table.scan()["Count"], 2)
+ 
+ 
+ if __name__ == "__main__":

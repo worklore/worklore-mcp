@@ -1,0 +1,51 @@
+{
+ "answer_file": true,
+ "answer_source": "repo",
+ "lanes": [
+  "codex",
+  "codex-sandboxed",
+  "kimi"
+ ],
+ "new_lane": "codex-sandboxed",
+ "paths_rewritten": [],
+ "lane_rc": 0,
+ "lane_out": " rc=0 answer=24 chars\ncp: cannot stat '/private/var/folders/wx/fkc3yttx3f7ddg45t1h52nyw0000gn/T/g-n4-d2fh1f11/home/.codex/auth.json': No such file or directory\ncp: cannot stat '/private/var/folders/wx/fkc3yttx3f7ddg45t1h52nyw0000gn/T/g-n4-d2fh1f11/home/.codex/config.toml': No such file or directory\n",
+ "codex_ran": true,
+ "codex_under_sandbox": true,
+ "sandbox_calls": 1,
+ "fence": {
+  "denies_home_write": true,
+  "denies_home_read": true,
+  "opens_run_folder": false,
+  "params": {
+   "HOME": "/private/var/folders/wx/fkc3yttx3f7ddg45t1h52nyw0000gn/T/g-n4-d2fh1f11/home"
+  }
+ },
+ "final_txt_has_answer": true,
+ "answer_json_has_answer": true,
+ "codex_wrote_out_file": true,
+ "codex_out_file": "/tmp/cout-P1kYn8/final.txt",
+ "failed_write_in_err": false,
+ "codex_lane_ok": true,
+ "agent_ran_sandbox_exec": [
+  "cat README.md && echo --- && cat check_answer.py && echo --- && cat .gitignore && echo --- && ls -R runs tasks | head -50 && echo --- && which codex sandbox-exe",
+  "cd /private/tmp/h-VoLmXu && cat README.md && echo --- && cat check_answer.py && echo --- && cat .gitignore && echo --- && ls -R runs tasks | head -50 && echo --",
+  "T=$(mktemp -d /tmp/probe-XXXXXX) && sandbox-exec -D HOME=\"$HOME\" -f sandbox/agent.sb /bin/cat \"$HOME/.codex/config.toml\" >/dev/null; echo \"read real home rc=$?\"",
+  "cd /private/tmp/h-VoLmXu && T=$(mktemp -d /tmp/probe-XXXXXX) && sandbox-exec -D HOME=\"$HOME\" -f sandbox/agent.sb /bin/cat \"$HOME/.codex/config.toml\" >/dev/null;"
+ ],
+ "agent_ran_harness": [
+  "git status --short && ls -la && echo --- && cat run.sh && echo --- && ls -la sandbox 2>/dev/null && echo --- && cat sandbox/agent.sb 2>/dev/null",
+  "cd /private/tmp/h-VoLmXu && git status --short && ls -la && echo --- && cat run.sh && echo --- && ls -la sandbox 2>/dev/null && echo --- && cat sandbox/agent.sb",
+  "bash -n run.sh && echo SYNTAX_OK && time ./run.sh fizz codex-sandboxed 1; echo \"---\"; R=runs/fizz-codex-sandboxed-r1; ls -la $R; echo \"--- meta\"; cat $R/meta.js",
+  "cd /private/tmp/h-VoLmXu && bash -n run.sh && echo SYNTAX_OK && time ./run.sh fizz codex-sandboxed 1; echo \"---\"; R=runs/fizz-codex-sandboxed-r1; ls -la $R; ech"
+ ],
+ "answer_mentions_output_file": true,
+ "changed_files": [
+  "ANSWER.md",
+  "README.md",
+  "run.sh"
+ ],
+ "commands_issued": 14,
+ "answer_chars": 4148,
+ "PASS": true
+}

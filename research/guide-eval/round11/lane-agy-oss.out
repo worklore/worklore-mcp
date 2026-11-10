@@ -1,0 +1,70 @@
+n10-agy-oss-none-r1 rc=3 wall=73s limit=false key_hits=0 PASS=False
+n10-agy-oss-story-r1 rc=3 wall=86s limit=false key_hits=0 PASS=False
+n4-agy-oss-none-r1 rc=0 wall=43s limit=false key_hits=0 PASS=False
+n4-agy-oss-story-r1 rc=3 wall=19s limit=false key_hits=0 PASS=False
+n6-agy-oss-none-r1 rc=0 wall=117s limit=false key_hits=0 PASS=False
+n6-agy-oss-story-r1 rc=0 wall=61s limit=false key_hits=0 PASS=False
+n10-agy-oss-none-r2 rc=3 wall=83s limit=true key_hits=0 PASS=False
+LIMIT n10 none r2 (will redo)
+n10-agy-oss-story-r2 rc=3 wall=60s limit=true key_hits=0 PASS=False
+LIMIT n10 story r2 (will redo)
+n4-agy-oss-none-r2 rc=0 wall=49s limit=false key_hits=0 PASS=False
+n4-agy-oss-story-r2 rc=0 wall=110s limit=false key_hits=0 PASS=True
+n6-agy-oss-none-r2 rc=0 wall=137s limit=false key_hits=0 PASS=False
+n6-agy-oss-story-r2 rc=0 wall=70s limit=false key_hits=0 PASS=True
+n10-agy-oss-none-r3 rc=3 wall=126s limit=true key_hits=0 PASS=False
+LIMIT n10 none r3 (will redo)
+n10-agy-oss-story-r3 rc=0 wall=88s limit=false key_hits=0 PASS=False
+n4-agy-oss-none-r3 rc=0 wall=58s limit=false key_hits=0 PASS=False
+n4-agy-oss-story-r3 rc=0 wall=30s limit=false key_hits=0 PASS=True
+n6-agy-oss-none-r3 rc=0 wall=82s limit=false key_hits=0 PASS=False
+n6-agy-oss-story-r3 rc=0 wall=111s limit=false key_hits=0 PASS=True
+n10-agy-oss-none-r4 rc=3 wall=14s limit=true key_hits=0 PASS=False
+LIMIT n10 none r4 (will redo)
+n10-agy-oss-story-r4 rc=3 wall=111s limit=true key_hits=0 PASS=False
+LIMIT n10 story r4 (will redo)
+n4-agy-oss-none-r4 rc=3 wall=5s limit=true key_hits=0 PASS=False
+LIMIT n4 none r4 (will redo)
+n4-agy-oss-story-r4 rc=3 wall=4s limit=true key_hits=0 PASS=False
+LIMIT n4 story r4 (will redo)
+n6-agy-oss-none-r4 rc=3 wall=108s limit=true key_hits=0 PASS=False
+LIMIT n6 none r4 (will redo)
+n6-agy-oss-story-r4 rc=0 wall=13s limit=false key_hits=0 PASS=False
+n10-agy-oss-none-r5 rc=3 wall=58s limit=true key_hits=0 PASS=False
+LIMIT n10 none r5 (will redo)
+n10-agy-oss-story-r5 rc=0 wall=86s limit=false key_hits=0 PASS=False
+n4-agy-oss-none-r5 rc=3 wall=17s limit=true key_hits=0 PASS=False
+LIMIT n4 none r5 (will redo)
+n4-agy-oss-story-r5 rc=0 wall=73s limit=false key_hits=0 PASS=True
+n6-agy-oss-none-r5 rc=3 wall=30s limit=true key_hits=0 PASS=False
+LIMIT n6 none r5 (will redo)
+n6-agy-oss-story-r5 rc=0 wall=109s limit=false key_hits=0 PASS=False
+pass 1 done, 11 cells missing; sleeping 30 min
+REDO n10 none r1
+n10-agy-oss-none-r1 rc=0 wall=116s limit=false key_hits=0 PASS=False
+REDO n10 story r1
+n10-agy-oss-story-r1 rc=0 wall=10s limit=false key_hits=0 PASS=False
+REDO n4 story r1
+n4-agy-oss-story-r1 rc=0 wall=87s limit=false key_hits=0 PASS=True
+n10-agy-oss-none-r2 rc=3 wall=5s limit=true key_hits=0 PASS=False
+LIMIT n10 none r2 (will redo)
+n10-agy-oss-story-r2 rc=3 wall=4s limit=true key_hits=0 PASS=False
+LIMIT n10 story r2 (will redo)
+n10-agy-oss-none-r3 rc=124 wall=1200s limit=false key_hits=0 PASS=False
+n10-agy-oss-none-r4 rc=0 wall=141s limit=false key_hits=0 PASS=False
+n10-agy-oss-story-r4 rc=3 wall=5s limit=true key_hits=0 PASS=False
+LIMIT n10 story r4 (will redo)
+n4-agy-oss-none-r4 rc=0 wall=27s limit=false key_hits=0 PASS=False
+n4-agy-oss-story-r4 rc=0 wall=34s limit=false key_hits=0 PASS=True
+n6-agy-oss-none-r4 rc=0 wall=83s limit=false key_hits=0 PASS=False
+n10-agy-oss-none-r5 rc=124 wall=1201s limit=false key_hits=0 PASS=False
+n4-agy-oss-none-r5 rc=0 wall=72s limit=false key_hits=0 PASS=False
+n6-agy-oss-none-r5 rc=0 wall=53s limit=false key_hits=0 PASS=False
+pass 2 done, 3 cells missing; sleeping 30 min
+n10-agy-oss-none-r2 rc=3 wall=34s limit=true key_hits=0 PASS=False
+LIMIT n10 none r2 (will redo)
+n10-agy-oss-story-r2 rc=0 wall=86s limit=false key_hits=0 PASS=False
+n10-agy-oss-story-r4 rc=0 wall=93s limit=false key_hits=0 PASS=False
+pass 3 done, 1 cells missing; sleeping 30 min
+n10-agy-oss-none-r2 rc=0 wall=161s limit=false key_hits=0 PASS=False
+LANE_DONE

@@ -1,0 +1,52 @@
+{
+ "answer_file": true,
+ "answer_source": "repo",
+ "lanes": [
+  "codex",
+  "codex-sandboxed",
+  "kimi"
+ ],
+ "new_lane": "codex-sandboxed",
+ "paths_rewritten": [],
+ "lane_rc": 0,
+ "lane_out": "fizz-codex-sandboxed-r1 rc=0 answer=24 chars\n",
+ "codex_ran": true,
+ "codex_under_sandbox": true,
+ "sandbox_calls": 1,
+ "fence": {
+  "denies_home_write": true,
+  "denies_home_read": true,
+  "opens_run_folder": false,
+  "params": {
+   "HOME": "/private/var/folders/wx/fkc3yttx3f7ddg45t1h52nyw0000gn/T/g-n4-vs5clg2a/home"
+  }
+ },
+ "final_txt_has_answer": true,
+ "answer_json_has_answer": true,
+ "codex_wrote_out_file": true,
+ "codex_out_file": "/tmp/cscr-KpeUQE/final.txt",
+ "failed_write_in_err": false,
+ "codex_lane_ok": true,
+ "agent_ran_sandbox_exec": [
+  "cat README.md && echo ---- && cat check_answer.py && echo ---- && ls runs tasks && cat .gitignore && echo ---- && command -v codex kimi sandbox-exec; ls -la ~/.",
+  "cd /private/tmp/h-TodAOK && cat README.md && echo ---- && cat check_answer.py && echo ---- && ls runs tasks && cat .gitignore && echo ---- && command -v codex k",
+  "env | cut -d= -f1 | grep -i -E 'codex|openai' ; echo \"--- config top-level keys:\"; grep -E '^[a-zA-Z_]+ *=' ~/.codex/config.toml | cut -d= -f1 | head -30; echo ",
+  "cd /private/tmp/h-TodAOK && env | cut -d= -f1 | grep -i -E 'codex|openai' ; echo \"--- config top-level keys:\"; grep -E '^[a-zA-Z_]+ *=' ~/.codex/config.toml | c",
+  "bash -n run.sh && echo SYNTAX_OK && SH=$(mktemp -d /tmp/chome-XXXXXX) && SCR=$(mktemp -d /tmp/cscr-XXXXXX) && mkdir -p $SH/.codex && cp ~/.codex/auth.json $SH/."
+ ],
+ "agent_ran_harness": [
+  "git status --short && git log --oneline | head -5 && ls -la && echo ---- && cat run.sh 2>/dev/null; echo ----; ls -la sandbox 2>/dev/null && cat sandbox/agent.s",
+  "cd /private/tmp/h-TodAOK && git status --short && git log --oneline | head -5 && ls -la && echo ---- && cat run.sh 2>/dev/null; echo ----; ls -la sandbox 2>/dev",
+  "bash -n run.sh && echo SYNTAX_OK && SH=$(mktemp -d /tmp/chome-XXXXXX) && SCR=$(mktemp -d /tmp/cscr-XXXXXX) && mkdir -p $SH/.codex && cp ~/.codex/auth.json $SH/.",
+  "cd /private/tmp/h-TodAOK && bash -n run.sh && echo SYNTAX_OK && SH=$(mktemp -d /tmp/chome-XXXXXX) && SCR=$(mktemp -d /tmp/cscr-XXXXXX) && mkdir -p $SH/.codex &&"
+ ],
+ "answer_mentions_output_file": true,
+ "changed_files": [
+  "ANSWER.md",
+  "README.md",
+  "run.sh"
+ ],
+ "commands_issued": 8,
+ "answer_chars": 4413,
+ "PASS": true
+}

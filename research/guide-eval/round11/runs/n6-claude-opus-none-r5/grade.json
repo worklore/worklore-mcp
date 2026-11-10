@@ -1,0 +1,61 @@
+{
+ "answer_file": true,
+ "hiero_version": null,
+ "hashgraph_version": "2.81.0",
+ "package_json_sdk": {
+  "@hashgraph/sdk": "^2.81.0"
+ },
+ "imports_hiero": false,
+ "imports_hashgraph": true,
+ "on_current_sdk": false,
+ "tsc_ok": true,
+ "tsc_tail": "",
+ "cases": [
+  {
+   "exit": 0,
+   "only_hex": true,
+   "err_tail": "",
+   "verify": {
+    "is_transfer": true,
+    "transfers": {
+     "0.0.2001": "-100000000",
+     "0.0.2002": "100000000"
+    },
+    "amounts_ok": true,
+    "memo_ok": true,
+    "node_ok": true,
+    "txid_ok": true,
+    "signature_ok": true,
+    "ok": true
+   }
+  },
+  {
+   "exit": 0,
+   "only_hex": true,
+   "err_tail": "",
+   "verify": {
+    "is_transfer": true,
+    "transfers": {
+     "0.0.48151": "-100000000",
+     "0.0.62342": "100000000"
+    },
+    "amounts_ok": true,
+    "memo_ok": true,
+    "node_ok": true,
+    "txid_ok": true,
+    "signature_ok": true,
+    "ok": true
+   }
+  }
+ ],
+ "output_ok": true,
+ "only_hex": true,
+ "read_skill_md": false,
+ "web_use": true,
+ "npm_looked_up": [
+  "@hashgraph/sdk"
+ ],
+ "PASS": false,
+ "WORKS_ON_OLD_SDK": true,
+ "reinstalled": false
+}

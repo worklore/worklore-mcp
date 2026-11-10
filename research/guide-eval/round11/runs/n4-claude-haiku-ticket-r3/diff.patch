@@ -1,0 +1,95 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..fd649fa
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,36 @@
++# ANSWER: codex-sandboxed lane
++
++## What I changed
++
++- **`run.sh`**: new lane `codex-sandboxed` (`codex_sandboxed_run`). It runs the same `codex exec` command as the `codex` lane (same flags, same prompt, same `-C "$W"` workdir, same timeout), under `sandbox-exec -D HOME=<real home> -f sandbox/agent.sb`, the same way the `kimi` lane does.
++  - Codex gets an empty scratch `HOME` and `CODEX_HOME=<scratch>/.codex`, so it never sees `~/.codex`. The `kimi` lane does the same with `HOME` and `KIMI_CODE_HOME`.
++  - `-o` points at a scratch folder `mktemp -d /tmp/cout-XXXXXX`, outside every denied path. After `sandbox-exec` returns, `final.txt` is copied into the run folder and both scratch folders are deleted.
++  - If Codex exits without writing the last-message file, the lane appends a line to `agent.err`. Codex's exit code alone doesn't prove the file was written.
++  - stdout and stderr still redirect straight into the run folder, since the shell opens those before the sandbox starts.
++- **`README.md`**: one bullet for the new lane in the lane list.
++- **`sandbox/agent.sb`**: unchanged. The `codex` binary lives in `/opt/homebrew`, outside the denied home path, so the profile needed no new rules.
++- The `codex` and `kimi` lanes are untouched. `check_answer.py` needed no change, since it reads `final.txt` for any non-kimi lane.
++
++## Checks I ran
++
++- `bash -n run.sh`: syntax OK.
++- Profile probe with the real `sandbox-exec` command: reading `~/.codex/config.toml` is denied, writing to `~/.codex` is denied, and writing to the `-o` scratch path and to the scratch `CODEX_HOME` both succeed. `/opt/homebrew/bin/codex --version` runs inside the sandbox (`codex-cli 0.160.0`).
++- End-to-end lane run on `fizz` with a stub `codex` on PATH, so no model provider was called. The stub saw `HOME` and `CODEX_HOME` pointing at scratch and could not read the real config. It wrote the `-o` file, which was copied to `final.txt`. `answer.json` came out with the stub text, and the lane's `meta.json` had `exit_code: 0`. I then deleted that test run folder.
++
++## Not verified
++
++- **No live Codex run.** A real run sends the task to OpenAI, and I didn't run one without your go-ahead. So I haven't confirmed that the sandboxed Codex gets through authentication and finishes a task.
++- **Authentication is untested.** The README says Codex logs in with `CODEX_API_KEY` and needs nothing from the home folder. `CODEX_API_KEY` is not set in my shell, so I couldn't confirm that. `~/.codex/auth.json` exists, though. If the Codex login is ChatGPT-based and reads `auth.json`, the sandboxed lane will fail to authenticate. I did not copy `auth.json` or open it to the sandbox: the agent's shell could then read the credential, which defeats the sandbox.
++
++## What differs from the `codex` lane
++
++- `~/.codex/config.toml` is not copied into the scratch `CODEX_HOME`, so this lane runs with Codex defaults plus the env key. The real config sets no model or provider (I checked), but it enables the github and posthog plugins and defines two MCP servers, `pencil` (under the home folder) and `posthog`. The sandboxed lane won't have those tools. Copying the file would give the agent's shell a readable copy of the home config, so I left it out. If the comparison needs those tools, that's a decision for you.
++
++## Colleague's note: what applied
++
++- **Applied:** the sandbox denies reads and writes under the real home, so the Codex output file goes to a scratch folder in `/tmp`, and the lane copies it into the run folder afterwards. stdout and stderr still go straight into the run folder. Don't trust exit 0: the lane now logs a missing last-message file to `agent.err`.
++- **Did not apply (not in this repo):** Mistral Vibe and its `--output-dir` flag. This harness has no Vibe lane.
++- **Applied as a precaution, not as a fix here:** this repo lives at `/private/tmp/h-A7v2QM`, outside the real home, so the `-o` denial the colleague hit wouldn't happen in this layout. I used the scratch folder anyway, so the lane still works if the run folder ever moves under the home folder.
++- **Did not apply:** the colleague's specific failure was a run folder under the home folder, which isn't this setup. I didn't change the profile or the `kimi` lane.
++
++Nothing was committed, deployed, published, or sent to any external service.
+diff --git a/README.md b/README.md
+index 9d81ca7..43b0ee0 100644
+--- a/README.md
++++ b/README.md
+@@ -17,6 +17,9 @@ run folder `runs/<task>-<lane>-r<rep>/`:
+ Lanes:
+ 
+ - `codex`: Codex CLI (`codex exec --json`), unsandboxed.
++- `codex-sandboxed`: the same Codex run, under the same profile as `kimi`, with
++  an empty scratch HOME and `CODEX_HOME`. Its last message goes to a scratch
++  folder in `/tmp` and is copied into the run folder afterwards.
+ - `kimi`: Kimi Code. Its output goes to Moonshot, so its shell runs under the
+   macOS sandbox profile `sandbox/agent.sb` (no reading or writing the real
+   home), with an empty scratch HOME. Kimi's own install and sessions live in
+diff --git a/run.sh b/run.sh
+index c41ad67..38c1892 100755
+--- a/run.sh
++++ b/run.sh
+@@ -1,6 +1,7 @@
+ #!/usr/bin/env bash
+ # usage: run.sh <task> <lane> [rep]
+ # lanes: codex   Codex CLI, unsandboxed
++#        codex-sandboxed  the same Codex run under sandbox/agent.sb (no reading or writing the real home), scratch HOME
+ #        kimi    Kimi Code under sandbox/agent.sb (no reading or writing the real home), scratch HOME
+ set -u
+ D="$(cd "$(dirname "$0")" && pwd)"
+@@ -24,9 +25,26 @@ kimi_run() {
+   local rc=$?; rm -rf "$SH"; return $rc
+ }
+ 
++# Codex under sandbox/agent.sb, as kimi is. Codex logs in with CODEX_API_KEY from the environment, so it gets an
++# empty scratch HOME and CODEX_HOME instead of ~/.codex. Its last message is written by Codex inside the sandbox,
++# so -o goes to a scratch folder in /tmp, outside every denied path; the lane copies it into the run folder after
++# sandbox-exec returns. Codex can exit 0 without writing that file, so a missing file is logged to agent.err.
++codex_sandboxed_run() {
++  local REAL="$HOME" SH OUT rc
++  SH=$(mktemp -d /tmp/chome-XXXXXX); OUT=$(mktemp -d /tmp/cout-XXXXXX); mkdir -p "$SH/.codex"
++  ( cd "$W" && export HOME="$SH" && sandbox-exec -D HOME="$REAL" -f "$D/sandbox/agent.sb" \
++      env CODEX_HOME="$SH/.codex" timeout $TO codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox -C "$W" --json \
++      -o "$OUT/final.txt" "$P" < /dev/null > "$R/agent.log" 2> "$R/agent.err" )
++  rc=$?
++  if [ -f "$OUT/final.txt" ]; then cp "$OUT/final.txt" "$R/final.txt"
++  else echo "codex-sandboxed: no last-message file was written (codex exit $rc)" >> "$R/agent.err"; fi
++  rm -rf "$SH" "$OUT"; return $rc
++}
++
+ start=$(date +%s)
+ case $A in
+   codex) codex_run;;
++  codex-sandboxed) codex_sandboxed_run;;
+   kimi)  kimi_run;;
+   *) echo "unknown lane $A"; exit 2;;
+ esac

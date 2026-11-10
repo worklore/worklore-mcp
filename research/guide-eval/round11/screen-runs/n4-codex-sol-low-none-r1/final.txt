@@ -1,0 +1,3 @@
+Added the `codex-sandboxed` lane. It runs the same Codex command as the `codex` lane under [sandbox/agent.sb](/tmp/h-fsqeoc/sandbox/agent.sb), with a scratch `HOME` and `CODEX_HOME`. The profile now gives Kimi its existing install access while keeping the real home inaccessible to the new lane.
+
+I documented the change in [ANSWER.md](/tmp/h-fsqeoc/ANSWER.md). Shell syntax and diff checks passed, and a sandbox check blocked reading a real-home file. I did not launch Codex because that would contact an external service.

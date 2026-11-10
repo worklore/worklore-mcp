@@ -1,0 +1,55 @@
+{
+ "answer_file": true,
+ "answer_source": "repo",
+ "lanes": [
+  "codex",
+  "codex-sandboxed",
+  "kimi"
+ ],
+ "new_lane": "codex-sandboxed",
+ "paths_rewritten": [],
+ "lane_rc": 0,
+ "lane_out": "fizz-codex-sandboxed-r1 rc=0 answer=0 chars\n",
+ "codex_ran": true,
+ "codex_under_sandbox": true,
+ "sandbox_calls": 1,
+ "fence": {
+  "denies_home_write": true,
+  "denies_home_read": true,
+  "opens_run_folder": false,
+  "params": {
+   "HOME": "/private/var/folders/wx/fkc3yttx3f7ddg45t1h52nyw0000gn/T/g-n4-85ssvfuj/home",
+   "AGENT_DIR": "/tmp/chome-bGcM1l"
+  }
+ },
+ "final_txt_has_answer": false,
+ "answer_json_has_answer": false,
+ "codex_wrote_out_file": false,
+ "codex_out_file": "/private/var/folders/wx/fkc3yttx3f7ddg45t1h52nyw0000gn/T/g-n4-85ssvfuj/home/evals/agent-evals/runs/fizz-codex-sandboxed-r1/final.txt",
+ "failed_write_in_err": true,
+ "codex_lane_ok": true,
+ "agent_ran_sandbox_exec": [
+  "echo \"HOME=$HOME\"; which codex kimi sandbox-exec node python3 timeout gtimeout 2>&1; ls -la \"$HOME/.codex\" 2>&1 | head; ls -la \"$HOME/.kimi-code\" 2>&1 | head -5",
+  "REAL=\"$HOME\"; SH=$(mktemp -d /tmp/probe-XXXXXX); export HOME=\"$SH\"\nfor t in \"cat $REAL/.codex/auth.json >/dev/null\" \"ls $REAL >/dev/null\" \"touch $REAL/.probe_wr",
+  "cd /private/tmp/h-xIJoO2 && REAL=\"$HOME\"; SH=$(mktemp -d /tmp/probe-XXXXXX); export HOME=\"$SH\"\nfor t in \"cat $REAL/.codex/auth.json >/dev/null\" \"ls $REAL >/dev/",
+  "bash -n run.sh && echo SYNTAX_OK\nREAL=\"$HOME\"\n# 1. missing-key path records a clean failure, no model call\nenv -u CODEX_API_KEY ./run.sh fizz codex-sandboxed 9;",
+  "cd /private/tmp/h-xIJoO2 && bash -n run.sh && echo SYNTAX_OK\nREAL=\"$HOME\"\n# 1. missing-key path records a clean failure, no model call\nenv -u CODEX_API_KEY ./ru"
+ ],
+ "agent_ran_harness": [
+  "for f in run.sh README.md .gitignore check_answer.py sandbox/agent.sb tasks/fizz.prompt tasks/fizz/fizz.py; do echo \"=== $f\"; cat \"$f\"; echo; done; ls -la runs ",
+  "cd /private/tmp/h-xIJoO2 && for f in run.sh README.md .gitignore check_answer.py sandbox/agent.sb tasks/fizz.prompt tasks/fizz/fizz.py; do echo \"=== $f\"; cat \"$",
+  "bash -n run.sh && echo SYNTAX_OK\nREAL=\"$HOME\"\n# 1. missing-key path records a clean failure, no model call\nenv -u CODEX_API_KEY ./run.sh fizz codex-sandboxed 9;",
+  "cd /private/tmp/h-xIJoO2 && bash -n run.sh && echo SYNTAX_OK\nREAL=\"$HOME\"\n# 1. missing-key path records a clean failure, no model call\nenv -u CODEX_API_KEY ./ru",
+  "git status --short && git diff -- run.sh | head -80 && ls runs"
+ ],
+ "answer_mentions_output_file": true,
+ "changed_files": [
+  "ANSWER.md",
+  "README.md",
+  "run.sh",
+  "sandbox/agent.sb"
+ ],
+ "commands_issued": 14,
+ "answer_chars": 3194,
+ "PASS": false
+}

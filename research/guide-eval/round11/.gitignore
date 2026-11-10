@@ -1,0 +1,13 @@
+# Kept locally, too large or machine-specific to publish.
+# Installed dependencies the agents pulled in during a run (npm install etc.)
+node_modules/
+__pycache__/
+.prisma/
+# Each run's own git history (moved from repo/.git so repo/ is not a nested repository)
+repo.git/
+# The full diff including node_modules; diff.patch is the same diff without those blocks
+diff.full.patch
+# Path of the run's temporary directory on the test machine
+workdir
+# Vibe session store (binary chunks; the same conversation is in vibe/export.json and agent.log)
+**/vibe/session/

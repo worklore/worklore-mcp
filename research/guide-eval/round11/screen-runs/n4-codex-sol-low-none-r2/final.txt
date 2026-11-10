@@ -1,0 +1,3 @@
+Added the `codex-sandboxed` lane to [run.sh](/tmp/h-SkWCij/run.sh). It uses the same Codex command and output files as `codex`, but runs under [sandbox/agent.sb](/tmp/h-SkWCij/sandbox/agent.sb) with a temporary HOME. The profile now gives Kimi its existing `~/.kimi-code` access only in the Kimi lane.
+
+I documented the changes in [ANSWER.md](/tmp/h-SkWCij/ANSWER.md). `bash -n`, `git diff --check`, and a sandbox check denying real-home access passed. I did not run a live Codex task.

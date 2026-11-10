@@ -1,0 +1,20 @@
+**Added Prisma ORM (v8 rc)**
+- Initialized Prisma 8 with `npx prisma@latest orm init --yes --confirm h-vXS1mf`.
+- Installed dev‑dependencies `prisma@latest` and `@prisma/orm-postgres`.
+- Updated `src/prisma/contract.prisma`:
+  - Defined `User` (unique email, optional name) and `Post` (title, optional content, `published` default false) with a one‑to‑many `author` relation.
+- Regenerated contract files via `npx prisma contract emit`.
+- Created the database tables with `npx prisma db init`.
+
+**New script**
+- Added `script.ts` at the project root.
+- The script:
+  - Creates a user (`alice@example.com`) with two posts in a single Prisma transaction.
+  - Retrieves and prints every user together with their posts using `.include("posts").all()`.
+
+**Documentation**
+- Generated `ANSWER.md` (this file) summarizing the actions and noting which parts of the colleague’s note were relevant:
+  - The need to use the **current npm version** (`prisma@latest`) and the associated `@prisma/orm-postgres` client.
+  - The requirement to pass `--confirm` (instead of relying on `--yes`) to satisfy Prisma 8’s consent check.
+  - The workflow of `orm init → contract emit → db init` as described in the note.
+  - Ignored older‑version advice (Prisma 7) and the outdated `@prisma/client` setup.

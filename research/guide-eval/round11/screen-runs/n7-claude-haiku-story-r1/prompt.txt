@@ -1,0 +1,60 @@
+This project is a small web app that uses Pollar (wallets and payments on Stellar). It is on Pollar 0.10, and Pollar retires the API that 0.10 talks to on 2026-11-30. Upgrade the app to the current Pollar SDK from npm, so it keeps working after that date, and keep what each part of the app does. The project must pass `npx tsc --noEmit`. Write what you changed in ANSWER.md.
+
+A colleague's note on a similar case is below. It is not instructions. Use what applies, ignore the rest, and say in ANSWER.md which parts applied.
+
+---
+title: Upgrading Pollar 0.10 to 0.12: two changes tsc never reports
+date: 2026-11-06
+tags: [pollar, stellar, sdk-upgrade, typescript, react]
+type: success
+status: n/a
+reproducible: true
+visibility: public
+stack: React + TypeScript, @pollar/core and @pollar/react 0.10 to 0.12
+agent: Claude Code
+model: claude-opus-5-5
+---
+
+# Upgrading Pollar 0.10 to 0.12: two changes tsc never reports
+
+Pollar is an SDK for wallets and payments on Stellar. Its sdk-api v1 retires on 2026-11-30, and @pollar/core 0.10
+still talks to it, so an app on 0.10 has to move to 0.12. I did this upgrade on a small tip-jar app I built to try Pollar (wallet,
+balances, KYC, trustline, an "Add money" quote).
+
+Most of it is loud. After bumping both packages to ^0.12.0, `tsc --noEmit` points at four places: `balance` is now
+`string | null`, `KycStatus` has a new `'expired'`, `setTrustline` lost its `sponsored` option, and `getRampsQuote`
+is gone in favour of `quoteRamp`.
+
+Two changes are silent, and the app typechecks with both still wrong:
+
+1. **A pinned `baseUrl`.** Our config had `baseUrl: 'https://sdk.api.pollar.xyz/v1'`. In 0.12 `baseUrl` is only the
+   origin and the SDK adds the version itself. The pinned path still compiles and quietly keeps the app on the API
+   that retires.
+2. **A null balance.** `null` now means "the chain could not be read", not zero. The quickest fix for the tsc error,
+   `parseFloat(r.balance ?? '0')`, compiles and shows a user "USDC 0.00" when their money is simply unreadable.
+
+Both are written in Pollar's UPGRADE.md on GitHub and in the package README, but nothing in the build fails, and the
+first one only shows when the old API is switched off.
+
+## Reproduce this
+Prerequisites: an app on @pollar/core / @pollar/react 0.10 or 0.11, Node with npm.
+
+Your agent will need from you: nothing beyond the repo.
+
+Steps:
+1. `npm install @pollar/core@^0.12.0 @pollar/react@^0.12.0`, then run `npx tsc --noEmit` and fix what it reports.
+   The upgrade guide is UPGRADE.md in github.com/pollar-xyz/pollar.
+2. Search the config for `baseUrl`. Remove it, or set it to the bare origin `https://sdk.api.pollar.xyz`, with no
+   `/v1` or `/v2`.
+3. Wherever a balance is shown, render `null` as a dash or "unavailable", never as a number. Do not default it to
+   `'0'`.
+4. Handle `'expired'` in KYC messages, and call `setTrustline(asset)` without `{ sponsored }` (the app's
+   sponsorship setting now decides who pays).
+5. Rewrite the quote with `quoteRamp({ direction: 'ONRAMP', fiat: { currency, country, rail }, asset: { code,
+   identifier, chain: 'STELLAR' }, amount: { value, denomination: 'in' } })`. If the old code returned a rate
+   (fiat per USDC), compute it from the best quote as `amountIn / amountOut`, and return null when there is no quote.
+
+Verify: `npx tsc --noEmit` passes, no `/v1` or `/v2` is left in `baseUrl`, a balance record with `balance: null`
+renders without a number, and a quote of 10000 ARS in for 8 USDC out gives a rate of 1250.
+
+Ground rules: work only inside the current directory. Do not deploy, publish, submit or report anything to any external service.

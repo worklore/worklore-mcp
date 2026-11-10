@@ -1,0 +1,34 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..4cba004
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,7 @@
++# Prompt caching fix
++
++Changed `build_system()` in `bot.py` to send two text blocks, each with an ephemeral cache marker. The first contains only the fixed coaching instructions. The second contains the date and athlete context, including long-term facts. When `save_fact` changes memory, the static instructions remain byte-identical, so the next request can reuse their cached prefix while creating a new cache entry for the changed context.
++
++The colleague's two-block cache boundary and byte-stable static instructions applied directly. Keeping all facts in a consistent order also applied; the bot already does this. Tool filtering and stable tool order were already implemented, so I left them alone. The quoted token counts, prices, and cache behavior are from the colleague's bot and were not used as measurements for this one.
++
++Verified locally that both blocks have cache markers, a fact write changes only the second block, and `build_request()` sends the split prompt. I did not make a live API call, so actual cache read and creation counts after the change are not measured here; `logs/usage.jsonl` can show those counts during normal operation.
+diff --git a/bot.py b/bot.py
+index e2ff241..31f73a6 100644
+--- a/bot.py
++++ b/bot.py
+@@ -128,9 +128,12 @@ def athlete_context(a, today):
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    # Keep the first cache boundary byte-stable when athlete memory changes.
++    marker = {"type": "ephemeral"}
++    return [
++        {"type": "text", "text": INSTRUCTIONS, "cache_control": marker},
++        {"type": "text", "text": athlete_context(a, today), "cache_control": marker},
++    ]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [
+# 1 file diffs under node_modules/, __pycache__/ or .prisma/ left out of this patch; 2 kept

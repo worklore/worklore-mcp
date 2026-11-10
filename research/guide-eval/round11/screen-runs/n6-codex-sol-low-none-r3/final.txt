@@ -1,0 +1,3 @@
+Added the current npm release of the Hedera JavaScript SDK (`@hashgraph/sdk` 2.81.0) and wrote [src/transfer.ts](/tmp/h-JYDLBe/src/transfer.ts). It reads the values from `.env`, builds and signs the transfer offline, and prints only the signed transaction bytes as hex. I documented the work in [ANSWER.md](/tmp/h-JYDLBe/ANSWER.md).
+
+`npx tsc --noEmit` passes. The script runs with the test values, and its output decodes to the requested transaction ID, node, memo, and a signature.

@@ -1,0 +1,70 @@
+diff --git a/package.json b/package.json
+index 7a7538f..f507a64 100644
+--- a/package.json
++++ b/package.json
+@@ -7,6 +7,7 @@
+     "transfer": "tsx src/transfer.ts"
+   },
+   "dependencies": {
++    "@hashgraph/sdk": "2.81.0",
+     "dotenv": "^17.2.0"
+   },
+   "devDependencies": {
+diff --git a/src/transfer.ts b/src/transfer.ts
+new file mode 100644
+index 0000000..30de499
+--- /dev/null
++++ b/src/transfer.ts
+@@ -0,0 +1,52 @@
++// src/transfer.ts
++// This script builds and signs a Hedera transfer transaction offline.
++// It reads configuration from environment variables via dotenv.
++
++import { config } from 'dotenv';
++config(); // load .env
++
++import {
++  AccountId,
++  PrivateKey,
++  TransactionId,
++  TransferTransaction,
++  Hbar,
++} from '@hashgraph/sdk';
++
++// Load required environment variables
++const operatorIdStr = process.env.OPERATOR_ID;
++const operatorKeyHex = process.env.OPERATOR_KEY;
++const recipientIdStr = process.env.RECIPIENT_ID;
++const validStartStr = process.env.VALID_START;
++
++if (!operatorIdStr || !operatorKeyHex || !recipientIdStr || !validStartStr) {
++  throw new Error('Missing required environment variables');
++}
++
++const operatorId = AccountId.fromString(operatorIdStr);
++const operatorKey = PrivateKey.fromStringDer(operatorKeyHex);
++const recipientId = AccountId.fromString(recipientIdStr);
++const validStartSec = Number(validStartStr);
++if (Number.isNaN(validStartSec)) {
++  throw new Error('VALID_START must be a valid integer Unix timestamp');
++}
++
++// Create a TransactionId with the provided valid start timestamp
++const validStartDate = new Date(validStartSec * 1000);
++const transactionId = new TransactionId(operatorId, validStartDate);
++
++// Build the transfer transaction (1 hbar from operator to recipient)
++const transaction = new TransferTransaction()
++  .setTransactionId(transactionId)
++  .setNodeAccountIds([new AccountId(0, 0, 3)])
++  .addHbarTransfer(operatorId, Hbar.fromTinybars(-1_000_000_000)) // -1 hbar
++  .addHbarTransfer(recipientId, Hbar.fromTinybars(1_000_000_000)) // +1 hbar
++  .setTransactionMemo('invoice 42');
++
++// Sign the transaction with the operator's private key
++await transaction.sign(operatorKey);
++
++// Get the signed transaction bytes and output as hex
++const signedBytes = transaction.toBytes();
++const hex = Buffer.from(signedBytes).toString('hex');
++console.log(hex);

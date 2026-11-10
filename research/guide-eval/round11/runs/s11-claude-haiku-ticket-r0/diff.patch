@@ -1,0 +1,170 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..0a43164
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,65 @@
++# Second publish returns 500: Python floats written to DynamoDB
++
++## Cause
++
++`similarity()` in `src/app.py` returns `round(0.7 * tag_score + 0.3 * word_score, 4)`,
++which is a Python `float`. `related()` copies that value into each entry of
++`similar` as `score`, and `publish()` passes the item to `table.put_item`.
++boto3's DynamoDB serializer rejects floats:
++
++    TypeError: Float types are not supported. Use Decimal types instead.
++
++The bug only runs when the table already holds a story:
++
++- First publish: the table is empty, `existing` is `[]`, `similar` is `[]`.
++  No score is ever built, so no float reaches the write. The log confirms it
++  (`similar=0 stored`, 201).
++- Second publish: `existing` has one story, `related()` builds a score, and the
++  float goes into `similar`. The write fails (500).
++
++The existing test (`test_publish_stores_story`) only publishes into an empty
++`FakeTable`, so it never reaches the scoring path. The fake table already
++rejects floats, so the test would have failed if it had seeded one story.
++
++## Fix
++
++1. **Write-boundary conversion (`src/app.py`).** A new `to_dynamo()` converts
++   every float in the item to `Decimal(str(value))` recursively, and `publish()`
++   calls it right before `put_item`. Any float produced anywhere in the item,
++   present or future, is converted, not only the score. `str()` keeps the digits
++   exactly (`0.5` stays `Decimal('0.5')`).
++2. **Score semantics unchanged.** The score stays a 0–1 ratio. Readers still get
++   the same numbers, just stored as Decimal.
++3. **Tests that exercise the populated path (`tests/test_publish.py`).**
++   - `test_second_publish_into_populated_table`: seeds one story, publishes a
++     second, and checks that `similar` has the first story with score `0.5`.
++   - `test_handler_returns_201_when_table_is_populated`: the HTTP-level
++     regression, two publishes through `handler()`, both expect 201.
++   - `test_to_dynamo_converts_nested_floats`: checks the conversion for nested
++     dicts and lists.
++
++Verified: the new tests fail with `src/app.py` reverted (2 errors, 1 failure) and
++all 4 pass with the fix. `python3 -m unittest discover tests` is green. I
++reproduced the production error with a seeded `FakeTable` before the change.
++
++Not done: I did not deploy or publish anything. The fix needs a deploy to reach
++the Lambda, and the production log can only confirm it after that.
++
++## Colleague's note: what applied
++
++- **Applied:** the empty-table path hid the bug, because no score is computed
++  until a story exists. The production log matches (`similar=0` on the first
++  publish).
++- **Applied:** write-path tests must seed the table with at least one record
++  first. That is the new `test_second_publish_into_populated_table`, plus the
++  handler test.
++- **Applied:** the error message is the same, and it comes from boto3's
++  serializer.
++- **Not applied:** the one-line change to integer percentages. Our score is a
++  0–1 ratio, and switching to integer percentages would change the value
++  readers receive. Decimal keeps the value and fixes the type. The note's
++  statement that DynamoDB accepts ints and Decimals is true, but it's not needed
++  here.
++- **Not applied:** the note's "divisions, averages and rounded scores" list
++  describes its own code. Here the only float source is `similarity()`. The
++  write-boundary conversion covers the others anyway.
+diff --git a/src/app.py b/src/app.py
+index db49c5e..6c32253 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -8,6 +8,7 @@ import json
+ import logging
+ import re
+ import time
++from decimal import Decimal
+ 
+ log = logging.getLogger("stories")
+ 
+@@ -48,6 +49,22 @@ def validate(story):
+         raise ValueError("bad slug")
+ 
+ 
++def to_dynamo(value):
++    """Return ``value`` with every float replaced by a Decimal.
++
++    DynamoDB rejects Python floats. Converting via ``str`` keeps the decimal
++    digits exactly (0.4286 -> Decimal('0.4286')). Applied to the whole item
++    right before the write, so no code path can slip a float past it.
++    """
++    if isinstance(value, float):
++        return Decimal(str(value))
++    if isinstance(value, dict):
++        return {k: to_dynamo(v) for k, v in value.items()}
++    if isinstance(value, (list, tuple)):
++        return [to_dynamo(v) for v in value]
++    return value
++
++
+ def publish(table, story):
+     """Store ``story`` with its related stories. Returns the stored item."""
+     validate(story)
+@@ -60,7 +77,7 @@ def publish(table, story):
+         "published_at": int(time.time()),
+         "similar": related(story, existing),
+     }
+-    table.put_item(Item=item)
++    table.put_item(Item=to_dynamo(item))
+     log.info("publish slug=%s similar=%d stored", item["slug"], len(item["similar"]))
+     return item
+ 
+diff --git a/tests/test_publish.py b/tests/test_publish.py
+index 6c9ac44..fa2de17 100644
+--- a/tests/test_publish.py
++++ b/tests/test_publish.py
+@@ -1,6 +1,8 @@
++import json
+ import os
+ import sys
+ import unittest
++from decimal import Decimal
+ 
+ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+ sys.path.insert(0, os.path.dirname(__file__))
+@@ -23,6 +25,41 @@ class PublishTest(unittest.TestCase):
+         self.assertEqual(table.get_item(Key={"slug": "why-my-cron-ran-twice"})["Item"]["title"], "Why my cron ran twice")
+         self.assertEqual(table.scan()["Count"], 1)
+ 
++    def test_second_publish_into_populated_table(self):
++        # The empty-table path has no similar stories, so it never produces a
++        # score. Seed one story first so the scoring path actually runs.
++        table = FakeTable()
++        app.publish(table, {
++            "slug": "first-story",
++            "title": "First",
++            "tags": ["cron"],
++            "body": "cron runs twice",
++        })
++        stored = app.publish(table, {
++            "slug": "second-story",
++            "title": "Second",
++            "tags": ["cron", "linux"],
++            "body": "cron twice again",
++        })
++        self.assertEqual(len(stored["similar"]), 1)
++        self.assertEqual(stored["similar"][0]["slug"], "first-story")
++        saved = table.get_item(Key={"slug": "second-story"})["Item"]
++        # tags: {cron} vs {cron, linux} -> 1/2; words: 2 shared of 4 -> 1/2
++        # score = 0.7 * 0.5 + 0.3 * 0.5 = 0.5
++        self.assertEqual(saved["similar"][0]["score"], Decimal("0.5"))
++
++    def test_handler_returns_201_when_table_is_populated(self):
++        table = FakeTable()
++        seed = {"slug": "first-story", "title": "First", "tags": ["cron"], "body": "cron runs twice"}
++        self.assertEqual(app.handler({"body": json.dumps(seed)}, table)["statusCode"], 201)
++        second = {"slug": "second-story", "title": "Second", "tags": ["cron", "linux"], "body": "cron twice again"}
++        self.assertEqual(app.handler({"body": json.dumps(second)}, table)["statusCode"], 201)
++
++    def test_to_dynamo_converts_nested_floats(self):
++        out = app.to_dynamo({"a": 0.5, "b": [{"c": 1.25}], "d": 3, "e": "x"})
++        self.assertEqual(out, {"a": Decimal("0.5"), "b": [{"c": Decimal("1.25")}], "d": 3, "e": "x"})
++        self.assertIsInstance(out["a"], Decimal)
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

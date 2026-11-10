@@ -1,0 +1,78 @@
+# Fix: a memory write no longer evicts the static instructions
+
+## Cause
+
+`build_system()` returned one cache-marked block containing `INSTRUCTIONS` plus
+the per-athlete context (date, profile, zones, goal, facts, language). Prompt
+caching is a prefix hash, so every `save_fact` changed the facts inside that
+block and invalidated the whole block. That matches `NOTES.md` and
+`logs/usage.jsonl`: the call right after a save shows `cache_read_input_tokens: 0`
+and `cache_creation_input_tokens` near the full prompt size.
+
+## Change (bot.py, `build_system`)
+
+The system prompt is now two text blocks, each with `cache_control: ephemeral`:
+
+1. `INSTRUCTIONS`: a constant string, byte-identical for every athlete and every day.
+2. `athlete_context(a, today)`: the volatile tail. A `save_fact` only changes this block.
+
+Nothing else changed. The tools list, the keyword-based tool filtering, the
+message loop, and the athlete storage are untouched. The request still has 2
+cache markers, below Anthropic's limit of 4.
+
+## Verification (offline, no API calls)
+
+I ran `reply()` with a fake LLM that makes a `save_fact` call on the first round,
+with the athletes file and usage log pointed at a temp directory so the repo's
+`data/` and `logs/` were not touched. Results:
+
+- 2 cache markers on every request.
+- Block 1 is byte-identical before and after the memory write.
+- Block 2 changes after the memory write and contains the new fact.
+- Block 1 contains no date or name, and it is the same on a different day.
+- The tools list is identical across the rounds of one message.
+
+I have not measured live cache behaviour. There is no API key in this
+environment, and I did not call the API.
+
+## Colleague's note: what applied
+
+- **Two `cache_control` segments, static instructions first, volatile tail second.** Applied; this is the change above.
+- **Block 1 must be byte-stable (no interpolated dates, names or counters).** Already true of `INSTRUCTIONS`. The date sits in block 2.
+- **Keep the tools array byte-stable within a message.** Already true, since the tool set depends only on the message's keywords and not on memory.
+- **Don't do per-message top-N fact selection.** Applies as a warning. The bot already injects all facts, so nothing to change.
+- **Check `usage` on every response.** Applies. Use the verification steps below.
+- **Telegram transport, 4-marker limit, ~780-token figure, the tool-filter numbers.** Did not apply. The Telegram code is in a separate repo, and the token counts are the colleague's, not this bot's.
+
+## Risks to check after deploy
+
+1. **Minimum cacheable length.** Sonnet 4.5 only caches a prefix of at least
+   1024 tokens. My estimate for block 1 with the core tools is roughly 800-900
+   tokens, which is close to the threshold, and I could not count it exactly
+   without a tokenizer or the API. If block 1 is below the minimum, its marker is
+   ignored without an error. The fix would then do nothing: the cache would
+   behave as before. Padding the instructions to reach 1024 would be a bad fix.
+   The better options are to make the tools list constant (costs extra tokens per
+   message) or to accept the cost. Decide after the check below.
+2. **A message that adds a tool group changes the tools array, which sits above
+   both blocks.** For example, "I have a race booked" adds the race tools and
+   misses both blocks on that message. This is the trade-off for the keyword tool
+   filtering, which `NOTES.md` says to keep. It is much rarer than a save on every
+   message, but it is not zero.
+3. **Daily date change.** The date is in block 2, so the tail is rewritten once
+   a day. Block 1 is unaffected.
+
+## How to verify on live traffic
+
+Run two messages within 5 minutes for the same athlete, then a message that
+triggers `save_fact`, then one more message. Read `logs/usage.jsonl`:
+
+- After the first message, `cache_creation_input_tokens` covers both blocks.
+- The second message has `cache_read_input_tokens` close to the full prompt.
+- The round after `save_fact` has `cache_read_input_tokens` covering block 1 and
+  `cache_creation_input_tokens` about the size of block 2 (roughly 100-300
+  tokens for the sample athletes), not the full prompt.
+
+If the round after `save_fact` still writes the full prompt, check risk 1 first.
+If the write is the full prompt only for messages that add a tool group, that is
+risk 2.

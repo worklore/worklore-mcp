@@ -1,0 +1,3 @@
+The second publish failed because it added a Python float similarity score to the DynamoDB item. The first publish had no related stories, so that path never ran.
+
+I changed the score to a `Decimal` and added a regression test that publishes into a populated table. Both tests pass. The cause, fix, and applicable parts of the colleague’s note are in [ANSWER.md](/tmp/h-Jng9tL/ANSWER.md).

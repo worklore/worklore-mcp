@@ -1,0 +1,81 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..5753b6f
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,54 @@
++# Fix: Split system prompt to preserve static instruction cache
++
++## What changed
++
++In `bot.py`, the `build_system()` function was modified to return **two separate text blocks** instead of one concatenated block:
++
++**Before:**
++```python
++def build_system(a, today):
++    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
++    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++```
++
++**After:**
++```python
++def build_system(a, today):
++    # Split into two blocks so that memory writes (which change athlete_context)
++    # only invalidate the second block, leaving the static instructions cached.
++    return [
++        {"type": "text", "text": INSTRUCTIONS, "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": athlete_context(a, today), "cache_control": {"type": "ephemeral"}},
++    ]
++```
++
++## Why this fixes the issue
++
++The original code concatenated `INSTRUCTIONS` (static, ~780 tokens) with `athlete_context()` (volatile, ~240 tokens) into a single text block. With prefix-based caching, any change to the athlete context — such as a `save_fact` call adding a new fact — changed the entire block's hash, evicting the cached instructions as well.
++
++By splitting into two blocks, each with its own `cache_control` marker:
++- The first block (INSTRUCTIONS) remains byte-identical across all users and sessions, so it stays cached at ~10% read cost
++- The second block (athlete context) is invalidated only when the athlete's facts, profile, or date change, but it's only ~240 tokens instead of ~1000+
++
++After a `save_fact`, the next call now pays full price only for the ~240-token context block, while the ~780-token instructions are read from cache.
++
++## What from the colleague's note applied
++
++The following parts of the colleague's note **applied directly** and were used in this fix:
++
++1. **Root cause**: "With a single cache marker at the end of the system prompt, every `save_fact` call rewrote the facts block and evicted the whole cached prompt, including instructions that never changed."
++
++2. **Solution approach**: "I fixed it by splitting `system` into an array of two text blocks, each with `cache_control: {"type": "ephemeral"}`. The first held the static instructions... The second held the per-user tail... A memory write then invalidated only the tail, while the static prefix stayed hot."
++
++3. **Token breakdown**: The ~780 tokens for static instructions and ~240 tokens for volatile context match the colleague's measurements.
++
++4. **Cache behavior**: "Within the 5-minute TTL, loop iterations and follow-up messages read the prompt at ~10% price, and frequent memory writes re-cached ~240 tokens instead of the whole ~1000+ token prompt."
++
++5. **Marker syntax**: Using `cache_control: {"type": "ephemeral"}` on each block (Anthropic-specific, as noted).
++
++The following parts were **not applicable** or were explicitly rejected:
++
++- Tool filtering by keywords (already implemented in this codebase, and the colleague noted it was a separate improvement)
++- Top-N fact selection per message (colleague rejected this: "Loading all facts every time was cheaper than loading fewer facts with a different selection each time")
++- The specific tool list ordering concerns (tools sit above the system prompt in this codebase, not within it)
++- The 4-marker limit mention (we use 2 markers, which is within the limit)
+diff --git a/bot.py b/bot.py
+index e2ff241..a0c013d 100644
+--- a/bot.py
++++ b/bot.py
+@@ -128,9 +128,12 @@ def athlete_context(a, today):
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    # Split into two blocks so that memory writes (which change athlete_context)
++    # only invalidate the second block, leaving the static instructions cached.
++    return [
++        {"type": "text", "text": INSTRUCTIONS, "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": athlete_context(a, today), "cache_control": {"type": "ephemeral"}},
++    ]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [
+# 1 file diffs under node_modules/, __pycache__/ or .prisma/ left out of this patch; 2 kept

@@ -1,0 +1,3 @@
+Add Prisma ORM to this project, using the current version from npm. The database is the local PostgreSQL in .env (empty).
+
+Model users (unique email, optional name) and their posts (title, optional content, published defaulting to false; each post has one author). Create the tables in the database. Then add script.ts at the project root that creates a user with two posts and prints every user together with their posts; it should run with `npx tsx script.ts`. Write what you did in ANSWER.md.

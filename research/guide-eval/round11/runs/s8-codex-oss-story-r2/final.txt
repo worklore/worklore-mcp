@@ -1,0 +1,13 @@
+**Changes Made**
+
+- Updated `bot.py` → `build_system`:
+  - Split the system prompt into **two separate cacheable blocks**.
+  - **Block 1** contains the immutable `INSTRUCTIONS` and is marked `ephemeral`.
+  - **Block 2** holds the per‑athlete, per‑day context (`athlete_context`) and is also marked `ephemeral`.
+  - Added a detailed docstring explaining the two‑block strategy.
+
+**Applied Parts of the Colleague’s Note**
+
+- **Two `cache_control: {"type": "ephemeral"}` markers** – implemented exactly as suggested, separating static instructions from volatile context.
+- Ensured the **static instructions block stays byte‑identical** across users and calls, allowing the Anthropic cache to retain the prefix.
+- Placed **all mutable data (date, profile, facts, language)** in the second block so that only this tail is regenerated on each `save_fact` write.

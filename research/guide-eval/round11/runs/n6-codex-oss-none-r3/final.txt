@@ -1,0 +1,13 @@
+**Summary of Changes**
+
+- Updated `package.json` to include `@hashgraph/sdk` (v2.81.0).
+- Added `.env` with sample values for operator ID/key, recipient ID, and a valid‑start Unix timestamp.
+- Created `src/transfer.ts`:
+  - Loads environment variables via `dotenv`.
+  - Parses IDs and DER‑encoded private key using `fromStringDer`.
+  - Constructs a `TransactionId` with the provided valid start.
+  - Builds a `TransferTransaction` for 1 hbar, memo `invoice 42`, targeting node `0.0.3`.
+  - Signs the transaction and outputs the signed bytes as a hex string.
+- Added `ANSWER.md` documenting the implementation and how to run it.
+
+The script runs offline with `npx tsx src/transfer.ts` and passes `npx tsc --noEmit`.

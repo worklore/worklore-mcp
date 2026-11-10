@@ -1,0 +1,10 @@
+;; macOS sandbox for the headless agent: it has a real shell and everything it prints goes to OpenRouter and the
+;; model host, so my real home (and the Keychain) must stay unreachable. The only things read from the home are
+;; Vibe's own install (pipx venv and its launcher). Network stays open. HOME is passed with -D.
+(version 1)
+(allow default)
+(deny file-read-data (subpath (param "HOME")))
+(deny file-write* (subpath (param "HOME")))
+(allow file-read-data (subpath (string-append (param "HOME") "/.local/pipx")))
+(allow file-read-data (literal (string-append (param "HOME") "/.local/bin/vibe")))
+(deny process-exec (literal "/bin/launchctl") (literal "/usr/bin/osascript"))

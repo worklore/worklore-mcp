@@ -1,0 +1,21 @@
+**Changes Made**
+- Updated `run.sh` header to list the new `codex‑sandboxed` lane.
+- Added `codex_sandboxed_run()`:
+  * Creates a temporary empty `$HOME` and a scratch directory in `/tmp`.
+  * Executes Codex inside `sandbox/agent.sb` via `sandbox-exec`.
+  * Writes `final.txt` to the scratch folder, then copies it back to the run folder.
+  * Cleans up temporary directories.
+- Added a case branch `codex‑sandboxed)` to invoke the new function.
+- Updated lane comment block accordingly.
+- Added `ANSWER.md` documenting the modifications and their basis.
+
+**Applied Parts of the Colleague Note**
+- Used a scratch folder in `/tmp` to avoid sandbox‑denied paths.
+- Copied the generated `final.txt` back after the sandbox run.
+- Kept `stdout`/`stderr` redirection outside the sandbox, matching the note’s observation.
+
+**How to Use the New Lane**
+```bash
+./run.sh <task> codex-sandboxed [rep]
+```
+Runs Codex inside the macOS sandbox (`sandbox/agent.sb`) with no access to the real `$HOME`. Output is safely captured in the run directory. The existing `codex` (unsandboxed) and `kimi` lanes remain unchanged.

@@ -1,0 +1,3 @@
+Updated [deploy.sh](/tmp/h-pNs22z/deploy.sh) to sync a fresh, complete build with `--delete`. This removes bucket objects for deleted or private notes and files removed from `site/`. Extensionless pages retain their explicit HTML content type.
+
+Documented the change in [ANSWER.md](/tmp/h-pNs22z/ANSWER.md). Shell syntax and local staging checks passed. No deployment was performed.

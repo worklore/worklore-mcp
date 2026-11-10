@@ -1,0 +1,64 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..e3d0397
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,5 @@
++# Answer
++
++Added the `codex-sandboxed` lane to `run.sh`. It uses the same Codex arguments and output files as `codex`, but launches Codex through `sandbox-exec` with `sandbox/agent.sb` and a temporary scratch `HOME`. The sandbox receives the real home path for its access rules, and the scratch home is removed after the run.
++
++Updated `README.md` with the new lane. Verified `run.sh` with `bash -n` and checked the diff with `git diff --check`. I did not run an agent, since that would contact an external service.
+diff --git a/README.md b/README.md
+index 9d81ca7..49b7dbb 100644
+--- a/README.md
++++ b/README.md
+@@ -17,6 +17,8 @@ run folder `runs/<task>-<lane>-r<rep>/`:
+ Lanes:
+ 
+ - `codex`: Codex CLI (`codex exec --json`), unsandboxed.
++- `codex-sandboxed`: The same Codex command and output files, run under
++  `sandbox/agent.sb` with a scratch HOME.
+ - `kimi`: Kimi Code. Its output goes to Moonshot, so its shell runs under the
+   macOS sandbox profile `sandbox/agent.sb` (no reading or writing the real
+   home), with an empty scratch HOME. Kimi's own install and sessions live in
+diff --git a/run.sh b/run.sh
+index c41ad67..dc50d7f 100755
+--- a/run.sh
++++ b/run.sh
+@@ -1,6 +1,7 @@
+ #!/usr/bin/env bash
+ # usage: run.sh <task> <lane> [rep]
+ # lanes: codex   Codex CLI, unsandboxed
++#        codex-sandboxed  Codex CLI under sandbox/agent.sb, scratch HOME
+ #        kimi    Kimi Code under sandbox/agent.sb (no reading or writing the real home), scratch HOME
+ set -u
+ D="$(cd "$(dirname "$0")" && pwd)"
+@@ -9,10 +10,17 @@ R="$D/runs/$T-$A-r$REP"; rm -rf "$R"; mkdir -p "$R"
+ W=$(mktemp -d /tmp/h-XXXXXX); cp -R "$D/tasks/$T/." "$W/"
+ P="$(cat "$D/tasks/$T.prompt")"; printf '%s\n' "$P" > "$R/prompt.txt"
+ TO=1200
++CODEX_ARGS=(exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox -C "$W" --json -o "$R/final.txt" "$P")
+ 
+ codex_run() {
+-  ( cd "$W" && timeout $TO codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox -C "$W" --json \
+-      -o "$R/final.txt" "$P" < /dev/null > "$R/agent.log" 2> "$R/agent.err" )
++  ( cd "$W" && timeout $TO codex "${CODEX_ARGS[@]}" < /dev/null > "$R/agent.log" 2> "$R/agent.err" )
++}
++
++codex_sandboxed_run() {
++  local REAL="$HOME" SH; SH=$(mktemp -d /tmp/chome-XXXXXX)
++  ( cd "$W" && export HOME="$SH" && sandbox-exec -D HOME="$REAL" -f "$D/sandbox/agent.sb" \
++      timeout $TO codex "${CODEX_ARGS[@]}" < /dev/null > "$R/agent.log" 2> "$R/agent.err" )
++  local rc=$?; rm -rf "$SH"; return $rc
+ }
+ 
+ # Kimi's output goes to Moonshot: its shell runs under sandbox/agent.sb with an empty scratch HOME.
+@@ -27,6 +35,7 @@ kimi_run() {
+ start=$(date +%s)
+ case $A in
+   codex) codex_run;;
++  codex-sandboxed) codex_sandboxed_run;;
+   kimi)  kimi_run;;
+   *) echo "unknown lane $A"; exit 2;;
+ esac

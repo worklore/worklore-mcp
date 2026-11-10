@@ -1,0 +1,3 @@
+Installed the current npm version of `@hashgraph/sdk` (2.81.0) and added [src/transfer.ts](/tmp/h-BM43mq/src/transfer.ts). It signs the requested transfer locally and prints only the signed transaction bytes as hex; it makes no network submission.
+
+`npx tsc --noEmit` passed. I also ran the script and decoded its output to verify the transaction fields. Details are in [ANSWER.md](/tmp/h-BM43mq/ANSWER.md).

@@ -1,0 +1,126 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..3c16efa
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,73 @@
++# Answer: save_fact evicts the cached system prompt
++
++## Cause
++
++`build_system()` put the whole system prompt in one text block with
++`cache_control`: the coaching instructions, the athlete profile, the date, and
++the long-term facts list. The cache breakpoint covers everything up to and
++including that block, so any change to the block invalidates the cache. Every
++`save_fact` appends to `a.facts`, which changes the block. The next request
++then reads 0 cached tokens and rewrites about 1,000–1,300 tokens at the cache
++write price. That matches `logs/usage.jsonl`: the call after each `save_fact`
++shows `cache_read_input_tokens: 0` and a large `cache_creation_input_tokens`.
++
++The same thing happened inside a single message. `reply()` mutates `a` in
++`run_tool()`, and `build_request()` rebuilds the system prompt for round 2, so
++round 2 of a `save_fact` turn also missed the cache.
++
++## Change (`bot.py`)
++
++The system prompt is now two text blocks:
++
++1. **Static block, cached** — `INSTRUCTIONS` plus the stable profile (name,
++   sport, zones, goal, language). It is byte-identical across `save_fact`
++   calls, across rounds of one message, and across days.
++2. **Dynamic block, not cached** — today's date and the facts list. It sits
++   after the cache breakpoint, so a memory write re-sends only this small
++   block at normal input price.
++
++`athlete_context()` was replaced by `profile_context()` and `facts_context()`.
++`build_system()` returns the two blocks. Nothing else changed: the tool
++selection, the logging, and the `save_fact` behaviour are the same.
++
++## Verification
++
++I ran `reply()` with a fake LLM (no API calls, and the athlete and usage files
++were redirected to a temp directory, so `data/` and `logs/` were not modified):
++
++- Turn 1 saves a fact in a tool round. The cached block is identical in round 1,
++  round 2 and turn 2. The fact appears only in the uncached block.
++- The cached block is identical for 2026-11-09 and 2026-11-10.
++
++I have not checked this against the live API, and I did not deploy.
++
++## Open risk: the 1,024-token minimum
++
++Prompt caching only engages when the cached prefix reaches the model's minimum
++(1,024 tokens for Sonnet 4.5, the model in `bot.py`). The cached prefix is now
++tools + static block, about 3,050 characters. From the existing log, the old
++prefix (about 3,300 characters) was 1,000–1,300 tokens, which suggests the new
++prefix is only just over or just under 1,024. I could not count tokens exactly
++without calling the API, so I did not check it that way.
++
++If the prefix is under the minimum, caching will not engage at all, and every
++call will be billed at full input price. That would be worse than before for
++athletes whose facts were stable.
++
++**How to check after deploying:** in `logs/usage.jsonl`, a normal follow-up
++message should show `cache_read_input_tokens` near the static size, and
++`cache_creation_input_tokens` should be 0. If `cache_creation_input_tokens` and
++`cache_read_input_tokens` are both 0 for every call, the prefix is below the
++minimum. The fix would be to add about 100 tokens of stable content to the
++static block. Do not pad it with filler.
++
++## Not changed
++
++- **Tool selection changes the prefix.** `select_tools()` changes the `tools`
++  array, which comes before the system prompt in the cache order. A message
++  that switches tool sets (for example, a planning keyword) therefore misses
++  the cache even when the athlete's data is unchanged. NOTES.md says the
++  keyword filter was a clear win, so I left it. A possible follow-up is to
++  always send the full tool list and cache it.
++- The facts block is not cached. It is small, and caching it would cost a cache
++  write on every save, which is what we are trying to avoid.
+diff --git a/bot.py b/bot.py
+index e2ff241..8f8baa2 100644
+--- a/bot.py
++++ b/bot.py
+@@ -114,23 +114,35 @@ Formatting:
+ """
+ 
+ 
+-def athlete_context(a, today):
+-    lines = [
+-        f"Today: {today.isoformat()} ({today.strftime('%A')})",
++def profile_context(a):
++    """Stable per-athlete profile. Changes only when the profile itself changes, not on save_fact."""
++    return "\n".join([
+         f"Athlete: {a.name} (id {a.user_id}), sport: {a.sport}",
+         "Zones: " + ", ".join(f"{k} {v}" for k, v in a.zones.items()),
+         f"Goal: {a.goal}",
++        f"Language: {a.lang}",
++    ])
++
++
++def facts_context(a, today):
++    """What changes during normal use: the facts list (every save_fact) and the date (daily)."""
++    lines = [
++        f"Today: {today.isoformat()} ({today.strftime('%A')})",
+         "Long-term facts:",
+     ]
+     lines += [f"- {f}" for f in a.facts] or ["- (none yet)"]
+-    lines.append(f"Language: {a.lang}")
+     return "\n".join(lines)
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    # Block 1 is cached and must stay byte-identical across save_fact and across days:
++    # the cache breakpoint covers tools + block 1 only. Block 2 sits after the breakpoint,
++    # so a memory write re-sends only the facts block at full price and never evicts block 1.
++    static = INSTRUCTIONS + "\n\n" + profile_context(a)
++    return [
++        {"type": "text", "text": static, "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": facts_context(a, today)},
++    ]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [

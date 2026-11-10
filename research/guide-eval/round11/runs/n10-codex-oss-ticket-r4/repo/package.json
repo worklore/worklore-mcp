@@ -1,0 +1,26 @@
+{
+  "name": "notes-api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "contract:emit": "prisma contract emit"
+  },
+  "devDependencies": {
+    "@prisma/cli-engine": "^0.9.0",
+    "@types/node": "^24.0.0",
+    "prisma": "^8.0.0-rc.33",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0"
+  },
+  "description": "A small TypeScript blog backend. Run with `npm run dev`.",
+  "main": "index.js",
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@prisma/orm-postgres": "^8.0.0-rc.23",
+    "dotenv": "^18.0.10"
+  }
+}

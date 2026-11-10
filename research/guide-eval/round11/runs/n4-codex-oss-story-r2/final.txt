@@ -1,0 +1,26 @@
+**Answer**
+
+Implemented a **codex‑sandboxed** lane in `run.sh` that runs the Codex CLI inside the existing sandbox profile (`sandbox/agent.sb`).  
+
+**What was added**
+- Updated lane comment list to include `codex-sandboxed`.
+- Added `codex_sandboxed_run` function:
+  - Creates a temporary HOME (`/tmp/codex-sb-XXXXXX`).
+  - Executes `codex exec` under `sandbox‑exec` with the same profile used for the `kimi` lane.
+  - Writes the output file to the temporary HOME (allowed by the sandbox).
+  - After the sandbox finishes, copies `final.txt` back to the run folder and cleans up the temporary directory.
+- Extended the lane dispatcher (`case $A in`) to handle `codex-sandboxed`.
+
+**Applied parts of the colleague’s note**
+- Identified that Codex cannot write its final answer inside the sandbox‑restricted run folder.
+- Followed the recommendation to use a scratch HOME directory (`mktemp -d /tmp/...`) for the output.
+- Copied the result out of the sandbox after execution.
+- Kept stdout/stderr redirections outside the sandbox, matching the advised approach.
+
+**Usage**
+
+```bash
+./run.sh <task> codex-sandboxed
+```
+
+The new lane behaves like the original `codex` lane but respects the sandbox’s restriction on accessing the real home directory.

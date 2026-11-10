@@ -1,0 +1,84 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..6e1c773
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,28 @@
++## Cause
++
++The `similarity()` function in `src/app.py` returns a Python `float` from `round(0.7 * tag_score + 0.3 * word_score, 4)`. This float is stored in the `similar` array as the `score` field of related stories.
++
++The first publish succeeds because the DynamoDB table is empty: `related()` returns an empty list, so no scores (and no floats) are written to the item. Once a story exists in the table, the second publish calls `related()`, which computes similarity scores as floats and includes them in the item passed to `table.put_item()`. DynamoDB rejects float types — it only accepts `Decimal`, `int`, `str`, `bool`, `bytes`, or `None`. This causes the `TypeError: Float types are not supported. Use Decimal types instead.` error seen in `logs/error.log`.
++
++This matches the colleague's note: the empty-database path hid the bug, and the populated-table path exposed it.
++
++## Fix
++
++1. **Code fix (src/app.py):**
++   - Added `from decimal import Decimal` import
++   - Changed `similarity()` to return `Decimal(str(round(0.7 * tag_score + 0.3 * word_score, 4)))` instead of a raw float
++   - This converts the rounded float to a string, then to a `Decimal`, which DynamoDB accepts
++
++2. **Test fix (tests/test_publish.py):**
++   - Seeded the fake table with an existing story before publishing the test story
++   - This ensures the test exercises the populated-table path where similarity scores are computed
++   - The test now catches the bug if floats are ever reintroduced
++
++## Parts of the colleague's note that applied
++
++- The empty-database path hiding the bug: **applied** — first publish worked, second failed
++- The scoring path producing floats that DynamoDB rejects: **applied** — `similarity()` returned floats
++- The fix of changing float scores to a DynamoDB-compatible type: **applied** — used `Decimal` instead of `int` (which would lose precision)
++- The test change to seed the table: **applied** — test now pre-populates with one story
++
++The colleague's note described the exact same issue and solution approach. The only difference is that we used `Decimal` (preserving the fractional scores) rather than integer percentages, since the similarity computation produces values in the range [0, 1] with 4 decimal places of precision.
+diff --git a/src/app.py b/src/app.py
+index db49c5e..af4bb08 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -8,6 +8,7 @@ import json
+ import logging
+ import re
+ import time
++from decimal import Decimal
+ 
+ log = logging.getLogger("stories")
+ 
+@@ -27,7 +28,7 @@ def similarity(a, b):
+     tag_score = len(ta & tb) / len(ta | tb) if (ta | tb) else 0
+     wa, wb = words(a.get("body")), words(b.get("body"))
+     word_score = len(wa & wb) / len(wa | wb) if (wa | wb) else 0
+-    return round(0.7 * tag_score + 0.3 * word_score, 4)
++    return Decimal(str(round(0.7 * tag_score + 0.3 * word_score, 4)))
+ 
+ 
+ def related(story, existing):
+diff --git a/tests/test_publish.py b/tests/test_publish.py
+index 6c9ac44..c186775 100644
+--- a/tests/test_publish.py
++++ b/tests/test_publish.py
+@@ -12,6 +12,15 @@ from fake_dynamo import FakeTable  # noqa: E402
+ class PublishTest(unittest.TestCase):
+     def test_publish_stores_story(self):
+         table = FakeTable()
++        existing = {
++            "slug": "first-story",
++            "title": "First Story",
++            "tags": ["test"],
++            "body": "This is the first story.",
++            "published_at": 1234567890,
++            "similar": [],
++        }
++        table.put_item(Item=existing)
+         story = {
+             "slug": "why-my-cron-ran-twice",
+             "title": "Why my cron ran twice",
+@@ -21,7 +30,7 @@ class PublishTest(unittest.TestCase):
+         stored = app.publish(table, story)
+         self.assertEqual(stored["slug"], "why-my-cron-ran-twice")
+         self.assertEqual(table.get_item(Key={"slug": "why-my-cron-ran-twice"})["Item"]["title"], "Why my cron ran twice")
+-        self.assertEqual(table.scan()["Count"], 1)
++        self.assertEqual(table.scan()["Count"], 2)
+ 
+ 
+ if __name__ == "__main__":

@@ -1,0 +1,10 @@
+;; OS-level fence for lanes whose output leaves the machine: the agent has a real shell, so the real home must be
+;; unreachable. Only the agent's own install is opened. Network stays open. HOME is passed with -D HOME=<real home>,
+;; the agent's own install with -D AGENT_DIR=<dir> (kimi: <real home>/.kimi-code; codex: its scratch HOME, outside the real home).
+(version 1)
+(allow default)
+(deny file-read-data (subpath (param "HOME")))
+(deny file-write* (subpath (param "HOME")))
+(allow file-read-data (subpath (param "AGENT_DIR")))
+(allow file-write* (subpath (param "AGENT_DIR")))
+(deny process-exec (literal "/bin/launchctl") (literal "/usr/bin/security") (literal "/usr/bin/osascript"))

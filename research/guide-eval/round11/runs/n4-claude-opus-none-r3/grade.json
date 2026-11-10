@@ -1,0 +1,52 @@
+{
+ "answer_file": true,
+ "answer_source": "repo",
+ "lanes": [
+  "codex",
+  "codex-sandboxed",
+  "kimi"
+ ],
+ "new_lane": "codex-sandboxed",
+ "paths_rewritten": [],
+ "lane_rc": 0,
+ "lane_out": "fizz-codex-sandboxed-r1 rc=0 answer=24 chars\n",
+ "codex_ran": true,
+ "codex_under_sandbox": true,
+ "sandbox_calls": 1,
+ "fence": {
+  "denies_home_write": true,
+  "denies_home_read": true,
+  "opens_run_folder": false,
+  "params": {
+   "HOME": "/private/var/folders/wx/fkc3yttx3f7ddg45t1h52nyw0000gn/T/g-n4-zjowyq_2/home",
+   "AGENT_DIR": "/tmp/chome-brNagp"
+  }
+ },
+ "final_txt_has_answer": true,
+ "answer_json_has_answer": true,
+ "codex_wrote_out_file": true,
+ "codex_out_file": "/tmp/chome-brNagp/final.txt",
+ "failed_write_in_err": false,
+ "codex_lane_ok": true,
+ "agent_ran_sandbox_exec": [
+  "cd /private/tmp/h-hntv3B; cat README.md check_answer.py tasks/fizz.prompt .gitignore; which codex sandbox-exec timeout; ls -la \"$(which codex)\" 2>/dev/null; ls ",
+  "cd /private/tmp/h-hntv3B; python3 - <<'EOF'\np='sandbox/agent.sb'; s=open(p).read()\ns=s.replace(''';; unreachable. Only the agent's own install is opened. Networ",
+  "cd /private/tmp/h-hntv3B; REAL=$HOME; SH=$(mktemp -d /tmp/chome-XXXXXX); mkdir -p $SH/.codex; W=$(mktemp -d /tmp/h-XXXXXX)\nprobe='t(){ if eval \"$2\" >/dev/null 2",
+  "cd /private/tmp/h-hntv3B; D=$PWD; REAL=$HOME; SH=$(mktemp -d /tmp/chome-XXXXXX); mkdir -p $SH/.codex; W=$(mktemp -d /tmp/h-XXXXXX)\nprobe='t(){ if eval \"$2\" >/de",
+  "cd /private/tmp/h-hntv3B; python3 - <<'EOF'\np='README.md'; s=open(p).read()\ns=s.replace('''- `kimi`: Kimi Code.''','''- `codex-sandboxed`: the same Codex run as"
+ ],
+ "agent_ran_harness": [
+  "cd /private/tmp/h-hntv3B; python3 - <<'EOF'\np='sandbox/agent.sb'; s=open(p).read()\ns=s.replace(''';; unreachable. Only the agent's own install is opened. Networ",
+  "cd /private/tmp/h-hntv3B; python3 - <<'EOF'\np='README.md'; s=open(p).read()\ns=s.replace('''- `kimi`: Kimi Code.''','''- `codex-sandboxed`: the same Codex run as"
+ ],
+ "answer_mentions_output_file": true,
+ "changed_files": [
+  "ANSWER.md",
+  "README.md",
+  "run.sh",
+  "sandbox/agent.sb"
+ ],
+ "commands_issued": 7,
+ "answer_chars": 3205,
+ "PASS": true
+}

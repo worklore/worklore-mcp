@@ -1,0 +1,9 @@
+# Cause and fix
+
+The last run stopped during Vibe startup, before it reached OpenRouter. `logs/last-run.err` says Vibe was reading API keys from the macOS Keychain and then failed to execute `/usr/bin/security` with `Operation not permitted`. The sandbox deliberately denies that executable. Although `OPENROUTER_API_KEY` is present, the launcher's `env -i` omitted `MISTRAL_API_KEY`, causing Vibe to try the Keychain for its own key.
+
+`run-vibe.sh` now passes `MISTRAL_API_KEY=unused` inside the `env -i` allowlist. The active provider remains OpenRouter and continues to use `OPENROUTER_API_KEY`. The placeholder only prevents the startup Keychain lookup; the sandbox still denies `/usr/bin/security`.
+
+The colleague's note applied to the matching stderr, Vibe's lookup of its own key even with OpenRouter selected, and the need to put the placeholder on the `env -i` command. Its suggestions to put a key in `.env`, use the test switch, or allow Keychain access were unnecessary here.
+
+I did not make a live provider request, so successful export creation and provider access remain unverified.

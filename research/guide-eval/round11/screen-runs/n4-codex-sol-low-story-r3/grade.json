@@ -1,0 +1,50 @@
+{
+ "answer_file": true,
+ "answer_source": "repo",
+ "lanes": [
+  "codex",
+  "codex-sandboxed",
+  "kimi"
+ ],
+ "new_lane": "codex-sandboxed",
+ "paths_rewritten": [],
+ "lane_rc": 0,
+ "lane_out": "fizz-codex-sandboxed-r1 rc=0 answer=24 chars\n",
+ "codex_ran": true,
+ "codex_under_sandbox": true,
+ "sandbox_calls": 1,
+ "fence": {
+  "denies_home_write": true,
+  "denies_home_read": true,
+  "opens_run_folder": false,
+  "params": {
+   "HOME": "/private/var/folders/wx/fkc3yttx3f7ddg45t1h52nyw0000gn/T/g-n4-q5h7_kc3/home",
+   "KIMI_HOME": "/tmp/chome-EREt0j"
+  }
+ },
+ "final_txt_has_answer": true,
+ "answer_json_has_answer": true,
+ "codex_wrote_out_file": true,
+ "codex_out_file": "/tmp/codex-out-ZufsYp/final.txt",
+ "failed_write_in_err": false,
+ "codex_lane_ok": true,
+ "agent_ran_sandbox_exec": [
+  "/bin/zsh -lc 'cat README.md; cat check_answer.py; find runs -maxdepth 2 -type f; command -v codex; command -v sandbox-exec; git status --short'",
+  "/bin/zsh -lc \"rg -n 'sandbox-exec|KIMI_HOME|codex_sandboxed' run.sh sandbox/agent.sb; bash -n run.sh; git diff --check; sandbox-exec -D HOME=/tmp/nonexistent-ho"
+ ],
+ "agent_ran_harness": [
+  "/bin/zsh -lc 'rg --files tasks; cat .gitignore; git diff -- run.sh sandbox/agent.sb README.md'",
+  "/bin/zsh -lc 'bash -n run.sh; git diff --check; git diff -- run.sh README.md'",
+  "/bin/zsh -lc \"rg -n 'sandbox-exec|KIMI_HOME|codex_sandboxed' run.sh sandbox/agent.sb; bash -n run.sh; git diff --check; sandbox-exec -D HOME=/tmp/nonexistent-ho"
+ ],
+ "answer_mentions_output_file": true,
+ "changed_files": [
+  "ANSWER.md",
+  "README.md",
+  "run.sh",
+  "sandbox/agent.sb"
+ ],
+ "commands_issued": 6,
+ "answer_chars": 1507,
+ "PASS": true
+}

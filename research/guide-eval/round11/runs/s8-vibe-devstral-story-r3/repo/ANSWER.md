@@ -1,0 +1,62 @@
+# Fix: Two cache_control segments for prompt caching
+
+## What changed
+
+In `bot.py`, the `build_system` function was modified to split the system prompt into two separate cache-controlled blocks instead of one combined block.
+
+**Before:**
+```python
+def build_system(a, today):
+    # One block, cached as a whole: instructions + per-athlete context.
+    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
+```
+
+**After:**
+```python
+def build_system(a, today):
+    # Two cache-controlled blocks so memory writes don't evict the static instructions.
+    # Block 1: static instructions (byte-identical across users and days).
+    # Block 2: per-user volatile data (date, profile, zones, goal, facts, language).
+    return [
+        {"type": "text", "text": INSTRUCTIONS, "cache_control": {"type": "ephemeral"}},
+        {"type": "text", "text": athlete_context(a, today), "cache_control": {"type": "ephemeral"}},
+    ]
+```
+
+## Why this fixes the issue
+
+The original implementation concatenated `INSTRUCTIONS` (static, ~780 tokens) with `athlete_context(a, today)` (volatile, ~240 tokens) into a single text block with one `cache_control` marker. When `save_fact` appended a new fact to the athlete's `facts` list, the entire `athlete_context` string changed, which changed the prefix hash of the single cached block, evicting **both** the static instructions and the volatile context from the cache.
+
+With two separate cache-controlled blocks:
+- Block 1 (static instructions) remains byte-identical across all users and days
+- Block 2 (per-user volatile data) is re-cached only when facts change
+
+Now when `save_fact` is called, only the second block (~240 tokens) is re-cached, while the first block (~780 tokens) stays hot in the prompt cache.
+
+## What from the colleague's note applied
+
+The following parts of the colleague's note were directly applicable and implemented:
+
+1. **"Split `system` into an array of two text blocks, each with `cache_control: {"type": "ephemeral"}`"** — Implemented exactly as described.
+
+2. **"Block one = instructions, guaranteed byte-stable (no interpolated dates, names, or counters); block two = everything volatile (date, profile, memory)"** — The `INSTRUCTIONS` constant is completely static with no interpolation. The `athlete_context(a, today)` function contains all volatile data including date, profile, zones, goal, facts, and language.
+
+3. **"A memory write now invalidates only the tail; the static prefix stays hot"** — This is the exact behavior achieved.
+
+4. **"Anthropic allows 4 markers per request — we use 2"** — We use exactly 2 cache_control markers.
+
+## What was rejected
+
+The colleague's note also mentioned approaches they rejected, which we similarly did not implement:
+
+- **Top-N fact selection per message** — We continue to include all facts every time, which is necessary for the volatile block to remain cacheable.
+- **Aggressive tool filtering** — The existing tool filtering logic remains unchanged; tools are selected based on message keywords but the core set is always included.
+
+## Expected impact
+
+Based on the usage logs in `logs/usage.jsonl`:
+- Before: `save_fact` calls showed `cache_creation_input_tokens` ~1046-1104 (full prompt) and `cache_read_input_tokens: 0`
+- After: `save_fact` calls should show `cache_creation_input_tokens` ~240 (volatile tail only) and `cache_read_input_tokens` ~780 (static instructions)
+
+This reduces the token cost of memory writes by approximately 75% (780/1046 tokens saved per write).

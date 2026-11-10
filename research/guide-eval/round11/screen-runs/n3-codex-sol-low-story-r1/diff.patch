@@ -1,0 +1,69 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..8a5abd8
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,9 @@
++# Deploy cleanup
++
++Updated `deploy.sh` so the `site/` sync uses `--delete`. Files removed from `site/` are therefore removed from the bucket on the next deploy.
++
++The sync excludes `s/*` and `a/*`, which are produced separately by `build_pages.py`. The script uploads those pages with their existing HTML content type, then lists both bucket prefixes and deletes keys absent from the current build. This removes pages for deleted or private notes, plus author pages with no remaining public notes. The page cleanup lists every page before deleting, including paginated S3 results.
++
++The colleague's note applies to the split upload: a plain `sync --delete` would temporarily remove every current note and author page before the separate upload restored it. Its exclusion and post-upload cleanup approach applies here. Its `paths/` prefix and post-upload `sync` suggestion do not apply: this build produces only `s/` and `a/`, and syncing extensionless pages could change their HTML content type.
++
++Checked `bash -n deploy.sh`, ran `build_pages.py` locally, and checked `git diff --check`. No live deploy was run.
+diff --git a/deploy.sh b/deploy.sh
+index 431ef02..6698cb4 100755
+--- a/deploy.sh
++++ b/deploy.sh
+@@ -13,7 +13,42 @@ build_pages() {
+ 
+ sync_site() {
+   echo "→ syncing site/ to s3://$BUCKET"
+-  aws s3 sync "$ROOT/site/" "s3://$BUCKET/" --only-show-errors
++  aws s3 sync "$ROOT/site/" "s3://$BUCKET/" --delete \
++    --exclude 's/*' --exclude 'a/*' --only-show-errors
++}
++
++remove_stale_pages() {
++  echo "→ removing stale note and author pages"
++  python3 - "$ROOT/.build/pages" "$BUCKET" <<'PY'
++import json
++import pathlib
++import subprocess
++import sys
++
++pages, bucket = pathlib.Path(sys.argv[1]), sys.argv[2]
++for prefix in ("s/", "a/"):
++    folder = pages / prefix
++    current = {p.relative_to(pages).as_posix() for p in folder.rglob("*")
++               if p.is_file()} if folder.exists() else set()
++    token = None
++    stale = []
++    while True:
++        command = ["aws", "s3api", "list-objects-v2", "--bucket", bucket,
++                   "--prefix", prefix, "--output", "json", "--no-paginate"]
++        if token:
++            command += ["--continuation-token", token]
++        result = json.loads(subprocess.check_output(command))
++        for obj in result.get("Contents", []):
++            key = obj["Key"]
++            if key not in current:
++                stale.append(key)
++        token = result.get("NextContinuationToken")
++        if not token:
++            break
++    for key in stale:
++        subprocess.run(["aws", "s3api", "delete-object", "--bucket", bucket,
++                        "--key", key], check=True, stdout=subprocess.DEVNULL)
++PY
+ }
+ 
+ upload_pages() {
+@@ -29,4 +64,5 @@ upload_pages() {
+ build_pages
+ sync_site
+ upload_pages
++remove_stale_pages
+ echo "✓ deployed to s3://$BUCKET"

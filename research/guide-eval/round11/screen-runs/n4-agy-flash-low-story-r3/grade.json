@@ -1,0 +1,49 @@
+{
+ "answer_file": true,
+ "answer_source": "repo",
+ "lanes": [
+  "codex",
+  "codex-sandboxed",
+  "kimi"
+ ],
+ "new_lane": "codex-sandboxed",
+ "paths_rewritten": [],
+ "lane_rc": 0,
+ "lane_out": "fizz-codex-sandboxed-r1 rc=0 answer=24 chars\n",
+ "codex_ran": true,
+ "codex_under_sandbox": true,
+ "sandbox_calls": 1,
+ "fence": {
+  "denies_home_write": true,
+  "denies_home_read": true,
+  "opens_run_folder": false,
+  "params": {
+   "HOME": "/private/var/folders/wx/fkc3yttx3f7ddg45t1h52nyw0000gn/T/g-n4-gxn2lprr/home"
+  }
+ },
+ "final_txt_has_answer": true,
+ "answer_json_has_answer": true,
+ "codex_wrote_out_file": true,
+ "codex_out_file": "/tmp/cscratch-KIUQ8A/final.txt",
+ "failed_write_in_err": false,
+ "codex_lane_ok": true,
+ "agent_ran_sandbox_exec": [
+  "bash -c '\nREAL=\"$HOME\"\nSH=$(mktemp -d /tmp/chome-XXXXXX)\nW=$(mktemp -d /tmp/testw-XXXXXX)\nOUT=$(mktemp -d /tmp/testout-XXXXXX)\nP=\"say hello\"\necho \"Testing sandb",
+  "bash -c '\nD=\"$(pwd)\"\nREAL=\"$HOME\"\nSH=$(mktemp -d /tmp/chome-XXXXXX)\nW=$(mktemp -d /tmp/testw-XXXXXX)\nOUT=$(mktemp -d /tmp/testout-XXXXXX)\nP=\"say hello\"\necho \"Te",
+  "bash -c '\nD=\"$(pwd)\"\nREAL=\"$HOME\"\nSH=$(mktemp -d /tmp/chome-XXXXXX)\nmkdir -p \"$SH/.codex\"\ncp \"$REAL/.codex/auth.json\" \"$SH/.codex/auth.json\"\nW=$(mktemp -d /tmp/",
+  "bash -c '\nD=\"$(pwd)\"\nREAL=\"$HOME\"\nSH=$(mktemp -d /tmp/chome-XXXXXX)\nW=$(mktemp -d /tmp/testw-XXXXXX)\nmkdir -p \"$D/runs/test-run\"\nP=\"say hello\"\n( cd \"$W\" && expo",
+  "bash -c '\nD=\"$(pwd)\"\nREAL=\"$HOME\"\nSH=$(mktemp -d /tmp/chome-XXXXXX)\nW=$(mktemp -d /tmp/testw-XXXXXX)\nOUT=$(mktemp -d /tmp/testout-XXXXXX)\nP=\"say hello\"\necho \"Te"
+ ],
+ "agent_ran_harness": [
+  "./run.sh fizz codex 1",
+  "./run.sh fizz codex-sandboxed 1"
+ ],
+ "answer_mentions_output_file": true,
+ "changed_files": [
+  "ANSWER.md",
+  "run.sh"
+ ],
+ "commands_issued": 44,
+ "answer_chars": 2587,
+ "PASS": true
+}

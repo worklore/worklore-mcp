@@ -1,0 +1,49 @@
+{
+ "answer_file": true,
+ "answer_source": "repo",
+ "lanes": [
+  "codex",
+  "codex-sandboxed",
+  "kimi"
+ ],
+ "new_lane": "codex-sandboxed",
+ "paths_rewritten": [],
+ "lane_rc": 0,
+ "lane_out": "fizz-codex-sandboxed-r1 rc=0 answer=0 chars\n",
+ "codex_ran": true,
+ "codex_under_sandbox": true,
+ "sandbox_calls": 1,
+ "fence": {
+  "denies_home_write": true,
+  "denies_home_read": true,
+  "opens_run_folder": false,
+  "params": {
+   "HOME": "/private/var/folders/wx/fkc3yttx3f7ddg45t1h52nyw0000gn/T/g-n4-xejz4sfa/home"
+  }
+ },
+ "final_txt_has_answer": false,
+ "answer_json_has_answer": false,
+ "codex_wrote_out_file": false,
+ "codex_out_file": "/private/var/folders/wx/fkc3yttx3f7ddg45t1h52nyw0000gn/T/g-n4-xejz4sfa/home/evals/agent-evals/runs/fizz-codex-sandboxed-r1/final.txt",
+ "failed_write_in_err": true,
+ "codex_lane_ok": true,
+ "agent_ran_sandbox_exec": [
+  "sandbox-exec -f /private/tmp/h-lzpOHJ/sandbox/agent.sb true 2>&1 && echo \"Sandbox profile valid\"",
+  "sandbox-exec --version 2>&1",
+  "sandbox-exec -p \"(version 1)(allow default)\" true 2>&1",
+  "sandbox-exec -p \"(version 1)(allow default)\" echo \"test\" 2>&1"
+ ],
+ "agent_ran_harness": [
+  "cd /private/tmp/h-lzpOHJ && bash -n run.sh && echo \"Syntax OK\"",
+  "cd /private/tmp/h-lzpOHJ && ls -la run.sh sandbox/agent.sb ANSWER.md"
+ ],
+ "answer_mentions_output_file": true,
+ "changed_files": [
+  "ANSWER.md",
+  "run.sh",
+  "sandbox/agent.sb"
+ ],
+ "commands_issued": 15,
+ "answer_chars": 1689,
+ "PASS": false
+}

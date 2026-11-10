@@ -1,0 +1,25 @@
+**Implemented Transfer Script**
+
+- Added the current Hedera SDK (`@hiero-ledger/sdk@2.91.0`) to the project.  
+- Created `src/transfer.ts` which:
+  - Loads `OPERATOR_ID`, `OPERATOR_KEY`, `RECIPIENT_ID`, `VALID_START` from `.env` using `dotenv`.
+  - Parses IDs with `AccountId.fromString` and the DER‑encoded private key with `PrivateKey.fromStringDer`.
+  - Constructs a `TransactionId` via `TransactionId.withValidStart`.
+  - Builds a `TransferTransaction`:
+    - Sets the transaction ID and node account `0.0.3`.
+    - Transfers `1 hbar` from operator to recipient.
+    - Adds memo `invoice 42`.
+    - Freezes for offline signing.
+  - Signs the transaction with the operator key.
+  - Serializes the signed transaction and prints the hex string.
+
+**Applied Parts of Colleague’s Note**
+
+- Switched from the deprecated `@hashgraph/sdk` to the new package `@hiero-ledger/sdk` as described.  
+- Kept the same class names (`TransferTransaction`, `PrivateKey.fromStringDer`, `TransactionId.withValidStart`, `Hbar`) because the API is unchanged.  
+- Followed the note’s guidance on using the current SDK version and import path.
+
+**Verification**
+
+- `npx tsc --noEmit` passes with no TypeScript errors.  
+- Running `npx tsx src/transfer.ts` produces the signed transaction bytes in hex (offline, no network calls).

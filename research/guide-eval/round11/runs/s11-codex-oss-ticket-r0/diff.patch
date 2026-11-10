@@ -1,0 +1,46 @@
+diff --git a/src/app.py b/src/app.py
+index db49c5e..a709ad4 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -1,7 +1,7 @@
+ """Story library: the publish handler.
+ 
+ Each story is stored in one DynamoDB item together with the three most similar
+-stories already in the library (``similar``), so the reader page can show
++stories already in the library (similar), so the reader page can show
+ "related" without a query at read time.
+ """
+ import json
+@@ -31,11 +31,22 @@ def similarity(a, b):
+ 
+ 
+ def related(story, existing):
++    """Return up to TOP_N related stories.
++
++    The original implementation stored the raw float similarity scores in
++    the DynamoDB similar attribute. DynamoDB (and the FakeTable used in
++    tests) rejects floats, raising TypeError: Float types are not supported.
++    Use Decimal types instead. To avoid dealing with Decimal objects we
++    convert the score to an integer percentage – this retains the relative
++    ordering and is accepted by DynamoDB.
++    """
+     scored = []
+     for other in existing:
+         if other["slug"] == story["slug"]:
+             continue
+-        scored.append({"slug": other["slug"], "score": similarity(story, other)})
++        raw_score = similarity(story, other)
++        int_score = int(round(raw_score * 100))
++        scored.append({"slug": other["slug"], "score": int_score})
+     scored.sort(key=lambda s: s["score"], reverse=True)
+     return scored[:TOP_N]
+ 
+@@ -49,7 +60,7 @@ def validate(story):
+ 
+ 
+ def publish(table, story):
+-    """Store ``story`` with its related stories. Returns the stored item."""
++    """Store story with its related stories. Returns the stored item."""
+     validate(story)
+     existing = table.scan(TableName=TABLE_NAME).get("Items", [])
+     item = {

@@ -1,0 +1,98 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..cadbae1
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,55 @@
++# Answer: stale pages and files stay live after deploy
++
++## Cause
++
++`deploy.sh` only ever added or overwrote objects in the bucket. It runs
++`aws s3 sync` (no `--delete`) for `site/` and `aws s3 cp` for the prerendered
++pages. Nothing removed an object whose source had gone away, so:
++
++- a note that was deleted or set to `private` kept its `s/<slug>` page;
++- an author with no public notes left was kept at `a/<handle>`;
++- a file removed from `site/` stayed in the bucket.
++
++## Change (`deploy.sh`)
++
++Added a `prune_bucket` step that runs after the uploads:
++
++1. Build the expected key list: every file under `site/` plus every file under
++   `.build/pages/`, with the `./` prefix stripped, sorted.
++2. List every key in `s3://$BUCKET` (`aws s3api list-objects-v2`), dropping the
++   literal `None` that the CLI prints for an empty bucket.
++3. `comm -13` gives the keys in the bucket that the build did not produce. Each
++   one is removed with `aws s3 rm`.
++
++Design choices:
++
++- **Prune runs last.** With `set -e`, a failed build or upload stops the script
++  before anything is deleted, so a broken build cannot wipe the site.
++- **Whole bucket, not just `s/` and `a/`.** The request said "anything in the
++  bucket that the build no longer produces", so the check covers every key.
++  Consequence: any object put in the bucket by hand, outside this repo, is
++  deleted on the next deploy.
++- `LC_ALL=C` is set inside the function so `sort` and `comm` agree.
++
++## Verification
++
++- `bash -n deploy.sh` passes.
++- I ran the script against a fake `aws` CLI (a shell stub outside the repo, in a
++  scratch directory, not committed). The fake bucket held the expected keys plus
++  `old.html`, `s/old-note`, `s/draft-moss-survey` (private note) and `a/cy`
++  (author with no notes). The run deleted exactly those four keys and left all
++  expected keys alone. A rerun against an empty bucket reported "nothing stale"
++  and exited 0.
++- **Not tested against real S3 or CloudFront.** I did not deploy, and I had no
++  AWS access. The `list-objects-v2 --query` output and the `aws s3 rm` calls
++  should be checked on the first real CI run.
++
++## Not covered
++
++- **CloudFront cache.** The pages are served with `max-age=300`, and the script
++  does not invalidate CloudFront. A deleted page can still be served from an edge
++  cache until its TTL expires. Making the removal immediate needs an invalidation
++  for the removed paths (`aws cloudfront create-invalidation`), which requires the
++  distribution ID. I did not add it because the ID is not in the repo.
++- The README still describes the deploy as "syncs and uploads". It should
++  mention the prune step; I did not change it.
+diff --git a/deploy.sh b/deploy.sh
+index 431ef02..c400e78 100755
+--- a/deploy.sh
++++ b/deploy.sh
+@@ -26,7 +26,32 @@ upload_pages() {
+     done )
+ }
+ 
++prune_bucket() {
++  # Anything in the bucket that this build did not produce is stale: the page of
++  # a deleted or private note, an author page with no public notes left, or a
++  # file removed from site/. Delete those. Runs after the uploads, so a failed
++  # upload stops the script before anything is removed.
++  echo "→ removing objects the build no longer produces"
++  export LC_ALL=C  # comm needs both lists sorted the same way
++  local expected="$ROOT/.build/expected-keys" live="$ROOT/.build/live-keys" stale
++  { ( cd "$ROOT/site" && find . -type f ); ( cd "$ROOT/.build/pages" && find . -type f ); } \
++    | sed 's|^\./||' | sort -u > "$expected"
++  # list-objects-v2 returns the literal "None" for an empty bucket; drop it.
++  aws s3api list-objects-v2 --bucket "$BUCKET" --output text --query 'Contents[].Key' \
++    | tr '\t' '\n' | { grep -v -e '^None$' -e '^$' || true; } | sort -u > "$live"
++  stale="$(comm -13 "$expected" "$live")"
++  if [ -z "$stale" ]; then
++    echo "  nothing stale"
++    return
++  fi
++  while IFS= read -r key; do
++    echo "  deleting $key"
++    aws s3 rm "s3://$BUCKET/$key" --only-show-errors
++  done <<< "$stale"
++}
++
+ build_pages
+ sync_site
+ upload_pages
++prune_bucket
+ echo "✓ deployed to s3://$BUCKET"

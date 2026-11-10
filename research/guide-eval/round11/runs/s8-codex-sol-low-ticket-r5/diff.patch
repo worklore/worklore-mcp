@@ -1,0 +1,63 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..4524d1e
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,9 @@
++# Prompt cache fix
++
++`bot.py` now sends two cached system text blocks: fixed coaching instructions first, then the athlete context (date, profile, zones, goal, facts and language). A `save_fact` changes the second block while leaving the first block byte-identical. I added fixed coaching guidance to make the first cache breakpoint more likely to meet Claude Sonnet 4.5's 1,024-token minimum; a shorter marked prefix is not cached at all.
++
++The colleague's two-breakpoint, stable-prefix approach applied. The warnings about changing tools also applied, so tool selection and ordering were left alone. Fact selection did not apply as a change: this bot already loads all facts. The suggested tool filtering was already present and was left alone.
++
++Local checks confirmed that a fact change leaves the first system block and selected tools unchanged, changes only the athlete block, and that `bot.py` compiles. No API call was made, so actual cache hits and token counts still need confirmation from `logs/usage.jsonl`: after a `save_fact`, expect a nonzero `cache_read_input_tokens` for the fixed prefix and a smaller `cache_creation_input_tokens` for the changed tail. The exact split depends on Anthropic's tokenization and cache lifetime.
++
++Reference: [Anthropic prompt caching documentation](https://platform.claude.com/docs/en/build-with-claude/prompt-caching).
+diff --git a/bot.py b/bot.py
+index e2ff241..42d5858 100644
+--- a/bot.py
++++ b/bot.py
+@@ -111,6 +111,26 @@ Formatting:
+ - Plain text. No markdown headings, no tables.
+ - Lists only for a session structure (warm-up / main / cool-down).
+ - Numbers with units: 45 min, 12 km, 150 bpm.
++
++How to apply the coaching rules:
++- Treat the athlete context that follows as data for this athlete. Check the listed zones, goal,
++  facts and language before giving a specific recommendation. If a needed value is absent,
++  ask for it rather than substituting a typical value from another athlete.
++- For a workout suggestion, state the purpose, duration and effort using the athlete's zones
++  or RPE. Include a warm-up and cool-down when the session has hard work. Keep recovery
++  suggestions genuinely easy and leave scheduled rest days free of training.
++- For a weekly plan, use plan_week and adapt the resulting structure to the athlete's stated
++  availability. Check the volume increase and hard-session limits before presenting it.
++  If the previous week's volume is unknown, ask for it before recommending an increase.
++- For a reported completed workout, call log_session with the details provided. Do not
++  invent missing duration or effort. After logging, respond to what the athlete actually
++  reported, including whether recovery or an easier next day is appropriate.
++- For durable personal information, compare it with the existing facts before calling
++  save_fact. Save one concise fact only when it adds new lasting information. A fact may
++  describe recurring availability, training history, equipment, race commitments or a
++  persistent preference. Avoid saving the current mood or today's single workout.
++- Give safety advice promptly when symptoms in the safety rules are mentioned. Do not
++  turn a symptom report into a training prescription. Keep the response brief and direct.
+ """
+ 
+ 
+@@ -128,9 +148,12 @@ def athlete_context(a, today):
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    # Keep the shared instructions as a stable cached prefix. A memory write
++    # changes only the athlete-specific block and its cache entry.
++    return [
++        {"type": "text", "text": INSTRUCTIONS, "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": athlete_context(a, today), "cache_control": {"type": "ephemeral"}},
++    ]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [
+# 1 file diffs under node_modules/, __pycache__/ or .prisma/ left out of this patch; 2 kept

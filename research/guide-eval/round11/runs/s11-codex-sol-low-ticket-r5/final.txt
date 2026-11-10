@@ -1,0 +1,3 @@
+The second publish failed because it added a Python float to `similar[0].score`, which DynamoDB rejected. The first publish had no related stories, so it never reached that path.
+
+I changed similarity scores to use `Decimal`, added a regression test that publishes twice, and documented the cause, fix, and applicable parts of the colleague’s note in [ANSWER.md](/tmp/h-VSNRew/ANSWER.md). Both tests pass.

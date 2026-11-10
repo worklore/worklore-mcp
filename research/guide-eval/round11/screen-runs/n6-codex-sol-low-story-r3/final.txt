@@ -1,0 +1,3 @@
+Installed `@hiero-ledger/sdk` 2.91.0 and added [src/transfer.ts](/tmp/h-4phjtb/src/transfer.ts). Run it with `npx tsx src/transfer.ts`; it builds and signs the transfer offline, then prints only the signed transaction bytes as hex.
+
+`npx tsc --noEmit` passes. I also deserialized the output to check the memo, node, transaction ID, and transfer entries. The work and the applicable parts of the colleague’s note are recorded in [ANSWER.md](/tmp/h-4phjtb/ANSWER.md).

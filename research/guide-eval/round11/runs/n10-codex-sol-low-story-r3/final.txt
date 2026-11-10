@@ -1,0 +1,3 @@
+Added Prisma ORM using npm’s current `latest` release and created the `User` and `Post` tables in the local PostgreSQL database. The root [script.ts](/tmp/h-RvF3jR/script.ts) creates a user with two posts and prints every user with their posts.
+
+Verified with `npx tsc --noEmit` and `npx tsx script.ts`. The setup and the applicable parts of the colleague’s note are documented in [ANSWER.md](/tmp/h-RvF3jR/ANSWER.md).

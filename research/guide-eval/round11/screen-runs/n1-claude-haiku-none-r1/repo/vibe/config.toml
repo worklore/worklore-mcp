@@ -1,0 +1,27 @@
+# Vibe config for the headless runs: Devstral 2 (mistralai/devstral-2512) through OpenRouter, in Mistral's own
+# agent, Vibe CLI 3.1.0. Everything that would talk to Mistral's own services is off (telemetry, updates, connectors).
+active_model = "devstral"
+enable_telemetry = false
+enable_update_checks = false
+enable_auto_update = false
+enable_notifications = false
+enable_connectors = false
+enable_mcp = false
+show_greeting = false
+outside_workdir = "deny"
+
+[[providers]]
+name = "openrouter"
+api_base = "https://openrouter.ai/api/v1"
+api_key_env_var = "OPENROUTER_API_KEY"
+api_style = "openai"
+backend = "generic"
+
+[models.devstral]
+name = "mistralai/devstral-2512"
+provider = "openrouter"
+alias = "devstral"
+temperature = 0.2
+input_price = 0.4
+output_price = 2.0
+max_context_length = 262144

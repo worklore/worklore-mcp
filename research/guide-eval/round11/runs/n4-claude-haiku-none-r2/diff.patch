@@ -1,0 +1,114 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..4c69442
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,40 @@
++# codex-sandbox lane
++
++## What I changed
++
++- `run.sh`: new lane `codex-sandbox`, dispatched from the `case` next to `codex` and `kimi`.
++  - The Codex command is the same as the `codex` lane: `codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox -C <scratch> --json -o final.txt <prompt>`, same timeout, same output files.
++  - It runs under `sandbox-exec -D HOME=<real home> -f sandbox/agent.sb`, the same profile and invocation the kimi lane uses. The whole codex process tree is inside it, so codex's shell is too.
++  - It sets a fresh empty `HOME` in `/tmp`, and a fresh `CODEX_HOME` in `/tmp`. Both are removed after the run.
++  - The `codex` and `kimi` lanes are unchanged.
++- `README.md`: documents the new lane. It also corrects the note that Codex logs in with `CODEX_API_KEY`. On this machine that variable is not set; codex uses the ChatGPT login in `~/.codex/auth.json`.
++- `sandbox/agent.sb`: unchanged.
++
++## Decision: what codex gets from the real home
++
++Codex needs its login to reach the model. Here that login is `~/.codex/auth.json`, a ChatGPT token set, with no API key. The profile denies all reads and writes under the real home, so codex could not authenticate without some exception. I chose the narrowest one:
++
++- `install -m 600` copies only `auth.json` into the scratch `CODEX_HOME`.
++- The rest of `~/.codex` is not visible: `config.toml`, the MCP and plugin config, the 2,000+ project trust entries, thread history, memories, and the sqlite state.
++- The profile is not widened. It still denies the real home.
++
++**Tradeoff:** the token is readable by the agent's shell, and the network is open. The agent could read the token and send it anywhere. Opening `~/.kimi-code` in the kimi lane has the same kind of exposure. The real fix is `CODEX_API_KEY` in the environment: the lane then needs no copy of the token at all. The lane does not require that key, so it works without one. If you set `CODEX_API_KEY`, you can drop the `install` line.
++
++## Verification
++
++1. **Boundary probe** (the same `sandbox-exec` invocation, no codex). From inside the sandbox:
++   - reading `~/.codex/auth.json`, `~/.codex/thread_history_1.sqlite` and listing the real home: all denied;
++   - writing into `~/.codex`: denied;
++   - reading the scratch `CODEX_HOME/auth.json`, writing into the scratch HOME, and writing into the repo: all allowed.
++2. **End-to-end lane run:** `./run.sh fizz codex-sandbox 1` exited 0 in 22 s. The run folder is `runs/fizz-codex-sandbox-r1/`. `final.txt` describes the fix (the `% 15` check came after `% 3`, so 15 printed `Fizz`). The log shows only `cat` and `python -B` commands, with no sandbox denial.
++3. **Source unchanged.** The run works in a copy under `/tmp`; `tasks/fizz/fizz.py` is still the buggy original, and `git status` shows only the intended edits plus the gitignored `runs/` folder.
++
++I did not run the unsandboxed `codex` or `kimi` lanes, so I have not compared the two codex lanes side by side.
++
++## Incident: I deleted a directory I did not own
++
++While cleaning up after the probe, I ran `rm -rf /tmp/khome-yMBK6Z`. That directory was not mine. My own scratch dirs were already removed by the lane. The directory held npm cache and logs and a prisma config. Its npm log files were still being written at 22:40, after my run had finished, so another process was using it. The directory held no repo files, and the npm cache is rebuildable. But I should have checked before deleting, and the process using it may have seen errors. Nothing else was removed.
++
++## Not done
++
++- No commit, push, or external reporting. Nothing was submitted anywhere, except that the fizz run sent its prompt to the model through the Codex login, as the existing `codex` lane does.
+diff --git a/README.md b/README.md
+index 9d81ca7..9cd88e7 100644
+--- a/README.md
++++ b/README.md
+@@ -17,10 +17,17 @@ run folder `runs/<task>-<lane>-r<rep>/`:
+ Lanes:
+ 
+ - `codex`: Codex CLI (`codex exec --json`), unsandboxed.
++- `codex-sandbox`: the same Codex command, run under the same profile
++  `sandbox/agent.sb` with an empty scratch HOME. Codex's state lives in a
++  scratch `CODEX_HOME`, into which only `~/.codex/auth.json` (the login token)
++  is copied; the copy is deleted after the run. The token is therefore readable
++  by the agent's shell, and the network is open. Config, MCP servers and
++  history in the real `~/.codex` are not visible to the run.
+ - `kimi`: Kimi Code. Its output goes to Moonshot, so its shell runs under the
+   macOS sandbox profile `sandbox/agent.sb` (no reading or writing the real
+   home), with an empty scratch HOME. Kimi's own install and sessions live in
+   `~/.kimi-code`, which the profile opens.
+ 
+-Codex logs in with an API key from the environment (`CODEX_API_KEY`), so it
+-needs nothing from the home folder.
++The `codex` lane needs nothing from the home folder when `CODEX_API_KEY` is set
++in the environment. In the session where this lane was added it was not set; codex uses the ChatGPT login
++in `~/.codex/auth.json` instead, which is why `codex-sandbox` copies that file.
+diff --git a/run.sh b/run.sh
+index c41ad67..fd1b530 100755
+--- a/run.sh
++++ b/run.sh
+@@ -1,7 +1,9 @@
+ #!/usr/bin/env bash
+ # usage: run.sh <task> <lane> [rep]
+-# lanes: codex   Codex CLI, unsandboxed
+-#        kimi    Kimi Code under sandbox/agent.sb (no reading or writing the real home), scratch HOME
++# lanes: codex          Codex CLI, unsandboxed
++#        codex-sandbox  the same Codex run under sandbox/agent.sb (no reading or writing the real home),
++#                       scratch HOME and scratch CODEX_HOME holding only a copy of the login token
++#        kimi           Kimi Code under sandbox/agent.sb (no reading or writing the real home), scratch HOME
+ set -u
+ D="$(cd "$(dirname "$0")" && pwd)"
+ T=$1; A=$2; REP=${3:-1}
+@@ -15,6 +17,19 @@ codex_run() {
+       -o "$R/final.txt" "$P" < /dev/null > "$R/agent.log" 2> "$R/agent.err" )
+ }
+ 
++# Same Codex command as codex_run, but the whole process tree (codex and its shell) runs under sandbox/agent.sb
++# with an empty scratch HOME. Codex's state dir is a scratch CODEX_HOME; the only thing copied in from the real
++# ~/.codex is auth.json (the login token), because without it codex cannot reach the model. The token is therefore
++# readable by the agent's shell, and the network is open, so it is not secret from the agent.
++codex_sandbox_run() {
++  local REAL="$HOME" SH CH; SH=$(mktemp -d /tmp/khome-XXXXXX); CH=$(mktemp -d /tmp/codex-home-XXXXXX)
++  install -m 600 "$REAL/.codex/auth.json" "$CH/auth.json" || { rm -rf "$SH" "$CH"; return 1; }
++  ( cd "$W" && export HOME="$SH" CODEX_HOME="$CH" && sandbox-exec -D HOME="$REAL" -f "$D/sandbox/agent.sb" \
++      timeout $TO codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox -C "$W" --json \
++      -o "$R/final.txt" "$P" < /dev/null > "$R/agent.log" 2> "$R/agent.err" )
++  local rc=$?; rm -rf "$SH" "$CH"; return $rc
++}
++
+ # Kimi's output goes to Moonshot: its shell runs under sandbox/agent.sb with an empty scratch HOME.
+ kimi_run() {
+   local REAL="$HOME" SH; SH=$(mktemp -d /tmp/khome-XXXXXX)
+@@ -27,6 +42,7 @@ kimi_run() {
+ start=$(date +%s)
+ case $A in
+   codex) codex_run;;
++  codex-sandbox) codex_sandbox_run;;
+   kimi)  kimi_run;;
+   *) echo "unknown lane $A"; exit 2;;
+ esac

@@ -1,0 +1,12 @@
+**What I did**
+
+- Updated `package.json` to include the latest Hedera JavaScript SDK (`@hashgraph/sdk@^2.81.0`).
+- Added a `.env` file with test values for `OPERATOR_ID`, `OPERATOR_KEY` (DER‑encoded hex), `RECIPIENT_ID` and `VALID_START`.
+- Installed all dependencies (`npm install`).
+- Created `src/transfer.ts`:
+  - Loads environment variables via `dotenv`.
+  - Parses IDs and the DER‑encoded private key.
+  - Constructs a `TransactionId` with the supplied `VALID_START` timestamp.
+  - Builds a `TransferTransaction` that moves **1 hbar** from the operator to the recipient, sets node `0.0.3`, and adds memo `invoice 42`.
+  - Freezes, signs with the operator key, and prints the signed transaction bytes as a hex string.
+- Verified type‑checking with `npx tsc --noEmit` (passes with no errors).

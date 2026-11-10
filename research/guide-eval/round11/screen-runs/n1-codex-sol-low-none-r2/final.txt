@@ -1,0 +1,5 @@
+The fast exit came from Vibe trying to read a missing Mistral API key through the macOS Keychain. The sandbox correctly blocked `/usr/bin/security`, so Vibe exited before sending the prompt.
+
+I updated [run-vibe.sh](/tmp/h-dnE7zC/run-vibe.sh) and [config.toml](/tmp/h-dnE7zC/vibe/config.toml) to keep startup on the configured OpenRouter model and prevent the Keychain lookup. The cause and fix are recorded in [ANSWER.md](/tmp/h-dnE7zC/ANSWER.md).
+
+An offline probe passed session setup and ran until its five-second deadline. A live OpenRouter run was not performed.

@@ -1,0 +1,3 @@
+I split the system prompt into two cached blocks in [bot.py](/tmp/h-jNTzQo/bot.py): stable coaching instructions first, athlete context and long-term facts second. A `save_fact` write now changes only the second block. I also updated [README.md](/tmp/h-jNTzQo/README.md).
+
+[ANSWER.md](/tmp/h-jNTzQo/ANSWER.md) records the change and which parts of the colleague’s note applied. Local checks confirmed the block boundaries and unchanged tool list; Python compilation passed. Live cache usage remains unverified because no external API was called.

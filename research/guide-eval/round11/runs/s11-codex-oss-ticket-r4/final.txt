@@ -1,0 +1,14 @@
+**Answer**
+
+- **Cause**  
+  The `similarity` function returned a Python `float`. When a story was published and the library already contained other stories, the computed similarity scores were stored in the `similar` attribute of the DynamoDB item. DynamoDB (and the test `FakeTable`) reject floats, raising `TypeError: Float types are not supported. Use Decimal types instead`. The first publish succeeded because the table was empty, so no similarity scores were written.
+
+- **Fix**  
+  Updated `src/app.py`:
+  * Added a detailed docstring explaining the issue.  
+  * After computing the weighted Jaccard score, the code now converts the result to an **integer percentage** (`int(round(raw_score * 100))`). This yields an `int` (or `Decimal`‑compatible) value, eliminating the Float‑type error.
+
+- **Applied Parts from Colleague’s Note**  
+  * Identified the same “float to DynamoDB” failure path.  
+  * Implemented the one‑line change (convert scores to ints) that the note recommended.  
+  * No additional test changes were needed because the existing test already covers publishing after the first insert.

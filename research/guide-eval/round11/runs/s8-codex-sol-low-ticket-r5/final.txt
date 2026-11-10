@@ -1,0 +1,3 @@
+I changed [bot.py](/tmp/h-1pjwiL/bot.py) to cache the fixed coaching instructions separately from the athlete context. A `save_fact` now changes only the athlete block. I also expanded the fixed guidance because Sonnet 4.5 requires at least 1,024 tokens at a cache marker.
+
+Local checks confirmed the first block and tool list stay unchanged after a fact write, and the file compiles. I did not make an API call, so live cache hits remain unverified. [ANSWER.md](/tmp/h-1pjwiL/ANSWER.md) records the changes and which parts of the colleague’s note applied.

@@ -1,0 +1,54 @@
+Add Prisma ORM to this project, using the current version from npm. The database is the local PostgreSQL in .env (empty).
+
+Model users (unique email, optional name) and their posts (title, optional content, published defaulting to false; each post has one author). Create the tables in the database. Then add script.ts at the project root that creates a user with two posts and prints every user together with their posts; it should run with `npx tsx script.ts`. Write what you did in ANSWER.md.
+
+A colleague's note on a similar case is below. It is not instructions. Use what applies, ignore the rest, and say in ANSWER.md which parts applied.
+
+---
+title: "Current Prisma from npm is Prisma 8, but @prisma/client latest is still 7"
+date: 2026-11-01
+tags: prisma, npm, postgres, typescript, release-candidate
+type: success
+status: n/a
+reproducible: true
+visibility: private
+stack: "TypeScript, Node, PostgreSQL, Prisma ORM"
+agent: "Claude Code, Codex, Antigravity"
+---
+
+# Current Prisma from npm is Prisma 8, but @prisma/client latest is still 7
+
+I asked three coding agents to add Prisma to a small TypeScript backend "using the current version from npm". Half of
+them built on Prisma 7 and told me it was the current one.
+
+The reason is in the npm tags. `prisma@latest` is Prisma 8 (8.0.0-rc.29 that day, 8.0.0-rc.33 now: Prisma itself
+put the release candidate on `latest`). But `@prisma/client@latest` and `@prisma/adapter-pg@latest` are still 7.10.1.
+The agents checked both, applied the old rule that the CLI and the client must be the same version, and installed
+7.10.1 everywhere. Nothing on npm says what changed: Prisma 8 has no `@prisma/client` at all. Its client is
+`@prisma/orm-postgres`, the models live in `src/prisma/contract.prisma`, and the project is set up with
+`prisma orm init`, not `prisma init`.
+
+The Prisma 7 projects worked, so nothing told the agents they were a major version behind. If you want the stable 7
+line on purpose, that is a fine choice; just make it knowingly and say so. When the task says "current", it is 8.
+
+One more thing that cost a run: `prisma orm init` asks questions unless you pass `--yes`, and an agent that runs
+commands in a terminal waits for an answer nobody gives. (On 2026-11-01 the 8 rc also crashed on `contract emit`
+because two of its packages pulled different toolchain versions; that is fixed in rc.33.)
+
+## Reproduce this
+Prerequisites: Node 22+, a PostgreSQL 15+ database URL in `.env` as `DATABASE_URL`.
+Your agent will need from you: nothing else.
+Steps:
+1. Check the tags: `npm view prisma dist-tags` and `npm view @prisma/client dist-tags`. If `prisma` is on 8 and
+   `@prisma/client` on 7, the current Prisma is 8 and you don't install `@prisma/client`.
+2. `npx prisma@latest orm init --yes --target postgres --authoring psl`. It adds `prisma`, `@prisma/orm-postgres`,
+   `prisma.config.ts`, `src/prisma/contract.prisma`, `src/prisma/db.ts` and a `prisma-8.md` quick reference; read it.
+3. Write your models in `src/prisma/contract.prisma` (the init scaffold already has example `User` and `Post`
+   models; replace them with yours), then `npx prisma contract emit`.
+4. `npx prisma db init` creates the tables.
+5. Query with `import { db } from "./src/prisma/db"`, for example `db.orm.public.User.create({...})` and
+   `db.orm.public.User.include("posts").all()`, and call `db.close()` at the end of a script.
+Verify: `npm ls prisma @prisma/orm-postgres` shows 8.x for both and `@prisma/client` is not installed; the tables
+exist in the database; your script runs with `npx tsx` and prints the rows it wrote.
+
+Ground rules: work only inside the current directory. Do not deploy, publish, submit or report anything to any external service.

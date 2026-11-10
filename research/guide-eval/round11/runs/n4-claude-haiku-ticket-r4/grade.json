@@ -1,0 +1,52 @@
+{
+ "answer_file": true,
+ "answer_source": "repo",
+ "lanes": [
+  "codex",
+  "codex-sandboxed",
+  "kimi"
+ ],
+ "new_lane": "codex-sandboxed",
+ "paths_rewritten": [],
+ "lane_rc": 0,
+ "lane_out": "fizz-codex-sandboxed-r1 rc=0 answer=24 chars\n",
+ "codex_ran": true,
+ "codex_under_sandbox": true,
+ "sandbox_calls": 1,
+ "fence": {
+  "denies_home_write": true,
+  "denies_home_read": true,
+  "opens_run_folder": false,
+  "params": {
+   "HOME": "/private/var/folders/wx/fkc3yttx3f7ddg45t1h52nyw0000gn/T/g-n4-6lsk05v1/home"
+  }
+ },
+ "final_txt_has_answer": true,
+ "answer_json_has_answer": true,
+ "codex_wrote_out_file": true,
+ "codex_out_file": "/tmp/cout-urxUvA/final.txt",
+ "failed_write_in_err": false,
+ "codex_lane_ok": true,
+ "agent_ran_sandbox_exec": [
+  "command -v codex kimi sandbox-exec python3 timeout gtimeout 2>&1; echo \"HOME=$HOME\"; uname -a; ls -la \"$HOME\" 2>&1 | head -40; env | grep -i -E 'codex|openai|ki",
+  "SCR=$(mktemp -d /tmp/probe-XXXXXX) && H=$(mktemp -d /tmp/chome-XXXXXX) && export HOME_ORIG=$HOME; \necho \"--- 1 read real home config (should be denied):\"; sandb",
+  "cd /private/tmp/h-7TRiS3 && SCR=$(mktemp -d /tmp/probe-XXXXXX) && H=$(mktemp -d /tmp/chome-XXXXXX) && export HOME_ORIG=$HOME; \necho \"--- 1 read real home config",
+  "P=$(mktemp -d \"$HOME/.h7-probe-XXXXXX\") && sandbox-exec -D HOME=\"$HOME\" -f /private/tmp/h-7TRiS3/sandbox/agent.sb sh -c 'echo x > \"$1/final.txt\"' _ \"$P\"; echo \""
+ ],
+ "agent_ran_harness": [
+  "for f in run.sh sandbox/agent.sb README.md .gitignore check_answer.py tasks/fizz.prompt tasks/fizz/fizz.py runs/.keep; do echo \"=== $f\"; cat -A \"$f\" | head -200",
+  "cd /private/tmp/h-7TRiS3 && for f in run.sh sandbox/agent.sb README.md .gitignore check_answer.py tasks/fizz.prompt tasks/fizz/fizz.py runs/.keep; do echo \"=== ",
+  "set -e; FB=$(mktemp -d /tmp/fakecodex-XXXXXX); cat > \"$FB/codex\" <<'EOF'\n#!/usr/bin/env bash\n# stand-in for codex exec: records its environment, probes the real",
+  "ls -ld --time-style=+%H:%M /tmp/chome-* /tmp/cout-* 2>/dev/null; date +%H:%M; FB=$(mktemp -d /tmp/fakecodex-XXXXXX); printf '#!/usr/bin/env bash\\necho \"{}\"; exi",
+  "git status --short && git diff run.sh | head -60"
+ ],
+ "answer_mentions_output_file": true,
+ "changed_files": [
+  "ANSWER.md",
+  "README.md",
+  "run.sh"
+ ],
+ "commands_issued": 15,
+ "answer_chars": 4543,
+ "PASS": true
+}

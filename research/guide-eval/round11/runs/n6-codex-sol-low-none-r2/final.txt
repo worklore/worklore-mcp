@@ -1,0 +1,3 @@
+Installed the current npm version of `@hashgraph/sdk` (2.81.0) and added [src/transfer.ts](/tmp/h-hP4iVp/src/transfer.ts). It builds and signs the specified transaction offline and prints only its bytes as hex. The work is documented in [ANSWER.md](/tmp/h-hP4iVp/ANSWER.md).
+
+Verified that `npx tsc --noEmit` passes and `npx tsx src/transfer.ts` runs with the test values.

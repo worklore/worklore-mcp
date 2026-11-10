@@ -1,0 +1,3 @@
+Updated [deploy.sh](/tmp/h-Fiq3a4/deploy.sh) to remove bucket files no longer produced by `site/` or the page build. It preserves live note and author pages during upload, then deletes stale pages. [ANSWER.md](/tmp/h-Fiq3a4/ANSWER.md) records the changes and which parts of the colleague’s note applied.
+
+Verified shell syntax and the deploy command order with a local AWS stub. No external deploy was run.

@@ -1,0 +1,13 @@
+**ANSWER.md**
+
+- **Cause**: `publish` stored similarity scores as native Python `float` values in the DynamoDB item (`similar` list). DynamoDB does not accept float types, only `Decimal`. The first publish succeeded because there were no similar stories (empty table), so no float was written. On subsequent publishes, the similarity calculation produced floats, leading to a `TypeError: Float types are not supported. Use Decimal types instead.`
+
+- **Fix**: Convert each similarity score to `Decimal` before inserting it into DynamoDB. Updated `src/app.py`:
+  - Imported `Decimal`.
+  - Modified `related` to wrap the float result of `similarity` with `Decimal(str(...))` and added a docstring explaining the DynamoDB compatibility reason.
+  - Kept sorting logic unchanged (Decimal is comparable).
+
+- **Applied parts of colleague’s note**:
+  - Recognized that the error stemmed from floats reaching DynamoDB (same as their “Float types are not supported” message).
+  - Followed the same remediation strategy: replace floats with a DynamoDB‑compatible numeric type (`Decimal`), rather than changing the score to an int.
+  - Added a comment explaining why the conversion is needed, mirroring their recommendation to adjust the write‑path.

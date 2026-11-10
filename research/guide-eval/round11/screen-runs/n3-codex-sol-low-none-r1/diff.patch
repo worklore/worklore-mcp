@@ -1,0 +1,43 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..82fb7c0
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,5 @@
++# Deploy cleanup
++
++`deploy.sh` now assembles a fresh `.build/deploy/` directory from `site/` and the generated note and author pages, then runs `aws s3 sync` with `--delete` against that complete build. Objects absent from the build, including deleted or private note pages and files removed from `site/`, are removed from the bucket on the next deploy. Extensionless pages are still uploaded with an explicit HTML content type and cache setting.
++
++Verified with `bash -n deploy.sh` and a local build and staging run. No deployment was performed.
+diff --git a/deploy.sh b/deploy.sh
+index 431ef02..4c721ea 100755
+--- a/deploy.sh
++++ b/deploy.sh
+@@ -11,9 +11,17 @@ build_pages() {
+   python3 "$ROOT/build_pages.py" "$ROOT/content/stories.json" "$ROOT/.build/pages"
+ }
+ 
++stage_site() {
++  # Sync one complete build so --delete also removes old note and author pages.
++  rm -rf "$ROOT/.build/deploy"
++  mkdir -p "$ROOT/.build/deploy"
++  cp -R "$ROOT/site/." "$ROOT/.build/deploy/"
++  cp -R "$ROOT/.build/pages/." "$ROOT/.build/deploy/"
++}
++
+ sync_site() {
+-  echo "→ syncing site/ to s3://$BUCKET"
+-  aws s3 sync "$ROOT/site/" "s3://$BUCKET/" --only-show-errors
++  echo "→ syncing complete build to s3://$BUCKET"
++  aws s3 sync "$ROOT/.build/deploy/" "s3://$BUCKET/" --delete --only-show-errors
+ }
+ 
+ upload_pages() {
+@@ -27,6 +35,7 @@ upload_pages() {
+ }
+ 
+ build_pages
++stage_site
+ sync_site
+ upload_pages
+ echo "✓ deployed to s3://$BUCKET"

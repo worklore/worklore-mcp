@@ -1,0 +1,38 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..1040e1d
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,7 @@
++# Deploy cleanup
++
++`deploy.sh` now stages both `site/` and the generated note and author pages, then syncs that complete build to S3 with `--delete`. A later deploy therefore removes bucket objects for deleted or private notes, authors with no public notes, and files removed from `site/`. The separate page uploads still set the HTML content type and cache control for extensionless page keys.
++
++The page build now creates its output directory even when there are no public pages.
++
++Verified locally with `bash -n deploy.sh`, `git diff --check`, and a run using a mocked `aws` command. The mock captured the sync with `--delete` and the page uploads. No deployment was performed.
+diff --git a/deploy.sh b/deploy.sh
+index 431ef02..d7c14ce 100755
+--- a/deploy.sh
++++ b/deploy.sh
+@@ -8,12 +8,18 @@ export AWS_PROFILE="${AWS_PROFILE:-fieldnotes-deploy}"
+ build_pages() {
+   echo "→ building note and author pages"
+   rm -rf "$ROOT/.build/pages"
++  mkdir -p "$ROOT/.build/pages"
+   python3 "$ROOT/build_pages.py" "$ROOT/content/stories.json" "$ROOT/.build/pages"
+ }
+ 
+ sync_site() {
+-  echo "→ syncing site/ to s3://$BUCKET"
+-  aws s3 sync "$ROOT/site/" "s3://$BUCKET/" --only-show-errors
++  # Sync the complete build so --delete also removes old note/author pages.
++  rm -rf "$ROOT/.build/deploy"
++  mkdir -p "$ROOT/.build/deploy"
++  cp -R "$ROOT/site/." "$ROOT/.build/deploy/"
++  cp -R "$ROOT/.build/pages/." "$ROOT/.build/deploy/"
++  echo "→ syncing build to s3://$BUCKET"
++  aws s3 sync "$ROOT/.build/deploy/" "s3://$BUCKET/" --delete --only-show-errors
+ }
+ 
+ upload_pages() {

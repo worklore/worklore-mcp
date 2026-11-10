@@ -1,0 +1,54 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..f7ad747
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,9 @@
++# Cache fix
++
++`build_system()` now sends two text blocks with `cache_control: {"type": "ephemeral"}`: stable coaching instructions first, then the date and athlete context (including facts). A `save_fact` changes only the second block, so a subsequent request can read the unchanged instruction prefix from cache and create a new cache entry for the athlete tail. The tool list remains fixed within each reply loop.
++
++I added stable, relevant coaching guidance to the instruction block because Claude Sonnet 4.5 requires a cache breakpoint to cover at least 1,024 tokens. The old complete prompt was only about 1,024–1,090 cached tokens in the usage log; splitting it without increasing the static prefix risked making the first breakpoint too short to cache. The extra guidance covers load, injury history, recovery, race estimates, and missing information.
++
++The colleague's two-breakpoint pattern, stable-prefix ordering, and usage-field verification apply. Their advice to avoid per-message fact selection also applies; this bot already includes all facts. Their tool-filtering discussion applies as a caveat: changing tool groups changes the prefix above both system blocks, but the existing keyword filtering is intentional and remains in place. The note's specific token sizes and claimed savings do not transfer to this bot.
++
++Verification: a local assertion confirmed that adding a fact changes only the second system block, and `python3 -m py_compile bot.py` passed. The Anthropic SDK and API credentials are unavailable here, so live cache-read and cache-creation counts were not measured. In a live check, compare consecutive `logs/usage.jsonl` entries around `save_fact`: the next round should show a nonzero `cache_read_input_tokens` for the static prefix and a smaller `cache_creation_input_tokens` for the changed tail. This assumes the same selected tools and a request within the cache TTL.
+diff --git a/bot.py b/bot.py
+index e2ff241..fa687d2 100644
+--- a/bot.py
++++ b/bot.py
+@@ -111,6 +111,18 @@ Formatting:
+ - Plain text. No markdown headings, no tables.
+ - Lists only for a session structure (warm-up / main / cool-down).
+ - Numbers with units: 45 min, 12 km, 150 bpm.
++
++Coaching detail:
++- Base a suggested session on the athlete's stated goal, sport, zones and known training history.
++- When recent training load is unknown, ask for it before suggesting an increase in volume.
++- For a workout recommendation, give the duration, effort or zone, and its purpose in a few words.
++- Keep recovery advice practical: describe what to do at the next session, rather than promising a recovery time.
++- If the athlete has a past injury, use it as context; do not assume that the injury is active now.
++- If a fact conflicts with the profile, ask which is current before changing the recommendation.
++- Treat a completed workout as a report of what happened, not as permission to add another hard session.
++- For a race estimate, say what recent performance the estimate uses and avoid unwarranted precision.
++- If the athlete asks for a weekly plan, account for the rest day and their available training days.
++- When a question has too little detail for a safe specific prescription, give a brief general answer and ask one focused follow-up question.
+ """
+ 
+ 
+@@ -128,9 +140,11 @@ def athlete_context(a, today):
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    # Cache the stable instructions independently of the athlete's mutable facts.
++    return [
++        {"type": "text", "text": INSTRUCTIONS, "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": athlete_context(a, today), "cache_control": {"type": "ephemeral"}},
++    ]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [
+# 1 file diffs under node_modules/, __pycache__/ or .prisma/ left out of this patch; 2 kept

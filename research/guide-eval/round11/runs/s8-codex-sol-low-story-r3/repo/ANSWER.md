@@ -1,0 +1,9 @@
+# Cache fix
+
+`build_system()` now sends two text blocks with `cache_control: {"type": "ephemeral"}`: stable coaching instructions first, then the date and athlete context (including facts). A `save_fact` changes only the second block, so a subsequent request can read the unchanged instruction prefix from cache and create a new cache entry for the athlete tail. The tool list remains fixed within each reply loop.
+
+I added stable, relevant coaching guidance to the instruction block because Claude Sonnet 4.5 requires a cache breakpoint to cover at least 1,024 tokens. The old complete prompt was only about 1,024–1,090 cached tokens in the usage log; splitting it without increasing the static prefix risked making the first breakpoint too short to cache. The extra guidance covers load, injury history, recovery, race estimates, and missing information.
+
+The colleague's two-breakpoint pattern, stable-prefix ordering, and usage-field verification apply. Their advice to avoid per-message fact selection also applies; this bot already includes all facts. Their tool-filtering discussion applies as a caveat: changing tool groups changes the prefix above both system blocks, but the existing keyword filtering is intentional and remains in place. The note's specific token sizes and claimed savings do not transfer to this bot.
+
+Verification: a local assertion confirmed that adding a fact changes only the second system block, and `python3 -m py_compile bot.py` passed. The Anthropic SDK and API credentials are unavailable here, so live cache-read and cache-creation counts were not measured. In a live check, compare consecutive `logs/usage.jsonl` entries around `save_fact`: the next round should show a nonzero `cache_read_input_tokens` for the static prefix and a smaller `cache_creation_input_tokens` for the changed tail. This assumes the same selected tools and a request within the cache TTL.

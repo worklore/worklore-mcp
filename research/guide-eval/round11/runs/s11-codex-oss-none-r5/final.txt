@@ -1,0 +1,9 @@
+**Cause**  
+The `similarity` function returned a plain Python `float`. When the story item was saved to DynamoDB, the AWS SDK tried to serialize that value as a `Number` attribute. DynamoDB does not support native floating‑point values; it requires numbers to be `Decimal` instances. This caused a `TypeError: Float types are not supported. Use Decimal types instead.` during the second publish, resulting in a 500 error.
+
+**Fix**  
+* Imported `Decimal` from the `decimal` module in `src/app.py`.  
+* After computing the similarity score, converted the rounded float to a `Decimal` with `Decimal(str(raw))`.  
+* Added documentation comments explaining the change.
+
+The fix is isolated to `src/app.py`; all tests now pass, and publishing the same story multiple times no longer triggers a 500 error. The explanation and steps are documented in `ANSWER.md`.

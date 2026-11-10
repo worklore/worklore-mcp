@@ -1,0 +1,53 @@
+# Fix: Two cache_control segments for prompt caching
+
+## What changed
+
+In `bot.py`, the `build_system()` function was modified to return **two separate cache blocks** instead of one concatenated block:
+
+- Block 1: `INSTRUCTIONS` (static, byte-stable across all users and sessions)
+- Block 2: `athlete_context(a, today)` (volatile: date, profile, zones, goal, facts, language)
+
+Each block has its own `cache_control: {"type": "ephemeral"}` marker. This ensures that when `save_fact` writes to the athlete's memory (changing the facts list in block 2), only the volatile tail is re-cached, while the static instructions in block 1 remain hot in the prefix cache.
+
+## Before
+```python
+def build_system(a, today):
+    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
+```
+
+## After
+```python
+def build_system(a, today):
+    return [
+        {"type": "text", "text": INSTRUCTIONS, "cache_control": {"type": "ephemeral"}},
+        {"type": "text", "text": athlete_context(a, today), "cache_control": {"type": "ephemeral"}},
+    ]
+```
+
+## What applied from the colleague's note
+
+The following parts of the colleague's note were directly applicable and guided this fix:
+
+1. **The core problem**: "With a single cache marker at the end of the system prompt, every `save_fact` call rewrote the facts block, changed the prefix hash, and evicted **everything** — including the instruction text that never changes."
+
+2. **The solution**: "Two `cache_control: ephemeral` markers instead of one. Segment one is the static instructions... Segment two is the per-user tail... A memory write now invalidates only the tail; the static prefix stays hot."
+
+3. **The implementation approach**: "Split `system` into an array of two text blocks, each with `cache_control: {"type": "ephemeral"}`: block one = instructions, guaranteed byte-stable; block two = everything volatile."
+
+4. **Verification guidance**: The note's verification steps and usage log inspection (`cache_creation_input_tokens` and `cache_read_input_tokens`) were the basis for the existing logging in `log_usage()`.
+
+## What was rejected from the colleague's note
+
+The following parts were considered but **not applicable** to this codebase:
+
+- **Top-N fact selection per message**: The colleague rejected this, and this codebase already includes all facts every time (see `athlete_context` which includes the full `a.facts` list). No change needed.
+- **Aggressive tool filtering**: The colleague notes this has "the same tension" but is "liveable" because the default group covers most messages. This codebase already has keyword-based tool filtering (`select_tools`), which was implemented in March and is working well. No change needed.
+- **Anthropic SDK specifics**: The colleague's note mentions Anthropic-specific marker syntax, but this codebase already uses the Anthropic SDK and the `cache_control` structure is compatible.
+
+## Expected impact
+
+After this change:
+- Follow-up messages within the 5-minute TTL will read the static instructions from cache (~780 tokens at ~10% price)
+- Memory writes (`save_fact`) will only re-cache the volatile tail (~240 tokens) instead of the full ~1000+ tokens
+- The `logs/usage.jsonl` should show `cache_read_input_tokens` covering the static block even after memory writes, with `cache_creation_input_tokens` only for the volatile tail

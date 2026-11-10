@@ -1,0 +1,32 @@
+diff --git a/src/app.py b/src/app.py
+index db49c5e..44ee2d5 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -22,12 +22,20 @@ def words(text):
+ 
+ 
+ def similarity(a, b):
+-    """Shared-tag ratio (Jaccard), blended with shared words of the two bodies."""
++    """Shared‑tag ratio (Jaccard), blended with shared words of the two bodies.
++
++    The original implementation returned a ``float`` which DynamoDB rejects.
++    We now return an **integer percentage** (0‑100) to keep the value a simple
++    number type that DynamoDB accepts. This mirrors the fix described in the
++    colleague's note.
++    """
+     ta, tb = set(a.get("tags", [])), set(b.get("tags", []))
+     tag_score = len(ta & tb) / len(ta | tb) if (ta | tb) else 0
+     wa, wb = words(a.get("body")), words(b.get("body"))
+     word_score = len(wa & wb) / len(wa | wb) if (wa | wb) else 0
+-    return round(0.7 * tag_score + 0.3 * word_score, 4)
++    # Compute a float similarity, then convert to an integer percentage.
++    raw = 0.7 * tag_score + 0.3 * word_score
++    return int(round(raw * 100))
+ 
+ 
+ def related(story, existing):
+@@ -76,3 +84,4 @@ def handler(event, table):
+     except Exception:
+         log.exception("publish failed")
+         return {"statusCode": 500, "body": json.dumps({"error": "Internal Server Error"})}
++

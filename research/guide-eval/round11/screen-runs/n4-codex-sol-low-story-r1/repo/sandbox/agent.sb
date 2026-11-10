@@ -1,0 +1,10 @@
+;; OS-level fence for lanes whose output leaves the machine: the agent has a real shell, so the real home must be
+;; unreachable. Only the lane's permitted install is opened. Network stays open.
+;; HOME is passed with -D HOME=<real home>; INSTALL is the lane-specific exception.
+(version 1)
+(allow default)
+(deny file-read-data (subpath (param "HOME")))
+(deny file-write* (subpath (param "HOME")))
+(allow file-read-data (subpath (param "INSTALL")))
+(allow file-write* (subpath (param "INSTALL")))
+(deny process-exec (literal "/bin/launchctl") (literal "/usr/bin/security") (literal "/usr/bin/osascript"))

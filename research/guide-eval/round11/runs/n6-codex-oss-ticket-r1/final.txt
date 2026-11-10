@@ -1,0 +1,12 @@
+**Changes Made**
+
+- Added `@hiero-ledger/sdk@2.91.0` as the current Hedera SDK dependency.  
+- Created `src/transfer.ts` that:
+  - Loads environment variables via `dotenv`.
+  - Builds a `TransactionId` using `VALID_START`.
+  - Constructs a `TransferTransaction` transferring 1 hbar from the operator to the recipient, with memo `invoice 42` and node `0.0.3`.
+  - Signs the transaction with the operator’s DER‑encoded ED25519 private key.
+  - Prints the signed transaction bytes as a hex string.
+  - Operates entirely offline (no network submission).  
+- Verified TypeScript compilation with `npx tsc --noEmit` (no errors).  
+- Documented the work and instructions in `ANSWER.md`.

@@ -1,0 +1,15 @@
+# CODEX_HOME/config.toml for the codex-oss lane: GPT-OSS 120B through OpenRouter's Responses API, medium reasoning
+# (the same effort as round 8's agy-oss). Codex 0.160 no longer accepts wire_api = "chat".
+model = "openai/gpt-oss-120b"
+model_provider = "openrouter"
+model_reasoning_effort = "medium"
+
+[model_providers.openrouter]
+name = "OpenRouter"
+base_url = "https://openrouter.ai/api/v1"
+env_key = "OPENROUTER_API_KEY"
+wire_api = "responses"
+
+# The agent's shell must not see the key (Codex already drops *KEY* names by default; this says it explicitly).
+[shell_environment_policy]
+exclude = ["OPENROUTER_API_KEY"]

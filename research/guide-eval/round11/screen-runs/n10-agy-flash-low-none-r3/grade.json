@@ -1,0 +1,58 @@
+{
+ "answer_file": true,
+ "reinstalled": false,
+ "prisma_version": "8.0.0-rc.33",
+ "orm_postgres_version": "8.0.0-rc.23",
+ "prisma_client_version": "7.10.1",
+ "package_json_prisma": {
+  "@prisma/client": "^7.10.1",
+  "@prisma/orm-postgres": "^8.0.0-rc.23",
+  "@prisma/cli-engine": "^0.9.0",
+  "prisma": "^8.0.0-rc.33"
+ },
+ "imports_prisma_client": false,
+ "imports_orm_postgres": true,
+ "style": "prisma8-contract",
+ "on_prisma_8": true,
+ "on_prisma_7": true,
+ "fresh_apply": [
+  {
+   "cmd": "db init",
+   "rc": 0,
+   "tail": "\u2714 Applied 5 operation(s) across 1 contract space\n\nApp space\n\u251c\u2500 Create table \"Post\"\n\u251c\u2500 Create table \"User\"\n\u251c\u2500 Add unique constraint on \"User\" (email)\n\u251c\u2500 Create index \"Post_authorId_idx_e47547ed\" on \"Post\"\n\u251c\u2500 Add foreign key \"Post_authorId_fkey\" on \"Post\"\n\u2514\u2500 marker bd5fe21ff49e17c00bfe645409be030ddefcddd91119f084f3bc447e0e3c04ac\n\n\u2192 Confirm the space is up to date: prisma migration status --db <url>\n"
+  }
+ ],
+ "db_source": "fresh",
+ "tables": [
+  "User",
+  "Post"
+ ],
+ "user_table": "User",
+ "post_table": "Post",
+ "table_checks": {
+  "email_unique": true,
+  "name_nullable": true,
+  "title_required": true,
+  "content_nullable": true,
+  "published_default_false": true
+ },
+ "tables_ok": true,
+ "script_exists": true,
+ "script_ok": true,
+ "script_exit": 0,
+ "script_out_tail": "[\n  {\n    email: 'alice_1794272289680@example.com',\n    id: 1,\n    name: 'Alice',\n    posts: [\n      {\n        authorId: 1,\n        content: 'This is the first post content.',\n        id: 1,\n        published: true,\n        title: 'First Post'\n      },\n      {\n        authorId: 1,\n        content: 'This is the second post content.',\n        id: 2,\n        published: false,\n        title: 'Second Post'\n      }\n    ]\n  }\n]\n",
+ "rows_after_script": {
+  "users": 1,
+  "linked_posts": 2
+ },
+ "titles_printed": true,
+ "tsc_ok": true,
+ "tsc_tail": "",
+ "looked_up_client_tag": true,
+ "ran_orm_init": true,
+ "read_prisma8_md": true,
+ "web_use": true,
+ "answer_chars": 1770,
+ "PASS": true,
+ "WORKS_ON_PRISMA7": false
+}

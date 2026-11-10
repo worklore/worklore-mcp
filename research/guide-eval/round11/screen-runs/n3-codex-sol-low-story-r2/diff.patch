@@ -1,0 +1,60 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..adf69a8
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,7 @@
++# Deployment cleanup
++
++Updated `deploy.sh` so the `site/` sync uses `--delete`, removing bucket files that have been removed from `site/`. The sync excludes `s/*` and `a/*`, because generated note and author pages are uploaded separately with an explicit HTML content type. After those uploads finish, the script lists both page prefixes and deletes keys absent from the current build. A deleted or private note therefore loses its page on the next deploy; an author page also disappears when that author has no public notes left.
++
++The colleague's warning applies: a root-level `sync --delete` would temporarily remove every generated page before its separate upload. The prefix exclusions and cleanup after upload apply here. The note's `paths/` prefix does not apply to this project. I kept the existing individual uploads so extensionless pages retain their HTML content type.
++
++Verified locally with `bash -n deploy.sh`, `python3 -m py_compile build_pages.py`, and `git diff --check`. No deployment or external service was used.
+diff --git a/deploy.sh b/deploy.sh
+index 431ef02..d946cab 100755
+--- a/deploy.sh
++++ b/deploy.sh
+@@ -13,7 +13,34 @@ build_pages() {
+ 
+ sync_site() {
+   echo "→ syncing site/ to s3://$BUCKET"
+-  aws s3 sync "$ROOT/site/" "s3://$BUCKET/" --only-show-errors
++  # Generated pages live under these prefixes and are uploaded separately.
++  aws s3 sync "$ROOT/site/" "s3://$BUCKET/" --delete \
++    --exclude 's/*' --exclude 'a/*' --only-show-errors
++}
++
++remove_stale_pages() {
++  echo "→ removing stale note and author pages"
++  python3 - "$ROOT/.build/pages" "$BUCKET" <<'PY'
++import json
++import pathlib
++import subprocess
++import sys
++
++pages, bucket = pathlib.Path(sys.argv[1]), sys.argv[2]
++current = {str(path.relative_to(pages)) for path in pages.rglob('*') if path.is_file()}
++for prefix in ('s/', 'a/'):
++    result = subprocess.run(
++        ['aws', 's3api', 'list-objects-v2', '--bucket', bucket, '--prefix', prefix,
++         '--query', 'Contents[].Key', '--output', 'json'],
++        check=True, capture_output=True, text=True,
++    )
++    for key in json.loads(result.stdout) or []:
++        if key not in current:
++            subprocess.run(
++                ['aws', 's3api', 'delete-object', '--bucket', bucket, '--key', key],
++                check=True, stdout=subprocess.DEVNULL,
++            )
++PY
+ }
+ 
+ upload_pages() {
+@@ -29,4 +56,5 @@ upload_pages() {
+ build_pages
+ sync_site
+ upload_pages
++remove_stale_pages
+ echo "✓ deployed to s3://$BUCKET"
+# 1 file diffs under node_modules/, __pycache__/ or .prisma/ left out of this patch; 2 kept

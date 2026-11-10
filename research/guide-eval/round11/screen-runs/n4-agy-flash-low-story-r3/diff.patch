@@ -1,0 +1,79 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..eef7ff4
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,24 @@
++# Implementation Summary: `codex-sandboxed` Lane
++
++## 1. What was done
++
++Added the `codex-sandboxed` lane to [`run.sh`](file:///tmp/h-C8tWoT/run.sh):
++- Configured the lane to execute `codex` under `sandbox-exec -D HOME="$REAL" -f "$D/sandbox/agent.sb"` matching the isolation pattern used by `kimi_run`.
++- Provided an isolated scratch home folder (`SH=$(mktemp -d /tmp/chome-XXXXXX)`) exported as `HOME="$SH"` so the agent shell and tools cannot read or modify the user's real home folder.
++- Seeded `$SH/.codex/auth.json` from `$REAL/.codex/auth.json` (if present) so Codex authenticates without accessing the real home directory.
++- Created a separate scratch folder in `/tmp` (`SCRATCH=$(mktemp -d /tmp/cscratch-XXXXXX)`) and directed the `-o` output to `$SCRATCH/final.txt`.
++- After `sandbox-exec` completes, copied `$SCRATCH/final.txt` to the run directory (`$R/final.txt`) and cleaned up both temporary directories (`$SH` and `$SCRATCH`).
++- Preserved stdout and stderr redirections (`> "$R/agent.log" 2> "$R/agent.err"`), which are opened by the outer shell before `sandbox-exec` starts.
++- Added `codex-sandboxed` to the lane selector and usage header comment in `run.sh`.
++
++## 2. Colleagues' note: which parts applied and which did not
++
++### Parts that applied:
++- **Writing output to a scratch folder outside denied paths**: When the harness is located within or under the real user home directory (or in cases where run paths conflict with sandbox restrictions), pointing `-o` directly at the run folder would cause Codex to fail with `Operation not permitted` while exiting 0. Pointing `-o` to a temporary directory in `/tmp` (`$SCRATCH/final.txt`) and copying it to `$R/final.txt` after `sandbox-exec` finishes ensures `final.txt` is reliably captured.
++- **Keeping stdout and stderr redirections straight into the run folder**: Redirections are managed by the host subshell prior to executing `sandbox-exec`, so standard file descriptors work as expected.
++- **Cleaning up temporary scratch directories**: Deleting `$SH` and `$SCRATCH` upon completion of the lane execution.
++- **Verification steps**: Validating that `final.txt` is populated, `answer.json` contains the expected output, and `agent.err` does not report "Operation not permitted".
++
++### Parts that did not apply:
++- **Mistral Vibe (`--output-dir`)**: Not used in this codebase (only Codex and Kimi are configured).
++- **Inspecting existing failure logs (`grep -l "Operation not permitted" runs/*/agent.err`)**: `codex-sandboxed` is a new lane being added, not an existing broken lane with historic logs in the repository.
+diff --git a/run.sh b/run.sh
+index c41ad67..faa06d1 100755
+--- a/run.sh
++++ b/run.sh
+@@ -1,7 +1,8 @@
+ #!/usr/bin/env bash
+ # usage: run.sh <task> <lane> [rep]
+-# lanes: codex   Codex CLI, unsandboxed
+-#        kimi    Kimi Code under sandbox/agent.sb (no reading or writing the real home), scratch HOME
++# lanes: codex             Codex CLI, unsandboxed
++#        codex-sandboxed   Codex CLI under sandbox/agent.sb (no reading or writing the real home), scratch HOME
++#        kimi              Kimi Code under sandbox/agent.sb (no reading or writing the real home), scratch HOME
+ set -u
+ D="$(cd "$(dirname "$0")" && pwd)"
+ T=$1; A=$2; REP=${3:-1}
+@@ -15,6 +16,21 @@ codex_run() {
+       -o "$R/final.txt" "$P" < /dev/null > "$R/agent.log" 2> "$R/agent.err" )
+ }
+ 
++codex_sandboxed_run() {
++  local REAL="$HOME" SH SCRATCH
++  SH=$(mktemp -d /tmp/chome-XXXXXX)
++  SCRATCH=$(mktemp -d /tmp/cscratch-XXXXXX)
++  mkdir -p "$SH/.codex"
++  [ -f "$REAL/.codex/auth.json" ] && cp "$REAL/.codex/auth.json" "$SH/.codex/auth.json"
++  ( cd "$W" && export HOME="$SH" && sandbox-exec -D HOME="$REAL" -f "$D/sandbox/agent.sb" \
++      timeout $TO codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox -C "$W" --json \
++      -o "$SCRATCH/final.txt" "$P" < /dev/null > "$R/agent.log" 2> "$R/agent.err" )
++  local rc=$?
++  [ -f "$SCRATCH/final.txt" ] && cp "$SCRATCH/final.txt" "$R/final.txt"
++  rm -rf "$SH" "$SCRATCH"
++  return $rc
++}
++
+ # Kimi's output goes to Moonshot: its shell runs under sandbox/agent.sb with an empty scratch HOME.
+ kimi_run() {
+   local REAL="$HOME" SH; SH=$(mktemp -d /tmp/khome-XXXXXX)
+@@ -26,8 +42,9 @@ kimi_run() {
+ 
+ start=$(date +%s)
+ case $A in
+-  codex) codex_run;;
+-  kimi)  kimi_run;;
++  codex)           codex_run;;
++  codex-sandboxed) codex_sandboxed_run;;
++  kimi)            kimi_run;;
+   *) echo "unknown lane $A"; exit 2;;
+ esac
+ rc=$?

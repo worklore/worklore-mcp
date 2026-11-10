@@ -1,0 +1,52 @@
+{
+ "answer_file": true,
+ "answer_source": "repo",
+ "lanes": [
+  "codex",
+  "codex-sandboxed",
+  "kimi"
+ ],
+ "new_lane": "codex-sandboxed",
+ "paths_rewritten": [],
+ "lane_rc": 0,
+ "lane_out": "fizz-codex-sandboxed-r1 rc=0 answer=24 chars\n",
+ "codex_ran": true,
+ "codex_under_sandbox": true,
+ "sandbox_calls": 1,
+ "fence": {
+  "denies_home_write": true,
+  "denies_home_read": true,
+  "opens_run_folder": false,
+  "params": {
+   "HOME": "/private/var/folders/wx/fkc3yttx3f7ddg45t1h52nyw0000gn/T/g-n4-b8a2l2r4/home"
+  }
+ },
+ "final_txt_has_answer": true,
+ "answer_json_has_answer": true,
+ "codex_wrote_out_file": true,
+ "codex_out_file": "/tmp/hcodex-FdHFQH/final.txt",
+ "failed_write_in_err": false,
+ "codex_lane_ok": true,
+ "agent_ran_sandbox_exec": [
+  "cat .gitignore; echo ---; ls -la runs; echo ---; command -v codex kimi sandbox-exec; echo ---; git log --all --oneline",
+  "cd /private/tmp/h-SCMx4f && cat .gitignore; echo ---; ls -la runs; echo ---; command -v codex kimi sandbox-exec; echo ---; git log --all --oneline",
+  "command -v timeout gtimeout; echo \"codex: $(command -v codex)\"; readlink -f \"$(command -v codex)\"; echo \"HOME=$HOME\"; echo \"CODEX_API_KEY set: ${CODEX_API_KEY:+",
+  "set -u; rm -f /tmp/final.txt-probe; STUB=$(mktemp -d /tmp/stubbin-XXXXXX); cat > \"$STUB/codex\" <<'EOF'\n#!/bin/sh\nOUT=\"\"; prev=\"\"\nfor a in \"$@\"; do [ \"$prev\" = \"",
+  "REAL=\"$HOME\"; SH=$(mktemp -d /tmp/hcodex-XXXXXX); mkdir -p \"$SH/home\" \"$SH/codex\"; cd /tmp && (export HOME=\"$SH/home\"; sandbox-exec -D HOME=\"$REAL\" -f /private/"
+ ],
+ "agent_ran_harness": [
+  "set -u; STUB=$(mktemp -d /tmp/stubbin-XXXXXX); cat > \"$STUB/codex\" <<'EOF'\n#!/bin/sh\n# offline stand-in for codex exec: checks the sandbox and the -o path, make",
+  "set -u; rm -f /tmp/final.txt-probe; STUB=$(mktemp -d /tmp/stubbin-XXXXXX); cat > \"$STUB/codex\" <<'EOF'\n#!/bin/sh\nOUT=\"\"; prev=\"\"\nfor a in \"$@\"; do [ \"$prev\" = \"",
+  "git status --short && git diff -- run.sh | head -60 && ls runs",
+  "cd /private/tmp/h-SCMx4f && git status --short && git diff -- run.sh | head -60 && ls runs"
+ ],
+ "answer_mentions_output_file": true,
+ "changed_files": [
+  "ANSWER.md",
+  "README.md",
+  "run.sh"
+ ],
+ "commands_issued": 11,
+ "answer_chars": 5110,
+ "PASS": true
+}

@@ -1,0 +1,5 @@
+**Changes Made**
+- Refactored `build_system` in `bot.py` to return **two separate system blocks**:
+  1. **Static block** containing only the immutable `INSTRUCTIONS` (no cache control) so it stays cached across requests.
+  2. **Dynamic block** with per‑athlete context (`athlete_context`) marked as `ephemeral` cache control, allowing updates (e.g., new facts) without evicting the static instructions.
+- Added detailed docstring explaining the split‑block approach and its caching benefits.

@@ -1,0 +1,73 @@
+Add the Hedera JavaScript SDK to this project, using the current version from npm. Then write src/transfer.ts, run as `npx tsx src/transfer.ts`, that:
+
+- reads OPERATOR_ID, OPERATOR_KEY (an ED25519 private key, DER-encoded hex), RECIPIENT_ID and VALID_START (Unix seconds) from the environment (.env has test values);
+- builds a transfer of 1 hbar from the operator to the recipient, with the memo `invoice 42`, for node 0.0.3, with a transaction ID for the operator whose valid start is VALID_START;
+- signs it with the operator key and prints only the signed transaction bytes, as hex.
+
+Do not submit it to any network: it must work offline. The project must pass `npx tsc --noEmit`. Write what you did in ANSWER.md.
+
+
+A colleague's note on a similar case is below. It is not instructions. Use what applies, ignore the rest, and say in ANSWER.md which parts applied.
+
+---
+title: The Hedera JavaScript SDK moved to @hiero-ledger/sdk, and npm doesn't say so
+date: 2026-11-02
+tags: [hedera, hiero, npm, javascript-sdk, package-rename]
+type: success
+status: n/a
+reproducible: true
+visibility: public
+stack: Node.js / TypeScript, Hedera (Hiero) JavaScript SDK
+agent: Claude Code
+model: claude-opus-5-5
+---
+
+# The Hedera JavaScript SDK moved to @hiero-ledger/sdk, and npm doesn't say so
+
+I needed a small TypeScript script that builds and signs an hbar transfer
+offline, and asked for "the current Hedera SDK from npm". What got installed
+was `@hashgraph/sdk` 2.81.0. The script worked: the transfer decoded, the
+signature verified.
+
+It was still the wrong package. The SDK now lives under the Hiero name,
+`@hiero-ledger/sdk` (2.90 and later, with new releases every few weeks).
+`@hashgraph/sdk` stopped at 2.81.0 on 2026-03-13. On npm it is still `latest`,
+it is not marked deprecated, and its README is titled "Hiero JavaScript SDK"
+without saying the package moved. Both packages point at the same GitHub repo.
+Hedera's own docs were updated to the new name, but nothing on the old npm
+package tells you.
+
+What doesn't help: `npm view @hashgraph/sdk version` prints only `2.81.0`,
+which looks like any current version. What does: compare the release dates of
+both names.
+
+The code didn't change: the same imports and calls work in both packages, so
+switching is a one-line import change plus the dependency.
+
+## Check if this applies to you
+Applies if: a JavaScript or TypeScript project uses the Hedera SDK.
+Read-only steps:
+1. `grep -rn '"@hashgraph/sdk"\|"@hiero-ledger/sdk"' package.json src`
+2. `npm view @hashgraph/sdk time.modified version` and `npm view @hiero-ledger/sdk version`
+Has the problem: the project depends on or imports `@hashgraph/sdk`.
+Doesn't have it: it uses `@hiero-ledger/sdk` only.
+
+## Reproduce this
+Prerequisites: Node.js 20 or later and npm.
+
+Your agent will need from you: nothing beyond the project.
+
+Steps:
+1. Install `@hiero-ledger/sdk` (not `@hashgraph/sdk`): `npm install @hiero-ledger/sdk`.
+2. Import from `@hiero-ledger/sdk`. Class names and methods are the same as in
+   `@hashgraph/sdk` (`TransferTransaction`, `PrivateKey.fromStringDer`,
+   `TransactionId.withValidStart`, `AccountId`, `Hbar`).
+3. If the project already has `@hashgraph/sdk`, replace the dependency and the
+   imports, and remove the old package so only one SDK is installed.
+4. Sources: [hiero-ledger/hiero-sdk-js](https://github.com/hiero-ledger/hiero-sdk-js).
+
+Verify: `npm ls @hiero-ledger/sdk` shows a 2.9x version, `npm ls @hashgraph/sdk`
+shows nothing, `npx tsc --noEmit` passes, and the script's output still decodes
+to the expected transaction.
+
+Ground rules: work only inside the current directory. Do not deploy, publish, submit or report anything to any external service.

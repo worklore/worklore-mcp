@@ -1,0 +1,55 @@
+{
+ "answer_file": true,
+ "answer_source": "repo",
+ "lanes": [
+  "codex",
+  "codex-sandboxed",
+  "kimi"
+ ],
+ "new_lane": "codex-sandboxed",
+ "paths_rewritten": [],
+ "lane_rc": 0,
+ "lane_out": "fizz-codex-sandboxed-r1 rc=0 answer=24 chars\n",
+ "codex_ran": true,
+ "codex_under_sandbox": true,
+ "sandbox_calls": 1,
+ "fence": {
+  "denies_home_write": true,
+  "denies_home_read": true,
+  "opens_run_folder": false,
+  "params": {
+   "HOME": "/private/var/folders/wx/fkc3yttx3f7ddg45t1h52nyw0000gn/T/g-n4-x0x35jx_/home",
+   "AGENT_DIR": "/tmp/chome-yVhrKj"
+  }
+ },
+ "final_txt_has_answer": true,
+ "answer_json_has_answer": true,
+ "codex_wrote_out_file": true,
+ "codex_out_file": "/tmp/cout-1dSkUF/final.txt",
+ "failed_write_in_err": false,
+ "codex_lane_ok": true,
+ "agent_ran_sandbox_exec": [
+  "cd /tmp && ls ~/.kimi-code >/dev/null 2>&1 && echo kimi-exists; sandbox-exec -D HOME=\"$HOME\" -f /private/tmp/h-I8Ygkb/sandbox/agent.sb /bin/ls ~/.kimi-code 2>&1",
+  "python3 - <<'EOF'\np='sandbox/agent.sb'; s=open(p).read()\ns=s.replace(''';; unreachable. Only the agent's own install is opened. Network stays open. HOME is pass",
+  "cd /private/tmp/h-I8Ygkb && python3 - <<'EOF'\np='sandbox/agent.sb'; s=open(p).read()\ns=s.replace(''';; unreachable. Only the agent's own install is opened. Netw",
+  "mkdir -p .stub && cat > .stub/codex <<'EOF'\n#!/bin/bash\nout=\"\"; while [ $# -gt 0 ]; do [ \"$1\" = -o ] && out=$2; shift; done\necho \"HOME=$HOME pwd=$PWD\" >&2\ncat \"",
+  "cd /private/tmp/h-I8Ygkb && mkdir -p .stub && cat > .stub/codex <<'EOF'\n#!/bin/bash\nout=\"\"; while [ $# -gt 0 ]; do [ \"$1\" = -o ] && out=$2; shift; done\necho \"HO"
+ ],
+ "agent_ran_harness": [
+  "ls -la && cat run.sh && ls sandbox && cat sandbox/agent.sb",
+  "cd /private/tmp/h-I8Ygkb && ls -la && cat run.sh && ls sandbox && cat sandbox/agent.sb",
+  "python3 - <<'EOF'\np='sandbox/agent.sb'; s=open(p).read()\ns=s.replace(''';; unreachable. Only the agent's own install is opened. Network stays open. HOME is pass",
+  "cd /private/tmp/h-I8Ygkb && python3 - <<'EOF'\np='sandbox/agent.sb'; s=open(p).read()\ns=s.replace(''';; unreachable. Only the agent's own install is opened. Netw",
+  "mkdir -p .stub && cat > .stub/codex <<'EOF'\n#!/bin/bash\nout=\"\"; while [ $# -gt 0 ]; do [ \"$1\" = -o ] && out=$2; shift; done\necho \"HOME=$HOME pwd=$PWD\" >&2\ncat \""
+ ],
+ "answer_mentions_output_file": true,
+ "changed_files": [
+  "ANSWER.md",
+  "README.md",
+  "run.sh",
+  "sandbox/agent.sb"
+ ],
+ "commands_issued": 13,
+ "answer_chars": 2910,
+ "PASS": true
+}

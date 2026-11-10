@@ -1,0 +1,3 @@
+I split the system prompt into two cached blocks: stable coaching instructions and mutable athlete context. A `save_fact` now changes the second block while leaving the instruction prefix intact. I also expanded the stable guidance to account for Claude Sonnet 4.5’s minimum cacheable length.
+
+The change and the parts of the colleague’s note that apply are documented in [ANSWER.md](/tmp/h-xDYQ2N/ANSWER.md). A local check confirmed that adding a fact changes only the athlete block, and `bot.py` compiles. Live cache usage remains unverified because the SDK and API credentials were unavailable.

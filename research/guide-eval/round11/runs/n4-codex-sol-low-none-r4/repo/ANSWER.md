@@ -1,0 +1,3 @@
+Added the `codex-sandboxed` lane to `run.sh`. It uses the same Codex command and output files as `codex`, but runs through `sandbox/agent.sb` with a temporary `HOME` and `CODEX_HOME`. The sandbox profile now takes a lane-specific `AGENT_HOME`: Kimi retains access to its install, while Codex gets access only to its scratch home. Updated `README.md` with the new lane.
+
+Verified with `bash -n`, `git diff --check`, and a local fake Codex run. The run completed with the expected `final.txt`, `meta.json`, and `answer.json`; attempts from inside the sandbox to read or write the real home were denied. No real Codex request was made.

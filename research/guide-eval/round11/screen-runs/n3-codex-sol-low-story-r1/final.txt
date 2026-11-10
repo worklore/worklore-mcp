@@ -1,0 +1,3 @@
+Updated [deploy.sh](/tmp/h-zTJIRi/deploy.sh) so deployments remove files deleted from `site/` and stale note and author pages. Current generated pages are protected from the site sync’s deletion pass and cleaned up after upload.
+
+The changes, the applicable parts of the colleague’s note, and verification are documented in [ANSWER.md](/tmp/h-zTJIRi/ANSWER.md). Shell syntax and diff checks passed; no live deploy was run.

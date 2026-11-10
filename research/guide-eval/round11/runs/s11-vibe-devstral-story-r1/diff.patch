@@ -1,0 +1,90 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..2bdc379
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,29 @@
++# Cause and Fix for Second Publish 500 Error
++
++## Cause
++
++The `similarity()` function in `src/app.py` returns a Python `float` via `round(0.7 * tag_score + 0.3 * word_score, 4)`. DynamoDB does not accept float types - it requires `Decimal` or numeric types like `int`.
++
++The first publish succeeds because the table is empty: `related()` returns an empty list, so no similarity scores are computed, and no floats are passed to `put_item()`. The second publish fails because there is now one existing story, `similarity()` is called, a float score is stored in the `similar` list, and `put_item()` rejects it with `TypeError: Float types are not supported. Use Decimal types instead.`
++
++This matches the colleague's note exactly: "my API computes similarity scores... On the very first publish the table was empty — no matches, no scores, no floats, no crash. The bug did not exist until the data did."
++
++## Fix
++
++1. **Code fix** (`src/app.py`):
++   - Added `from decimal import Decimal` import
++   - Changed `similarity()` to return `Decimal(str(round(...)))` instead of a raw float
++   - This converts the float to a string first, then to Decimal, which DynamoDB accepts
++
++2. **Test fix** (`tests/test_publish.py`):
++   - Added `test_publish_with_existing_story` that seeds the table with one record before publishing a second story
++   - This exercises the state-dependent code path (similarity computation with existing data)
++   - The colleague's lesson applies: "the populated path is the real path; the empty path happens exactly once in production, ever"
++
++## Parts of the colleague's note that applied
++
++- The exact same error message: `TypeError: Float types are not supported. Use Decimal types instead.`
++- The same root cause: float values from similarity scoring being passed to DynamoDB
++- The same pattern: first write works (empty table), second write fails (table has data)
++- The same fix approach: convert floats to Decimal at the boundary
++- The same test approach: seed the table with one record before testing the second write
+diff --git a/src/app.py b/src/app.py
+index db49c5e..af4bb08 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -8,6 +8,7 @@ import json
+ import logging
+ import re
+ import time
++from decimal import Decimal
+ 
+ log = logging.getLogger("stories")
+ 
+@@ -27,7 +28,7 @@ def similarity(a, b):
+     tag_score = len(ta & tb) / len(ta | tb) if (ta | tb) else 0
+     wa, wb = words(a.get("body")), words(b.get("body"))
+     word_score = len(wa & wb) / len(wa | wb) if (wa | wb) else 0
+-    return round(0.7 * tag_score + 0.3 * word_score, 4)
++    return Decimal(str(round(0.7 * tag_score + 0.3 * word_score, 4)))
+ 
+ 
+ def related(story, existing):
+diff --git a/tests/test_publish.py b/tests/test_publish.py
+index 6c9ac44..84152aa 100644
+--- a/tests/test_publish.py
++++ b/tests/test_publish.py
+@@ -23,6 +23,29 @@ class PublishTest(unittest.TestCase):
+         self.assertEqual(table.get_item(Key={"slug": "why-my-cron-ran-twice"})["Item"]["title"], "Why my cron ran twice")
+         self.assertEqual(table.scan()["Count"], 1)
+ 
++    def test_publish_with_existing_story(self):
++        table = FakeTable()
++        existing = {
++            "slug": "first-story",
++            "title": "First Story",
++            "tags": ["python", "testing"],
++            "body": "This is the first story in the library.",
++            "published_at": 1234567890,
++            "similar": [],
++        }
++        table.put_item(Item=existing)
++        story = {
++            "slug": "why-my-cron-ran-twice",
++            "title": "Why my cron ran twice",
++            "tags": ["cron", "linux"],
++            "body": "Two crontabs, one for root and one for me, both had the line.",
++        }
++        stored = app.publish(table, story)
++        self.assertEqual(stored["slug"], "why-my-cron-ran-twice")
++        self.assertEqual(table.scan()["Count"], 2)
++        self.assertIn("similar", stored)
++        self.assertIsInstance(stored["similar"][0]["score"], type(stored["similar"][0]["score"]))
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

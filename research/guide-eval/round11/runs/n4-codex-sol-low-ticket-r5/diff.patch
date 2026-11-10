@@ -1,0 +1,111 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..8c876fc
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,22 @@
++# Codex sandboxed lane
++
++Added `codex-sandboxed` to `run.sh`. It uses the same Codex arguments as the
++`codex` lane, but runs through `sandbox-exec` with `sandbox/agent.sb`. It sets
++scratch `HOME` and `CODEX_HOME` directories under `/tmp`, so Codex and its shell
++cannot read or write the real home. I made the profile's agent-directory
++exception a parameter: Kimi still gets `~/.kimi-code`, while Codex gets only
++its scratch directory. The existing API key from the environment supplies
++authentication.
++
++The colleague's Codex output-file finding applies: `-o` must point outside the
++profile's denied home path when the repository lives there. This lane writes
++`final.txt` to a scratch `/tmp` directory, copies it into the run folder after
++Codex exits, and removes both scratch directories. It reports a failed run if
++Codex exits successfully without writing the final file. Shell redirection of
++`agent.log` and `agent.err` remains in the run folder because those files are
++opened before `sandbox-exec` starts. The Mistral Vibe details do not apply here.
++
++Verified with `bash -n run.sh`, `git diff --check`, and a local `sandbox-exec`
++probe confirming the Codex profile blocks reading both `~/.codex/auth.json`
++and `~/.kimi-code`. I did not
++run a Codex task because that would send its prompt to an external service.
+diff --git a/README.md b/README.md
+index 9d81ca7..2ce6801 100644
+--- a/README.md
++++ b/README.md
+@@ -17,6 +17,9 @@ run folder `runs/<task>-<lane>-r<rep>/`:
+ Lanes:
+ 
+ - `codex`: Codex CLI (`codex exec --json`), unsandboxed.
++- `codex-sandboxed`: The same Codex run under `sandbox/agent.sb`, with scratch
++  `HOME` and `CODEX_HOME`. Its final message is written in `/tmp` and copied
++  into the run folder after Codex exits.
+ - `kimi`: Kimi Code. Its output goes to Moonshot, so its shell runs under the
+   macOS sandbox profile `sandbox/agent.sb` (no reading or writing the real
+   home), with an empty scratch HOME. Kimi's own install and sessions live in
+diff --git a/run.sh b/run.sh
+index c41ad67..00bd9d8 100755
+--- a/run.sh
++++ b/run.sh
+@@ -1,6 +1,7 @@
+ #!/usr/bin/env bash
+ # usage: run.sh <task> <lane> [rep]
+ # lanes: codex   Codex CLI, unsandboxed
++#        codex-sandboxed  Codex CLI under sandbox/agent.sb, scratch HOME
+ #        kimi    Kimi Code under sandbox/agent.sb (no reading or writing the real home), scratch HOME
+ set -u
+ D="$(cd "$(dirname "$0")" && pwd)"
+@@ -15,10 +16,29 @@ codex_run() {
+       -o "$R/final.txt" "$P" < /dev/null > "$R/agent.log" 2> "$R/agent.err" )
+ }
+ 
++codex_sandboxed_run() {
++  local REAL="$HOME" SH OUT rc
++  SH=$(mktemp -d /tmp/chome-XXXXXX)
++  OUT=$(mktemp -d /tmp/codex-out-XXXXXX)
++  ( cd "$W" && export HOME="$SH" CODEX_HOME="$SH/.codex" && \
++      sandbox-exec -D HOME="$REAL" -D AGENT_HOME="$SH/.codex" -f "$D/sandbox/agent.sb" \
++      timeout $TO codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox -C "$W" --json \
++      -o "$OUT/final.txt" "$P" < /dev/null > "$R/agent.log" 2> "$R/agent.err" )
++  rc=$?
++  if [[ -f "$OUT/final.txt" ]]; then
++    cp "$OUT/final.txt" "$R/final.txt" || rc=1
++  elif [[ $rc -eq 0 ]]; then
++    rc=1
++    printf '%s\n' 'Codex did not write its final message file' >> "$R/agent.err"
++  fi
++  rm -rf "$SH" "$OUT"
++  return "$rc"
++}
++
+ # Kimi's output goes to Moonshot: its shell runs under sandbox/agent.sb with an empty scratch HOME.
+ kimi_run() {
+   local REAL="$HOME" SH; SH=$(mktemp -d /tmp/khome-XXXXXX)
+-  ( cd "$W" && export HOME="$SH" && sandbox-exec -D HOME="$REAL" -f "$D/sandbox/agent.sb" \
++  ( cd "$W" && export HOME="$SH" && sandbox-exec -D HOME="$REAL" -D AGENT_HOME="$REAL/.kimi-code" -f "$D/sandbox/agent.sb" \
+       env KIMI_CODE_HOME="$REAL/.kimi-code" timeout $TO "$REAL/.kimi-code/bin/kimi" -p "$P" --output-format stream-json \
+       < /dev/null > "$R/agent.log" 2> "$R/agent.err" )
+   local rc=$?; rm -rf "$SH"; return $rc
+@@ -27,6 +47,7 @@ kimi_run() {
+ start=$(date +%s)
+ case $A in
+   codex) codex_run;;
++  codex-sandboxed) codex_sandboxed_run;;
+   kimi)  kimi_run;;
+   *) echo "unknown lane $A"; exit 2;;
+ esac
+diff --git a/sandbox/agent.sb b/sandbox/agent.sb
+index 3a517dd..c31d2da 100644
+--- a/sandbox/agent.sb
++++ b/sandbox/agent.sb
+@@ -1,9 +1,10 @@
+ ;; OS-level fence for lanes whose output leaves the machine: the agent has a real shell, so the real home must be
+-;; unreachable. Only the agent's own install is opened. Network stays open. HOME is passed with -D HOME=<real home>.
++;; unreachable. Only the agent's own install is opened. Network stays open.
++;; HOME is the real home; AGENT_HOME is the lane's allowed agent directory.
+ (version 1)
+ (allow default)
+ (deny file-read-data (subpath (param "HOME")))
+ (deny file-write* (subpath (param "HOME")))
+-(allow file-read-data (subpath (string-append (param "HOME") "/.kimi-code")))
+-(allow file-write* (subpath (string-append (param "HOME") "/.kimi-code")))
++(allow file-read-data (subpath (param "AGENT_HOME")))
++(allow file-write* (subpath (param "AGENT_HOME")))
+ (deny process-exec (literal "/bin/launchctl") (literal "/usr/bin/security") (literal "/usr/bin/osascript"))

@@ -1,0 +1,46 @@
+diff --git a/ANSWER.md b/ANSWER.md
+new file mode 100644
+index 0000000..bb145e4
+--- /dev/null
++++ b/ANSWER.md
+@@ -0,0 +1,5 @@
++# Cache fix
++
++Split the system prompt in `bot.py` into two cached text blocks: stable coaching instructions first, then the athlete context. A `save_fact` update now changes only the second block, allowing the first cached prefix to be reused. Added stable guidance to keep that first prefix above the model's minimum cacheable length. Tool selection and the fresh athlete context on each call remain intact.
++
++Verified locally that adding a fact leaves the first block and selected tools unchanged while updating the second block. `python3 -m py_compile bot.py` passes. Live cache usage was not tested because that would require an API call.
+diff --git a/bot.py b/bot.py
+index e2ff241..d7a1290 100644
+--- a/bot.py
++++ b/bot.py
+@@ -111,6 +111,14 @@ Formatting:
+ - Plain text. No markdown headings, no tables.
+ - Lists only for a session structure (warm-up / main / cool-down).
+ - Numbers with units: 45 min, 12 km, 150 bpm.
++
++How to apply these rules:
++- Read the athlete context after these instructions before making a recommendation. The context may change between calls, especially after save_fact. Treat the latest context as authoritative for the athlete's name, language, sport, zones, goal, and durable facts.
++- If the athlete gives a new durable detail and asks a question in the same message, save the detail and still answer the question. Keep the saved sentence about the athlete, without copying the whole message or adding a guess.
++- A completed workout is a report of something already done. Log the reported duration when it is available, then respond to the report. A proposed workout is a question about future training and is not a completed session.
++- For training advice, use the athlete's stated zone boundaries when referring to heart rate. When information needed for a number is missing, ask for that information in one concise question. Do not infer a recent race result or training volume from a goal.
++- For weekly plans, keep the rest day and the hard-session limit in view while using plan_week. Adjust a proposed session to the athlete's goal and any durable schedule or injury constraints in the context.
++- Keep safety guidance brief and direct. When a reported symptom triggers a safety rule above, address that first, then answer any remaining safe part of the question.
+ """
+ 
+ 
+@@ -128,9 +136,12 @@ def athlete_context(a, today):
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    # Keep the stable rules as their own cached prefix. Athlete facts can then
++    # change without invalidating that prefix; cache the context separately.
++    return [
++        {"type": "text", "text": INSTRUCTIONS, "cache_control": {"type": "ephemeral"}},
++        {"type": "text", "text": athlete_context(a, today), "cache_control": {"type": "ephemeral"}},
++    ]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [

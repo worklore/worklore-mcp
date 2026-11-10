@@ -1,0 +1,8 @@
+**Changes Made**
+- Updated `run.sh` lane list to include `codex-sandboxed`.
+- Added `codex_sandboxed_run()` which:
+  - Creates a temporary HOME directory.
+  - Executes Codex within `sandbox/agent.sb` via `sandbox-exec`, shielding the real HOME.
+  - Cleans up the temporary HOME after run.
+- Modified case statement to handle `codex-sandboxed` lane.
+- Documented the new lane and implementation details in `ANSWER.md`.

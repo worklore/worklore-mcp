@@ -1,0 +1,3 @@
+Rewrote [src/main.ts](/tmp/h-bYmTMJ/src/main.ts) with an Effect rates service and layer, Effect’s HTTP client, and Schema validation. It reads `RATES_URL` and retries network errors and 5xx responses up to three times with exponential backoff starting at 50 ms.
+
+The CLI now prints the rate to four decimals and uses the requested error messages and exit codes. `npx tsc --noEmit` passes. Local HTTP checks confirmed success, unknown currency, invalid response, and recovery after two transient failures.

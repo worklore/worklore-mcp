@@ -1,0 +1,50 @@
+{
+ "answer_file": true,
+ "answer_source": "repo",
+ "lanes": [
+  "codex",
+  "codex-sandboxed",
+  "kimi"
+ ],
+ "new_lane": "codex-sandboxed",
+ "paths_rewritten": [],
+ "lane_rc": 0,
+ "lane_out": "fizz-codex-sandboxed-r1 rc=0 answer=0 chars\n",
+ "codex_ran": true,
+ "codex_under_sandbox": true,
+ "sandbox_calls": 1,
+ "fence": {
+  "denies_home_write": true,
+  "denies_home_read": true,
+  "opens_run_folder": false,
+  "params": {
+   "HOME": "/private/var/folders/wx/fkc3yttx3f7ddg45t1h52nyw0000gn/T/g-n4-o8jukdt_/home",
+   "KIMI_HOME": "/tmp/chome-CS14xE"
+  }
+ },
+ "final_txt_has_answer": false,
+ "answer_json_has_answer": false,
+ "codex_wrote_out_file": false,
+ "codex_out_file": "/private/var/folders/wx/fkc3yttx3f7ddg45t1h52nyw0000gn/T/g-n4-o8jukdt_/home/evals/agent-evals/runs/fizz-codex-sandboxed-r1/final.txt",
+ "failed_write_in_err": true,
+ "codex_lane_ok": true,
+ "agent_ran_sandbox_exec": [
+  "/bin/zsh -lc 'bash -n run.sh && sandbox-exec -D HOME=\"$HOME\" -D KIMI_HOME=/tmp -f sandbox/agent.sb /bin/sh -c '\"'test -r \\\"\"'$HOME/.codex/config.toml\"; test $? ",
+  "/bin/zsh -lc 'bash -n run.sh && git diff --check && sandbox-exec -D HOME=\"$HOME\" -D KIMI_HOME=/tmp -f sandbox/agent.sb /bin/sh -c '\"'cat \\\"\"'$HOME/.codex/config"
+ ],
+ "agent_ran_harness": [
+  "/bin/zsh -lc \"pwd && rg --files -g 'AGENTS.md' -g 'run.sh' -g 'sandbox/**' -g 'ANSWER.md' && sed -n '1,240p' run.sh && printf '\\\\n--- sandbox ---\\\\n' && sed -n ",
+  "/bin/zsh -lc 'bash -n run.sh && sandbox-exec -D HOME=\"$HOME\" -D KIMI_HOME=/tmp -f sandbox/agent.sb /bin/sh -c '\"'test -r \\\"\"'$HOME/.codex/config.toml\"; test $? ",
+  "/bin/zsh -lc 'bash -n run.sh && git diff --check && sandbox-exec -D HOME=\"$HOME\" -D KIMI_HOME=/tmp -f sandbox/agent.sb /bin/sh -c '\"'cat \\\"\"'$HOME/.codex/config"
+ ],
+ "answer_mentions_output_file": false,
+ "changed_files": [
+  "ANSWER.md",
+  "README.md",
+  "run.sh",
+  "sandbox/agent.sb"
+ ],
+ "commands_issued": 5,
+ "answer_chars": 653,
+ "PASS": false
+}

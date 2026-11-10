@@ -1,0 +1,41 @@
+{
+ "answer_file": true,
+ "answer_source": "repo",
+ "deploy1_rc": 0,
+ "deploy1_missing": [],
+ "deploy2_rc": 0,
+ "deploy2_tail": "",
+ "calls_deploy2": 11,
+ "keys_kept": 7,
+ "gaps": [],
+ "gap_calls": 0,
+ "max_missing_at_once": 0,
+ "stale_left": [],
+ "stale_expected": [
+  "a/bob",
+  "old-map.js",
+  "s/river-gauge-alerts",
+  "s/trail-gpx-cleanup"
+ ],
+ "new_missing": [],
+ "pages_html": true,
+ "failed_or_unsupported_aws_calls": [],
+ "absolute_aws_rewritten": [],
+ "agent_ran_aws": [
+  "cat README.md; echo ---; cat build_pages.py; echo ---; cat .gitignore; echo ---; cat content/stories.json; echo ---; find site -type f; echo ---; ls /tmp/h-Z0Nx",
+  "cd /private/tmp/h-Z0Nx6g && cat README.md; echo ---; cat build_pages.py; echo ---; cat .gitignore; echo ---; cat content/stories.json; echo ---; find site -type",
+  "set -e\nT=.build/test; rm -rf \"$T\"; mkdir -p \"$T/bin\"\ncat > \"$T/bin/aws\" <<'EOF'\n#!/usr/bin/env bash\necho \"aws $*\" >> \"$AWS_LOG\"\nif [ \"$1 $2\" = \"s3api list-objec",
+  "cd /private/tmp/h-Z0Nx6g && set -e\nT=.build/test; rm -rf \"$T\"; mkdir -p \"$T/bin\"\ncat > \"$T/bin/aws\" <<'EOF'\n#!/usr/bin/env bash\necho \"aws $*\" >> \"$AWS_LOG\"\nif [",
+  "set -e\nE=.build/test/empty; rm -rf \"$E\"; mkdir -p \"$E/content\"\ncp -R deploy.sh build_pages.py site \"$E/\"; echo '[{\"slug\":\"x\",\"title\":\"x\",\"summary\":\"x\",\"author\":"
+ ],
+ "agent_ran_deploy": true,
+ "answer_mentions_window": false,
+ "changed_files": [
+  "ANSWER.md",
+  "README.md",
+  "deploy.sh"
+ ],
+ "commands_issued": 10,
+ "answer_chars": 2971,
+ "PASS": true
+}

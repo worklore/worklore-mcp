@@ -1,0 +1,3 @@
+Added the `codex-sandboxed` lane to [run.sh](/tmp/h-d47XvP/run.sh). It runs the same Codex command through `sandbox/agent.sb` with a temporary home. The profile now grants Kimi’s home-folder exception only to the Kimi lane.
+
+I documented the change in [ANSWER.md](/tmp/h-d47XvP/ANSWER.md). Shell syntax and diff checks passed, and a sandbox probe confirmed that reading a real-home file was denied. I did not run a full agent task.

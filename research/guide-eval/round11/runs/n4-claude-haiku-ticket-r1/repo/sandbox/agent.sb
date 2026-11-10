@@ -1,0 +1,11 @@
+;; OS-level fence for lanes whose output leaves the machine: the agent has a real shell, so the real home must be
+;; unreachable. Only the agent's own state folder is opened (AGENT_HOME, e.g. ~/.kimi-code or ~/.codex), so one lane's
+;; credentials stay out of another lane's shell. Network stays open.
+;; Pass -D HOME=<real home> and -D AGENT_HOME=<real home>/<the agent's own folder>.
+(version 1)
+(allow default)
+(deny file-read-data (subpath (param "HOME")))
+(deny file-write* (subpath (param "HOME")))
+(allow file-read-data (subpath (param "AGENT_HOME")))
+(allow file-write* (subpath (param "AGENT_HOME")))
+(deny process-exec (literal "/bin/launchctl") (literal "/usr/bin/security") (literal "/usr/bin/osascript"))

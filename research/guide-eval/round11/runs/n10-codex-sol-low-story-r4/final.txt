@@ -1,0 +1,3 @@
+Added Prisma 8, modeled users and posts, and created both tables in the local PostgreSQL database. The root [script.ts](/tmp/h-Gb0GGc/script.ts) creates a user with two posts and prints every user with their posts.
+
+`npx tsc --noEmit` passed, and `npx tsx script.ts` ran successfully. The setup, verification, and applicable parts of the colleague’s note are recorded in [ANSWER.md](/tmp/h-Gb0GGc/ANSWER.md).

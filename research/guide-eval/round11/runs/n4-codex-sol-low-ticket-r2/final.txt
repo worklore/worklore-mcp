@@ -1,0 +1,3 @@
+Added the `codex-sandboxed` lane. It runs the Codex command under `sandbox/agent.sb` with a scratch home, then copies Codex’s final message into the run folder. The shared profile now gives each lane only its specified directory exception.
+
+[ANSWER.md](/tmp/h-VcJXQS/ANSWER.md) records the changes and which parts of the colleague’s note applied. Shell syntax and diff checks passed; a local mock run confirmed the real-home read block and final-answer capture. I did not run the real Codex CLI because it would contact an external service.

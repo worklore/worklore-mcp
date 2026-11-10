@@ -1,0 +1,50 @@
+{
+ "answer_file": false,
+ "reinstalled": false,
+ "prisma_version": "5.22.0",
+ "orm_postgres_version": null,
+ "prisma_client_version": "5.22.0",
+ "package_json_prisma": {
+  "@prisma/client": "^5.15.0",
+  "prisma": "^5.15.0"
+ },
+ "imports_prisma_client": false,
+ "imports_orm_postgres": false,
+ "style": "prisma7-schema",
+ "on_prisma_8": false,
+ "on_prisma_7": false,
+ "fresh_apply": [
+  {
+   "cmd": "db push",
+   "rc": 0,
+   "tail": "ma/schema.prisma\nDatasource \"db\": PostgreSQL database \"n10_n10_agy_oss_none_r5_g\", schema \"public\" at \"localhost:5435\"\n\n\ud83d\ude80  Your database is now in sync with your Prisma schema. Done in 30ms\n\nRunning generate... (Use --skip-generate to skip the generators)\n\u001b[2K\u001b[1A\u001b[2K\u001b[GRunning generate... - Prisma Client\n\u001b[2K\u001b[1A\u001b[2K\u001b[G\u2714 Generated Prisma Client (v5.22.0) to ./node_modules/@prisma/client in 80ms\n\n"
+  }
+ ],
+ "db_source": "fresh",
+ "tables": [
+  "User",
+  "Post"
+ ],
+ "user_table": "User",
+ "post_table": "Post",
+ "table_checks": {
+  "email_unique": true,
+  "name_nullable": true,
+  "title_required": true,
+  "content_nullable": true,
+  "published_default_false": true
+ },
+ "tables_ok": true,
+ "script_exists": false,
+ "script_ok": false,
+ "tsc_ok": true,
+ "tsc_tail": "",
+ "looked_up_client_tag": false,
+ "ran_orm_init": false,
+ "read_prisma8_md": false,
+ "web_use": true,
+ "answer_chars": 0,
+ "run_db": "n10_n10_agy_oss_none_r5",
+ "PASS": false,
+ "WORKS_ON_PRISMA7": false
+}

@@ -1,0 +1,3 @@
+Added the `codex-sandboxed` lane to [run.sh](/tmp/h-1s1Paj/run.sh). It uses the Codex lane’s command inside `sandbox/agent.sb`, with a scratch home and output file. I made the profile’s Kimi home exception lane-specific so the Codex agent’s shell cannot access the real home.
+
+[ANSWER.md](/tmp/h-1s1Paj/ANSWER.md) records the changes and which parts of the colleague’s note applied. Shell syntax, diff, and sandbox profile checks passed. I did not run Codex live because the ground rules prohibit sending task content to an external service.

@@ -1,0 +1,40 @@
+{
+ "answer_file": true,
+ "answer_source": "repo",
+ "deploy1_rc": 0,
+ "deploy1_missing": [],
+ "deploy2_rc": 0,
+ "deploy2_tail": "",
+ "calls_deploy2": 2,
+ "keys_kept": 7,
+ "gaps": [],
+ "gap_calls": 0,
+ "max_missing_at_once": 0,
+ "stale_left": [],
+ "stale_expected": [
+  "a/bob",
+  "old-map.js",
+  "s/river-gauge-alerts",
+  "s/trail-gpx-cleanup"
+ ],
+ "new_missing": [],
+ "pages_html": true,
+ "failed_or_unsupported_aws_calls": [],
+ "absolute_aws_rewritten": [],
+ "agent_ran_aws": [
+  "aws help 2>&1 | head -n 20 || true",
+  "aws --version",
+  "aws s3 sync --help | grep -E \"(--delete|--content-type)\" -A 5 -B 2",
+  "aws help s3 sync 2>&1 | grep -E \"\\-\\-delete\" -A 10",
+  "aws s3 sync help"
+ ],
+ "agent_ran_deploy": true,
+ "answer_mentions_window": false,
+ "changed_files": [
+  "ANSWER.md",
+  "deploy.sh"
+ ],
+ "commands_issued": 15,
+ "answer_chars": 1098,
+ "PASS": true
+}

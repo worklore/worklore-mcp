@@ -1,0 +1,25 @@
+**ANSWER.md**  
+
+## What I did
+- Installed the current Prisma 8 packages: `npm install prisma@latest @prisma/orm-postgres@latest -D`.  
+- Ran `npx prisma@latest orm init --yes --target postgres --authoring psl` to scaffold Prisma for PostgreSQL.  
+- Added the required `// use prisma-8` directive and defined the models in `src/prisma/contract.prisma`:
+  - **User** – unique `email`, optional `name`, relation to `Post`.  
+  - **Post** – `title`, optional `content`, `published` default `false`, required author relation.  
+- Regenerated the contract files (`contract.json` & `contract.d.ts`) with `npx prisma contract emit`.  
+- Synced Prisma skills (`npx prisma skills sync`).  
+- Applied the migration to the local PostgreSQL DB (`npx prisma db init`).  
+- Added `script.ts` at the project root that:
+  1. Creates a user with two posts (one published) using a nested create.  
+  2. Retrieves all users together with their posts.  
+  3. Prints the created user and the full list.  
+- The script can be run via `npx tsx script.ts`.
+
+## Which parts of the colleague’s note applied
+- **Prisma 8 is the current version** – I used `prisma@latest` and `@prisma/orm-postgres` (no `@prisma/client`).  
+- **Pass `--yes` to avoid interactive prompts** – included during `orm init`.  
+- **Add `// use prisma-8` directive** – required for contract emission.  
+- **Emit contract and sync skills** – followed the `npx prisma contract emit` and `npx prisma skills sync` steps.  
+- **Example of creating a user and including posts** – reflected in `script.ts`.  
+
+All other details (older version quirks, `@prisma/client` usage) were irrelevant for this task.

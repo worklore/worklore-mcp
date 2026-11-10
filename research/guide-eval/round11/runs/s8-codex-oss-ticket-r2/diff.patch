@@ -1,0 +1,28 @@
+diff --git a/bot.py b/bot.py
+index e2ff241..639a6b3 100644
+--- a/bot.py
++++ b/bot.py
+@@ -128,9 +128,20 @@ def athlete_context(a, today):
+ 
+ 
+ def build_system(a, today):
+-    # One block, cached as a whole: instructions + per-athlete context.
+-    text = INSTRUCTIONS + "\n\n" + athlete_context(a, today)
+-    return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
++    """Construct the system prompt in two independent blocks.
++
++    * The first block contains the static coaching instructions. It is left
++      without a ``cache_control`` marker so the provider can cache it across
++      requests.
++    * The second block holds per‑athlete, per‑day information (date, profile,
++      zones, goal, and long‑term facts). This block is marked as
++      ``ephemeral`` so that writes to ``facts`` only invalidate this tail and
++      leave the static prefix hot in the cache.
++    """
++    static_block = {"type": "text", "text": INSTRUCTIONS}
++    volatile_text = athlete_context(a, today)
++    volatile_block = {"type": "text", "text": volatile_text, "cache_control": {"type": "ephemeral"}}
++    return [static_block, volatile_block]
+ 
+ # --------------------------------------------------------------------------- tools
+ CORE_TOOLS = [
