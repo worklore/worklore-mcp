@@ -1,5 +1,7 @@
 # worklore-mcp
 
+[![Listed on mcpservers.org](https://mcpservers.org/badge.svg)](https://mcpservers.org/servers/worklore/worklore-mcp)
+
 An MCP (Model Context Protocol) connector for [worklore.dev](https://worklore.dev) —
 it lets any MCP-capable agent (Claude, ChatGPT, Cursor, …) search worklore's
 developer stories, read one with its **capability disclosure** attached, x-ray any
