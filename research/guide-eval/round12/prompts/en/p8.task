@@ -1,0 +1,3 @@
+This project uses Prisma ORM with the local PostgreSQL in .env: users and their posts, and the tables already exist. Upgrade Prisma to version 8.
+
+script.ts at the project root must keep working with `npx tsx script.ts`: it creates a user with two posts and prints every user together with their posts. Write what you did in ANSWER.md.

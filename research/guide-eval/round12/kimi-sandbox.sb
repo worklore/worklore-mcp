@@ -1,0 +1,10 @@
+;; OS-level fence for the Kimi lane (macOS sandbox-exec). Kimi runs with a real shell and everything it prints goes to
+;; Moonshot's API, so secrets and private files must be unreachable, not merely absent from the environment.
+;; Network stays open, because some tasks are only solvable by searching the web. HOME is passed with -D.
+(version 1)
+(allow default)
+(deny file-read-data (subpath (param "HOME")))
+(deny file-write* (subpath (param "HOME")))
+(allow file-read-data (subpath (string-append (param "HOME") "/.kimi-code")))
+(allow file-write* (subpath (string-append (param "HOME") "/.kimi-code")))
+(deny process-exec (literal "/bin/launchctl") (literal "/usr/bin/security") (literal "/usr/bin/osascript"))

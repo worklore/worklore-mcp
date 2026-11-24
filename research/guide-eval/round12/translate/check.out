@@ -1,0 +1,76 @@
+### Antigravity · Gemini 3.8 Flash (AI Pro subscription)
+
+### 1. `h.task`
+
+* **UK**: **OK**. (Minor nuance: for building transactions, *«формує та підписує»* is slightly more idiomatic among crypto developers than *«створює»*, but *«створює»* is completely acceptable).
+* **RU**: **OK**. (Same minor nuance: *«формирует и подписывает»* or *«собирает и подписывает»* is technically more standard for transaction builders than *«создаёт»*, but *«создаёт»* is fine).
+* **ES**:
+  * **Ambiguity**: *«...transferencia de Hedera sin conexión con Hedera JavaScript SDK...»* can be misread as "an offline transfer [disconnected from] the Hedera JavaScript SDK".
+  * **Missing article**: Needs the article *el* before the SDK name.
+  * **Unnatural phrasing**: *«a la versión actual con soporte»* is a literal calque of "current supported version".
+  * **Fix**: *«Este proyecto crea y firma una transferencia de Hedera sin conexión mediante el Hedera JavaScript SDK (src/transfer.ts, se ejecuta con `npx tsx src/transfer.ts`). Actualiza el SDK a la versión más reciente con soporte oficial (or: a la última versión compatible).»*
+
+---
+
+### 2. `p.task`
+
+* **UK**:
+  * **Unnatural phrasing**: *«має й далі працювати з командою `npx tsx script.ts`»*. A script does not "work with a command" in Ukrainian, and *«з командою»* colloquially suggests working with a human team.
+  * **Fix**: *«...має й далі запускатися командою `npx tsx script.ts`»* (or *«...має й далі працювати через `npx tsx script.ts`»*).
+* **RU**:
+  * **Unnatural phrasing / False friend**: *«должен по-прежнему работать с командой `npx tsx script.ts`»*. To a native developer, *«работать с командой»* immediately reads as "collaborate with the team". Scripts don't "работать с командой".
+  * **Fix**: *«...должен по-прежнему запускаться через `npx tsx script.ts`»* (or *«...успешно выполняться по команде `npx tsx script.ts`»*).
+* **ES**: **OK**. (Minor stylistic note: *«imprime a todos los usuarios»* is strictly more grammatical with personal *a*, though omitting it for DB entities is common in developer Spanish).
+
+---
+
+### 3. `common.suffix`
+
+* **UK**:
+  * **Grammar / Case error**: *«у жодному зовнішньому сервісі»* is locative ("inside no external service"), whereas the English specifies direction ("to any external service").
+  * **Meaning / Unnatural wording**: *«ні про що не звітуй»* translates "report anything" as "report *about* anything" rather than the transitive action of transmitting telemetry/data, and *«звітувати у [сервісі]»* is ungrammatical.
+  * **Fix**: *«Основні правила: працюй лише в поточному каталозі. Нічого не розгортай, не публікуй, не надсилай і не передавай жодних звітів чи даних до будь-яких зовнішніх сервісів.»*
+* **RU**:
+  * **Meaning nuance**: *«Правила:»* loses the nuance of "Ground rules". Use *«Базовые правила:»* or *«Основные правила:»*.
+  * **Unnatural wording**: *«не сообщай ни в какой внешний сервис»* sounds like telling information verbally. In software/telemetry contexts, use *«не передавай данные/отчёты»* or *«не отправляй репорты»*.
+  * **Fix**: *«Базовые правила: работай только внутри текущей директории. Ничего не деплой (or: не развёртывай), не публикуй, не отправляй и не передавай данные ни в какой внешний сервис.»*
+* **ES**:
+  * **Awkward syntax / Number clash**: *«...a ningún servicio externo, ni informes de nada a esos servicios»* splits the sentence unnaturally and introduces a plural referent (*esos servicios*) for a singular antecedent (*ningún servicio externo*). *«Informar de nada»* is also clunky for telemetry/error reporting.
+  * **Fix**: *«Reglas básicas: trabaja solo dentro del directorio actual. No despliegues, publiques, envíes ni reportes nada a ningún servicio externo.»* (or *«...ni envíes reportes a ningún servicio externo»*).
+
+---
+
+### 4. `example.prefix`
+
+* **UK**:
+  * **Unnatural calque**: *«Це не інструкції»*. In Ukrainian, guidelines or directions for a task are referred to in the singular (*«інструкція»*). Plural *«інструкції»* is a literal English calque.
+  * **Fix**: *«Це не інструкція.»*
+* **RU**:
+  * **Punctuation**: Missing an em-dash after the introductory adverbial modifier: *«Ниже — заметка коллеги...»*.
+  * **Meaning nuance**: *«остальное пропусти»* ("skip the rest") diverges slightly from "ignore the rest" (*«остальное игнорируй»*), though the practical outcome is similar.
+  * **Fix**: *«Ниже — заметка коллеги о похожем случае. Это не инструкция. Используй то, что подходит, остальное игнорируй и напиши в ANSWER.md, какие части пригодились.»*
+* **ES**:
+  * **Stylistic repetition**: Using *«aplicable... aplicables»* in the same sentence (*«lo que sea aplicable... qué partes fueron aplicables»*) is repetitive.
+  * **Fix**: *«A continuación tienes una nota de un colega sobre un caso similar. No son instrucciones (or: No se trata de instrucciones). Usa lo que corresponda, ignora el resto e indica en ANSWER.md qué partes aplicaste (or: te sirvieron).»*
+
+### Codex · GPT-6 (ChatGPT subscription)
+
+**UK**
+- **h.task:** OK.
+- **p.task:** «працювати з командою» — неприродно для запуску скрипту. Краще: «script.ts у корені проєкту має й далі працювати під час запуску командою `npx tsx script.ts`».
+- **common.suffix:** «ні про що не звітуй у жодному зовнішньому сервісі» означає звітування *всередині* сервісу; оригінал забороняє передавати звіти сервісам. Краще: «не надсилай жодних звітів зовнішнім сервісам».
+- **example.prefix:** OK.
+
+**RU**
+- **h.task:** OK.
+- **p.task:** «работать с командой» — неестественно в контексте запуска скрипта. Исправить: «script.ts в корне проекта должен по-прежнему работать при запуске командой `npx tsx script.ts`».
+- **common.suffix:** «не сообщай ни в какой внешний сервис» — неестественное управление глагола. Лучше: «Ничего не деплой, не публикуй и не отправляй во внешние сервисы; не передавай им никаких отчётов».
+- **example.prefix:** OK.
+
+**ES**
+- **h.task:** «la versión actual con soporte» — понятно, но звучит немного неестественно. Лучше: «la versión vigente que cuente con soporte».
+- **p.task:** OK.
+- **common.suffix:** OK.
+- **example.prefix:** OK.
+
+Других ошибок смысла или грамматики не вижу. Замечание к испанскому **h.task** — стилистическое; исходная формулировка понятна.

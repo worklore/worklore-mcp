@@ -1,0 +1,8 @@
+;; OS-level fence for the DeepSeek lane (claude-deepseek), as round 11's open-sandbox.sb: the agent has a real shell and
+;; everything it prints goes to DeepSeek, so the real home must be unreachable. Claude Code itself lives in /opt/homebrew.
+;; Network stays open. HOME via -D.
+(version 1)
+(allow default)
+(deny file-read-data (subpath (param "HOME")))
+(deny file-write* (subpath (param "HOME")))
+(deny process-exec (literal "/bin/launchctl") (literal "/usr/bin/security") (literal "/usr/bin/osascript"))
